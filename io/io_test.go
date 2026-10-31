@@ -22,13 +22,18 @@ func testFileKey(stripeID storage.StripeID) storage.FileKey {
 	}
 }
 
-func newTestLayer(root string, output *bytes.Buffer, level slog.Level) *IO {
+func newTestLayer(root string) *IO {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	return New(NewRequest{Root: root, Logger: logger}).Layer
+}
+
+func newTestLayerWithOutput(root string, output *bytes.Buffer, level slog.Level) *IO {
 	logger := slog.New(slog.NewTextHandler(output, &slog.HandlerOptions{Level: level}))
 	return New(NewRequest{Root: root, Logger: logger}).Layer
 }
 
 func TestReadWriteDelete(t *testing.T) {
-	layer := New(NewRequest{Root: t.TempDir()}).Layer
+	layer := newTestLayer(t.TempDir())
 	ctx := context.Background()
 	key := testFileKey(0)
 	data := []byte("stripe data")
@@ -63,7 +68,7 @@ func TestReadWriteDelete(t *testing.T) {
 }
 
 func TestScanOnlyStripeZero(t *testing.T) {
-	layer := New(NewRequest{Root: t.TempDir()}).Layer
+	layer := newTestLayer(t.TempDir())
 	ctx := context.Background()
 	for _, key := range []storage.FileKey{testFileKey(0), testFileKey(1)} {
 		if _, err := layer.Write(WriteRequest{Context: ctx, Key: key, Data: []byte("stripe data")}); err != nil {
@@ -87,7 +92,7 @@ func TestScanOnlyStripeZero(t *testing.T) {
 func TestScanSkipsInvalidFileNameWithWarning(t *testing.T) {
 	root := t.TempDir()
 	var logOutput bytes.Buffer
-	layer := newTestLayer(root, &logOutput, slog.LevelDebug)
+	layer := newTestLayerWithOutput(root, &logOutput, slog.LevelDebug)
 	if _, err := layer.Write(WriteRequest{Context: context.Background(), Key: testFileKey(0), Data: []byte("valid header")}); err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +117,7 @@ func TestScanSkipsInvalidFileNameWithWarning(t *testing.T) {
 func TestPublicOperationResultsAreDebugAndLevelIsConfigurable(t *testing.T) {
 	root := t.TempDir()
 	var debugOutput bytes.Buffer
-	debugLayer := newTestLayer(root, &debugOutput, slog.LevelDebug)
+	debugLayer := newTestLayerWithOutput(root, &debugOutput, slog.LevelDebug)
 	if _, err := debugLayer.Write(WriteRequest{Context: context.Background(), Key: testFileKey(0), Data: []byte("private payload")}); err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +129,7 @@ func TestPublicOperationResultsAreDebugAndLevelIsConfigurable(t *testing.T) {
 	}
 
 	var infoOutput bytes.Buffer
-	infoLayer := newTestLayer(t.TempDir(), &infoOutput, slog.LevelInfo)
+	infoLayer := newTestLayerWithOutput(t.TempDir(), &infoOutput, slog.LevelInfo)
 	if _, err := infoLayer.Write(WriteRequest{Context: context.Background(), Key: testFileKey(0), Data: []byte("data")}); err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +140,7 @@ func TestPublicOperationResultsAreDebugAndLevelIsConfigurable(t *testing.T) {
 
 func TestExpectedOperationErrorIsNotLoggedAsWarningOrError(t *testing.T) {
 	var output bytes.Buffer
-	layer := newTestLayer(t.TempDir(), &output, slog.LevelDebug)
+	layer := newTestLayerWithOutput(t.TempDir(), &output, slog.LevelDebug)
 	_, err := layer.Read(ReadRequest{Context: context.Background(), Key: testFileKey(0)})
 	if !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected os.ErrNotExist, got %v", err)
@@ -150,7 +155,7 @@ func TestExpectedOperationErrorIsNotLoggedAsWarningOrError(t *testing.T) {
 }
 
 func TestScanCallbackError(t *testing.T) {
-	layer := New(NewRequest{Root: t.TempDir()}).Layer
+	layer := newTestLayer(t.TempDir())
 	if _, err := layer.Write(WriteRequest{Context: context.Background(), Key: testFileKey(0), Data: []byte("header")}); err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +167,7 @@ func TestScanCallbackError(t *testing.T) {
 }
 
 func TestPathUsesObjectIDShards(t *testing.T) {
-	layer := New(NewRequest{Root: t.TempDir()}).Layer
+	layer := newTestLayer(t.TempDir())
 	key := testFileKey(0)
 	if _, err := layer.Write(WriteRequest{Context: context.Background(), Key: key, Data: []byte("data")}); err != nil {
 		t.Fatal(err)
