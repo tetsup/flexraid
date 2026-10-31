@@ -4,6 +4,8 @@ package io
 import (
 	"log/slog"
 	"os"
+
+	"github.com/tetsup/flexraid/storage"
 )
 
 // IO operates on physical files beneath one root directory.
