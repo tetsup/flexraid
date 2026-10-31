@@ -33,7 +33,7 @@ func newTestLayerWithOutput(t testing.TB, root string, output *bytes.Buffer, lev
 	logger := slog.New(slog.NewTextHandler(output, &slog.HandlerOptions{Level: level}))
 	t.Cleanup(func() {
 		if t.Failed() && output.Len() > 0 {
-			t.Logf("captured logs:\\n%s", output.String())
+			t.Logf("captured logs:\n%s", output.String())
 		}
 	})
 	return New(NewRequest{Root: root, Logger: logger}).Layer
@@ -99,7 +99,7 @@ func TestScanOnlyStripeZero(t *testing.T) {
 func TestScanSkipsInvalidFileNameWithWarning(t *testing.T) {
 	root := t.TempDir()
 	var logOutput bytes.Buffer
-	layer := newTestLayerWithOutput(root, &logOutput, slog.LevelDebug)
+	layer := newTestLayerWithOutput(t, root, &logOutput, slog.LevelDebug)
 	if _, err := layer.Write(WriteRequest{Context: context.Background(), Key: testFileKey(0), Data: []byte("valid header")}); err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestScanSkipsInvalidFileNameWithWarning(t *testing.T) {
 func TestPublicOperationResultsAreDebugAndLevelIsConfigurable(t *testing.T) {
 	root := t.TempDir()
 	var debugOutput bytes.Buffer
-	debugLayer := newTestLayerWithOutput(root, &debugOutput, slog.LevelDebug)
+	debugLayer := newTestLayerWithOutput(t, root, &debugOutput, slog.LevelDebug)
 	if _, err := debugLayer.Write(WriteRequest{Context: context.Background(), Key: testFileKey(0), Data: []byte("private payload")}); err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestPublicOperationResultsAreDebugAndLevelIsConfigurable(t *testing.T) {
 	}
 
 	var infoOutput bytes.Buffer
-	infoLayer := newTestLayerWithOutput(t.TempDir(), &infoOutput, slog.LevelInfo)
+	infoLayer := newTestLayerWithOutput(t, t.TempDir(), &infoOutput, slog.LevelInfo)
 	if _, err := infoLayer.Write(WriteRequest{Context: context.Background(), Key: testFileKey(0), Data: []byte("data")}); err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestPublicOperationResultsAreDebugAndLevelIsConfigurable(t *testing.T) {
 
 func TestExpectedOperationErrorIsNotLoggedAsWarningOrError(t *testing.T) {
 	var output bytes.Buffer
-	layer := newTestLayerWithOutput(t.TempDir(), &output, slog.LevelDebug)
+	layer := newTestLayerWithOutput(t, t.TempDir(), &output, slog.LevelDebug)
 	_, err := layer.Read(ReadRequest{Context: context.Background(), Key: testFileKey(0)})
 	if !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected os.ErrNotExist, got %v", err)
