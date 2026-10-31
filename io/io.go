@@ -4,6 +4,7 @@ package io
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -94,7 +95,11 @@ func (layer *IO) Scan(ctx context.Context, callback func(ScanEntry) error) error
 			return err
 		}
 		key, err := storage.ParseFileKey(filepath.ToSlash(relative))
-		if err != nil || key.StripeID != 0 {
+		if err != nil {
+			slog.Warn("skipping file with invalid name", "path", relative, "error", err)
+			return nil
+		}
+		if key.StripeID != 0 {
 			return nil
 		}
 

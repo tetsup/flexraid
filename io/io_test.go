@@ -1,10 +1,13 @@
 package io
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/tetsup/flexraid/storage"
@@ -65,6 +68,44 @@ func TestScanOnlyStripeZero(t *testing.T) {
 	}
 	if len(found) != 1 || found[0].Key.StripeID != 0 || string(found[0].Data) != "header" {
 		t.Fatalf("unexpected scan result: %#v", found)
+	}
+}
+
+
+func TestScanSkipsInvalidFileNameWithWarning(t *testing.T) {
+	layer := New(t.TempDir())
+	ctx := context.Background()
+	if err := layer.Write(ctx, testFileKey(0), []byte("valid header")); err != nil {
+		t.Fatal(err)
+	}
+
+	invalidPath := filepath.Join(layer.root, "invalid-file-name")
+	if err := os.WriteFile(invalidPath, []byte("ignored"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var logOutput bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logOutput, nil)))
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+
+	var found []ScanEntry
+	if err := layer.Scan(ctx, func(entry ScanEntry) error {
+		found = append(found, entry)
+		return nil
+	}); err != nil {
+		t.Fatalf("Scan returned an error: %v", err)
+	}
+
+	if len(found) != 1 || string(found[0].Data) != "valid header" {
+		t.Fatalf("unexpected scan result: %#v", found)
+	}
+	logs := logOutput.String()
+	if !strings.Contains(logs, "skipping file with invalid name") {
+		t.Fatalf("expected invalid filename warning, got %q", logs)
+	}
+	if !strings.Contains(logs, "invalid-file-name") {
+		t.Fatalf("expected warning to include invalid path, got %q", logs)
 	}
 }
 
