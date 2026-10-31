@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	stdio "io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -23,7 +24,7 @@ func testFileKey(stripeID storage.StripeID) storage.FileKey {
 }
 
 func newTestLayer(root string) *IO {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	logger := slog.New(slog.NewTextHandler(stdio.Discard, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	return New(NewRequest{Root: root, Logger: logger}).Layer
 }
 
