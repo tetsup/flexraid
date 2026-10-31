@@ -39,10 +39,6 @@ The system consists of four layers:
 │ Physical file operations │
 └─────────────────────────────┘
 
-Each layer exposes a single entry point to its upstream caller. A layer receives an execution plan and the operations it is permitted to invoke. It may inspect the plan, invoke the supplied operations, and return a result.
-
-This design limits dependencies between layers and makes their responsibilities easier to test independently.
-
 1. I/O Layer
 
 Responsibilities
