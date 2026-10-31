@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	stdio "io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -23,18 +22,25 @@ func testFileKey(stripeID storage.StripeID) storage.FileKey {
 	}
 }
 
-func newTestLayer(root string) *IO {
-	logger := slog.New(slog.NewTextHandler(stdio.Discard, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	return New(NewRequest{Root: root, Logger: logger}).Layer
+func newTestLayer(t testing.TB, root string) *IO {
+	t.Helper()
+	var output bytes.Buffer
+	return newTestLayerWithOutput(t, root, &output, slog.LevelDebug)
 }
 
-func newTestLayerWithOutput(root string, output *bytes.Buffer, level slog.Level) *IO {
+func newTestLayerWithOutput(t testing.TB, root string, output *bytes.Buffer, level slog.Level) *IO {
+	t.Helper()
 	logger := slog.New(slog.NewTextHandler(output, &slog.HandlerOptions{Level: level}))
+	t.Cleanup(func() {
+		if t.Failed() && output.Len() > 0 {
+			t.Logf("captured logs:\\n%s", output.String())
+		}
+	})
 	return New(NewRequest{Root: root, Logger: logger}).Layer
 }
 
 func TestReadWriteDelete(t *testing.T) {
-	layer := newTestLayer(t.TempDir())
+	layer := newTestLayer(t, t.TempDir())
 	ctx := context.Background()
 	key := testFileKey(0)
 	data := []byte("stripe data")
@@ -69,7 +75,7 @@ func TestReadWriteDelete(t *testing.T) {
 }
 
 func TestScanOnlyStripeZero(t *testing.T) {
-	layer := newTestLayer(t.TempDir())
+	layer := newTestLayer(t, t.TempDir())
 	ctx := context.Background()
 	for _, key := range []storage.FileKey{testFileKey(0), testFileKey(1)} {
 		if _, err := layer.Write(WriteRequest{Context: ctx, Key: key, Data: []byte("stripe data")}); err != nil {
@@ -156,7 +162,7 @@ func TestExpectedOperationErrorIsNotLoggedAsWarningOrError(t *testing.T) {
 }
 
 func TestScanCallbackError(t *testing.T) {
-	layer := newTestLayer(t.TempDir())
+	layer := newTestLayer(t, t.TempDir())
 	if _, err := layer.Write(WriteRequest{Context: context.Background(), Key: testFileKey(0), Data: []byte("header")}); err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +174,7 @@ func TestScanCallbackError(t *testing.T) {
 }
 
 func TestPathUsesObjectIDShards(t *testing.T) {
-	layer := newTestLayer(t.TempDir())
+	layer := newTestLayer(t, t.TempDir())
 	key := testFileKey(0)
 	if _, err := layer.Write(WriteRequest{Context: context.Background(), Key: key, Data: []byte("data")}); err != nil {
 		t.Fatal(err)
