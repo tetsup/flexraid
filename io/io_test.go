@@ -22,109 +22,161 @@ func testFileKey(stripeID storage.StripeID) storage.FileKey {
 	}
 }
 
+func newTestLayer(t testing.TB, root string) *IO {
+	t.Helper()
+	var output bytes.Buffer
+	return newTestLayerWithOutput(t, root, &output, slog.LevelDebug)
+}
+
+func newTestLayerWithOutput(t testing.TB, root string, output *bytes.Buffer, level slog.Level) *IO {
+	t.Helper()
+	logger := slog.New(slog.NewTextHandler(output, &slog.HandlerOptions{Level: level}))
+	t.Cleanup(func() {
+		if t.Failed() && output.Len() > 0 {
+			t.Logf("captured logs:\n%s", output.String())
+		}
+	})
+	return New(NewRequest{Root: root, Logger: logger}).Layer
+}
+
 func TestReadWriteDelete(t *testing.T) {
-	layer := New(t.TempDir())
+	layer := newTestLayer(t, t.TempDir())
 	ctx := context.Background()
 	key := testFileKey(0)
 	data := []byte("stripe data")
 
-	if err := layer.Write(ctx, key, data); err != nil {
-		t.Fatal(err)
-	}
-	if err := layer.Write(ctx, key, []byte("replacement")); !errors.Is(err, os.ErrExist) {
-		t.Fatalf("expected os.ErrExist, got %v", err)
-	}
-	got, err := layer.Read(ctx, key)
+	written, err := layer.Write(WriteRequest{Context: ctx, Key: key, Data: data})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != string(data) {
-		t.Fatalf("got %q, want %q", got, data)
+	if written.BytesWritten != len(data) {
+		t.Fatalf("wrote %d bytes, want %d", written.BytesWritten, len(data))
 	}
-	if err := layer.Delete(ctx, key); err != nil {
+	if _, err := layer.Write(WriteRequest{Context: ctx, Key: key, Data: []byte("replacement")}); !errors.Is(err, os.ErrExist) {
+		t.Fatalf("expected os.ErrExist, got %v", err)
+	}
+	read, err := layer.Read(ReadRequest{Context: ctx, Key: key})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := layer.Read(ctx, key); !errors.Is(err, os.ErrNotExist) {
+	if string(read.Data) != string(data) {
+		t.Fatalf("got %q, want %q", read.Data, data)
+	}
+	deleted, err := layer.Delete(DeleteRequest{Context: ctx, Key: key})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !deleted.Deleted {
+		t.Fatal("expected Deleted to be true")
+	}
+	if _, err := layer.Read(ReadRequest{Context: ctx, Key: key}); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected os.ErrNotExist, got %v", err)
 	}
 }
 
 func TestScanOnlyStripeZero(t *testing.T) {
-	layer := New(t.TempDir())
+	layer := newTestLayer(t, t.TempDir())
 	ctx := context.Background()
-	if err := layer.Write(ctx, testFileKey(0), []byte("header")); err != nil {
-		t.Fatal(err)
-	}
-	if err := layer.Write(ctx, testFileKey(1), []byte("other stripe")); err != nil {
-		t.Fatal(err)
+	for _, key := range []storage.FileKey{testFileKey(0), testFileKey(1)} {
+		if _, err := layer.Write(WriteRequest{Context: ctx, Key: key, Data: []byte("stripe data")}); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	var found []ScanEntry
-	if err := layer.Scan(ctx, func(entry ScanEntry) error {
+	response, err := layer.Scan(ScanRequest{Context: ctx, Callback: func(entry ScanEntry) error {
 		found = append(found, entry)
 		return nil
-	}); err != nil {
+	}})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if len(found) != 1 || found[0].Key.StripeID != 0 || string(found[0].Data) != "header" {
-		t.Fatalf("unexpected scan result: %#v", found)
+	if response.Entries != 1 || len(found) != 1 || found[0].Key.StripeID != 0 || string(found[0].Data) != "stripe data" {
+		t.Fatalf("unexpected scan result: response=%#v entries=%#v", response, found)
 	}
 }
 
-
 func TestScanSkipsInvalidFileNameWithWarning(t *testing.T) {
-	layer := New(t.TempDir())
-	ctx := context.Background()
-	if err := layer.Write(ctx, testFileKey(0), []byte("valid header")); err != nil {
+	root := t.TempDir()
+	var logOutput bytes.Buffer
+	layer := newTestLayerWithOutput(t, root, &logOutput, slog.LevelDebug)
+	if _, err := layer.Write(WriteRequest{Context: context.Background(), Key: testFileKey(0), Data: []byte("valid header")}); err != nil {
 		t.Fatal(err)
 	}
-
-	invalidPath := filepath.Join(layer.root, "invalid-file-name")
+	invalidPath := filepath.Join(root, "invalid-file-name")
 	if err := os.WriteFile(invalidPath, []byte("ignored"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	var logOutput bytes.Buffer
-	previousLogger := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logOutput, nil)))
-	t.Cleanup(func() { slog.SetDefault(previousLogger) })
-
-	var found []ScanEntry
-	if err := layer.Scan(ctx, func(entry ScanEntry) error {
-		found = append(found, entry)
-		return nil
-	}); err != nil {
+	response, err := layer.Scan(ScanRequest{Context: context.Background(), Callback: func(ScanEntry) error { return nil }})
+	if err != nil {
 		t.Fatalf("Scan returned an error: %v", err)
 	}
-
-	if len(found) != 1 || string(found[0].Data) != "valid header" {
-		t.Fatalf("unexpected scan result: %#v", found)
+	if response.Entries != 1 {
+		t.Fatalf("got %d entries, want 1", response.Entries)
 	}
 	logs := logOutput.String()
-	if !strings.Contains(logs, "skipping file with invalid name") {
+	if !strings.Contains(logs, "level=WARN") || !strings.Contains(logs, "invalid-file-name") {
 		t.Fatalf("expected invalid filename warning, got %q", logs)
 	}
-	if !strings.Contains(logs, "invalid-file-name") {
-		t.Fatalf("expected warning to include invalid path, got %q", logs)
+}
+
+func TestPublicOperationResultsAreDebugAndLevelIsConfigurable(t *testing.T) {
+	root := t.TempDir()
+	var debugOutput bytes.Buffer
+	debugLayer := newTestLayerWithOutput(t, root, &debugOutput, slog.LevelDebug)
+	if _, err := debugLayer.Write(WriteRequest{Context: context.Background(), Key: testFileKey(0), Data: []byte("private payload")}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(debugOutput.String(), "level=DEBUG") {
+		t.Fatalf("expected DEBUG result log, got %q", debugOutput.String())
+	}
+	if strings.Contains(debugOutput.String(), "private payload") {
+		t.Fatalf("log contains file payload: %q", debugOutput.String())
+	}
+
+	var infoOutput bytes.Buffer
+	infoLayer := newTestLayerWithOutput(t, t.TempDir(), &infoOutput, slog.LevelInfo)
+	if _, err := infoLayer.Write(WriteRequest{Context: context.Background(), Key: testFileKey(0), Data: []byte("data")}); err != nil {
+		t.Fatal(err)
+	}
+	if infoOutput.Len() != 0 {
+		t.Fatalf("DEBUG logs should be filtered at INFO, got %q", infoOutput.String())
+	}
+}
+
+func TestExpectedOperationErrorIsNotLoggedAsWarningOrError(t *testing.T) {
+	var output bytes.Buffer
+	layer := newTestLayerWithOutput(t, t.TempDir(), &output, slog.LevelDebug)
+	_, err := layer.Read(ReadRequest{Context: context.Background(), Key: testFileKey(0)})
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected os.ErrNotExist, got %v", err)
+	}
+	logs := output.String()
+	if strings.Contains(logs, "level=WARN") || strings.Contains(logs, "level=ERROR") {
+		t.Fatalf("expected errors must not be elevated to WARN/ERROR: %q", logs)
+	}
+	if !strings.Contains(logs, "level=DEBUG") {
+		t.Fatalf("expected operation result at DEBUG, got %q", logs)
 	}
 }
 
 func TestScanCallbackError(t *testing.T) {
-	layer := New(t.TempDir())
-	if err := layer.Write(context.Background(), testFileKey(0), []byte("header")); err != nil {
+	layer := newTestLayer(t, t.TempDir())
+	if _, err := layer.Write(WriteRequest{Context: context.Background(), Key: testFileKey(0), Data: []byte("header")}); err != nil {
 		t.Fatal(err)
 	}
 	want := errors.New("stop")
-	err := layer.Scan(context.Background(), func(ScanEntry) error { return want })
+	_, err := layer.Scan(ScanRequest{Context: context.Background(), Callback: func(ScanEntry) error { return want }})
 	if !errors.Is(err, want) {
 		t.Fatalf("got %v, want callback error", err)
 	}
 }
 
 func TestPathUsesObjectIDShards(t *testing.T) {
-	layer := New(t.TempDir())
+	layer := newTestLayer(t, t.TempDir())
 	key := testFileKey(0)
-	if err := layer.Write(context.Background(), key, []byte("data")); err != nil {
+	if _, err := layer.Write(WriteRequest{Context: context.Background(), Key: key, Data: []byte("data")}); err != nil {
 		t.Fatal(err)
 	}
 	relative, err := key.Path()
