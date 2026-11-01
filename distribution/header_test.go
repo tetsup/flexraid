@@ -13,7 +13,7 @@ func sampleHeader() Header {
 	return Header{
 		FormatVersion: HeaderFormatVersion,
 		ObjectID: ObjectID{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab},
-		ParentID: ObjectID{0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x4a, 0x70, 0x80, 0x90, 0xa0, 0xb0, 0xc0, 0xd0, 0xe0, 0xf0},
+		ParentID: ptrObjectID(ObjectID{0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x4a, 0x70, 0x80, 0x90, 0xa0, 0xb0, 0xc0, 0xd0, 0xe0, 0xf0}),
 		Kind: shared.ObjectKind(2),
 		Name: "メディア.bin",
 		Mode: 0644,
@@ -41,7 +41,15 @@ func TestHeaderBinaryRoundTrip(t *testing.T) {
 	if err := got.UnmarshalBinary(data); err != nil {
 		t.Fatal(err)
 	}
-	if got != want {
+	if got.ObjectID != want.ObjectID ||
+		!equalOptionalObjectID(got.ParentID, want.ParentID) ||
+		got.FormatVersion != want.FormatVersion ||
+		got.Kind != want.Kind || got.Name != want.Name ||
+		got.Mode != want.Mode || got.UID != want.UID ||
+		got.GID != want.GID || got.Nlink != want.Nlink ||
+		got.Size != want.Size || !got.Atime.Equal(want.Atime) ||
+		!got.Mtime.Equal(want.Mtime) || !got.Ctime.Equal(want.Ctime) ||
+		got.Layout != want.Layout {
 		t.Fatalf("got %#v want %#v", got, want)
 	}
 }
@@ -93,7 +101,7 @@ func TestHeaderUnmarshalRejectsInvalidLengthAndPadding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b[2+16+16+1+2+len([]byte("メディア.bin"))] = 1
+	b[2+16+1+16+1+2+len([]byte("メディア.bin"))] = 1
 	if err := h.UnmarshalBinary(b); !errors.Is(err, ErrInvalidHeader) {
 		t.Fatalf("got %v", err)
 	}
@@ -112,9 +120,9 @@ func TestHeaderUnmarshalRejectsInvalidUUIDv4(t *testing.T) {
 	}
 }
 
-func TestHeaderAllowsZeroParentID(t *testing.T) {
+func TestHeaderAllowsNullParentID(t *testing.T) {
 	header := sampleHeader()
-	header.ParentID = ObjectID{}
+	header.ParentID = nil
 
 	data, err := header.MarshalBinary()
 	if err != nil {
@@ -124,7 +132,54 @@ func TestHeaderAllowsZeroParentID(t *testing.T) {
 	if err := got.UnmarshalBinary(data); err != nil {
 		t.Fatal(err)
 	}
-	if got.ParentID != (ObjectID{}) {
-		t.Fatalf("got ParentID %v, want zero value", got.ParentID)
+	if got.ParentID != nil {
+		t.Fatalf("got ParentID %v, want nil", got.ParentID)
 	}
+}
+
+func TestHeaderRejectsInvalidParentPresence(t *testing.T) {
+	data, err := sampleHeader().MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data[2+16] = 2
+
+	var got Header
+	if err := got.UnmarshalBinary(data); !errors.Is(err, ErrInvalidHeader) {
+		t.Fatalf("got %v, want ErrInvalidHeader", err)
+	}
+}
+
+func TestHeaderRejectsInvalidParentUUID(t *testing.T) {
+	data, err := sampleHeader().MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// ParentID starts after version, ObjectID, and the presence marker.
+	data[2+16+1+6] = (data[2+16+1+6] & 0x0f) | 0x10
+
+	var got Header
+	if err := got.UnmarshalBinary(data); !errors.Is(err, ErrInvalidHeader) {
+		t.Fatalf("got %v, want ErrInvalidHeader", err)
+	}
+}
+
+func TestHeaderMarshalRejectsInvalidObjectID(t *testing.T) {
+	header := sampleHeader()
+	header.ObjectID = ObjectID{}
+
+	if _, err := header.MarshalBinary(); !errors.Is(err, ErrInvalidHeader) {
+		t.Fatalf("got %v, want ErrInvalidHeader", err)
+	}
+}
+
+func ptrObjectID(id ObjectID) *ObjectID {
+	return &id
+}
+
+func equalOptionalObjectID(a, b *ObjectID) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
 }
