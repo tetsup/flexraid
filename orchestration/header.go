@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	HeaderFormatVersion uint16 = 1
+	HeaderFormatVersion uint16 = 0
 	MaxNameSize                 = 255
 	HeaderSize                  = 2 + 16 + 1 + 16 + 1 + 1 + 16 + 2 + MaxNameSize + 4 + 4 + 4 + 4 + 8 + 8 + 8 + 8 + 1 + 4 + 2 + 2
 )
@@ -68,9 +68,6 @@ type Header struct {
 // MarshalBinary encodes a logical object header as fixed-size, big-endian bytes.
 // UUIDs are stored as 16 raw bytes and timestamps use Unix nanoseconds.
 func (h Header) MarshalBinary() ([]byte, error) {
-	if h.FormatVersion == 0 {
-		h.FormatVersion = HeaderFormatVersion
-	}
 	if h.FormatVersion != HeaderFormatVersion {
 		return nil, ErrUnsupportedFormat
 	}
