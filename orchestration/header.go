@@ -41,7 +41,7 @@ const (
 )
 
 type layout struct {
-	Mode         LayoutMode
+	Mode         layoutMode
 	ChunkSize    uint32
 	DataChunks   uint16
 	ParityChunks uint16
@@ -62,7 +62,7 @@ type header struct {
 	Atime         time.Time
 	Mtime         time.Time
 	Ctime         time.Time
-	Layout        Layout
+	Layout        layout
 }
 
 // MarshalBinary encodes a logical object header as fixed-size, big-endian bytes.
@@ -188,7 +188,7 @@ func (h *header) UnmarshalBinary(data []byte) error {
 	out.Atime = time.Unix(0, at)
 	out.Mtime = time.Unix(0, mt)
 	out.Ctime = time.Unix(0, ct)
-	out.Layout.Mode = LayoutMode(lm)
+	out.Layout.Mode = layoutMode(lm)
 	if lm != uint8(layoutModeMirror) && lm != uint8(layoutModeStripe) {
 		return errInvalidHeader
 	}
