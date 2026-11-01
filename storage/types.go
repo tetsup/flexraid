@@ -16,10 +16,10 @@ var (
 )
 
 // ObjectID identifies a logical file.
-// It aliases the shared uint64-based identifier used by persistent headers.
+// It aliases the shared UUIDv4 identifier used by persistent headers.
 type ObjectID = shared.ObjectID
 
-// ParseObjectID parses the canonical 16-character hexadecimal ObjectID.
+// ParseObjectID parses the canonical UUIDv4 ObjectID.
 func ParseObjectID(value string) (ObjectID, error) {
 	return shared.ParseObjectID(value)
 }
@@ -102,7 +102,7 @@ func (key FileKey) Path() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrInvalidFileKey, err)
 	}
-	if key.ObjectID == 0 {
+	if key.ObjectID.IsZero() {
 		return "", fmt.Errorf("%w: %v", ErrInvalidFileKey, ErrInvalidObjectID)
 	}
 
@@ -121,32 +121,32 @@ func ParseFileKey(path string) (FileKey, error) {
 	}
 
 	name := parts[2]
-	const expectedLength = 16 + 1 + 16 + 1 + 4 + 1 + 16
+	const expectedLength = 36 + 1 + 16 + 1 + 4 + 1 + 16
 	if len(name) != expectedLength {
 		return key, ErrInvalidFileKey
 	}
 
-	objectIDText := name[:16]
+	objectIDText := name[:36]
 	if parts[0] != objectIDText[:2] || parts[1] != objectIDText[2:4] {
 		return key, ErrInvalidFileKey
 	}
 
-	if name[16] != '-' || name[33] != '-' || name[38] != '-' {
+	if name[36] != '-' || name[53] != '-' || name[58] != '-' {
 		return key, ErrInvalidFileKey
 	}
 	objectID, err := ParseObjectID(objectIDText)
 	if err != nil {
 		return key, fmt.Errorf("%w: %v", ErrInvalidFileKey, err)
 	}
-	version, err := strconv.ParseUint(name[17:33], 16, 64)
+	version, err := strconv.ParseUint(name[37:53], 16, 64)
 	if err != nil {
 		return key, ErrInvalidFileKey
 	}
-	layout, err := ParseLayoutID(name[34:38])
+	layout, err := ParseLayoutID(name[54:58])
 	if err != nil {
 		return key, ErrInvalidFileKey
 	}
-	stripeID, err := strconv.ParseUint(name[39:55], 16, 64)
+	stripeID, err := strconv.ParseUint(name[59:75], 16, 64)
 	if err != nil {
 		return key, ErrInvalidFileKey
 	}
