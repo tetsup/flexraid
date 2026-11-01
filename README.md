@@ -241,7 +241,7 @@ HardLink の TargetID は HardLinkedFile の ObjectID を直接指す。HardLink
 
 ハードリンク作成前の通常 File は、最初のハードリンク作成時に実体を HardLinkedFile として Namespace から切り離し、元の名前と追加する名前をそれぞれ HardLink Object として表現する。以後、複数の HardLink が同じ HardLinkedFile を参照する。永続化上は実体と各名前が別々の Object だが、メモリ展開時には各 HardLink Node から同じ Runtime のファイル実体を参照させる。ファイルデータの冗長化・配置は HardLinkedFile 単位で行い、Namespace の children と Runtime の参照関係は Orchestration 層が管理する。
 
-Header では Kind によって役割を区別し、追加する参照情報は nullable な TargetID のみとする。TargetID は HardLink の場合だけ設定し、HardLink 以外では nil とする。HardLinkedFile を識別するための追加フラグは設けない。ParentID と TargetID の nullable 表現は、ゼロ UUID ではなく明示的な存在情報で符号化する。Header のバイナリ形式を変更するため FormatVersion と HeaderSize を更新する。
+Header では Kind によって役割を区別し、追加する参照情報は nullable な TargetID のみとする。TargetID は HardLink の場合だけ設定し、HardLink 以外では nil とする。HardLinkedFile を識別するための追加フラグは設けない。ParentID と TargetID の nullable 表現は、ゼロ UUID ではなく明示的な存在情報で符号化する。リリースまでは、Header のバイナリ構造を変更しても FormatVersion は 0 のままとし、後方互換性の維持や旧形式の読み込み対応は行わない。HeaderSize は現在の構造に合わせて更新する。
 
 
 ParentID が nil になる Object は root Directory と HardLinkedFile の2種類であり、Kind によって区別する。したがって「ParentID が nil なのは root だけ」という前提は置かない。HardLinkedFile は Namespace の children に登録せず、root の候補にも含めない。
