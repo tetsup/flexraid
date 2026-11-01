@@ -1,48 +1,23 @@
 package storage
 
 import (
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/tetsup/flexraid/pkg/shared"
 )
 
 var (
-	ErrInvalidObjectID = errors.New("invalid UUIDv4")
+	ErrInvalidObjectID = shared.ErrInvalidObjectID
 	ErrInvalidLayoutID = errors.New("invalid layout ID")
 	ErrInvalidFileKey  = errors.New("invalid file key")
 )
 
-// ObjectID identifies a logical file using a UUIDv4.
-type ObjectID [16]byte
-
-// String returns the canonical UUID representation.
-func (id ObjectID) String() string {
-	raw := hex.EncodeToString(id[:])
-	return raw[:8] + "-" + raw[8:12] + "-" + raw[12:16] + "-" + raw[16:20] + "-" + raw[20:]
-}
-
-// ParseObjectID parses a canonical UUIDv4 string.
-func ParseObjectID(value string) (ObjectID, error) {
-	var id ObjectID
-	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' {
-		return id, ErrInvalidObjectID
-	}
-
-	raw := strings.ReplaceAll(value, "-", "")
-	decoded, err := hex.DecodeString(raw)
-	if err != nil || len(decoded) != len(id) {
-		return id, ErrInvalidObjectID
-	}
-	copy(id[:], decoded)
-
-	// UUID version 4 and RFC 4122 variant.
-	if id[6]>>4 != 4 || id[8]>>6 != 2 {
-		return ObjectID{}, ErrInvalidObjectID
-	}
-	return id, nil
-}
+// ObjectID identifies a logical file.
+// It aliases the shared UUIDv4 identifier used by persistent headers.
+type ObjectID = shared.ObjectID
 
 // StripeVersion identifies one version of a stripe.
 type StripeVersion uint64
@@ -151,9 +126,9 @@ func ParseFileKey(path string) (FileKey, error) {
 	if name[36] != '-' || name[53] != '-' || name[58] != '-' {
 		return key, ErrInvalidFileKey
 	}
-	objectID, err := ParseObjectID(objectIDText)
+	objectID, err := shared.ParseObjectID(objectIDText)
 	if err != nil {
-		return key, err
+		return key, fmt.Errorf("%w: %v", ErrInvalidFileKey, err)
 	}
 	version, err := strconv.ParseUint(name[37:53], 16, 64)
 	if err != nil {
@@ -161,7 +136,7 @@ func ParseFileKey(path string) (FileKey, error) {
 	}
 	layout, err := ParseLayoutID(name[54:58])
 	if err != nil {
-		return key, err
+		return key, ErrInvalidFileKey
 	}
 	stripeID, err := strconv.ParseUint(name[59:75], 16, 64)
 	if err != nil {

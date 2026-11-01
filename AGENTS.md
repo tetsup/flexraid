@@ -70,6 +70,15 @@ fuse/
 - 複数の操作で共有する型は、共有する責務が明確なファイルに配置する。
 - 型の共有は重複を避けることだけを目的に行わず、各レイヤーの独立性と責務を優先する。
 
+### ObjectID と ParentID
+
+- `ObjectID` は常に有効な UUIDv4 とする。無効値や未設定値を表す ObjectID は設けない。
+- ObjectID の生成・文字列解析・バイナリ解析など、外部入力を受け取る境界で UUIDv4 を検証する。検証ロジックは共通の単一の検証経路に集約する。
+- ObjectID のゼロ値を特別な識別子、root、未設定値、無効値などとして扱わない。ゼロ値判定やゼロ値を利用した分岐を設けない。
+- `ParentID` は nullable とし、親が存在しない root のみ `nil`（永続形式では明示的な null）を持つ。それ以外の Object は必ず有効な UUIDv4 の親 ID を持つ。
+- root 自身も通常の Object として有効な ObjectID を持つ。root の子の ParentID には root 自身の ObjectID を設定する。
+- nullable な識別子を永続化するときは、ゼロ UUID を null の代用にせず、存在フラグなどで有無を明示する。存在する場合の ID は必ず UUIDv4 として検証する。
+
 ## 6. 関数と共通処理
 
 - 公開関数は PascalCase、非公開関数は camelCase とする。
