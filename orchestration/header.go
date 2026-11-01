@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	HeaderFormatVersion uint16 = 2
+	HeaderFormatVersion uint16 = 1
 	MaxNameSize                 = 255
 	HeaderSize                  = 2 + 16 + 1 + 16 + 1 + 1 + 16 + 2 + MaxNameSize + 4 + 4 + 4 + 4 + 8 + 8 + 8 + 8 + 1 + 4 + 2 + 2
 )
