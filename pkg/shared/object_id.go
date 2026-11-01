@@ -53,8 +53,11 @@ func (id *ObjectID) UnmarshalBinary(data []byte) error {
 	return nil
 }
 
-// MarshalBinary returns the 16-byte binary representation.
+// MarshalBinary returns the validated 16-byte UUIDv4 binary representation.
 func (id ObjectID) MarshalBinary() ([]byte, error) {
+	if _, err := parseObjectIDBytes(id[:]); err != nil {
+		return nil, err
+	}
 	return append([]byte(nil), id[:]...), nil
 }
 
@@ -65,11 +68,6 @@ func (id ObjectID) String() string {
 		hex.EncodeToString(id[6:8]) + "-" +
 		hex.EncodeToString(id[8:10]) + "-" +
 		hex.EncodeToString(id[10:16])
-}
-
-// IsZero reports whether id is the all-zero sentinel value.
-func (id ObjectID) IsZero() bool {
-	return id == ObjectID{}
 }
 
 // parseObjectIDBytes is the single UUIDv4 validation gate for all input formats.
