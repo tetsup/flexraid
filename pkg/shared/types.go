@@ -26,9 +26,9 @@ func NewObjectID() (ObjectID, error) {
 	return id, nil
 }
 
-// IsZero reports whether id is the zero value.
-func (id ObjectID) IsZero() bool {
-	return id == ObjectID{}
+// IsValid reports whether id has the UUIDv4 version and RFC 4122 variant bits.
+func (id ObjectID) IsValid() bool {
+	return id[6]>>4 == 4 && id[8]&0xc0 == 0x80
 }
 
 // String returns the canonical 36-character UUID representation.
@@ -41,7 +41,6 @@ func (id ObjectID) String() string {
 }
 
 // ParseObjectID parses a canonical UUIDv4 string.
-// The zero value and UUIDs that do not have the version 4 / RFC 4122 variant bits are rejected.
 func ParseObjectID(value string) (ObjectID, error) {
 	var id ObjectID
 	if len(value) != 36 ||
@@ -56,7 +55,7 @@ func ParseObjectID(value string) (ObjectID, error) {
 	}
 	copy(id[:], decoded)
 
-	if id.IsZero() || id[6]>>4 != 4 || id[8]&0xc0 != 0x80 {
+	if !id.IsValid() {
 		return ObjectID{}, ErrInvalidObjectID
 	}
 	return id, nil
