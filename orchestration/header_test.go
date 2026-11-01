@@ -127,10 +127,10 @@ func TestHeaderUnmarshalRejectsInvalidUUIDv4(t *testing.T) {
 func TestHeaderAllowsNullParentIDForRootAndHardLinkedFile(t *testing.T) {
 	for _, kind := range []shared.ObjectKind{objectKindDirectory, objectKindHardLinkedFile} {
 		t.Run(string(rune('0'+kind)), func(t *testing.T) {
-			header := sampleHeader()
-			header.Kind = kind
-			header.ParentID = nil
-			data, err := header.MarshalBinary()
+			h := sampleHeader()
+			h.Kind = kind
+			h.ParentID = nil
+			data, err := h.MarshalBinary()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -158,10 +158,10 @@ func TestHeaderRejectsInvalidParentPresence(t *testing.T) {
 }
 
 func TestHeaderRejectsInvalidTargetPresence(t *testing.T) {
-	header := sampleHeader()
-	header.Kind = objectKindHardLink
-	header.TargetID = ptrObjectID(shared.ObjectID{0x21, 0x43, 0x65, 0x87, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab})
-	data, err := header.MarshalBinary()
+	h := sampleHeader()
+	h.Kind = objectKindHardLink
+	h.TargetID = ptrObjectID(shared.ObjectID{0x21, 0x43, 0x65, 0x87, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab})
+	data, err := h.MarshalBinary()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,10 +174,10 @@ func TestHeaderRejectsInvalidTargetPresence(t *testing.T) {
 }
 
 func TestHeaderRejectsInvalidTargetUUID(t *testing.T) {
-	header := sampleHeader()
-	header.Kind = objectKindHardLink
-	header.TargetID = ptrObjectID(shared.ObjectID{0x21, 0x43, 0x65, 0x87, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab})
-	data, err := header.MarshalBinary()
+	h := sampleHeader()
+	h.Kind = objectKindHardLink
+	h.TargetID = ptrObjectID(shared.ObjectID{0x21, 0x43, 0x65, 0x87, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab})
+	data, err := h.MarshalBinary()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,9 +202,9 @@ func TestHeaderRejectsInvalidParentUUID(t *testing.T) {
 }
 
 func TestHeaderMarshalRejectsInvalidObjectID(t *testing.T) {
-	header := sampleHeader()
-	header.ObjectID = shared.ObjectID{}
-	if _, err := header.MarshalBinary(); !errors.Is(err, errInvalidHeader) {
+	h := sampleHeader()
+	h.ObjectID = shared.ObjectID{}
+	if _, err := h.MarshalBinary(); !errors.Is(err, errInvalidHeader) {
 		t.Fatalf("got %v, want errInvalidHeader", err)
 	}
 }
