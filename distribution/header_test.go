@@ -99,3 +99,42 @@ func TestHeaderUnmarshalRejectsInvalidLengthAndPadding(t *testing.T) {
 		t.Fatalf("got %v", e)
 	}
 }
+
+func TestHeaderUnmarshalRejectsInvalidUUIDv4(t *testing.T) {
+	data, err := sampleHeader().MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data[2+6] = (data[2+6] & 0x0f) | 0x10
+
+	var got Header
+	if err := got.UnmarshalBinary(data); !errors.Is(err, ErrInvalidHeader) {
+		t.Fatalf("got %v, want ErrInvalidHeader", err)
+	}
+}
+
+func TestHeaderAllowsZeroParentID(t *testing.T) {
+	header := sampleHeader()
+	header.ParentID = ObjectID{}
+
+	data, err := header.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got Header
+	if err := got.UnmarshalBinary(data); err != nil {
+		t.Fatal(err)
+	}
+	if got.ParentID != (ObjectID{}) {
+		t.Fatalf("got ParentID %v, want zero value", got.ParentID)
+	}
+}
+
+func TestHeaderMarshalRejectsInvalidParentID(t *testing.T) {
+	header := sampleHeader()
+	header.ParentID[6] = (header.ParentID[6] & 0x0f) | 0x10
+
+	if _, err := header.MarshalBinary(); !errors.Is(err, ErrInvalidHeader) {
+		t.Fatalf("got %v, want ErrInvalidHeader", err)
+	}
+}
