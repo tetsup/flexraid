@@ -177,6 +177,8 @@ fuse/
 - 永続化時は HardLinkedFile と各 HardLink を個別 Object として保存し、メモリ展開時は複数の HardLink Node が同一の Runtime ファイル実体を共有する。Distribution 上のデータ冗長化・配置単位は HardLinkedFile とする。
 
 - チャンク、ストライプ、StripeVersion、物理チャンク配置の情報は Distribution 層の内部に閉じ込める。Orchestration 層にチャンク単位の内部情報を公開しない。
+- `ChunkNo`、チャンク番号のビットフラグ、`DistributionMethod`、`StripeKeyInfo` などのチャンク表現・復元処理用型は Distribution パッケージ内だけで使用し、公開しない。チャンク番号の生成・判定関数や復元処理だけで使うエラー識別子も同様に非公開とする。
+- Distribution の公開 API は論理ストライプ単位の操作と ObjectID の列挙を基本とし、チャンク番号・StripeVersion・物理配置を表す内部型を Request / Response に露出させない。配置方針を受け渡す型が必要な場合は、チャンク内部表現とは分離した API 契約として定義する。
 - StripeVersion は Object 全体ではなく、ObjectID + StripeID ごとに管理する。
 - 永続インデックスは作らない。起動時に実ファイルを全件列挙し、Distribution 層がストライプごとのチャンク・バージョン・物理配置情報をメモリ上に構築する。
 - 起動時の全件列挙後は、通常のストライプ操作のために I/O 層へストライプ単位の再スキャンを要求しない。ストライプ情報は Distribution 層のメモリ上の情報を使う。
