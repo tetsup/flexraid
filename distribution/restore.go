@@ -34,7 +34,7 @@ func validateChunks(chunks []chunkDataWithInfo,method DistributionMethod)(map[Ch
  var key StripeKeyInfo
  result:=make(map[ChunkNo][]byte,len(chunks))
  for i,chunk:=range chunks{
-  if chunk.StripeKey.ObjectID==0{return nil,fmt.Errorf("%w: zero object ID",ErrInvalidChunk)}
+  if chunk.StripeKey.ObjectID.IsZero(){return nil,fmt.Errorf("%w: zero object ID",ErrInvalidChunk)}
   if i==0{key=chunk.StripeKey}else if chunk.StripeKey!=key{return nil,fmt.Errorf("%w: mixed stripe versions",ErrInvalidChunk)}
   if chunk.DistributionMethod!=method{return nil,fmt.Errorf("%w: mixed distribution methods",ErrInvalidChunk)}
   if _,exists:=result[chunk.ChunkNo];exists{return nil,fmt.Errorf("%w: duplicate chunk number %d",ErrInvalidChunk,chunk.ChunkNo)}
