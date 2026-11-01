@@ -14,7 +14,7 @@ import (
 const (
 	HeaderFormatVersion uint16 = 1
 	MaxNameSize                 = 255
-	HeaderSize                  = 2 + 16 + 16 + 1 + 2 + MaxNameSize + 4 + 4 + 4 + 4 + 8 + 8 + 8 + 8 + 1 + 4 + 2 + 2
+	HeaderSize                  = 2 + 16 + 1 + 16 + 1 + 2 + MaxNameSize + 4 + 4 + 4 + 4 + 8 + 8 + 8 + 8 + 1 + 4 + 2 + 2
 )
 
 var (
@@ -43,7 +43,7 @@ type Layout struct {
 type Header struct {
 	FormatVersion uint16
 	ObjectID      ObjectID
-	ParentID      ObjectID
+	ParentID      *ObjectID
 	Kind          shared.ObjectKind
 	Name          string
 	Mode          uint32
@@ -77,8 +77,24 @@ func (h Header) MarshalBinary() ([]byte, error) {
 		return nil, fmt.Errorf("%w: invalid layout mode", ErrInvalidHeader)
 	}
 
+	objectIDBytes, err := h.ObjectID.MarshalBinary()
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid ObjectID: %v", ErrInvalidHeader, err)
+	}
+
+	var parentPresent uint8
+	var parentIDBytes [16]byte
+	if h.ParentID != nil {
+		parentPresent = 1
+		encoded, err := h.ParentID.MarshalBinary()
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid ParentID: %v", ErrInvalidHeader, err)
+		}
+		copy(parentIDBytes[:], encoded)
+	}
+
 	b := bytes.NewBuffer(make([]byte, 0, HeaderSize))
-	values := []any{h.FormatVersion, h.ObjectID, h.ParentID, uint8(h.Kind), uint16(len(name))}
+	values := []any{h.FormatVersion, objectIDBytes, parentPresent, parentIDBytes, uint8(h.Kind), uint16(len(name))}
 	for _, v := range values {
 		if err := binary.Write(b, binary.BigEndian, v); err != nil {
 			return nil, err
@@ -104,9 +120,10 @@ func (h *Header) UnmarshalBinary(data []byte) error {
 	read := func(v any) error { return binary.Read(r, binary.BigEndian, v) }
 	var version uint16
 	var oidBytes, pidBytes [16]byte
+	var parentPresent uint8
 	var kind uint8
 	var n uint16
-	for _, v := range []any{&version, &oidBytes, &pidBytes, &kind, &n} {
+	for _, v := range []any{&version, &oidBytes, &parentPresent, &pidBytes, &kind, &n} {
 		if err := read(v); err != nil {
 			return fmt.Errorf("%w: %v", ErrInvalidHeader, err)
 		}
@@ -119,11 +136,21 @@ func (h *Header) UnmarshalBinary(data []byte) error {
 	if err := oid.UnmarshalBinary(oidBytes[:]); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidHeader, err)
 	}
-	// A zero ParentID represents the root and is the only non-UUID sentinel.
-	if pidBytes != [16]byte{} {
+	var parentID *shared.ObjectID
+	switch parentPresent {
+	case 0:
+		// The presence marker is authoritative. The reserved ParentID bytes
+		// must be canonical padding when no parent is present.
+		if pidBytes != [16]byte{} {
+			return ErrInvalidHeader
+		}
+	case 1:
 		if err := pid.UnmarshalBinary(pidBytes[:]); err != nil {
 			return fmt.Errorf("%w: %v", ErrInvalidHeader, err)
 		}
+		parentID = &pid
+	default:
+		return ErrInvalidHeader
 	}
 	if n > MaxNameSize {
 		return ErrInvalidHeader
@@ -145,7 +172,7 @@ func (h *Header) UnmarshalBinary(data []byte) error {
 	var out Header
 	out.FormatVersion = version
 	out.ObjectID = oid
-	out.ParentID = pid
+	out.ParentID = parentID
 	out.Kind = shared.ObjectKind(kind)
 	out.Name = string(name)
 	var at, mt, ct int64
