@@ -11,13 +11,15 @@ import (
 
 func testChunks(method distributionMethod, values map[chunkNo][]byte) []chunkDataWithInfo {
 	key := stripeKeyInfo{
-		objectID: shared.ObjectID{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab},
-		stripeID: 7,
+		objectID:      shared.ObjectID{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab},
+		stripeID:      7,
 		stripeVersion: 2,
 	}
 	result := make([]chunkDataWithInfo, 0, len(values))
 	for no, data := range values {
-		result = append(result, chunkDataWithInfo{stripeKey: key, distributionMethod: method, chunkNo: no, data: data})
+		result = append(result, chunkDataWithInfo{
+			stripeKey: key, distributionMethod: method, chunkNo: no, data: data,
+		})
 	}
 	return result
 }
@@ -76,18 +78,18 @@ func TestRestoreParityRejectsInconsistentParity(t *testing.T) {
 func TestRestoreRejectsMixedStripeVersions(t *testing.T) {
 	method := distributionMethod{distributionType: distributionMirror, numChunks: 2}
 	chunks := testChunks(method, map[chunkNo][]byte{0: []byte("x"), 1: []byte("x")})
-	chunks[1].stripeKey.stripeVersion = storage.stripeVersion(3)
+	chunks[1].stripeKey.stripeVersion = storage.StripeVersion(3)
 	if _, err := restoreStripe(chunks); !errors.Is(err, errInvalidChunk) {
 		t.Fatalf("got %v", err)
 	}
 }
 
-func TestchunkNoEncoding(t *testing.T) {
-	data, err := NewDatachunkNo(127)
+func TestChunkNoEncoding(t *testing.T) {
+	data, err := newDataChunkNo(127)
 	if err != nil {
 		t.Fatal(err)
 	}
-	parity, err := NewParitychunkNo(127)
+	parity, err := newParityChunkNo(127)
 	if err != nil {
 		t.Fatal(err)
 	}
