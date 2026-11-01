@@ -92,6 +92,7 @@ fuse/
 - Symlink は ParentID を持つ。リンク先パス文字列は Header ではなく通常の論理データとして保持する。
 - HardLinkedFile は Namespace ツリー外の実体であり、ParentID と TargetID を持たず、実データを保持する。
 - HardLink は Namespace 上の名前を表す Object であり、ParentID と TargetID を持つ。TargetID は必ず HardLinkedFile の ObjectID を直接指し、HardLink は実データを保持しない。
+- Header で追加する参照情報は nullable な TargetID のみとし、TargetID は HardLink の場合だけ設定する。HardLinkedFile を識別する追加フラグは設けない。TargetID が存在する場合は UUIDv4 として検証し、nil はゼロ UUID ではなく明示的な存在情報で表す。Header のバイナリ形式を変更する場合は FormatVersion と HeaderSize を更新する。
 - HardLink の連鎖、Directory / Symlink を参照先とする HardLink、Directory 自体のハードリンクは認めない。HardLink は Directory ではなく、children を持つ親にはなれない。
 - ハードリンク作成時は、元の File の実体を HardLinkedFile として Namespace から切り離し、元の名前と新しい名前をそれぞれ HardLink Object として表現する。同じ HardLinkedFile を複数の HardLink が参照できる。
 - 永続化時は実体と各 Namespace Object を個別の Object として保存する。メモリ展開時は Directory の children を構築し、各 HardLink Node が同じ Runtime ファイル実体を共有するように解決する。
@@ -257,6 +258,12 @@ Distribution の公開 API はストライプ単位を基本とする。Header �
 | `GetAttr` | 候補・責務要確認 | 属性を取得する |
 | `SetAttr` | 候補・責務要確認 | 属性を変更する |
 | `Create` | 候補・責務要確認 | Object を作成する |
+| `Mkdir` | 候補 | Directory を作成する |
+| `Rmdir` | 候補 | 空の Directory を削除する |
+| `Rename` | 候補 | Namespace 上の Object 名・親を変更する |
+| `Link` | 候補 | 既存ファイル実体への HardLink を作成する |
+| `Symlink` | 候補 | Symlink Object とリンク先パスデータを作成する |
+| `Readlink` | 候補 | Symlink のリンク先パスデータを取得する |
 | `Unlink` | 候補・責務要確認 | Object を削除する |
 
 上記の公開 API 一覧は議論時点の候補であり、すべてが確定したわけではない。特に namespace 操作・属性操作の最終的な責務境界は README.md および今後の設計合意に従う。
