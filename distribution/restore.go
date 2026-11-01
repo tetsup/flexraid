@@ -38,8 +38,11 @@ func validateChunks(chunks []chunkDataWithInfo,method DistributionMethod)(map[Ch
   if i==0{key=chunk.StripeKey}else if chunk.StripeKey!=key{return nil,fmt.Errorf("%w: mixed stripe versions",ErrInvalidChunk)}
   if chunk.DistributionMethod!=method{return nil,fmt.Errorf("%w: mixed distribution methods",ErrInvalidChunk)}
   if _,exists:=result[chunk.ChunkNo];exists{return nil,fmt.Errorf("%w: duplicate chunk number %d",ErrInvalidChunk,chunk.ChunkNo)}
-  if chunk.ChunkNo.Index()>=method.NumChunks{return nil,fmt.Errorf("%w: chunk index %d out of range",ErrInvalidChunk,chunk.ChunkNo.Index())}
-  if chunk.ChunkNo.IsParity()&&method.DistributionType!=DistributionParity{return nil,fmt.Errorf("%w: parity chunk in mirror layout",ErrInvalidChunk)}
+  if chunk.ChunkNo.IsParity() {
+   if method.DistributionType!=DistributionParity || chunk.ChunkNo.Index()>=method.NumParities { return nil,fmt.Errorf("%w: parity chunk index %d out of range",ErrInvalidChunk,chunk.ChunkNo.Index()) }
+  } else if chunk.ChunkNo.Index()>=method.NumChunks {
+   return nil,fmt.Errorf("%w: data chunk index %d out of range",ErrInvalidChunk,chunk.ChunkNo.Index())
+  }
   result[chunk.ChunkNo]=chunk.Data
  }
  return result,nil
