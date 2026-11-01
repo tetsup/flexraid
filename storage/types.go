@@ -15,8 +15,8 @@ var (
 	ErrInvalidFileKey  = errors.New("invalid file key")
 )
 
-// ObjectID identifies a logical file.
-// It aliases the shared UUIDv4 identifier used by persistent headers.
+// ObjectID identifies a logical filesystem object.
+// It aliases the shared UUIDv4 identifier.
 type ObjectID = shared.ObjectID
 
 // StripeVersion identifies one version of a stripe.

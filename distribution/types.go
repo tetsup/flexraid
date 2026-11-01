@@ -7,6 +7,7 @@ import (
  "github.com/tetsup/flexraid/storage"
 )
 
+
 type DistributionType uint8
 const (
  DistributionMirror DistributionType = iota+1

@@ -1,4 +1,4 @@
-package distribution
+package orchestration
 
 import (
 	"bytes"
@@ -57,8 +57,8 @@ type Header struct {
 	Layout        Layout
 }
 
-// MarshalBinary encodes a fixed-size, big-endian header. UUIDs are stored as 16 raw bytes.
-// Timestamps use Unix nanoseconds.
+// MarshalBinary encodes a logical object header as fixed-size, big-endian bytes.
+// UUIDs are stored as 16 raw bytes and timestamps use Unix nanoseconds.
 func (h Header) MarshalBinary() ([]byte, error) {
 	if h.FormatVersion == 0 {
 		h.FormatVersion = HeaderFormatVersion
@@ -111,7 +111,7 @@ func (h Header) MarshalBinary() ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-// UnmarshalBinary decodes a fixed-size, big-endian header.
+// UnmarshalBinary decodes a logical object header from fixed-size, big-endian bytes.
 func (h *Header) UnmarshalBinary(data []byte) error {
 	if h == nil || len(data) != HeaderSize {
 		return ErrInvalidHeader
