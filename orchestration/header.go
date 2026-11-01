@@ -82,7 +82,7 @@ func (h header) MarshalBinary() ([]byte, error) {
 		return nil, errInvalidName
 	}
 	if h.Layout.Mode != layoutModeMirror && h.Layout.Mode != layoutModeStripe {
-		return nil, fmt.Errorf("%w: invalid layout mode", errInvalidheader)
+		return nil, fmt.Errorf("%w: invalid layout mode", errInvalidHeader)
 	}
 
 	objectIDBytes, err := h.ObjectID.MarshalBinary()
