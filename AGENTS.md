@@ -124,6 +124,128 @@ fuse/
 - OS からの要求を Orchestration 層への要求に変換し、結果を返す。
 - 配置方式や物理ストレージの内部実装を持たない。
 
+## 9. 現在の設計議論と関数一覧
+
+この節は、現在までに合意した責務分担と、議論に出ている関数一覧を記録する。ここに記載した関数名は、明示的に「確定」としたものを除き、実装 API の確定を意味しない。未決事項を実装都合で確定しない。
+
+### 9.1 確定している設計
+
+- チャンク、ストライプ、StripeVersion、物理チャンク配置の情報は Distribution 層の内部に閉じ込める。Orchestration 層にチャンク単位の内部情報を公開しない。
+- StripeVersion は Object 全体ではなく、ObjectID + StripeID ごとに管理する。
+- 永続インデックスは作らない。起動時に実ファイルを全件列挙し、Distribution 層がストライプごとのチャンク・バージョン・物理配置情報をメモリ上に構築する。
+- 起動時の全件列挙後は、通常のストライプ操作のために I/O 層へストライプ単位の再スキャンを要求しない。ストライプ情報は Distribution 層のメモリ上の情報を使う。
+- I/O 層の既存 `Scan` は StripeID 0 の物理ファイル列挙として維持し、公開名を `ScanHeaders` とする。返すのは解析済み Header 構造体ではなく、従来どおり物理ファイルデータ（および物理ファイル識別情報）である。Header の解析・解釈は Distribution 層が行う。
+- I/O 層に `ListChunks` を追加する。これは StripeID で絞り込まず、全ストライプの物理ファイルを列挙し、物理ファイルデータ（および物理ファイル識別情報）を返す。チャンクの意味や有効性は I/O 層で解析しない。
+- `ScanHeaders` と `ListChunks` は異なる用途の API であり、`ListChunks` の代わりに `ScanHeaders` のフィルターを外すだけ、という変更ではない。
+- Orchestration 層が配置方針を決定する。各ドライブの容量・状態、書き込みサイズ、配置ポリシーなどを考慮して、どのドライブにどう分散するかを決める。
+- Distribution 層は Orchestration 層から渡された配置方針を実現し、チャンク単位の実際の物理配置を管理する。Distribution 層がシステム全体の配置ポリシーを独自に決定してはならない。
+- I/O 層は指定された Storage 上の物理ファイル操作と Storage に関する低レベル情報の提供を担う。配置方針は判断しない。
+- ストライプ単位の書き込みは、対象ストライプの全チャンクの書き込みが完了した時点で上位層へ成功を返す。部分的なストライプ書き込みを成功として公開しない。
+- 読み込みは、要求されたデータを返せる状態になった時点で応答する。通常のやり取りの基本単位はストライプとする。
+- 有効バージョンの探索とバージョン更新は Distribution 層が担当する。有効性の判定は既存設計どおり grep に基づく。I/O 層は有効性を判断しない。
+- パリティ方式は XOR、NumParities=1 を前提とする。復元可能なのはデータチャンク1個の欠損まで。複数欠損や整合性不一致はエラーとする。
+- `RestoreStripe` は方式別復元処理へのディスパッチを担い、Mirror / Parity それぞれの復元処理が方式固有の検証を行う。旧 StripeVersion へのフォールバックは方式別復元関数に混ぜず、読み込み・復元フロー側で扱う。
+
+### 9.2 I/O 層の関数一覧
+
+| 関数 | 位置付け | 内容 |
+|---|---|---|
+| `New` | 既存 API | I/O インスタンスを生成する |
+| `Read` | 既存 API | 指定 Storage の物理ファイルを読み込む |
+| `Write` | 既存 API | 指定 Storage に物理ファイルを書き込む。既存ファイルの上書き可否などは既存契約に従う |
+| `Delete` | 既存 API | 指定 Storage の物理ファイルを削除する |
+| `ScanHeaders` | 既存 Scan の改名案 | StripeID 0 の物理ファイルを列挙し、物理ファイルデータを返す。Header 構造体には解析しない |
+| `ListChunks` | 追加する API 案 | 全 StripeID の物理ファイルを列挙し、物理ファイルデータを返す。Distribution の起動時全展開に使う |
+| Storage 情報取得 | API 未確定 | Orchestration が配置方針を決めるために必要な Storage 一覧・容量・状態などを提供する手段。関数名・取得範囲は未確定 |
+
+I/O の列挙結果には、Distribution が物理ファイルを識別して配置情報を構築できる情報が必要である。ただし、I/O 層は FileKey 等の物理識別情報を超えて Header やチャンクの意味を解析しない。
+
+### 9.3 Distribution 層の関数一覧
+
+#### 公開 API 候補
+
+| 関数 | 位置付け | 内容 |
+|---|---|---|
+| `New` | 候補 | Distribution インスタンスを生成する |
+| `Initialize` | 合意した処理 | I/O の `ListChunks` を使って全物理ファイルを解析し、ストライプ・チャンク・バージョン・配置情報をメモリに構築する |
+| `EnumerateHeaders` | 既存設計上の API | 有効な Header を列挙し、Orchestration の初期化に渡す |
+| `ReadStripe` | 候補 | 指定ストライプを読み込み、必要に応じて復元する |
+| `WriteStripe` | 候補 | 指定ストライプを、Orchestration から渡された配置方針に従って書き込む。全チャンクの書き込み完了後に成功を返す |
+| `DeleteStripe` | 候補・要確認 | 指定ストライプの削除。削除の単位や Header との関係は要確認 |
+| `CheckStripe` | 候補 | 指定ストライプの整合性を確認する |
+| `RecoverStripe` | 候補 | 指定ストライプの復旧を実行する |
+
+Distribution の公開 API はストライプ単位を基本とする。Orchestration はチャンク情報や StripeVersion の内部表現を直接操作しない。
+
+#### 内部処理候補
+
+| 関数 | 内容 |
+|---|---|
+| `findValidVersions` | ストライプの有効バージョンを探索する |
+| `updateVersionInfo` | メモリ上のバージョン情報を更新する |
+| `splitStripe` | ストライプデータをチャンクに分割する |
+| `combineStripe` | チャンクをストライプデータに結合する |
+| `generateParity` | パリティを生成する |
+| `restoreStripe` | 方式別復元処理へのディスパッチ |
+| `restoreMirror` | Mirror 方式の復元 |
+| `restoreParity` | Parity 方式の復元 |
+| `checkStripe` | チャンク間の整合性を確認する |
+| `writeChunks` | 配置方針に従ってチャンクを物理書き込みする |
+| `deleteVersion` | 指定バージョンの物理ファイルを削除する |
+
+上記の内部関数名・分割は候補であり、実装時に責務が重複する場合は整理してよい。ただし、方式別復元の検証責務やストライプ単位の原子性を崩さない。
+
+### 9.4 Orchestration 層の関数一覧
+
+#### 公開 API 候補
+
+| 関数 | 位置付け | 内容 |
+|---|---|---|
+| `New` | 候補 | Orchestration インスタンスを生成する |
+| `Initialize` | 合意した処理 | Distribution の `EnumerateHeaders` から有効な Header を取得し、Orchestration の State を構築する |
+| `Open` | 既存設計の操作候補 | Object を開く |
+| `Read` | 既存設計の操作候補 | Object の指定範囲を読み込む |
+| `Write` | 既存設計の操作候補 | Object の指定範囲を書き込む |
+| `Truncate` | 既存設計の操作候補 | Object のサイズを変更する |
+| `Fsync` | 既存設計の操作候補 | Object の変更を永続化する |
+| `Allocate` | 既存設計の操作候補 | Object の領域を確保する |
+| `Lseek` | 既存設計の操作候補 | Object 内のデータ領域を探索する |
+| `Release` | 候補 | Object のハンドルを解放する |
+| `GetAttr` | 候補・責務要確認 | 属性を取得する |
+| `SetAttr` | 候補・責務要確認 | 属性を変更する |
+| `Create` | 候補・責務要確認 | Object を作成する |
+| `Unlink` | 候補・責務要確認 | Object を削除する |
+
+上記の公開 API 一覧は議論時点の候補であり、すべてが確定したわけではない。特に namespace 操作・属性操作の最終的な責務境界は README.md および今後の設計合意に従う。
+
+#### 内部処理候補
+
+| 関数 | 内容 |
+|---|---|
+| `selectStorages` | 配置方針に使用する Storage を選択する |
+| `planPlacement` | データサイズ・容量・状態・配置ポリシーから配置計画を作成する |
+| `getStorageCapacity` | Storage の容量情報を取得する |
+| `splitWriteRange` | Object の書き込み範囲をストライプ単位に分割する |
+| `readStripes` | 必要なストライプを読み込む |
+| `writeStripes` | 必要なストライプを書き込む |
+| `updateState` | Distribution での永続化成功後に Orchestration の State を更新する |
+
+配置計画を Distribution に渡す具体的な Request 型・フィールド・チャンク枠との対応関係は未確定。Orchestration がチャンク内部情報を持つ設計にはしない。Distribution は配置計画を実際のチャンク配置へ対応付ける。
+
+### 9.5 FUSE 層
+
+FUSE 層の具体的な関数一覧は、この議論ではまだ整理していない。OS/FUSE の操作を Orchestration の公開 API に変換する責務のみを確定事項とする。
+
+### 9.6 未決事項・今後決めること
+
+- Storage 情報（一覧、容量、状態）を I/O 層から Orchestration 層へ提供する具体的な API とデータ型。
+- Orchestration が作成する配置計画の具体的な形式、および Distribution のストライプ構成・チャンク枠との対応付け。
+- Distribution の公開関数のうち、候補とした `DeleteStripe`、`CheckStripe`、`RecoverStripe` の必要性・責務・呼び出し元。
+- Header の作成・更新・削除と、ストライプ書き込みの確定順序。
+- namespace 操作・属性操作（`Create`、`Unlink`、`GetAttr`、`SetAttr` 等）の最終的なレイヤー境界。
+- ストレージ障害・容量変化を踏まえた配置計画の再評価と、既存チャンクの再配置方針。
+- ストライプ書き込みの原子性をクラッシュ時にも保証する具体的な確定・復旧手順。
+
 ## 9. テスト
 
 - 実装した操作・機能には、対応するテストを用意する。
