@@ -19,11 +19,6 @@ var (
 // It aliases the shared UUIDv4 identifier used by persistent headers.
 type ObjectID = shared.ObjectID
 
-// ParseObjectID parses the canonical UUIDv4 ObjectID.
-func ParseObjectID(value string) (ObjectID, error) {
-	return shared.ParseObjectID(value)
-}
-
 // StripeVersion identifies one version of a stripe.
 type StripeVersion uint64
 
@@ -102,9 +97,6 @@ func (key FileKey) Path() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrInvalidFileKey, err)
 	}
-	if !key.ObjectID.IsValid() {
-		return "", fmt.Errorf("%w: %v", ErrInvalidFileKey, ErrInvalidObjectID)
-	}
 
 	objectID := key.ObjectID.String()
 	name := fmt.Sprintf("%s-%016x-%s-%016x",
@@ -134,7 +126,7 @@ func ParseFileKey(path string) (FileKey, error) {
 	if name[36] != '-' || name[53] != '-' || name[58] != '-' {
 		return key, ErrInvalidFileKey
 	}
-	objectID, err := ParseObjectID(objectIDText)
+	objectID, err := shared.ParseObjectID(objectIDText)
 	if err != nil {
 		return key, fmt.Errorf("%w: %v", ErrInvalidFileKey, err)
 	}
