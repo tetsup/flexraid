@@ -81,9 +81,14 @@ func TestParseFileKeyRejectsWrongShard(t *testing.T) {
 	}
 }
 
-func TestFileKeyPathRejectsZeroObjectID(t *testing.T) {
-	key := FileKey{LayoutID: LayoutID{Type: 'X', DriveCount: 1, Role: ChunkRoleData, Index: 1}}
-	if _, err := key.Path(); err == nil {
-		t.Fatal("expected zero ObjectID to be rejected")
+func TestFileKeyPathRejectsInvalidObjectID(t *testing.T) {
+	for _, id := range []ObjectID{
+		{},
+		{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0x1d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab},
+	} {
+		key := FileKey{ObjectID: id, LayoutID: LayoutID{Type: 'X', DriveCount: 1, Role: ChunkRoleData, Index: 1}}
+		if _, err := key.Path(); err == nil {
+			t.Errorf("Path() succeeded for invalid ObjectID %v", id)
+		}
 	}
 }
