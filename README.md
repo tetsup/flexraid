@@ -223,6 +223,31 @@ Orchestration 層は、ドライブ状態の更新、故障ドライブへの新
 
 現時点では、独立したメタデータデータベースを必須要件とはしない。メモリ上のインデックスやキャッシュを導入する場合、それらは永続化されたストレージメタデータ、または明示的に定義された復旧情報から再構築できなければならない。
 
+Object ツリー、Namespace、リンク
+
+論理ファイルシステムは Object の親子関係から構築する。各 Object は独立した ObjectID を持ち、名前空間上の所属は Header の ParentID と Name で表現する。
+
+ディレクトリの children は永続化しない。永続化される各 Object の Header を読み込み、ParentID と Name から Orchestration 層のメモリ上に children（名前から Object への対応）を構築する。root の ObjectID は固定値や予約値で識別せず、ParentID が nil である唯一の Directory Object として特定する。root が一意に特定できない場合は Namespace を正常に復元できないものとして扱う。
+
+Object の Kind は次の種類を持つ。
+
+- File: 通常ファイル。ParentID を持ち、実データを保持する。
+- Directory: ディレクトリ。root 以外は ParentID を持つ。children はメモリ上だけに保持する。
+- Symlink: シンボリックリンク。ParentID を持ち、リンク先パス文字列を通常の論理データとして保持する。リンク先パスは Header に格納しない。
+- HardLinkedFile: ハードリンクの実体。Namespace ツリーには所属せず、ParentID と TargetID は持たない。実データを保持する。
+- HardLink: Namespace 上のハードリンク名。ParentID と実体を指す TargetID を持ち、実データは保持しない。
+
+HardLink の TargetID は HardLinkedFile の ObjectID を直接指す。HardLink 同士の連鎖や Directory / Symlink への参照は認めない。HardLink は Directory ではないため、children を持つ親にはなれない。Directory 自体のハードリンクも認めない。
+
+ハードリンク作成前の通常 File は、最初のハードリンク作成時に実体を HardLinkedFile として Namespace から切り離し、元の名前と追加する名前をそれぞれ HardLink Object として表現する。以後、複数の HardLink が同じ HardLinkedFile を参照する。永続化上は実体と各名前が別々の Object だが、メモリ展開時には各 HardLink Node から同じ Runtime のファイル実体を参照させる。ファイルデータの冗長化・配置は HardLinkedFile 単位で行い、Namespace の children と Runtime の参照関係は Orchestration 層が管理する。
+
+Header では Kind によって役割を区別し、追加する参照情報は nullable な TargetID のみとする。TargetID は HardLink の場合だけ設定し、HardLink 以外では nil とする。HardLinkedFile を識別するための追加フラグは設けない。ParentID と TargetID の nullable 表現は、ゼロ UUID ではなく明示的な存在情報で符号化する。Header のバイナリ形式を変更するため FormatVersion と HeaderSize を更新する。
+
+
+ParentID が nil になる Object は root Directory と HardLinkedFile の2種類であり、Kind によって区別する。したがって「ParentID が nil なのは root だけ」という前提は置かない。HardLinkedFile は Namespace の children に登録せず、root の候補にも含めない。
+
+リンクの参照整合性、最後の HardLink 削除時の実体解放、オープン中ファイルの寿命、属性情報と FUSE inode / link count の対応、複数 Object を更新する操作のクラッシュ整合性などの詳細は、別途定義する。
+
 保留中の設計事項
 
 以下は現段階では確定しない。
