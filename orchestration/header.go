@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	HeaderFormatVersion uint16 = 1
+	HeaderFormatVersion uint16 = 0
 	MaxNameSize                 = 255
-	HeaderSize                  = 2 + 16 + 1 + 16 + 1 + 2 + MaxNameSize + 4 + 4 + 4 + 4 + 8 + 8 + 8 + 8 + 1 + 4 + 2 + 2
+	HeaderSize                  = 2 + 16 + 1 + 16 + 1 + 1 + 16 + 2 + MaxNameSize + 4 + 4 + 4 + 4 + 8 + 8 + 8 + 8 + 1 + 4 + 2 + 2
 )
 
 var (
@@ -24,7 +24,14 @@ var (
 	ErrInvalidName       = errors.New("invalid name")
 )
 
-type ObjectID = shared.ObjectID
+// ObjectKind values identify the logical object types owned by Orchestration.
+const (
+	ObjectKindFile shared.ObjectKind = iota + 1
+	ObjectKindDirectory
+	ObjectKindSymlink
+	ObjectKindHardLinkedFile
+	ObjectKindHardLink
+)
 
 type LayoutMode uint8
 
@@ -42,8 +49,9 @@ type Layout struct {
 
 type Header struct {
 	FormatVersion uint16
-	ObjectID      ObjectID
-	ParentID      *ObjectID
+	ObjectID      shared.ObjectID
+	ParentID      *shared.ObjectID
+	TargetID      *shared.ObjectID
 	Kind          shared.ObjectKind
 	Name          string
 	Mode          uint32
@@ -60,11 +68,11 @@ type Header struct {
 // MarshalBinary encodes a logical object header as fixed-size, big-endian bytes.
 // UUIDs are stored as 16 raw bytes and timestamps use Unix nanoseconds.
 func (h Header) MarshalBinary() ([]byte, error) {
-	if h.FormatVersion == 0 {
-		h.FormatVersion = HeaderFormatVersion
-	}
 	if h.FormatVersion != HeaderFormatVersion {
 		return nil, ErrUnsupportedFormat
+	}
+	if err := validateHeaderReferences(h.Kind, h.ParentID, h.TargetID); err != nil {
+		return nil, err
 	}
 	name := []byte(h.Name)
 	if len(name) > MaxNameSize {
@@ -82,19 +90,17 @@ func (h Header) MarshalBinary() ([]byte, error) {
 		return nil, fmt.Errorf("%w: invalid ObjectID: %v", ErrInvalidHeader, err)
 	}
 
-	var parentPresent uint8
-	var parentIDBytes [16]byte
-	if h.ParentID != nil {
-		parentPresent = 1
-		encoded, err := h.ParentID.MarshalBinary()
-		if err != nil {
-			return nil, fmt.Errorf("%w: invalid ParentID: %v", ErrInvalidHeader, err)
-		}
-		copy(parentIDBytes[:], encoded)
+	parentPresent, parentIDBytes, err := encodeOptionalObjectID(h.ParentID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid ParentID: %v", ErrInvalidHeader, err)
+	}
+	targetPresent, targetIDBytes, err := encodeOptionalObjectID(h.TargetID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid TargetID: %v", ErrInvalidHeader, err)
 	}
 
 	b := bytes.NewBuffer(make([]byte, 0, HeaderSize))
-	values := []any{h.FormatVersion, objectIDBytes, parentPresent, parentIDBytes, uint8(h.Kind), uint16(len(name))}
+	values := []any{h.FormatVersion, objectIDBytes, parentPresent, parentIDBytes, uint8(h.Kind), targetPresent, targetIDBytes, uint16(len(name))}
 	for _, v := range values {
 		if err := binary.Write(b, binary.BigEndian, v); err != nil {
 			return nil, err
@@ -119,11 +125,11 @@ func (h *Header) UnmarshalBinary(data []byte) error {
 	r := bytes.NewReader(data)
 	read := func(v any) error { return binary.Read(r, binary.BigEndian, v) }
 	var version uint16
-	var oidBytes, pidBytes [16]byte
-	var parentPresent uint8
+	var oidBytes, pidBytes, tidBytes [16]byte
+	var parentPresent, targetPresent uint8
 	var kind uint8
 	var n uint16
-	for _, v := range []any{&version, &oidBytes, &parentPresent, &pidBytes, &kind, &n} {
+	for _, v := range []any{&version, &oidBytes, &parentPresent, &pidBytes, &kind, &targetPresent, &tidBytes, &n} {
 		if err := read(v); err != nil {
 			return fmt.Errorf("%w: %v", ErrInvalidHeader, err)
 		}
@@ -132,25 +138,21 @@ func (h *Header) UnmarshalBinary(data []byte) error {
 		return ErrUnsupportedFormat
 	}
 
-	var oid, pid shared.ObjectID
+	var oid shared.ObjectID
 	if err := oid.UnmarshalBinary(oidBytes[:]); err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidHeader, err)
+		return fmt.Errorf("%w: invalid ObjectID: %v", ErrInvalidHeader, err)
 	}
-	var parentID *shared.ObjectID
-	switch parentPresent {
-	case 0:
-		// The presence marker is authoritative. The reserved ParentID bytes
-		// must be canonical padding when no parent is present.
-		if pidBytes != [16]byte{} {
-			return ErrInvalidHeader
-		}
-	case 1:
-		if err := pid.UnmarshalBinary(pidBytes[:]); err != nil {
-			return fmt.Errorf("%w: %v", ErrInvalidHeader, err)
-		}
-		parentID = &pid
-	default:
-		return ErrInvalidHeader
+	parentID, err := decodeOptionalObjectID(parentPresent, pidBytes)
+	if err != nil {
+		return fmt.Errorf("%w: invalid ParentID: %v", ErrInvalidHeader, err)
+	}
+	targetID, err := decodeOptionalObjectID(targetPresent, tidBytes)
+	if err != nil {
+		return fmt.Errorf("%w: invalid TargetID: %v", ErrInvalidHeader, err)
+	}
+	objectKind := shared.ObjectKind(kind)
+	if err := validateHeaderReferences(objectKind, parentID, targetID); err != nil {
+		return err
 	}
 	if n > MaxNameSize {
 		return ErrInvalidHeader
@@ -173,7 +175,8 @@ func (h *Header) UnmarshalBinary(data []byte) error {
 	out.FormatVersion = version
 	out.ObjectID = oid
 	out.ParentID = parentID
-	out.Kind = shared.ObjectKind(kind)
+	out.TargetID = targetID
+	out.Kind = objectKind
 	out.Name = string(name)
 	var at, mt, ct int64
 	var lm uint8
@@ -190,5 +193,60 @@ func (h *Header) UnmarshalBinary(data []byte) error {
 		return ErrInvalidHeader
 	}
 	*h = out
+	return nil
+}
+
+func encodeOptionalObjectID(id *shared.ObjectID) (uint8, [16]byte, error) {
+	var encoded [16]byte
+	if id == nil {
+		return 0, encoded, nil
+	}
+	data, err := id.MarshalBinary()
+	if err != nil {
+		return 0, encoded, err
+	}
+	copy(encoded[:], data)
+	return 1, encoded, nil
+}
+
+func decodeOptionalObjectID(present uint8, encoded [16]byte) (*shared.ObjectID, error) {
+	switch present {
+	case 0:
+		if encoded != [16]byte{} {
+			return nil, ErrInvalidHeader
+		}
+		return nil, nil
+	case 1:
+		var id shared.ObjectID
+		if err := id.UnmarshalBinary(encoded[:]); err != nil {
+			return nil, err
+		}
+		return &id, nil
+	default:
+		return nil, ErrInvalidHeader
+	}
+}
+
+func validateHeaderReferences(kind shared.ObjectKind, parentID, targetID *shared.ObjectID) error {
+	switch kind {
+	case ObjectKindFile, ObjectKindSymlink:
+		if parentID == nil || targetID != nil {
+			return ErrInvalidHeader
+		}
+	case ObjectKindDirectory:
+		if targetID != nil {
+			return ErrInvalidHeader
+		}
+	case ObjectKindHardLinkedFile:
+		if parentID != nil || targetID != nil {
+			return ErrInvalidHeader
+		}
+	case ObjectKindHardLink:
+		if parentID == nil || targetID == nil {
+			return ErrInvalidHeader
+		}
+	default:
+		return ErrInvalidHeader
+	}
 	return nil
 }
