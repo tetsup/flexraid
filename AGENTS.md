@@ -79,9 +79,24 @@ fuse/
 - `ObjectID` は常に有効な UUIDv4 とする。無効値や未設定値を表す ObjectID は設けない。
 - ObjectID の生成・文字列解析・バイナリ解析など、外部入力を受け取る境界で UUIDv4 を検証する。検証ロジックは共通の単一の検証経路に集約する。
 - ObjectID のゼロ値を特別な識別子、root、未設定値、無効値などとして扱わない。ゼロ値判定やゼロ値を利用した分岐を設けない。
-- `ParentID` は nullable とし、親が存在しない root のみ `nil`（永続形式では明示的な null）を持つ。それ以外の Object は必ず有効な UUIDv4 の親 ID を持つ。
-- root 自身も通常の Object として有効な ObjectID を持つ。root の子の ParentID には root 自身の ObjectID を設定する。
+- `ParentID` は nullable とする。通常の Namespace Object は有効な UUIDv4 の親 ID を持つが、root Directory と Namespace 外の HardLinkedFile は `nil` を持つ。
+- root 自身も通常の Object として有効な ObjectID を持つ。root は ParentID が nil の唯一の Directory Object として識別し、root の子の ParentID には root 自身の ObjectID を設定する。
+- HardLinkedFile も ParentID が nil になるため、ParentID の nil だけで root と判定してはならない。必ず Kind と組み合わせて判定する。
 - nullable な識別子を永続化するときは、ゼロ UUID を null の代用にせず、存在フラグなどで有無を明示する。存在する場合の ID は必ず UUIDv4 として検証する。
+
+### ObjectKind、Namespace、HardLink
+
+- 論理 Object の Kind は Orchestration が所有する。Kind は File、Directory、Symlink、HardLinkedFile、HardLink を区別する。
+- File は ParentID を持ち、実データを保持する。
+- Directory は root 以外 ParentID を持つ。Directory の children は永続化せず、起動時に各 Object の ParentID と Name から Orchestration のメモリ上に構築する。
+- Symlink は ParentID を持つ。リンク先パス文字列は Header ではなく通常の論理データとして保持する。
+- HardLinkedFile は Namespace ツリー外の実体であり、ParentID と TargetID を持たず、実データを保持する。
+- HardLink は Namespace 上の名前を表す Object であり、ParentID と TargetID を持つ。TargetID は必ず HardLinkedFile の ObjectID を直接指し、HardLink は実データを保持しない。
+- HardLink の連鎖、Directory / Symlink を参照先とする HardLink、Directory 自体のハードリンクは認めない。HardLink は Directory ではなく、children を持つ親にはなれない。
+- ハードリンク作成時は、元の File の実体を HardLinkedFile として Namespace から切り離し、元の名前と新しい名前をそれぞれ HardLink Object として表現する。同じ HardLinkedFile を複数の HardLink が参照できる。
+- 永続化時は実体と各 Namespace Object を個別の Object として保存する。メモリ展開時は Directory の children を構築し、各 HardLink Node が同じ Runtime ファイル実体を共有するように解決する。
+- データ実体の Distribution 上の冗長化・配置は HardLinkedFile 単位とし、Namespace と Runtime の参照関係は Orchestration が管理する。
+- HardLinkedFile は少なくとも1つの HardLink から参照されることを基本不変条件とする。ただし、最後の参照削除とオープン中ファイルの寿命・実体解放の詳細は別途設計する。
 
 ## 6. 関数と共通処理
 
@@ -130,6 +145,7 @@ fuse/
 
 - 論理ファイルシステム全体の状態管理を担当する。
 - 論理ファイルの名前空間、ディレクトリ階層、Object 間の親子関係、および各 Object の論理的な状態を管理する。
+- 永続化された Object の Header から ParentID / Name に基づいてメモリ上の Directory children を構築し、HardLink の TargetID を解決して同一の Runtime ファイル実体を共有させる。
 - Distribution 層から論理データを読み出し、その先頭に含まれる Header を解析して、ObjectID・ParentID・論理サイズ・ファイル属性などの論理ファイル情報を管理する。
 - Header の定義、生成、解析、シリアライズ、および Header に保持する論理ファイル属性の更新・永続化を担当する。
 - 起動時には Distribution 層が列挙した ObjectID をもとに、共通のストライプ読み出し API で論理データを取得し、Header を解析して論理ファイルシステムの状態を再構築する。
@@ -150,6 +166,13 @@ fuse/
 この節は、現在までに合意した責務分担と、議論に出ている関数一覧を記録する。ここに記載した関数名は、明示的に「確定」としたものを除き、実装 API の確定を意味しない。未決事項を実装都合で確定しない。
 
 ### 9.1 確定している設計
+
+- Namespace は各 Object の Header にある ParentID と Name から復元する。Directory の children は永続化せず、起動時に Orchestration のメモリ上で構築する。
+- root は ParentID が nil の唯一の Directory Object として識別する。HardLinkedFile も ParentID が nil だが、Kind によって root と区別する。
+- Object Kind は File / Directory / Symlink / HardLinkedFile / HardLink を区別する。HardLinkedFile は Namespace 外で実データを保持し、HardLink は ParentID と TargetID を持つ Namespace Object で実データを保持しない。
+- HardLink の TargetID は HardLinkedFile を直接指す。HardLink の連鎖、Directory / Symlink への参照、Directory のハードリンクは認めない。
+- Symlink のリンク先パスは Header ではなく通常の論理データとして保持する。
+- 永続化時は HardLinkedFile と各 HardLink を個別 Object として保存し、メモリ展開時は複数の HardLink Node が同一の Runtime ファイル実体を共有する。Distribution 上のデータ冗長化・配置単位は HardLinkedFile とする。
 
 - チャンク、ストライプ、StripeVersion、物理チャンク配置の情報は Distribution 層の内部に閉じ込める。Orchestration 層にチャンク単位の内部情報を公開しない。
 - StripeVersion は Object 全体ではなく、ObjectID + StripeID ごとに管理する。
@@ -263,6 +286,10 @@ FUSE 層の具体的な関数一覧は、この議論ではまだ整理してい
 - Distribution の公開関数のうち、候補とした `DeleteStripe`、`CheckStripe`、`RecoverStripe` の必要性・責務・呼び出し元。
 - Header の作成・更新・削除と、ストライプ書き込みの確定順序。
 - namespace 操作・属性操作（`Create`、`Unlink`、`GetAttr`、`SetAttr` 等）の最終的なレイヤー境界。
+- HardLinkedFile / HardLink の属性情報の保持場所と FUSE inode / st_nlink への対応。
+- 最後の HardLink 削除時の HardLinkedFile の解放条件、オープン中ファイルの寿命、および参照数の再構築方法。
+- ハードリンク作成・削除など複数 Object の永続化を伴う Namespace 操作の原子性とクラッシュ復旧手順。
+- root の一意性検証、および Namespace から到達できない Object を起動時にどう扱うか。
 - ストレージ障害・容量変化を踏まえた配置計画の再評価と、既存チャンクの再配置方針。
 - Distribution が記録するチャンクごとのエラー情報の具体的なデータ形式・保持方法、および記録情報の利用方法・利用主体。
 - ストライプ書き込みの原子性をクラッシュ時にも保証する具体的な確定・復旧手順。
