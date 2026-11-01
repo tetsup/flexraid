@@ -52,7 +52,7 @@ func TestHeaderBinaryRoundTrip(t *testing.T) {
 	}
 }
 
-func TestHeaderMarshalDefaultsVersion(t *testing.T) {
+func TestHeaderMarshalUsesVersionZero(t *testing.T) {
 	h := sampleHeader()
 	h.FormatVersion = 0
 	b, err := h.MarshalBinary()
@@ -62,9 +62,6 @@ func TestHeaderMarshalDefaultsVersion(t *testing.T) {
 	var got Header
 	if err := got.UnmarshalBinary(b); err != nil {
 		t.Fatal(err)
-	}
-	if got.FormatVersion != 1 {
-		t.Fatalf("got version %d, want 1", got.FormatVersion)
 	}
 	if got.FormatVersion != HeaderFormatVersion {
 		t.Fatal(got.FormatVersion)
@@ -77,7 +74,7 @@ func TestHeaderMarshalValidation(t *testing.T) {
 		change func(*Header)
 		want   error
 	}{
-		{"unsupported version", func(h *Header) { h.FormatVersion = 2 }, ErrUnsupportedFormat},
+		{"unsupported version", func(h *Header) { h.FormatVersion = 1 }, ErrUnsupportedFormat},
 		{"long name", func(h *Header) { h.Name = string(bytes.Repeat([]byte("x"), MaxNameSize+1)) }, ErrNameTooLong},
 		{"invalid utf8", func(h *Header) { h.Name = string([]byte{0xff}) }, ErrInvalidName},
 		{"unknown kind", func(h *Header) { h.Kind = shared.ObjectKind(99) }, ErrInvalidHeader},
