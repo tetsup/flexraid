@@ -66,7 +66,7 @@ func (h Header) MarshalBinary() ([]byte, error) {
 	if h.FormatVersion != HeaderFormatVersion {
 		return nil, ErrUnsupportedFormat
 	}
-	if !h.ObjectID.IsValid() {
+	if !h.ObjectID.IsValid() || (!h.ParentID.IsZero() && !h.ParentID.IsValid()) {
 		return nil, fmt.Errorf("%w: invalid object ID", ErrInvalidHeader)
 	}
 	name := []byte(h.Name)
@@ -117,7 +117,7 @@ func (h *Header) UnmarshalBinary(data []byte) error {
 	if version != HeaderFormatVersion {
 		return ErrUnsupportedFormat
 	}
-	if !oid.IsValid() || n > MaxNameSize {
+	if !oid.IsValid() || (!pid.IsZero() && !pid.IsValid()) || n > MaxNameSize {
 		return ErrInvalidHeader
 	}
 	namebuf := make([]byte, MaxNameSize)
