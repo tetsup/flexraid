@@ -63,6 +63,9 @@ func TestHeaderMarshalDefaultsVersion(t *testing.T) {
 	if err := got.UnmarshalBinary(b); err != nil {
 		t.Fatal(err)
 	}
+	if got.FormatVersion != 1 {
+		t.Fatalf("got version %d, want 1", got.FormatVersion)
+	}
 	if got.FormatVersion != HeaderFormatVersion {
 		t.Fatal(got.FormatVersion)
 	}
@@ -74,7 +77,7 @@ func TestHeaderMarshalValidation(t *testing.T) {
 		change func(*Header)
 		want   error
 	}{
-		{"version", func(h *Header) { h.FormatVersion = 1 }, ErrUnsupportedFormat},
+		{"unsupported version", func(h *Header) { h.FormatVersion = 2 }, ErrUnsupportedFormat},
 		{"long name", func(h *Header) { h.Name = string(bytes.Repeat([]byte("x"), MaxNameSize+1)) }, ErrNameTooLong},
 		{"invalid utf8", func(h *Header) { h.Name = string([]byte{0xff}) }, ErrInvalidName},
 		{"unknown kind", func(h *Header) { h.Kind = shared.ObjectKind(99) }, ErrInvalidHeader},
