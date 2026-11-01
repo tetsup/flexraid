@@ -26,12 +26,12 @@ type distributionMethod struct {
 type chunkNo uint8
 
 const (
-	parityFlag      chunkNo = 0x80
-	chunkIndexMask  chunkNo = 0x7f
+	parityFlag     chunkNo = 0x80
+	chunkIndexMask chunkNo = 0x7f
 )
 
 func (n chunkNo) isParity() bool { return n&parityFlag != 0 }
-func (n chunkNo) index() uint8  { return uint8(n & chunkIndexMask) }
+func (n chunkNo) index() uint8   { return uint8(n & chunkIndexMask) }
 
 func newDataChunkNo(index uint8) (chunkNo, error) {
 	if index > uint8(chunkIndexMask) {
@@ -54,7 +54,7 @@ type stripeKeyInfo struct {
 }
 
 type chunkDataWithInfo struct {
-	stripeKey         stripeKeyInfo
+	stripeKey          stripeKeyInfo
 	distributionMethod distributionMethod
 	chunkNo            chunkNo
 	data               []byte
@@ -62,8 +62,8 @@ type chunkDataWithInfo struct {
 
 var (
 	errInvalidDistributionMethod = errors.New("invalid distribution method")
-	errInvalidChunk              = errors.New("invalid chunk")
-	errInsufficientChunks        = errors.New("insufficient chunks to restore stripe")
-	errTooManyMissingChunks      = errors.New("too many missing data chunks")
-	errInconsistentParity        = errors.New("inconsistent parity data")
+	errInvalidChunk               = errors.New("invalid chunk")
+	errInsufficientChunks         = errors.New("insufficient chunks to restore stripe")
+	errTooManyMissingChunks       = errors.New("too many missing data chunks")
+	errInconsistentParity         = errors.New("inconsistent parity data")
 )
