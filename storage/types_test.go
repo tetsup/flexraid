@@ -20,9 +20,15 @@ func TestObjectIDRoundTrip(t *testing.T) {
 	}
 }
 
-func TestParseObjectIDRejectsZero(t *testing.T) {
-	if _, err := ParseObjectID("00000000-0000-0000-0000-000000000000"); err == nil {
-		t.Fatal("expected zero ObjectID to be rejected")
+func TestParseObjectIDRejectsInvalidUUIDv4(t *testing.T) {
+	for _, value := range []string{
+		"00000000-0000-0000-0000-000000000000",
+		"12345678-9abc-1def-8abc-1234567890ab",
+		"12345678-9abc-4def-0abc-1234567890ab",
+	} {
+		if _, err := ParseObjectID(value); err == nil {
+			t.Errorf("ParseObjectID(%q) succeeded, want error", value)
+		}
 	}
 }
 
