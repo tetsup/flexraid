@@ -189,8 +189,7 @@ I/O の列挙結果には、Distribution が物理ファイルを識別して配
 
 | 関数 | 位置付け | 内容 |
 |---|---|---|
-| `New` | 候補 | Distribution インスタンスを生成する |
-| `Initialize` | 合意した処理 | I/O の `ListChunks` を使って全物理ファイルを解析し、ストライプ・チャンク・バージョン・配置情報をメモリに構築する |
+| `New` | 候補 | I/O の `ListChunks` を使って全物理ファイルを同期的に解析し、ストライプ・チャンク・バージョン・配置情報をメモリに構築した Distribution インスタンスを返す。初期化に失敗した場合は error を返す |
 | `ListObjects` | 公開 API 候補（旧 `EnumerateHeaders` の置き換え） | Distribution が把握している ObjectID を列挙する。Header の読み出し・解析は行わない |
 | `ReadStripe` | 候補 | 指定ストライプの論理データを読み込み、必要に応じて復元する。Header を含むかどうかで処理を分けない |
 | `WriteStripe` | 候補 | Header を含むかどうかに関係なく、指定ストライプの論理データを配置方針に従って書き込む。全チャンクの書き込み完了後に成功を返す |
@@ -223,8 +222,7 @@ Distribution の公開 API はストライプ単位を基本とする。Header �
 
 | 関数 | 位置付け | 内容 |
 |---|---|---|
-| `New` | 候補 | Orchestration インスタンスを生成する |
-| `Initialize` | 合意した処理 | Distribution の `ListObjects` で ObjectID を列挙し、共通の `ReadStripe` で論理データを読み出して Header を解析し、Orchestration の State を構築する |
+| `New` | 候補 | Distribution の `ListObjects` で ObjectID を列挙し、共通の `ReadStripe` で論理データを読み出して Header を解析し、Orchestration の State を同期的に構築したインスタンスを返す。初期化に失敗した場合は error を返す |
 | `Open` | 既存設計の操作候補 | Object を開く |
 | `Read` | 既存設計の操作候補 | Object の指定範囲を読み込む |
 | `Write` | 既存設計の操作候補 | Object の指定範囲を書き込む |
