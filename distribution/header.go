@@ -34,9 +34,9 @@ const (
 )
 
 type Layout struct {
-	Mode        LayoutMode
-	ChunkSize   uint32
-	DataChunks  uint16
+	Mode         LayoutMode
+	ChunkSize    uint32
+	DataChunks   uint16
 	ParityChunks uint16
 }
 
@@ -65,9 +65,6 @@ func (h Header) MarshalBinary() ([]byte, error) {
 	}
 	if h.FormatVersion != HeaderFormatVersion {
 		return nil, ErrUnsupportedFormat
-	}
-	if !h.ObjectID.IsValid() || (!h.ParentID.IsZero() && !h.ParentID.IsValid()) {
-		return nil, fmt.Errorf("%w: invalid object ID", ErrInvalidHeader)
 	}
 	name := []byte(h.Name)
 	if len(name) > MaxNameSize {
@@ -106,10 +103,10 @@ func (h *Header) UnmarshalBinary(data []byte) error {
 	r := bytes.NewReader(data)
 	read := func(v any) error { return binary.Read(r, binary.BigEndian, v) }
 	var version uint16
-	var oid, pid shared.ObjectID
+	var oidBytes, pidBytes [16]byte
 	var kind uint8
 	var n uint16
-	for _, v := range []any{&version, &oid, &pid, &kind, &n} {
+	for _, v := range []any{&version, &oidBytes, &pidBytes, &kind, &n} {
 		if err := read(v); err != nil {
 			return fmt.Errorf("%w: %v", ErrInvalidHeader, err)
 		}
@@ -117,9 +114,21 @@ func (h *Header) UnmarshalBinary(data []byte) error {
 	if version != HeaderFormatVersion {
 		return ErrUnsupportedFormat
 	}
-	if !oid.IsValid() || (!pid.IsZero() && !pid.IsValid()) || n > MaxNameSize {
+
+	var oid, pid shared.ObjectID
+	if err := oid.UnmarshalBinary(oidBytes[:]); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidHeader, err)
+	}
+	// A zero ParentID represents the root and is the only non-UUID sentinel.
+	if pidBytes != [16]byte{} {
+		if err := pid.UnmarshalBinary(pidBytes[:]); err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidHeader, err)
+		}
+	}
+	if n > MaxNameSize {
 		return ErrInvalidHeader
 	}
+
 	namebuf := make([]byte, MaxNameSize)
 	if _, err := r.Read(namebuf); err != nil {
 		return ErrInvalidHeader
