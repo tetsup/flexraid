@@ -194,7 +194,7 @@ fuse/
 - チャンクごとのエラー情報を Distribution 層で記録することは確定している。エラー情報の具体的な形式・保持方法、および記録した情報をどの層・処理でどのように利用するかは未決事項とする。
 - ストライプの整合性確認と復旧は Distribution 内部の管理処理とし、`CheckStripe` / `RecoverStripe` のような公開関数として外部に提供しない。内部関数 `checkStripe` / `recoverStripe` などから必要に応じて実行する。外部から個別に管理・指示させない。
 - パリティ方式は XOR、NumParities=1 を前提とする。復元可能なのはデータチャンク1個の欠損まで。複数欠損や整合性不一致はエラーとする。
-- `RestoreStripe` は方式別復元処理へのディスパッチを担い、Mirror / Parity それぞれの復元処理が方式固有の検証を行う。旧 StripeVersion へのフォールバックは方式別復元関数に混ぜず、読み込み・復元フロー側で扱う。
+- `restoreStripe` は方式別復元処理へのディスパッチを担い、Mirror / Parity それぞれの復元処理が方式固有の検証を行う。旧 StripeVersion へのフォールバックは方式別復元関数に混ぜず、読み込み・復元フロー側で扱う。
 
 ### 9.2 I/O 層の関数一覧
 
@@ -293,7 +293,7 @@ FUSE 層の具体的な関数一覧は、この議論ではまだ整理してい
 
 - Storage 情報（一覧、容量、状態）を I/O 層から Orchestration 層へ提供する具体的な API とデータ型。
 - Orchestration が作成する配置計画の具体的な形式、および Distribution のストライプ構成・チャンク枠との対応付け。
-- Distribution の公開関数のうち、候補とした `DeleteStripe`、`CheckStripe`、`RecoverStripe` の必要性・責務・呼び出し元。
+- Distribution の `DeleteStripe` の必要性・責務・呼び出し元。
 - Header の作成・更新・削除と、ストライプ書き込みの確定順序。
 - namespace 操作・属性操作（`Create`、`Unlink`、`GetAttr`、`SetAttr` 等）の最終的なレイヤー境界。
 - HardLinkedFile / HardLink の属性情報の保持場所と FUSE inode / st_nlink への対応。
