@@ -1,47 +1,27 @@
 package storage
 
 import (
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/tetsup/flexraid/pkg/shared"
 )
 
 var (
-	ErrInvalidObjectID = errors.New("invalid UUIDv4")
+	ErrInvalidObjectID = shared.ErrInvalidObjectID
 	ErrInvalidLayoutID = errors.New("invalid layout ID")
 	ErrInvalidFileKey  = errors.New("invalid file key")
 )
 
-// ObjectID identifies a logical file using a UUIDv4.
-type ObjectID [16]byte
+// ObjectID identifies a logical file.
+// It aliases the shared uint64-based identifier used by persistent headers.
+type ObjectID = shared.ObjectID
 
-// String returns the canonical UUID representation.
-func (id ObjectID) String() string {
-	raw := hex.EncodeToString(id[:])
-	return raw[:8] + "-" + raw[8:12] + "-" + raw[12:16] + "-" + raw[16:20] + "-" + raw[20:]
-}
-
-// ParseObjectID parses a canonical UUIDv4 string.
+// ParseObjectID parses the canonical 16-character hexadecimal ObjectID.
 func ParseObjectID(value string) (ObjectID, error) {
-	var id ObjectID
-	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' {
-		return id, ErrInvalidObjectID
-	}
-
-	raw := strings.ReplaceAll(value, "-", "")
-	decoded, err := hex.DecodeString(raw)
-	if err != nil || len(decoded) != len(id) {
-		return id, ErrInvalidObjectID
-	}
-	copy(id[:], decoded)
-
-	// UUID version 4 and RFC 4122 variant.
-	if id[6]>>4 != 4 || id[8]>>6 != 2 {
-		return ObjectID{}, ErrInvalidObjectID
-	}
-	return id, nil
+	return shared.ParseObjectID(value)
 }
 
 // StripeVersion identifies one version of a stripe.
@@ -122,6 +102,9 @@ func (key FileKey) Path() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrInvalidFileKey, err)
 	}
+	if key.ObjectID == 0 {
+		return "", fmt.Errorf("%w: %v", ErrInvalidFileKey, ErrInvalidObjectID)
+	}
 
 	objectID := key.ObjectID.String()
 	name := fmt.Sprintf("%s-%016x-%s-%016x",
@@ -138,32 +121,32 @@ func ParseFileKey(path string) (FileKey, error) {
 	}
 
 	name := parts[2]
-	const expectedLength = 36 + 1 + 16 + 1 + 4 + 1 + 16
+	const expectedLength = 16 + 1 + 16 + 1 + 4 + 1 + 16
 	if len(name) != expectedLength {
 		return key, ErrInvalidFileKey
 	}
 
-	objectIDText := name[:36]
+	objectIDText := name[:16]
 	if parts[0] != objectIDText[:2] || parts[1] != objectIDText[2:4] {
 		return key, ErrInvalidFileKey
 	}
 
-	if name[36] != '-' || name[53] != '-' || name[58] != '-' {
+	if name[16] != '-' || name[33] != '-' || name[38] != '-' {
 		return key, ErrInvalidFileKey
 	}
 	objectID, err := ParseObjectID(objectIDText)
 	if err != nil {
-		return key, err
+		return key, fmt.Errorf("%w: %v", ErrInvalidFileKey, err)
 	}
-	version, err := strconv.ParseUint(name[37:53], 16, 64)
+	version, err := strconv.ParseUint(name[17:33], 16, 64)
 	if err != nil {
 		return key, ErrInvalidFileKey
 	}
-	layout, err := ParseLayoutID(name[54:58])
+	layout, err := ParseLayoutID(name[34:38])
 	if err != nil {
-		return key, err
+		return key, ErrInvalidFileKey
 	}
-	stripeID, err := strconv.ParseUint(name[59:75], 16, 64)
+	stripeID, err := strconv.ParseUint(name[39:55], 16, 64)
 	if err != nil {
 		return key, ErrInvalidFileKey
 	}
