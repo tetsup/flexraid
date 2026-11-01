@@ -116,7 +116,8 @@ fuse/
 ### Distribution 層
 
 - ミラーリング、ストライピング、パリティ、データ復旧、配置移行を担当する。
-- 物理ファイルデータを解析し、Header・チャンク・ストライプ・バージョンの情報を管理する。
+- Header の形式や内容を知らず、Header を含む論理データを通常のバイト列として扱う。
+- チャンク・ストライプ・バージョン・物理配置の情報を管理する。
 - 起動時に I/O 層の `ListChunks` を利用して、全ストライプのチャンクおよびバージョン情報をメモリ上に構築する。永続インデックスは持たず、実ファイルから再構築する。
 - 実際のチャンク単位の物理配置と、その配置情報を管理する。ただし、どのドライブ群を利用し、容量や書き込みサイズを踏まえてどう分散するかという配置方針は決定しない。
 - Orchestration 層から渡された配置方針に従って、チャンクの物理配置を実現する。
@@ -143,7 +144,7 @@ fuse/
 - StripeVersion は Object 全体ではなく、ObjectID + StripeID ごとに管理する。
 - 永続インデックスは作らない。起動時に実ファイルを全件列挙し、Distribution 層がストライプごとのチャンク・バージョン・物理配置情報をメモリ上に構築する。
 - 起動時の全件列挙後は、通常のストライプ操作のために I/O 層へストライプ単位の再スキャンを要求しない。ストライプ情報は Distribution 層のメモリ上の情報を使う。
-- I/O 層の既存 `Scan` は StripeID 0 の物理ファイル列挙として維持し、公開名を `ScanHeaders` とする。返すのは解析済み Header 構造体ではなく、従来どおり物理ファイルデータ（および物理ファイル識別情報）である。Header の解析・解釈は Distribution 層が行う。
+- I/O 層の既存 `Scan` は StripeID 0 の物理ファイル列挙として維持し、公開名を `ScanHeaders` とする。返すのは解析済み Header 構造体ではなく、従来どおり物理ファイルデータ（および物理ファイル識別情報）である。Header の解析・解釈は Orchestration 層が行う。
 - I/O 層に `ListChunks` を追加する。これは StripeID で絞り込まず、全ストライプの物理ファイルを列挙し、物理ファイルデータ（および物理ファイル識別情報）を返す。チャンクの意味や有効性は I/O 層で解析しない。
 - `ScanHeaders` と `ListChunks` は異なる用途の API であり、`ListChunks` の代わりに `ScanHeaders` のフィルターを外すだけ、という変更ではない。
 - Orchestration 層が配置方針を決定する。各ドライブの容量・状態、書き込みサイズ、配置ポリシーなどを考慮して、どのドライブにどう分散するかを決める。
@@ -179,12 +180,12 @@ I/O の列挙結果には、Distribution が物理ファイルを識別して配
 |---|---|---|
 | `New` | 候補 | Distribution インスタンスを生成する |
 | `Initialize` | 合意した処理 | I/O の `ListChunks` を使って全物理ファイルを解析し、ストライプ・チャンク・バージョン・配置情報をメモリに構築する |
-| `EnumerateHeaders` | 既存設計上の API | 有効な Header を列挙し、Orchestration の初期化に渡す |
-| `ReadStripe` | 候補 | 指定ストライプを読み込み、必要に応じて復元する |
-| `WriteStripe` | 候補 | 指定ストライプを、Orchestration から渡された配置方針に従って書き込む。全チャンクの書き込み完了後に成功を返す |
+| `ListObjects` | 公開 API 候補（旧 `EnumerateHeaders` の置き換え） | Distribution が把握している ObjectID を列挙する。Header の読み出し・解析は行わない |
+| `ReadStripe` | 候補 | 指定ストライプの論理データを読み込み、必要に応じて復元する。Header を含むかどうかで処理を分けない |
+| `WriteStripe` | 候補 | Header を含むかどうかに関係なく、指定ストライプの論理データを配置方針に従って書き込む。全チャンクの書き込み完了後に成功を返す |
 | `DeleteStripe` | 候補・要確認 | 指定ストライプの削除。削除の単位や Header との関係は要確認 |
 
-Distribution の公開 API はストライプ単位を基本とする。Orchestration はチャンク情報や StripeVersion の内部表現を直接操作しない。
+Distribution の公開 API はストライプ単位を基本とする。Header 専用の読み書き API は設けず、Header を含むストライプも通常のストライプとして扱う。Orchestration はチャンク情報や StripeVersion の内部表現を直接操作しない。
 
 #### 内部処理候補
 
@@ -212,7 +213,7 @@ Distribution の公開 API はストライプ単位を基本とする。Orchestr
 | 関数 | 位置付け | 内容 |
 |---|---|---|
 | `New` | 候補 | Orchestration インスタンスを生成する |
-| `Initialize` | 合意した処理 | Distribution の `EnumerateHeaders` から有効な Header を取得し、Orchestration の State を構築する |
+| `Initialize` | 合意した処理 | Distribution の `ListObjects` で ObjectID を列挙し、共通の `ReadStripe` で論理データを読み出して Header を解析し、Orchestration の State を構築する |
 | `Open` | 既存設計の操作候補 | Object を開く |
 | `Read` | 既存設計の操作候補 | Object の指定範囲を読み込む |
 | `Write` | 既存設計の操作候補 | Object の指定範囲を書き込む |
