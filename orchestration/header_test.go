@@ -9,7 +9,7 @@ import (
 	"github.com/tetsup/flexraid/pkg/shared"
 )
 
-func sampleHeader() Header {
+func sampleHeader() header {
 	return header{
 		FormatVersion: headerFormatVersion,
 		ObjectID: shared.ObjectID{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab},
@@ -24,7 +24,7 @@ func sampleHeader() Header {
 		Atime: time.Unix(1700000000, 123456789),
 		Mtime: time.Unix(1700000001, 234567890),
 		Ctime: time.Unix(1700000002, 345678901),
-		Layout: Layout{Mode: layoutModeStripe, ChunkSize: 1 << 20, DataChunks: 4, ParityChunks: 1},
+		Layout: layout{Mode: layoutModeStripe, ChunkSize: 1 << 20, DataChunks: 4, ParityChunks: 1},
 	}
 }
 
@@ -98,7 +98,7 @@ func TestHeaderMarshalValidation(t *testing.T) {
 
 func TestHeaderUnmarshalRejectsInvalidLengthAndPadding(t *testing.T) {
 	var h header
-	if err := h.UnmarshalBinary(make([]byte, headerSize-1)); !errors.Is(err, errInvalidheader) {
+	if err := h.UnmarshalBinary(make([]byte, headerSize-1)); !errors.Is(err, errInvalidHeader) {
 		t.Fatalf("got %v", err)
 	}
 	b, err := sampleHeader().MarshalBinary()
@@ -107,7 +107,7 @@ func TestHeaderUnmarshalRejectsInvalidLengthAndPadding(t *testing.T) {
 	}
 	namePaddingOffset := 2 + 16 + 1 + 16 + 1 + 1 + 16 + 2 + len([]byte("メディア.bin"))
 	b[namePaddingOffset] = 1
-	if err := h.UnmarshalBinary(b); !errors.Is(err, errInvalidheader) {
+	if err := h.UnmarshalBinary(b); !errors.Is(err, errInvalidHeader) {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -119,7 +119,7 @@ func TestHeaderUnmarshalRejectsInvalidUUIDv4(t *testing.T) {
 	}
 	data[2+6] = (data[2+6] & 0x0f) | 0x10
 	var got header
-	if err := got.UnmarshalBinary(data); !errors.Is(err, errInvalidheader) {
+	if err := got.UnmarshalBinary(data); !errors.Is(err, errInvalidHeader) {
 		t.Fatalf("got %v, want errInvalidHeader", err)
 	}
 }
@@ -152,7 +152,7 @@ func TestHeaderRejectsInvalidParentPresence(t *testing.T) {
 	}
 	data[2+16] = 2
 	var got header
-	if err := got.UnmarshalBinary(data); !errors.Is(err, errInvalidheader) {
+	if err := got.UnmarshalBinary(data); !errors.Is(err, errInvalidHeader) {
 		t.Fatalf("got %v, want errInvalidHeader", err)
 	}
 }
@@ -168,7 +168,7 @@ func TestHeaderRejectsInvalidTargetPresence(t *testing.T) {
 	targetPresenceOffset := 2 + 16 + 1 + 16 + 1
 	data[targetPresenceOffset] = 2
 	var got header
-	if err := got.UnmarshalBinary(data); !errors.Is(err, errInvalidheader) {
+	if err := got.UnmarshalBinary(data); !errors.Is(err, errInvalidHeader) {
 		t.Fatalf("got %v, want errInvalidHeader", err)
 	}
 }
@@ -184,7 +184,7 @@ func TestHeaderRejectsInvalidTargetUUID(t *testing.T) {
 	targetIDOffset := 2 + 16 + 1 + 16 + 1 + 1
 	data[targetIDOffset+6] = (data[targetIDOffset+6] & 0x0f) | 0x10
 	var got header
-	if err := got.UnmarshalBinary(data); !errors.Is(err, errInvalidheader) {
+	if err := got.UnmarshalBinary(data); !errors.Is(err, errInvalidHeader) {
 		t.Fatalf("got %v, want errInvalidHeader", err)
 	}
 }
@@ -196,7 +196,7 @@ func TestHeaderRejectsInvalidParentUUID(t *testing.T) {
 	}
 	data[2+16+1+6] = (data[2+16+1+6] & 0x0f) | 0x10
 	var got header
-	if err := got.UnmarshalBinary(data); !errors.Is(err, errInvalidheader) {
+	if err := got.UnmarshalBinary(data); !errors.Is(err, errInvalidHeader) {
 		t.Fatalf("got %v, want errInvalidHeader", err)
 	}
 }
@@ -204,7 +204,7 @@ func TestHeaderRejectsInvalidParentUUID(t *testing.T) {
 func TestHeaderMarshalRejectsInvalidObjectID(t *testing.T) {
 	header := sampleHeader()
 	header.ObjectID = shared.ObjectID{}
-	if _, err := header.MarshalBinary(); !errors.Is(err, errInvalidheader) {
+	if _, err := header.MarshalBinary(); !errors.Is(err, errInvalidHeader) {
 		t.Fatalf("got %v, want errInvalidHeader", err)
 	}
 }
