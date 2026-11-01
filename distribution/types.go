@@ -7,9 +7,6 @@ import (
  "github.com/tetsup/flexraid/storage"
 )
 
-// ObjectID identifies a logical object whose data is distributed across stripes.
-// It is shared with Orchestration, but Distribution does not interpret logical Header data.
-type ObjectID = shared.ObjectID
 
 type DistributionType uint8
 const (
