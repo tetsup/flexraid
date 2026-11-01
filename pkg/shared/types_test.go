@@ -25,8 +25,8 @@ func TestNewObjectIDGeneratesUUIDv4(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id.IsZero() {
-		t.Fatal("NewObjectID returned zero")
+	if !id.IsValid() {
+		t.Fatal("NewObjectID returned an invalid UUIDv4")
 	}
 	if id[6]>>4 != 4 {
 		t.Fatalf("version = %d, want 4", id[6]>>4)
