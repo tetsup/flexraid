@@ -102,7 +102,7 @@ func (key FileKey) Path() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrInvalidFileKey, err)
 	}
-	if key.ObjectID.IsZero() {
+	if !key.ObjectID.IsValid() {
 		return "", fmt.Errorf("%w: %v", ErrInvalidFileKey, ErrInvalidObjectID)
 	}
 
