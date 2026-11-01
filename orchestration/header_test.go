@@ -9,12 +9,12 @@ import (
 	"github.com/tetsup/flexraid/pkg/shared"
 )
 
-func sampleHeader() Header {
-	return Header{
-		FormatVersion: HeaderFormatVersion,
+func sampleHeader() header {
+	return header{
+		FormatVersion: headerFormatVersion,
 		ObjectID: shared.ObjectID{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab},
 		ParentID: ptrObjectID(shared.ObjectID{0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x4a, 0x70, 0x80, 0x90, 0xa0, 0xb0, 0xc0, 0xd0, 0xe0, 0xf0}),
-		Kind: ObjectKindFile,
+		Kind: objectKindFile,
 		Name: "メディア.bin",
 		Mode: 0644,
 		UID: 1000,
@@ -24,22 +24,22 @@ func sampleHeader() Header {
 		Atime: time.Unix(1700000000, 123456789),
 		Mtime: time.Unix(1700000001, 234567890),
 		Ctime: time.Unix(1700000002, 345678901),
-		Layout: Layout{Mode: LayoutModeStripe, ChunkSize: 1 << 20, DataChunks: 4, ParityChunks: 1},
+		Layout: layout{Mode: layoutModeStripe, ChunkSize: 1 << 20, DataChunks: 4, ParityChunks: 1},
 	}
 }
 
 func TestHeaderBinaryRoundTrip(t *testing.T) {
 	want := sampleHeader()
 	want.TargetID = ptrObjectID(shared.ObjectID{0x21, 0x43, 0x65, 0x87, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab})
-	want.Kind = ObjectKindHardLink
+	want.Kind = objectKindHardLink
 	data, err := want.MarshalBinary()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(data) != HeaderSize {
-		t.Fatalf("got %d want %d", len(data), HeaderSize)
+	if len(data) != headerSize {
+		t.Fatalf("got %d want %d", len(data), headerSize)
 	}
-	var got Header
+	var got header
 	if err := got.UnmarshalBinary(data); err != nil {
 		t.Fatal(err)
 	}
@@ -59,11 +59,11 @@ func TestHeaderMarshalUsesVersionZero(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got Header
+	var got header
 	if err := got.UnmarshalBinary(b); err != nil {
 		t.Fatal(err)
 	}
-	if got.FormatVersion != HeaderFormatVersion {
+	if got.FormatVersion != headerFormatVersion {
 		t.Fatal(got.FormatVersion)
 	}
 }
@@ -71,18 +71,18 @@ func TestHeaderMarshalUsesVersionZero(t *testing.T) {
 func TestHeaderMarshalValidation(t *testing.T) {
 	tests := []struct {
 		name   string
-		change func(*Header)
+		change func(*header)
 		want   error
 	}{
-		{"unsupported version", func(h *Header) { h.FormatVersion = 1 }, ErrUnsupportedFormat},
-		{"long name", func(h *Header) { h.Name = string(bytes.Repeat([]byte("x"), MaxNameSize+1)) }, ErrNameTooLong},
-		{"invalid utf8", func(h *Header) { h.Name = string([]byte{0xff}) }, ErrInvalidName},
-		{"unknown kind", func(h *Header) { h.Kind = shared.ObjectKind(99) }, ErrInvalidHeader},
-		{"file without parent", func(h *Header) { h.ParentID = nil }, ErrInvalidHeader},
-		{"file with target", func(h *Header) { h.TargetID = ptrObjectID(shared.ObjectID{0x21, 0x43, 0x65, 0x87, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab}) }, ErrInvalidHeader},
-		{"hard link without target", func(h *Header) { h.Kind = ObjectKindHardLink }, ErrInvalidHeader},
-		{"hard link without parent", func(h *Header) { h.Kind = ObjectKindHardLink; h.TargetID = ptrObjectID(shared.ObjectID{0x21, 0x43, 0x65, 0x87, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab}); h.ParentID = nil }, ErrInvalidHeader},
-		{"hard linked file with parent", func(h *Header) { h.Kind = ObjectKindHardLinkedFile }, ErrInvalidHeader},
+		{"unsupported version", func(h *header) { h.FormatVersion = 1 }, errUnsupportedFormat},
+		{"long name", func(h *header) { h.Name = string(bytes.Repeat([]byte("x"), maxNameSize+1)) }, errNameTooLong},
+		{"invalid utf8", func(h *header) { h.Name = string([]byte{0xff}) }, errInvalidName},
+		{"unknown kind", func(h *header) { h.Kind = shared.ObjectKind(99) }, errInvalidHeader},
+		{"file without parent", func(h *header) { h.ParentID = nil }, errInvalidHeader},
+		{"file with target", func(h *header) { h.TargetID = ptrObjectID(shared.ObjectID{0x21, 0x43, 0x65, 0x87, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab}) }, errInvalidHeader},
+		{"hard link without target", func(h *header) { h.Kind = objectKindHardLink }, errInvalidHeader},
+		{"hard link without parent", func(h *header) { h.Kind = objectKindHardLink; h.TargetID = ptrObjectID(shared.ObjectID{0x21, 0x43, 0x65, 0x87, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab}); h.ParentID = nil }, errInvalidHeader},
+		{"hard linked file with parent", func(h *header) { h.Kind = objectKindHardLinkedFile }, errInvalidHeader},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -97,8 +97,8 @@ func TestHeaderMarshalValidation(t *testing.T) {
 }
 
 func TestHeaderUnmarshalRejectsInvalidLengthAndPadding(t *testing.T) {
-	var h Header
-	if err := h.UnmarshalBinary(make([]byte, HeaderSize-1)); !errors.Is(err, ErrInvalidHeader) {
+	var h header
+	if err := h.UnmarshalBinary(make([]byte, headerSize-1)); !errors.Is(err, errInvalidHeader) {
 		t.Fatalf("got %v", err)
 	}
 	b, err := sampleHeader().MarshalBinary()
@@ -107,7 +107,7 @@ func TestHeaderUnmarshalRejectsInvalidLengthAndPadding(t *testing.T) {
 	}
 	namePaddingOffset := 2 + 16 + 1 + 16 + 1 + 1 + 16 + 2 + len([]byte("メディア.bin"))
 	b[namePaddingOffset] = 1
-	if err := h.UnmarshalBinary(b); !errors.Is(err, ErrInvalidHeader) {
+	if err := h.UnmarshalBinary(b); !errors.Is(err, errInvalidHeader) {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -118,23 +118,23 @@ func TestHeaderUnmarshalRejectsInvalidUUIDv4(t *testing.T) {
 		t.Fatal(err)
 	}
 	data[2+6] = (data[2+6] & 0x0f) | 0x10
-	var got Header
-	if err := got.UnmarshalBinary(data); !errors.Is(err, ErrInvalidHeader) {
-		t.Fatalf("got %v, want ErrInvalidHeader", err)
+	var got header
+	if err := got.UnmarshalBinary(data); !errors.Is(err, errInvalidHeader) {
+		t.Fatalf("got %v, want errInvalidHeader", err)
 	}
 }
 
 func TestHeaderAllowsNullParentIDForRootAndHardLinkedFile(t *testing.T) {
-	for _, kind := range []shared.ObjectKind{ObjectKindDirectory, ObjectKindHardLinkedFile} {
+	for _, kind := range []shared.ObjectKind{objectKindDirectory, objectKindHardLinkedFile} {
 		t.Run(string(rune('0'+kind)), func(t *testing.T) {
-			header := sampleHeader()
-			header.Kind = kind
-			header.ParentID = nil
-			data, err := header.MarshalBinary()
+			h := sampleHeader()
+			h.Kind = kind
+			h.ParentID = nil
+			data, err := h.MarshalBinary()
 			if err != nil {
 				t.Fatal(err)
 			}
-			var got Header
+			var got header
 			if err := got.UnmarshalBinary(data); err != nil {
 				t.Fatal(err)
 			}
@@ -151,41 +151,41 @@ func TestHeaderRejectsInvalidParentPresence(t *testing.T) {
 		t.Fatal(err)
 	}
 	data[2+16] = 2
-	var got Header
-	if err := got.UnmarshalBinary(data); !errors.Is(err, ErrInvalidHeader) {
-		t.Fatalf("got %v, want ErrInvalidHeader", err)
+	var got header
+	if err := got.UnmarshalBinary(data); !errors.Is(err, errInvalidHeader) {
+		t.Fatalf("got %v, want errInvalidHeader", err)
 	}
 }
 
 func TestHeaderRejectsInvalidTargetPresence(t *testing.T) {
-	header := sampleHeader()
-	header.Kind = ObjectKindHardLink
-	header.TargetID = ptrObjectID(shared.ObjectID{0x21, 0x43, 0x65, 0x87, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab})
-	data, err := header.MarshalBinary()
+	h := sampleHeader()
+	h.Kind = objectKindHardLink
+	h.TargetID = ptrObjectID(shared.ObjectID{0x21, 0x43, 0x65, 0x87, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab})
+	data, err := h.MarshalBinary()
 	if err != nil {
 		t.Fatal(err)
 	}
 	targetPresenceOffset := 2 + 16 + 1 + 16 + 1
 	data[targetPresenceOffset] = 2
-	var got Header
-	if err := got.UnmarshalBinary(data); !errors.Is(err, ErrInvalidHeader) {
-		t.Fatalf("got %v, want ErrInvalidHeader", err)
+	var got header
+	if err := got.UnmarshalBinary(data); !errors.Is(err, errInvalidHeader) {
+		t.Fatalf("got %v, want errInvalidHeader", err)
 	}
 }
 
 func TestHeaderRejectsInvalidTargetUUID(t *testing.T) {
-	header := sampleHeader()
-	header.Kind = ObjectKindHardLink
-	header.TargetID = ptrObjectID(shared.ObjectID{0x21, 0x43, 0x65, 0x87, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab})
-	data, err := header.MarshalBinary()
+	h := sampleHeader()
+	h.Kind = objectKindHardLink
+	h.TargetID = ptrObjectID(shared.ObjectID{0x21, 0x43, 0x65, 0x87, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab})
+	data, err := h.MarshalBinary()
 	if err != nil {
 		t.Fatal(err)
 	}
 	targetIDOffset := 2 + 16 + 1 + 16 + 1 + 1
 	data[targetIDOffset+6] = (data[targetIDOffset+6] & 0x0f) | 0x10
-	var got Header
-	if err := got.UnmarshalBinary(data); !errors.Is(err, ErrInvalidHeader) {
-		t.Fatalf("got %v, want ErrInvalidHeader", err)
+	var got header
+	if err := got.UnmarshalBinary(data); !errors.Is(err, errInvalidHeader) {
+		t.Fatalf("got %v, want errInvalidHeader", err)
 	}
 }
 
@@ -195,17 +195,17 @@ func TestHeaderRejectsInvalidParentUUID(t *testing.T) {
 		t.Fatal(err)
 	}
 	data[2+16+1+6] = (data[2+16+1+6] & 0x0f) | 0x10
-	var got Header
-	if err := got.UnmarshalBinary(data); !errors.Is(err, ErrInvalidHeader) {
-		t.Fatalf("got %v, want ErrInvalidHeader", err)
+	var got header
+	if err := got.UnmarshalBinary(data); !errors.Is(err, errInvalidHeader) {
+		t.Fatalf("got %v, want errInvalidHeader", err)
 	}
 }
 
 func TestHeaderMarshalRejectsInvalidObjectID(t *testing.T) {
-	header := sampleHeader()
-	header.ObjectID = shared.ObjectID{}
-	if _, err := header.MarshalBinary(); !errors.Is(err, ErrInvalidHeader) {
-		t.Fatalf("got %v, want ErrInvalidHeader", err)
+	h := sampleHeader()
+	h.ObjectID = shared.ObjectID{}
+	if _, err := h.MarshalBinary(); !errors.Is(err, errInvalidHeader) {
+		t.Fatalf("got %v, want errInvalidHeader", err)
 	}
 }
 

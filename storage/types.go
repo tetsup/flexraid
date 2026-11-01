@@ -10,14 +10,9 @@ import (
 )
 
 var (
-	ErrInvalidObjectID = shared.ErrInvalidObjectID
 	ErrInvalidLayoutID = errors.New("invalid layout ID")
 	ErrInvalidFileKey  = errors.New("invalid file key")
 )
-
-// ObjectID identifies a logical filesystem object.
-// It aliases the shared UUIDv4 identifier.
-type ObjectID = shared.ObjectID
 
 // StripeVersion identifies one version of a stripe.
 type StripeVersion uint64
@@ -85,7 +80,7 @@ func isUpperAlpha(value byte) bool {
 
 // FileKey identifies one physical chunk file.
 type FileKey struct {
-	ObjectID      ObjectID
+	ObjectID      shared.ObjectID
 	StripeVersion StripeVersion
 	LayoutID      LayoutID
 	StripeID      StripeID

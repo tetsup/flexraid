@@ -9,71 +9,71 @@ import (
 // restoreStripe validates chunk identity and dispatches to the selected layout.
 func restoreStripe(chunks []chunkDataWithInfo) ([]byte, error) {
 	if len(chunks) == 0 {
-		return nil, ErrInsufficientChunks
+		return nil, errInsufficientChunks
 	}
-	method := chunks[0].DistributionMethod
+	method := chunks[0].distributionMethod
 	if err := validateDistributionMethod(method); err != nil {
 		return nil, err
 	}
-	switch method.DistributionType {
-	case DistributionMirror:
+	switch method.distributionType {
+	case distributionMirror:
 		return restoreMirror(chunks, method)
-	case DistributionParity:
+	case distributionParity:
 		return restoreParity(chunks, method)
 	default:
-		return nil, ErrInvalidDistributionMethod
+		return nil, errInvalidDistributionMethod
 	}
 }
 
-func validateDistributionMethod(method DistributionMethod) error {
-	if method.NumChunks == 0 || method.NumChunks > 127 {
-		return ErrInvalidDistributionMethod
+func validateDistributionMethod(method distributionMethod) error {
+	if method.numChunks == 0 || method.numChunks > 127 {
+		return errInvalidDistributionMethod
 	}
-	switch method.DistributionType {
-	case DistributionMirror:
-		if method.NumParities != 0 {
-			return ErrInvalidDistributionMethod
+	switch method.distributionType {
+	case distributionMirror:
+		if method.numParities != 0 {
+			return errInvalidDistributionMethod
 		}
-	case DistributionParity:
-		if method.NumParities != 1 {
-			return ErrInvalidDistributionMethod
+	case distributionParity:
+		if method.numParities != 1 {
+			return errInvalidDistributionMethod
 		}
 	default:
-		return ErrInvalidDistributionMethod
+		return errInvalidDistributionMethod
 	}
 	return nil
 }
 
-func validateChunks(chunks []chunkDataWithInfo, method DistributionMethod) (map[ChunkNo][]byte, error) {
-	var key StripeKeyInfo
-	result := make(map[ChunkNo][]byte, len(chunks))
+func validateChunks(chunks []chunkDataWithInfo, method distributionMethod) (map[chunkNo][]byte, error) {
+	var key stripeKeyInfo
+	result := make(map[chunkNo][]byte, len(chunks))
 	for i, chunk := range chunks {
 		if i == 0 {
-			key = chunk.StripeKey
-		} else if chunk.StripeKey != key {
-			return nil, fmt.Errorf("%w: mixed stripe versions", ErrInvalidChunk)
+			key = chunk.stripeKey
+		} else if chunk.stripeKey != key {
+			return nil, fmt.Errorf("%w: mixed stripe versions", errInvalidChunk)
 		}
-		if chunk.DistributionMethod != method {
-			return nil, fmt.Errorf("%w: mixed distribution methods", ErrInvalidChunk)
+		if chunk.distributionMethod != method {
+			return nil, fmt.Errorf("%w: mixed distribution methods", errInvalidChunk)
 		}
-		if _, exists := result[chunk.ChunkNo]; exists {
-			return nil, fmt.Errorf("%w: duplicate chunk number %d", ErrInvalidChunk, chunk.ChunkNo)
+		if _, exists := result[chunk.chunkNo]; exists {
+			return nil, fmt.Errorf("%w: duplicate chunk number %d", errInvalidChunk, chunk.chunkNo)
 		}
-		if chunk.ChunkNo.IsParity() {
-			if method.DistributionType != DistributionParity || chunk.ChunkNo.Index() >= method.NumParities {
-				return nil, fmt.Errorf("%w: parity chunk index %d out of range", ErrInvalidChunk, chunk.ChunkNo.Index())
+		if chunk.chunkNo.isParity() {
+			if method.distributionType != distributionParity || chunk.chunkNo.index() >= method.numParities {
+				return nil, fmt.Errorf("%w: parity chunk index %d out of range", errInvalidChunk, chunk.chunkNo.index())
 			}
-		} else if chunk.ChunkNo.Index() >= method.NumChunks {
-			return nil, fmt.Errorf("%w: data chunk index %d out of range", ErrInvalidChunk, chunk.ChunkNo.Index())
+		} else if chunk.chunkNo.index() >= method.numChunks {
+			return nil, fmt.Errorf("%w: data chunk index %d out of range", errInvalidChunk, chunk.chunkNo.index())
 		}
-		result[chunk.ChunkNo] = chunk.Data
+		result[chunk.chunkNo] = chunk.data
 	}
 	return result, nil
 }
 
-func restoreMirror(chunks []chunkDataWithInfo, method DistributionMethod) ([]byte, error) {
-	if err := validateDistributionMethod(method); err != nil || method.DistributionType != DistributionMirror {
-		return nil, ErrInvalidDistributionMethod
+func restoreMirror(chunks []chunkDataWithInfo, method distributionMethod) ([]byte, error) {
+	if err := validateDistributionMethod(method); err != nil || method.distributionType != distributionMirror {
+		return nil, errInvalidDistributionMethod
 	}
 	indexed, err := validateChunks(chunks, method)
 	if err != nil {
@@ -81,42 +81,42 @@ func restoreMirror(chunks []chunkDataWithInfo, method DistributionMethod) ([]byt
 	}
 	indexes := make([]int, 0, len(indexed))
 	for no := range indexed {
-		if no.IsParity() {
-			return nil, ErrInvalidChunk
+		if no.isParity() {
+			return nil, errInvalidChunk
 		}
-		indexes = append(indexes, int(no.Index()))
+		indexes = append(indexes, int(no.index()))
 	}
 	if len(indexes) == 0 {
-		return nil, ErrInsufficientChunks
+		return nil, errInsufficientChunks
 	}
 	sort.Ints(indexes)
 	// Any available mirror replica contains the complete stripe.
-	return append([]byte(nil), indexed[ChunkNo(indexes[0])]...), nil
+	return append([]byte(nil), indexed[chunkNo(indexes[0])]...), nil
 }
 
-func restoreParity(chunks []chunkDataWithInfo, method DistributionMethod) ([]byte, error) {
-	if err := validateDistributionMethod(method); err != nil || method.DistributionType != DistributionParity {
-		return nil, ErrInvalidDistributionMethod
+func restoreParity(chunks []chunkDataWithInfo, method distributionMethod) ([]byte, error) {
+	if err := validateDistributionMethod(method); err != nil || method.distributionType != distributionParity {
+		return nil, errInvalidDistributionMethod
 	}
 	indexed, err := validateChunks(chunks, method)
 	if err != nil {
 		return nil, err
 	}
-	data := make([][]byte, method.NumChunks)
+	data := make([][]byte, method.numChunks)
 	missing := -1
 	for i := range data {
-		if value, ok := indexed[ChunkNo(i)]; ok {
+		if value, ok := indexed[chunkNo(i)]; ok {
 			data[i] = value
 		} else if missing == -1 {
 			missing = i
 		} else {
-			return nil, ErrTooManyMissingChunks
+			return nil, errTooManyMissingChunks
 		}
 	}
 	if missing >= 0 {
-		parity, ok := indexed[ParityFlag]
+		parity, ok := indexed[parityFlag]
 		if !ok {
-			return nil, ErrInsufficientChunks
+			return nil, errInsufficientChunks
 		}
 		restored := append([]byte(nil), parity...)
 		for i, chunk := range data {
@@ -125,7 +125,7 @@ func restoreParity(chunks []chunkDataWithInfo, method DistributionMethod) ([]byt
 			}
 			for j, b := range chunk {
 				if j >= len(restored) {
-					return nil, ErrInconsistentParity
+					return nil, errInconsistentParity
 				}
 				restored[j] ^= b
 			}
@@ -134,10 +134,10 @@ func restoreParity(chunks []chunkDataWithInfo, method DistributionMethod) ([]byt
 	}
 	// If all data chunks are present, parity is optional. If it is present,
 	// verify it so corrupted parity is not silently accepted.
-	if parity, ok := indexed[ParityFlag]; ok {
+	if parity, ok := indexed[parityFlag]; ok {
 		expected := generateParity(data)
 		if !bytes.Equal(expected, parity) {
-			return nil, ErrInconsistentParity
+			return nil, errInconsistentParity
 		}
 	}
 	return combineStripe(data), nil

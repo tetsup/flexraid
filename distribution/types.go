@@ -1,52 +1,69 @@
 package distribution
 
 import (
- "errors"
- "fmt"
- "github.com/tetsup/flexraid/pkg/shared"
- "github.com/tetsup/flexraid/storage"
+	"errors"
+	"fmt"
+
+	"github.com/tetsup/flexraid/pkg/shared"
+	"github.com/tetsup/flexraid/storage"
 )
 
+type distributionType uint8
 
-type DistributionType uint8
 const (
- DistributionMirror DistributionType = iota+1
- DistributionParity
+	distributionMirror distributionType = iota + 1
+	distributionParity
 )
 
-// DistributionMethod describes the redundancy layout for one stripe.
-// NumChunks is the replica count for Mirror and the data-chunk count for Parity.
-type DistributionMethod struct {
- DistributionType DistributionType
- NumChunks uint8
- NumParities uint8
+// distributionMethod describes the redundancy layout for one stripe.
+// numChunks is the replica count for Mirror and the data-chunk count for Parity.
+type distributionMethod struct {
+	distributionType distributionType
+	numChunks        uint8
+	numParities      uint8
 }
 
-type ChunkNo uint8
-const (
- ParityFlag ChunkNo = 0x80
- ChunkIndexMask ChunkNo = 0x7f
-)
-func (n ChunkNo) IsParity() bool { return n&ParityFlag!=0 }
-func (n ChunkNo) Index() uint8 { return uint8(n&ChunkIndexMask) }
-func NewDataChunkNo(index uint8)(ChunkNo,error){if index>uint8(ChunkIndexMask){return 0,fmt.Errorf("%w: chunk index out of range",ErrInvalidChunk)};return ChunkNo(index),nil}
-func NewParityChunkNo(index uint8)(ChunkNo,error){if index>uint8(ChunkIndexMask){return 0,fmt.Errorf("%w: chunk index out of range",ErrInvalidChunk)};return ChunkNo(index)|ParityFlag,nil}
+type chunkNo uint8
 
-type StripeKeyInfo struct {
- ObjectID shared.ObjectID
- StripeNo storage.StripeID
- StripeVersion storage.StripeVersion
+const (
+	parityFlag     chunkNo = 0x80
+	chunkIndexMask chunkNo = 0x7f
+)
+
+func (n chunkNo) isParity() bool { return n&parityFlag != 0 }
+func (n chunkNo) index() uint8   { return uint8(n & chunkIndexMask) }
+
+func newDataChunkNo(index uint8) (chunkNo, error) {
+	if index > uint8(chunkIndexMask) {
+		return 0, fmt.Errorf("%w: chunk index out of range", errInvalidChunk)
+	}
+	return chunkNo(index), nil
 }
+
+func newParityChunkNo(index uint8) (chunkNo, error) {
+	if index > uint8(chunkIndexMask) {
+		return 0, fmt.Errorf("%w: chunk index out of range", errInvalidChunk)
+	}
+	return chunkNo(index) | parityFlag, nil
+}
+
+type stripeKeyInfo struct {
+	objectID      shared.ObjectID
+	stripeID      storage.StripeID
+	stripeVersion storage.StripeVersion
+}
+
 type chunkDataWithInfo struct {
- StripeKey StripeKeyInfo
- DistributionMethod DistributionMethod
- ChunkNo ChunkNo
- Data []byte
+	stripeKey          stripeKeyInfo
+	distributionMethod distributionMethod
+	chunkNo            chunkNo
+	data               []byte
 }
+
 var (
- ErrInvalidDistributionMethod=errors.New("invalid distribution method")
- ErrInvalidChunk=errors.New("invalid chunk")
- ErrInsufficientChunks=errors.New("insufficient chunks to restore stripe")
- ErrTooManyMissingChunks=errors.New("too many missing data chunks")
- ErrInconsistentParity=errors.New("inconsistent parity data")
+	errInvalidDistributionMethod = errors.New("invalid distribution method")
+	errInvalidChunk               = errors.New("invalid chunk")
+	errInsufficientChunks         = errors.New("insufficient chunks to restore stripe")
+	errTooManyMissingChunks       = errors.New("too many missing data chunks")
+	errInconsistentParity         = errors.New("inconsistent parity data")
 )
