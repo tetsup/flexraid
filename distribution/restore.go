@@ -12,7 +12,7 @@ func restoreStripe(chunks []chunkDataWithInfo) ([]byte, error) {
 		return nil, errInsufficientChunks
 	}
 	method := chunks[0].distributionMethod
-	if err := validatedistributionMethod(method); err != nil {
+	if err := validateDistributionMethod(method); err != nil {
 		return nil, err
 	}
 	switch method.distributionType {
@@ -21,31 +21,31 @@ func restoreStripe(chunks []chunkDataWithInfo) ([]byte, error) {
 	case distributionParity:
 		return restoreParity(chunks, method)
 	default:
-		return nil, ErrInvaliddistributionMethod
+		return nil, errInvalidDistributionMethod
 	}
 }
 
-func validatedistributionMethod(method distributionMethod) error {
+func validateDistributionMethod(method distributionMethod) error {
 	if method.numChunks == 0 || method.numChunks > 127 {
-		return ErrInvaliddistributionMethod
+		return errInvalidDistributionMethod
 	}
 	switch method.distributionType {
 	case distributionMirror:
 		if method.numParities != 0 {
-			return ErrInvaliddistributionMethod
+			return errInvalidDistributionMethod
 		}
 	case distributionParity:
 		if method.numParities != 1 {
-			return ErrInvaliddistributionMethod
+			return errInvalidDistributionMethod
 		}
 	default:
-		return ErrInvaliddistributionMethod
+		return errInvalidDistributionMethod
 	}
 	return nil
 }
 
 func validateChunks(chunks []chunkDataWithInfo, method distributionMethod) (map[chunkNo][]byte, error) {
-	var key StripeKeyInfo
+	var key stripeKeyInfo
 	result := make(map[chunkNo][]byte, len(chunks))
 	for i, chunk := range chunks {
 		if i == 0 {
@@ -72,8 +72,8 @@ func validateChunks(chunks []chunkDataWithInfo, method distributionMethod) (map[
 }
 
 func restoreMirror(chunks []chunkDataWithInfo, method distributionMethod) ([]byte, error) {
-	if err := validatedistributionMethod(method); err != nil || method.distributionType != distributionMirror {
-		return nil, ErrInvaliddistributionMethod
+	if err := validateDistributionMethod(method); err != nil || method.distributionType != distributionMirror {
+		return nil, errInvalidDistributionMethod
 	}
 	indexed, err := validateChunks(chunks, method)
 	if err != nil {
@@ -95,8 +95,8 @@ func restoreMirror(chunks []chunkDataWithInfo, method distributionMethod) ([]byt
 }
 
 func restoreParity(chunks []chunkDataWithInfo, method distributionMethod) ([]byte, error) {
-	if err := validatedistributionMethod(method); err != nil || method.distributionType != distributionParity {
-		return nil, ErrInvaliddistributionMethod
+	if err := validateDistributionMethod(method); err != nil || method.distributionType != distributionParity {
+		return nil, errInvalidDistributionMethod
 	}
 	indexed, err := validateChunks(chunks, method)
 	if err != nil {
