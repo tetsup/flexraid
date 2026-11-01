@@ -3,7 +3,7 @@ package storage
 import "testing"
 
 func sampleObjectID() ObjectID {
-	return ObjectID{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde}
+	return ObjectID(0x123456789abcdef0)
 }
 
 func TestObjectIDRoundTrip(t *testing.T) {
@@ -17,9 +17,9 @@ func TestObjectIDRoundTrip(t *testing.T) {
 	}
 }
 
-func TestParseObjectIDRejectsNonV4(t *testing.T) {
-	if _, err := ParseObjectID("12345678-9abc-1def-8a12-3456789abcde"); err == nil {
-		t.Fatal("expected UUID version validation error")
+func TestParseObjectIDRejectsZero(t *testing.T) {
+	if _, err := ParseObjectID("0000000000000000"); err == nil {
+		t.Fatal("expected zero ObjectID to be rejected")
 	}
 }
 
@@ -52,7 +52,7 @@ func TestFileKeyPathRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const expected = "12/34/12345678-9abc-4def-8a12-3456789abcde-0000000000001234-X5D2-0000000000005678"
+	const expected = "12/34/123456789abcdef0-0000000000001234-X5D2-0000000000005678"
 	if path != expected {
 		t.Fatalf("got %q, want %q", path, expected)
 	}
@@ -66,8 +66,15 @@ func TestFileKeyPathRoundTrip(t *testing.T) {
 }
 
 func TestParseFileKeyRejectsWrongShard(t *testing.T) {
-	_, err := ParseFileKey("ff/34/12345678-9abc-4def-8a12-3456789abcde-0000000000001234-X5D2-0000000000005678")
+	_, err := ParseFileKey("ff/34/123456789abcdef0-0000000000001234-X5D2-0000000000005678")
 	if err == nil {
 		t.Fatal("expected invalid shard path error")
+	}
+}
+
+func TestFileKeyPathRejectsZeroObjectID(t *testing.T) {
+	key := FileKey{LayoutID: LayoutID{Type: 'X', DriveCount: 1, Role: ChunkRoleData, Index: 1}}
+	if _, err := key.Path(); err == nil {
+		t.Fatal("expected zero ObjectID to be rejected")
 	}
 }
