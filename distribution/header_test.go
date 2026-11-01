@@ -68,7 +68,7 @@ func TestHeaderMarshalValidation(t *testing.T) {
 		change func(*Header)
 		want   error
 	}{
-		{"zero ID", func(h *Header) { h.ObjectID = ObjectID{} }, ErrInvalidHeader},
+		{"invalid UUIDv4", func(h *Header) { h.ObjectID[6] = 0x1f }, ErrInvalidHeader},
 		{"version", func(h *Header) { h.FormatVersion = 2 }, ErrUnsupportedFormat},
 		{"long name", func(h *Header) { h.Name = string(bytes.Repeat([]byte("x"), MaxNameSize+1)) }, ErrNameTooLong},
 		{"invalid utf8", func(h *Header) { h.Name = string([]byte{0xff}) }, ErrInvalidName},
