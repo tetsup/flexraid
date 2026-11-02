@@ -18,10 +18,12 @@ type CleanupResponse struct { DeletedObjects int; DeletedFiles int }
 
 func(layer *Orchestration)Cleanup(request CleanupRequest)(response CleanupResponse,err error){
 	started:=time.Now()
+	ctx:=request.Context
+	if ctx==nil{ctx=context.Background()}
 	defer func(){logCleanup(layer.logger,started,err,response)}()
 	for objectID:=range layer.deletionQueue{
-		if err=request.Context.Err();err!=nil{return response,err}
-		result,deleteErr:=layer.distribution.DeleteObject(distribution.DeleteObjectRequest{Context:request.Context,ObjectID:objectID})
+		if err=ctx.Err();err!=nil{return response,err}
+		result,deleteErr:=layer.distribution.DeleteObject(distribution.DeleteObjectRequest{Context:ctx,ObjectID:objectID})
 		response.DeletedFiles+=result.DeletedFiles
 		if deleteErr!=nil{err=errors.Join(err,deleteErr);continue}
 		delete(layer.deletionQueue,objectID)
