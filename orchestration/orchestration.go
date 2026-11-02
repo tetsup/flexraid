@@ -24,9 +24,11 @@ func New(request NewRequest)(NewResponse,error){
 	logger:=request.Logger
 	if logger==nil{logger=slog.New(slog.NewTextHandler(os.Stderr,&slog.HandlerOptions{Level:request.LogLevel}))}
 	if request.Distribution==nil{return NewResponse{},fmt.Errorf("distribution is nil")}
-	if err:=request.Context.Err();err!=nil{return NewResponse{},err}
+	ctx:=request.Context
+	if ctx==nil{ctx=context.Background()}
+	if err:=ctx.Err();err!=nil{return NewResponse{},err}
 	layer:=&Orchestration{distribution:request.Distribution,logger:logger,headers:make(map[shared.ObjectID]header),deletionQueue:make(map[shared.ObjectID]struct{})}
-	objects,err:=request.Distribution.ListObjects(distribution.ListObjectsRequest{Context:request.Context})
+	objects,err:=request.Distribution.ListObjects(distribution.ListObjectsRequest{Context:ctx})
 	if err!=nil{return NewResponse{},err}
 	for _,objectID:=range objects.ObjectIDs{
 		read,readErr:=request.Distribution.ReadStripe(distribution.ReadStripeRequest{Context:request.Context,ObjectID:objectID,StripeID:0})
