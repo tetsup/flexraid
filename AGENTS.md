@@ -221,10 +221,11 @@ I/O の列挙結果には、Distribution が物理ファイルを識別して配
 | `ListObjects` | 公開 API | Distribution が把握している ObjectID を列挙する。Header の読み出し・解析は行わない |
 | `ReadStripe` | 公開 API | 指定 Stripe の論理データを読み込み、必要に応じて復元して返す。復元可能な欠損・破損は成功として扱い、WARNING ログと IO ごとのエラーカウントを記録する。復元不能な場合は上位層にデータ破損を表すエラーコードを返し、ERROR ログ、IO ごと・全体のエラーカウント、および Stripe 単位の破損状態を記録する |
 | `WriteStripe` | 公開 API | `IOIndexes []int` で上位層が使用する IO の候補を指定する。Chunk の種類・番号・分割・配置は Distribution が決定する。全 Chunk の書き込み成功後にのみ新 Version をインメモリ上で有効化する。IO index は重複せず有効範囲内であることを検証する |
-| `Cleanup` | 公開 API | bool フィールドで古い Version、無効な Stripe、不完全チャンクの整理を個別に指定する。論理削除済み Object の物理削除対象は Orchestration から ObjectID を指定する。削除件数などの実行結果は INFO ログに記録し、Response では返さない |
+| `DeleteObject` | 公開 API | Orchestration から指定された Object の物理データを削除する。Header 以外の Stripe / Version を先に削除し、最後に Header を削除する |
+| `Cleanup` | 公開 API | 古い Version、無効な Stripe、不完全チャンクなど、Object 全体の論理削除とは別の不要データを整理する。削除対象の種類を bool フィールドで個別に指定する |
 | `GetErrorStats` | 公開 API | IO ごと・全体のエラーカウントなど、揮発性の診断状態を外部コマンドから取得する |
 
-Distribution の公開 API は論理ストライプ単位の読み書き操作と ObjectID の列挙を基本とする。Header 専用の読み書き API や `DeleteStripe` / `DeleteObject` のような削除 API は設けない。物理削除は `Cleanup` に集約する。Orchestration が Header の論理削除状態を通常の `WriteStripe` で永続化し、Cleanup 時には Orchestration が Header を確認して論理削除済み Object の ObjectID を Distribution に渡す。Distribution は Header の内容を解釈しない。
+Distribution の公開 API は論理ストライプ単位の読み書き操作、ObjectID の列挙、および Object 単位の物理削除を提供する。Header 専用の読み書き API や `DeleteStripe` は設けない。Object の論理削除状態は Orchestration が管理し、物理削除は Orchestration からの明示的な `DeleteObject` 呼び出しで実行する。Distribution の `Cleanup` は Orchestration の `Cleanup` から呼び出され、論理削除済み Object の判定や ObjectID の選定は行わない。Distribution は Header の内容を解釈しない。
 
 #### 公開 API の共通契約・確定事項
 
@@ -240,12 +241,12 @@ Distribution の公開 API は論理ストライプ単位の読み書き操作�
 - `WriteStripe` は新 Version の全 Chunk の物理書き込みが完了した場合にのみ、インメモリの最新 Version を更新する。途中失敗時は新 Version を有効化せず、既に物理的に書き込まれた不完全データは破損データとして残す。失敗を ERROR ログに記録し、呼び出し元へエラーを返す。
 - Distribution は `WriteStripe` 成功直後に旧 Version を自動削除しない。不要 Version の削除は `Cleanup` が担う。
 - Distribution 内部では同一トランザクションの処理を並列実行しない。トランザクション間の排他・調停は Orchestration の責務とし、Distribution 内部のロック機構は現時点では実装しない。
-- Object の論理削除は Orchestration が Header の論理削除状態を通常の `WriteStripe` で永続化することで行う。Header の書き込みに失敗した場合は削除失敗として返し、論理削除状態を確定しない。
-- Distribution は Header の内容・論理削除状態を解釈しない。Orchestration が Header を確認して論理削除済み Object の ObjectID を `Cleanup` に渡し、Distribution は指定された Object の物理削除を担当する。
-- 論理削除済み Object の Cleanup では、Header 以外の Stripe / Version を先に削除する。すべての非 Header データの削除が完了した場合に限り、最後に Header を削除する。途中で削除に失敗した場合は Header を残し、次回 Cleanup で再試行できるようにする。Header 自身の削除に失敗した場合も、その Header を残して再試行対象とする。
-- 物理削除の個別失敗は Cleanup の呼び出し元へ返さず、Cleanup の再実行で処理する。論理削除の成否と物理削除の成否を分離する。
-- `Cleanup` は専用 Request 型で、古い Version、無効な Stripe、WriteStripe 失敗時に残った不完全チャンクの削除を bool フィールドで個別に on/off 指定する。論理削除済み Object の物理削除対象は ObjectID のリストで Orchestration から指定する。無効な Stripe はサルベージ目的で保持する場合があるため、常に削除する前提にしない。Version の有効性は Distribution のインメモリ管理情報にある最新 Version を正とする。
-- 論理削除済み Object の物理削除では、Orchestration が指定した ObjectID について、Header 以外の Stripe / Version を先に削除し、すべての削除成功後に Header を最後に削除する。失敗した場合は Header を残し、Orchestration が次回 Cleanup 時に再度対象として指定できるようにする。
+- Object の論理削除状態と削除対象の管理は Orchestration が担当する。論理削除の確定に必要な Header の更新は通常の `WriteStripe` で行い、書き込みに失敗した場合は論理削除を確定しない。
+- Orchestration の `Cleanup` は、Orchestration が保持するメモリ上の状態から論理削除済み Object を特定し、対象ごとに Distribution の `DeleteObject` を呼び出す。その後、Distribution の `Cleanup` を呼び出す。
+- Distribution は Header の内容・論理削除状態を解釈せず、`DeleteObject` で指定された Object の物理データを削除する。削除対象の選定や論理削除状態の判定は行わない。
+- `DeleteObject` は Header 以外の Stripe / Version を先に削除し、すべての非 Header データの削除が完了した場合に限り、最後に Header を削除する。途中で削除に失敗した場合は Header を残し、次回の Orchestration `Cleanup` で再試行できるようにする。Header 自身の削除に失敗した場合も同様に Header を残す。
+- 物理削除の個別失敗は論理削除の取り消しを意味しない。削除対象であることを Orchestration のメモリ上の状態に保持し、次回の Orchestration `Cleanup` で `DeleteObject` を再実行する。物理削除の成否と論理削除の成否を分離する。
+- Distribution の `Cleanup` は Object 全体の論理削除を実行せず、古い Version、無効な Stripe、WriteStripe 失敗時に残った不完全チャンクなどを整理する。これらの削除対象の種類は bool フィールドで個別に on/off 指定する。無効な Stripe はサルベージ目的で保持する場合があるため、常に削除する前提にしない。Version の有効性は Distribution のインメモリ管理情報にある最新 Version を正とする。
 - `Cleanup` は通常操作のフォールバック対象のみを削除する。トランザクション間の並行実行制御は Orchestration が担い、Distribution 内部ではロックを実装しない。
 - エラーの分類・判定は一箇所に集約し、その判定結果をログに記録する。ログ出力のために別のエラー判定を重複させない。上位層で同じ問題を重複してログ出力しない。
 - 処理途中で失敗した場合はその場で中断し、有効なインメモリ状態や既存の有効データを壊さない構造にする。物理的に残る不完全データは有効状態として扱わず、後続の Cleanup 対象にできるようにする。
@@ -293,7 +294,8 @@ Distribution の公開 API は論理ストライプ単位の読み書き操作�
 | `Link` | 候補 | 既存ファイル実体への HardLink を作成する |
 | `Symlink` | 候補 | Symlink Object とリンク先パスデータを作成する |
 | `Readlink` | 候補 | Symlink のリンク先パスデータを取得する |
-| `Unlink` | 候補・責務要確認 | Object を削除する |
+| `Unlink` | 候補・責務要確認 | Namespace 上の名前を削除し、必要に応じて実体の論理削除状態を更新する |
+| `Cleanup` | 公開 API 候補 | メモリ上の状態から論理削除済み Object を特定し、各 Object に `Distribution.DeleteObject` を実行した後、`Distribution.Cleanup` を呼び出す |
 
 上記の公開 API 一覧は議論時点の候補であり、すべてが確定したわけではない。特に namespace 操作・属性操作の最終的な責務境界は README.md および今後の設計合意に従う。
 
