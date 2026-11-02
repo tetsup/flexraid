@@ -2,7 +2,6 @@ package orchestration
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	physicalio "github.com/tetsup/flexraid/io"
@@ -14,8 +13,8 @@ import (
 func TestStartupRebuildsDeletionQueueAndCleanupDeletesObject(t *testing.T){
 	ctx:=context.Background()
 	ios:=[]*physicalio.IO{
-		physicalio.New(physicalio.NewRequest{Root:filepath.Join(t.TempDir(),"disk-a")}).Layer,
-		physicalio.New(physicalio.NewRequest{Root:filepath.Join(t.TempDir(),"disk-b")}).Layer,
+		physicalio.New(physicalio.NewRequest{Root:t.TempDir()}).Layer,
+		physicalio.New(physicalio.NewRequest{Root:t.TempDir()}).Layer,
 	}
 	initial,err:=distribution.New(distribution.NewRequest{IOs:ios});if err!=nil{t.Fatal(err)}
 	id:=shared.ObjectID{0x12,0x34,0x56,0x78,0x9a,0xbc,0x4d,0xef,0x8a,0xbc,0x12,0x34,0x56,0x78,0x90,0xab}
