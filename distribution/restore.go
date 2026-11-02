@@ -94,8 +94,14 @@ func restoreMirror(chunks []chunkDataWithInfo, method distributionMethod) ([]byt
 		return nil, errInsufficientChunks
 	}
 	sort.Ints(indexes)
-	// Any available mirror replica contains the complete stripe.
-	return append([]byte(nil), indexed[chunkNo(indexes[0])]...), nil
+	// Every available mirror replica must agree; choosing one silently could hide corruption.
+	data := indexed[chunkNo(indexes[0])]
+	for _, index := range indexes[1:] {
+		if !bytes.Equal(data, indexed[chunkNo(index)]) {
+			return nil, errInconsistentParity
+		}
+	}
+	return append([]byte(nil), data...), nil
 }
 
 func restoreParity(chunks []chunkDataWithInfo, method distributionMethod) ([]byte, error) {
