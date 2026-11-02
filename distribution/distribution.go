@@ -45,6 +45,7 @@ func New(request NewRequest) (NewResponse, error) {
 	usable := 0
 	for index, layer := range d.ios {
 		_, err := layer.ListChunks(physicalio.ListChunksRequest{Context: context.Background(), Callback: func(entry physicalio.ScanEntry) error {
+			if entry.Error != nil { d.recordIOError(index, entry.Error); return nil }
 			method, no, methodErr := methodFromLayout(entry.Key.LayoutID)
 			if methodErr != nil { d.recordIOError(index, methodErr); return nil }
 			total, payload, decodeErr := decodeChunk(entry.Data)
