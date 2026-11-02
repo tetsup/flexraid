@@ -35,7 +35,8 @@ func TestWriteReadParityAndRecoverMissingChunk(t *testing.T){
 	written,err:=created.Layer.WriteStripe(WriteStripeRequest{Context:ctx,ObjectID:testObjectID(),StripeID:4,Layout:Layout{Type:LayoutParity,NumChunks:3},IOIndexes:[]int{0,1,2,3},Data:data});if err!=nil{t.Fatal(err)}
 	missingKey:=storage.FileKey{ObjectID:testObjectID(),StripeVersion:written.Version,LayoutID:storage.LayoutID{Type:storage.LayoutType(LayoutParity),DriveCount:4,Role:storage.ChunkRoleData,Index:2},StripeID:4}
 	if _,err:=ios[1].Delete(physicalio.DeleteRequest{Context:ctx,Key:missingKey});err!=nil{t.Fatal(err)}
-	read,err:=created.Layer.ReadStripe(ReadStripeRequest{Context:ctx,ObjectID:testObjectID(),StripeID:4,RepairIOIndexes:[]int{4,0,1}});if err!=nil{t.Fatal(err)}
+	restarted,err:=New(NewRequest{IOs:ios});if err!=nil{t.Fatal(err)}
+	read,err:=restarted.Layer.ReadStripe(ReadStripeRequest{Context:ctx,ObjectID:testObjectID(),StripeID:4,RepairIOIndexes:[]int{4,0,1}});if err!=nil{t.Fatal(err)}
 	if !bytes.Equal(read.Data,data){t.Fatalf("got %q",read.Data)}
 	repaired,err:=ios[4].Read(physicalio.ReadRequest{Context:ctx,Key:missingKey});if err!=nil{t.Fatal(err)}
 	if _,_,err:=decodeChunk(repaired.Data);err!=nil{t.Fatal(err)}
