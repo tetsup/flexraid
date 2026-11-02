@@ -9,7 +9,6 @@ import (
 
 	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/pkg/shared"
-	"github.com/tetsup/flexraid/storage"
 )
 
 type DeleteObjectRequest struct { Context context.Context; ObjectID shared.ObjectID }
@@ -44,4 +43,3 @@ func(d *Distribution)DeleteObject(request DeleteObjectRequest)(response DeleteOb
 	delete(d.objects,request.ObjectID)
 	return response,nil
 }
-var _ storage.StripeID
