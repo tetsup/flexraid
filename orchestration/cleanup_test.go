@@ -20,7 +20,7 @@ func TestStartupRebuildsDeletionQueueAndCleanupDeletesObject(t *testing.T){
 	id:=shared.ObjectID{0x12,0x34,0x56,0x78,0x9a,0xbc,0x4d,0xef,0x8a,0xbc,0x12,0x34,0x56,0x78,0x90,0xab}
 	h:=header{FormatVersion:headerFormatVersion,Deleted:true,ObjectID:id,Kind:objectKindDirectory,Layout:layout{Mode:layoutModeMirror}}
 	headerData,err:=h.MarshalBinary();if err!=nil{t.Fatal(err)}
-	for _,item:=range []struct{stripe storage.StripeID;data []byte}{{0,headerData},{1,[]byte("payload")}}{
+	for _,item:=range []struct{stripe storage.StripeID;data []byte}{{0,headerData[:100]},{1,headerData[100:]},{2,[]byte("payload")}}{
 		if _,err:=initial.Layer.WriteStripe(distribution.WriteStripeRequest{Context:ctx,ObjectID:id,StripeID:item.stripe,Layout:distribution.Layout{Type:distribution.LayoutMirror,NumChunks:2},IOIndexes:[]int{0,1},Data:item.data});err!=nil{t.Fatal(err)}
 	}
 	restarted,err:=distribution.New(distribution.NewRequest{IOs:ios});if err!=nil{t.Fatal(err)}
