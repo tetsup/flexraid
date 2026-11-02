@@ -16,7 +16,7 @@ type CleanupResponse struct { DeletedFiles int }
 func(d *Distribution)Cleanup(request CleanupRequest)(response CleanupResponse,err error){
 	started:=time.Now();defer func(){logOperation(d.logger,"Cleanup",started,err,"deleted_files",response.DeletedFiles)}()
 	if err=request.Context.Err();err!=nil{return response,err}
-	if request.IncompleteChunks || request.InvalidStripes {
+	if request.IncompleteChunks || request.InvalidStripes || request.OldVersions {
 		for objectID,locations:=range d.orphans {
 			remaining:=locations[:0]
 			for _,location:=range locations {
