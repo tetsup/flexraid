@@ -3,7 +3,6 @@ package distribution
 import (
 	"bytes"
 	"context"
-		"path/filepath"
 	"testing"
 
 	physicalio "github.com/tetsup/flexraid/io"
