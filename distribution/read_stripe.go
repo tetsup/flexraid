@@ -33,6 +33,7 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest)(response ReadStripe
 		if !exists{missing=append(missing,no);continue}
 		read,readErr:=d.ios[location.ioIndex].Read(physicalio.ReadRequest{Context:request.Context,Key:location.key})
 		if readErr!=nil{
+			if errors.Is(readErr,context.Canceled)||errors.Is(readErr,context.DeadlineExceeded){return response,readErr}
 			d.recordIOError(location.ioIndex,readErr);missing=append(missing,no);continue
 		}
 		total,payload,decodeErr:=decodeChunk(read.Data)
