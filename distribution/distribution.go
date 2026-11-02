@@ -99,7 +99,7 @@ func methodFromLayout(layout storage.LayoutID) (distributionMethod, chunkNo, err
 	case storage.LayoutType(LayoutParity):
 		if layout.DriveCount < 2 { return method,0,errInvalidChunk }
 		method = distributionMethod{distributionType:distributionParity,numChunks:layout.DriveCount-1,numParities:1}
-		if layout.Role == storage.ChunkRoleParity { return method,parityFlag,nil }
+		if layout.Role == storage.ChunkRoleParity { if layout.Index!=1{return method,0,errInvalidChunk}; return method,parityFlag,nil }
 		if layout.Role != storage.ChunkRoleData || layout.Index == 0 { return method,0,errInvalidChunk }
 		return method,chunkNo(layout.Index-1),nil
 	default: return method,0,errInvalidDistributionMethod
