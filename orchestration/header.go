@@ -14,7 +14,7 @@ import (
 const (
 	headerFormatVersion uint16 = 0
 	maxNameSize                 = 255
-	headerSize                  = 2 + 16 + 1 + 16 + 1 + 1 + 16 + 2 + maxNameSize + 4 + 4 + 4 + 4 + 8 + 8 + 8 + 8 + 1 + 4 + 2 + 2
+	headerSize                  = 2 + 1 + 16 + 1 + 16 + 1 + 1 + 16 + 2 + maxNameSize + 4 + 4 + 4 + 4 + 8 + 8 + 8 + 8 + 1 + 4 + 2 + 2
 )
 
 var (
@@ -49,6 +49,7 @@ type layout struct {
 
 type header struct {
 	FormatVersion uint16
+	Deleted       bool
 	ObjectID      shared.ObjectID
 	ParentID      *shared.ObjectID
 	TargetID      *shared.ObjectID
@@ -100,7 +101,11 @@ func (h header) MarshalBinary() ([]byte, error) {
 	}
 
 	b := bytes.NewBuffer(make([]byte, 0, headerSize))
-	values := []any{h.FormatVersion, objectIDBytes, parentPresent, parentIDBytes, uint8(h.Kind), targetPresent, targetIDBytes, uint16(len(name))}
+	deleted := uint8(0)
+	if h.Deleted {
+		deleted = 1
+	}
+	values := []any{h.FormatVersion, deleted, objectIDBytes, parentPresent, parentIDBytes, uint8(h.Kind), targetPresent, targetIDBytes, uint16(len(name))}
 	for _, v := range values {
 		if err := binary.Write(b, binary.BigEndian, v); err != nil {
 			return nil, err
@@ -125,17 +130,21 @@ func (h *header) UnmarshalBinary(data []byte) error {
 	r := bytes.NewReader(data)
 	read := func(v any) error { return binary.Read(r, binary.BigEndian, v) }
 	var version uint16
+	var deleted uint8
 	var oidBytes, pidBytes, tidBytes [16]byte
 	var parentPresent, targetPresent uint8
 	var kind uint8
 	var n uint16
-	for _, v := range []any{&version, &oidBytes, &parentPresent, &pidBytes, &kind, &targetPresent, &tidBytes, &n} {
+	for _, v := range []any{&version, &deleted, &oidBytes, &parentPresent, &pidBytes, &kind, &targetPresent, &tidBytes, &n} {
 		if err := read(v); err != nil {
 			return fmt.Errorf("%w: %v", errInvalidHeader, err)
 		}
 	}
 	if version != headerFormatVersion {
 		return errUnsupportedFormat
+	}
+	if deleted > 1 {
+		return errInvalidHeader
 	}
 
 	var oid shared.ObjectID
@@ -173,6 +182,7 @@ func (h *header) UnmarshalBinary(data []byte) error {
 	}
 	var out header
 	out.FormatVersion = version
+	out.Deleted = deleted == 1
 	out.ObjectID = oid
 	out.ParentID = parentID
 	out.TargetID = targetID

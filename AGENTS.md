@@ -92,7 +92,7 @@ fuse/
 - Symlink は ParentID を持つ。リンク先パス文字列は Header ではなく通常の論理データとして保持する。
 - HardLinkedFile は Namespace ツリー外の実体であり、ParentID と TargetID を持たず、実データを保持する。
 - HardLink は Namespace 上の名前を表す Object であり、ParentID と TargetID を持つ。TargetID は必ず HardLinkedFile の ObjectID を直接指し、HardLink は実データを保持しない。
-- Header で追加する参照情報は nullable な TargetID のみとし、TargetID は HardLink の場合だけ設定する。HardLinkedFile を識別する追加フラグは設けない。TargetID が存在する場合は UUIDv4 として検証し、nil はゼロ UUID ではなく明示的な存在情報で表す。
+- Header は論理削除状態を示す `Deleted bool` を持ち、バイナリでは 0 / 1 の 1 byte として保存する。1 以外は不正 Header とする。起動時に Orchestration は `Deleted == true` の ObjectID をメモリ上の削除キューへ登録する。Header で追加する参照情報は nullable な TargetID のみとし、TargetID は HardLink の場合だけ設定する。HardLinkedFile を識別する追加フラグは設けない。TargetID が存在する場合は UUIDv4 として検証し、nil はゼロ UUID ではなく明示的な存在情報で表す。
 - リリースまでは、Header のバイナリ構造を変更しても `FormatVersion` は `0` のままとし、後方互換性の維持や旧形式の読み込み対応は行わない。`HeaderSize` は現在の構造に合わせて更新する。
 - HardLink の連鎖、Directory / Symlink を参照先とする HardLink、Directory 自体のハードリンクは認めない。HardLink は Directory ではなく、children を持つ親にはなれない。
 - ハードリンク作成時は、元の File の実体を HardLinkedFile として Namespace から切り離し、元の名前と新しい名前をそれぞれ HardLink Object として表現する。同じ HardLinkedFile を複数の HardLink が参照できる。
@@ -190,8 +190,9 @@ fuse/
 - I/O 層は指定された Storage 上の物理ファイル操作と Storage に関する低レベル情報の提供を担う。配置方針は判断しない。
 - ストライプ単位の書き込みは、対象ストライプの全チャンクの書き込みが完了した時点で上位層へ成功を返す。部分的なストライプ書き込みを成功として公開しない。
 - 読み込みは、要求されたデータを返せる状態になった時点で応答する。通常のやり取りの基本単位はストライプとする。
-- 有効バージョンの探索とバージョン更新は Distribution 層が担当する。有効性の判定は既存設計どおり grep に基づく。I/O 層は有効性を判断しない。
-- チャンクごとのエラー情報を Distribution 層で記録することは確定している。エラー情報の具体的な形式・保持方法、および記録した情報をどの層・処理でどのように利用するかは未決事項とする。
+- 有効バージョンの探索とバージョン更新は Distribution 層が担当する。有効バージョンは Distribution のインメモリ管理情報に保持された最新 Version を正とする。I/O 層は有効性を判断しない。
+- Distribution は要求された操作を実行し、成功時は結果、失敗時はエラーを返す。内部状態として管理するのは、Stripe ごとの Version 情報と Object の存在情報を基本とする。物理データの途中状態を有効状態として公開せず、処理途中の失敗で既存の有効状態を壊さない。
+- IO ごと・全体のエラーカウントおよび Stripe 単位の破損状態を Distribution 層の非公開フィールドで保持する。外部からの参照には公開 getter を使用する。エラーカウント等は揮発性とし、定期的にログ出力する。外部コマンド向けに取得 API を提供し、長期保存が必要な場合は外部ログ解析ツールを利用する。
 - ストライプの整合性確認と復旧は Distribution 内部の管理処理とし、`CheckStripe` / `RecoverStripe` のような公開関数として外部に提供しない。内部関数 `checkStripe` / `recoverStripe` などから必要に応じて実行する。外部から個別に管理・指示させない。
 - パリティ方式は XOR、NumParities=1 を前提とする。復元可能なのはデータチャンク1個の欠損まで。複数欠損や整合性不一致はエラーとする。
 - `restoreStripe` は方式別復元処理へのディスパッチを担い、Mirror / Parity それぞれの復元処理が方式固有の検証を行う。旧 StripeVersion へのフォールバックは方式別復元関数に混ぜず、読み込み・復元フロー側で扱う。
@@ -212,17 +213,44 @@ I/O の列挙結果には、Distribution が物理ファイルを識別して配
 
 ### 9.3 Distribution 層の関数一覧
 
-#### 公開 API 候補
+#### 公開 API
 
 | 関数 | 位置付け | 内容 |
 |---|---|---|
-| `New` | 候補 | I/O の `ListChunks` を使って全物理ファイルを同期的に解析し、ストライプ・チャンク・バージョン・配置情報をメモリに構築した Distribution インスタンスを返す。初期化に失敗した場合は error を返す |
-| `ListObjects` | 公開 API 候補（旧 `EnumerateHeaders` の置き換え） | Distribution が把握している ObjectID を列挙する。Header の読み出し・解析は行わない |
-| `ReadStripe` | 候補 | 指定ストライプの論理データを読み込み、必要に応じて復元する。Header を含むかどうかで処理を分けない |
-| `WriteStripe` | 候補 | Header を含むかどうかに関係なく、指定ストライプの論理データを配置方針に従って書き込む。全チャンクの書き込み完了後に成功を返す |
-| `DeleteStripe` | 候補・要確認 | 指定ストライプの削除。削除の単位や Header との関係は要確認 |
+| `New` | 公開 API | `NewRequest.IOs []*io.IO` を受け取り、スライスの index を IO の識別子として使用する。全 IO の `ListChunks` を走査し、読み込めた Stripe 情報と障害状態を Distribution インスタンスの非公開状態フィールドに構築する。外部からの参照には公開 getter を使用する。戻り値は初期化成功またはクリティカルなエラーのみとし、IO 単位・Stripe 単位の部分障害は戻り値ではなく、公開 getter を通じて参照できるようにする。利用可能な IO が 1 つもない場合はクリティカルな初期化エラーとする。 |
+| `ListObjects` | 公開 API | Distribution が把握している ObjectID を列挙する。Header の読み出し・解析は行わない |
+| `ReadStripe` | 公開 API | 指定 Stripe の論理データを読み込み、必要に応じて復元して返す。復元可能な欠損・破損は成功として扱い、WARNING ログと IO ごとのエラーカウントを記録する。復元不能な場合は上位層にデータ破損を表すエラーコードを返し、ERROR ログ、IO ごと・全体のエラーカウント、および Stripe 単位の破損状態を記録する |
+| `WriteStripe` | 公開 API | 配置方式（Mirror / XOR Parity とチャンク数）、IO index 配列、論理ストライプデータを受け取る。Chunk の種類・番号・分割・配置は Distribution が決定する。全 Chunk の書き込み成功後にのみ新 Version をインメモリ上で有効化する。IO index は重複せず有効範囲内であることを検証する |
+| `DeleteObject` | 公開 API | Orchestration から指定された Object の物理データを削除する。Header 以外の Stripe / Version を先に削除し、最後に Header を削除する |
+| `Cleanup` | 公開 API | 古い Version、無効な Stripe、不完全チャンクなど、Object 全体の論理削除とは別の不要データを整理する。削除対象の種類を bool フィールドで個別に指定する |
+| `GetErrorStats` | 公開 API | IO ごと・全体のエラーカウントなど、揮発性の診断状態を外部コマンドから取得する |
 
-Distribution の公開 API はストライプ単位を基本とする。Header 専用の読み書き API は設けず、Header を含むストライプも通常のストライプとして扱う。Orchestration はチャンク情報や StripeVersion の内部表現を直接操作しない。
+Distribution の公開 API は論理ストライプ単位の読み書き操作、ObjectID の列挙、および Object 単位の物理削除を提供する。Header 専用の読み書き API や `DeleteStripe` は設けない。Object の論理削除状態は Orchestration が管理し、物理削除は Orchestration からの明示的な `DeleteObject` 呼び出しで実行する。Distribution の `Cleanup` は Orchestration の `Cleanup` から呼び出され、論理削除済み Object の判定や ObjectID の選定は行わない。Distribution は Header の内容を解釈しない。
+
+#### 公開 API の共通契約・確定事項
+
+- 実行系 Request には `context.Context` を含める。
+- `NewRequest` は `IOs []*io.IO` を受け取る。IO の識別子は渡されたスライスの index とし、IO 自体に識別子を追加することは前提としない。
+- 同一の `*io.IO` インスタンスを複数回登録することは禁止する。物理ドライブや実体パスが同一かどうかまでは判定しない。`New` ではポインタの重複を検証し、IO index のリストを受け取る要求では index の重複・範囲を検証する。
+- Orchestration は利用する IO の index の集合だけを指定する。Chunk の種類・番号・パリティ・IO 内での配置は Distribution が決定する。
+- IO index の重複、範囲外指定、必要数を満たさない指定はエラーとする。
+- `New` は全 IO を走査し、正常に読み込めた Stripe 情報を構築する。IO へのアクセス段階で発生したエラーと、Stripe を認識した後にその Stripe のデータを読み込めなかったエラーを区別して Distribution インスタンスの非公開状態フィールドに保持し、公開 getter を通じて参照できるようにする。戻り値は初期化成功またはクリティカルなエラーのみとする。利用可能な IO が 1 つもない場合はクリティカルな初期化エラーとする。部分障害がシステム全体にとってクリティカルかどうかは Orchestration が公開状態を参照して判断する。
+- `ReadStripe` で指定 Stripe が存在しない場合はエラーを返す。復元可能な欠損・破損は復元して成功を返す。復元不能時は上位層に詳細な物理障害情報を露出せず、データ破損を表すエラーコードを返す。
+- `ReadStripe` で破損を検出した場合、修復に使用できる IO index の候補配列を受け取り、必要最低数以上の候補があることを検証したうえで、配列の先頭から順に書き込みを試みる。必要最低数は Mirror 方式では 1、XOR パリティ方式ではデータチャンク数とする。現時点では XOR 以外のパリティ方式は存在しない前提とする。候補の切り替え・再配置方針の判断は Orchestration が行い、Distribution は渡された順序に従って試行する。
+- エラー情報は IO ごとのカウントと全体カウントを持ち、Stripe 単位で破損状態を Distribution の非公開状態として保持する。復元可能な異常は WARNING、復元不能なデータ破損は ERROR として記録する。エラーカウント等の診断状態はメモリ上のみで保持し、定期的にログ出力する。永続化は行わず、外部コマンド向けの取得 API `GetErrorStats` を提供する。getter は内部の map / slice 等を直接変更できない値として返す。必要な長期保存は外部ログ解析ツールに委ねる。
+- `WriteStripeRequest` は配置方式の指定、書き込み先 IO index の配列、論理ストライプのデータ本体を受け取る。配置方式の指定には Mirror / XOR Parity の方式と必要なチャンク数（Mirror の複製数、Parity のデータチャンク数）を含める。Distribution はこの指定と IO index 配列に従ってチャンクを生成・配置する。
+- `WriteStripe` は新 Version の全 Chunk の物理書き込みが完了した場合にのみ、インメモリの最新 Version を更新する。途中失敗時は新 Version を有効化せず、既に物理的に書き込まれた不完全データは破損データとして残す。失敗を ERROR ログに記録し、呼び出し元へエラーを返す。
+- Distribution は `WriteStripe` 成功直後に旧 Version を自動削除しない。不要 Version の削除は `Cleanup` が担う。
+- Distribution 内部では同一トランザクションの処理を並列実行しない。トランザクション間の排他・調停は Orchestration の責務とし、Distribution 内部のロック機構は現時点では実装しない。
+- Object の論理削除状態と削除対象の管理は Orchestration が担当する。Distribution 側に削除済み状態を重複して保持したり、物理ファイル名などに別の削除マーカーを設けたりしない。起動時に Orchestration が Header を読み、`Deleted == true` の ObjectID をメモリ上の削除キューへ登録する。削除キューは Header から再構築し、別の永続マーカーは設けない。
+- Orchestration の `Cleanup` は、Header の `Deleted` フラグから起動時に再構築したメモリ上の削除キューを処理し、対象ごとに Distribution の `DeleteObject` を呼び出す。その後、Distribution の `Cleanup` を呼び出す。
+- Distribution は Header の内容・論理削除状態を解釈せず、`DeleteObject` で指定された Object の物理データを削除する。削除対象の選定や論理削除状態の判定は行わない。
+- `DeleteObject` は Header 以外の Stripe / Version を先に削除し、すべての非 Header データの削除が完了した場合に限り、最後に Header を削除する。途中で削除に失敗した場合は Header を残し、次回の Orchestration `Cleanup` で再試行できるようにする。Header 自身の削除に失敗した場合も同様に Header を残す。
+- 物理削除の個別失敗は論理削除の取り消しを意味しない。削除対象であることを Orchestration のメモリ上の状態に保持し、次回の Orchestration `Cleanup` で `DeleteObject` を再実行する。物理削除の成否と論理削除の成否を分離する。
+- Distribution の `Cleanup` は Object 全体の論理削除を実行せず、古い Version、無効な Stripe、WriteStripe 失敗時に残った不完全チャンクなどを整理する。これらの削除対象の種類は bool フィールドで個別に on/off 指定する。無効な Stripe はサルベージ目的で保持する場合があるため、常に削除する前提にしない。Version の有効性は Distribution のインメモリ管理情報にある最新 Version を正とする。
+- `Cleanup` は通常操作のフォールバック対象のみを削除する。トランザクション間の並行実行制御は Orchestration が担い、Distribution 内部ではロックを実装しない。
+- エラーの分類・判定は一箇所に集約し、その判定結果をログに記録する。ログ出力のために別のエラー判定を重複させない。上位層で同じ問題を重複してログ出力しない。
+- 処理途中で失敗した場合はその場で中断し、有効なインメモリ状態や既存の有効データを壊さない構造にする。物理的に残る不完全データは有効状態として扱わず、後続の Cleanup 対象にできるようにする。
 
 #### 内部処理候補
 
@@ -267,7 +295,8 @@ Distribution の公開 API はストライプ単位を基本とする。Header �
 | `Link` | 候補 | 既存ファイル実体への HardLink を作成する |
 | `Symlink` | 候補 | Symlink Object とリンク先パスデータを作成する |
 | `Readlink` | 候補 | Symlink のリンク先パスデータを取得する |
-| `Unlink` | 候補・責務要確認 | Object を削除する |
+| `Unlink` | 候補・責務要確認 | Namespace 上の名前を削除し、必要に応じて実体の論理削除状態を更新する |
+| `Cleanup` | 公開 API 候補 | メモリ上の状態から論理削除済み Object を特定し、各 Object に `Distribution.DeleteObject` を実行した後、`Distribution.Cleanup` を呼び出す |
 
 上記の公開 API 一覧は議論時点の候補であり、すべてが確定したわけではない。特に namespace 操作・属性操作の最終的な責務境界は README.md および今後の設計合意に従う。
 
@@ -293,16 +322,16 @@ FUSE 層の具体的な関数一覧は、この議論ではまだ整理してい
 
 - Storage 情報（一覧、容量、状態）を I/O 層から Orchestration 層へ提供する具体的な API とデータ型。
 - Orchestration が作成する配置計画の具体的な形式、および Distribution のストライプ構成・チャンク枠との対応付け。
-- Distribution の `DeleteStripe` の必要性・責務・呼び出し元。
-- Header の作成・更新・削除と、ストライプ書き込みの確定順序。
 - namespace 操作・属性操作（`Create`、`Unlink`、`GetAttr`、`SetAttr` 等）の最終的なレイヤー境界。
 - HardLinkedFile / HardLink の属性情報の保持場所と FUSE inode / st_nlink への対応。
 - 最後の HardLink 削除時の HardLinkedFile の解放条件、オープン中ファイルの寿命、および参照数の再構築方法。
 - ハードリンク作成・削除など複数 Object の永続化を伴う Namespace 操作の原子性とクラッシュ復旧手順。
 - root の一意性検証、および Namespace から到達できない Object を起動時にどう扱うか。
 - ストレージ障害・容量変化を踏まえた配置計画の再評価と、既存チャンクの再配置方針。
-- Distribution が記録するチャンクごとのエラー情報の具体的なデータ形式・保持方法、および記録情報の利用方法・利用主体。
-- ストライプ書き込みの原子性をクラッシュ時にも保証する具体的な確定・復旧手順。
+- `New` 時の利用可能 IO の判定基準（IO へのアクセスが成功したとみなす条件）と、非公開状態フィールドおよび getter の具体的な名前・戻り値の構造。
+- `GetErrorStats` の Request / Response の具体的なフィールド構成と、定期ログ出力の間隔・出力内容。getter が返す状態スナップショットの具体的な型・構造。
+- 上位層向けエラーコードの一覧と、内部診断情報との分離方法。
+- ストライプ書き込みの原子性をプロセス停止・電源断などのクラッシュ時にも保証する具体的な確定・復旧手順。
 
 ## 9. テスト
 

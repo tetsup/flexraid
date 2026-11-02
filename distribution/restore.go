@@ -46,12 +46,16 @@ func validateDistributionMethod(method distributionMethod) error {
 
 func validateChunks(chunks []chunkDataWithInfo, method distributionMethod) (map[chunkNo][]byte, error) {
 	var key stripeKeyInfo
+	var totalLength uint64
 	result := make(map[chunkNo][]byte, len(chunks))
 	for i, chunk := range chunks {
 		if i == 0 {
 			key = chunk.stripeKey
+			totalLength = chunk.totalLength
 		} else if chunk.stripeKey != key {
 			return nil, fmt.Errorf("%w: mixed stripe versions", errInvalidChunk)
+		} else if chunk.totalLength != totalLength {
+			return nil, fmt.Errorf("%w: inconsistent stripe lengths", errInvalidChunk)
 		}
 		if chunk.distributionMethod != method {
 			return nil, fmt.Errorf("%w: mixed distribution methods", errInvalidChunk)
@@ -90,8 +94,14 @@ func restoreMirror(chunks []chunkDataWithInfo, method distributionMethod) ([]byt
 		return nil, errInsufficientChunks
 	}
 	sort.Ints(indexes)
-	// Any available mirror replica contains the complete stripe.
-	return append([]byte(nil), indexed[chunkNo(indexes[0])]...), nil
+	// Every available mirror replica must agree; choosing one silently could hide corruption.
+	data := indexed[chunkNo(indexes[0])]
+	for _, index := range indexes[1:] {
+		if !bytes.Equal(data, indexed[chunkNo(index)]) {
+			return nil, errInconsistentParity
+		}
+	}
+	return append([]byte(nil), data...), nil
 }
 
 func restoreParity(chunks []chunkDataWithInfo, method distributionMethod) ([]byte, error) {
@@ -140,7 +150,11 @@ func restoreParity(chunks []chunkDataWithInfo, method distributionMethod) ([]byt
 			return nil, errInconsistentParity
 		}
 	}
-	return combineStripe(data), nil
+	result := combineStripe(data)
+	if totalLength := chunks[0].totalLength; totalLength > 0 && totalLength < uint64(len(result)) {
+		result = result[:totalLength]
+	}
+	return result, nil
 }
 
 func generateParity(chunks [][]byte) []byte {
