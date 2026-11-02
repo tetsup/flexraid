@@ -48,7 +48,7 @@ func New(request NewRequest) (NewResponse, error) {
 		ioErrors: make([]uint64, len(request.IOs)), ioFailures: make([]error, len(request.IOs)), orphans: make(map[shared.ObjectID][]chunkLocation)}
 	usable := 0
 	for index, layer := range d.ios {
-		_, err := layer.ListChunks(physicalio.ListChunksRequest{Context: ctx, Callback: func(entry physicalio.ScanEntry) error {
+		scanResult, err := layer.ListChunks(physicalio.ListChunksRequest{Context: ctx, Callback: func(entry physicalio.ScanEntry) error {
 			if entry.Error != nil { d.recordIOError(index, entry.Error); d.orphans[entry.Key.ObjectID]=append(d.orphans[entry.Key.ObjectID],chunkLocation{ioIndex:index,key:entry.Key}); return nil }
 			method, no, methodErr := methodFromLayout(entry.Key.LayoutID)
 			if methodErr != nil { d.recordIOError(index, methodErr); d.orphans[entry.Key.ObjectID]=append(d.orphans[entry.Key.ObjectID],chunkLocation{ioIndex:index,key:entry.Key}); return nil }
@@ -64,7 +64,8 @@ func New(request NewRequest) (NewResponse, error) {
 			version.chunks[no] = chunkLocation{ioIndex: index, key: entry.Key, data: payload, totalLength: total}
 			return nil
 		}})
-		if err != nil { d.ioFailures[index] = err; d.recordIOError(index, err); continue }
+		if ctx.Err()!=nil{return NewResponse{},ctx.Err()}
+		if err != nil { d.ioFailures[index] = err; d.recordIOError(index, err); if scanResult.Entries>0{usable++}; continue }
 		usable++
 	}
 	if usable == 0 { return NewResponse{}, errNoUsableIO }
