@@ -23,7 +23,7 @@ type WriteStripeResponse struct { Version storage.StripeVersion }
 func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteStripeResponse, err error) {
 	started:=time.Now()
 	defer func(){logOperation(d.logger,"WriteStripe",started,err,"object_id",request.ObjectID.String(),"stripe_id",request.StripeID,"bytes",len(request.Data))}()
-	if err=request.Context.Err();err!=nil{return response,err}
+	if err=request.Context.Err();err!=nil{savePartial();return response,err}
 	method,err:=request.Layout.method();if err!=nil{return response,err}
 	required:=int(method.numChunks)
 	if method.distributionType==distributionParity{required++}
@@ -40,6 +40,7 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 		chunks[parityFlag]=generateParity(orderedDataChunks(chunks,method.numChunks))
 	}
 	written:=make(map[chunkNo]chunkLocation,len(chunks))
+	savePartial:=func(){if len(written)>0{versions:=d.versions[key];if versions==nil{versions=make(map[storage.StripeVersion]*versionInfo);d.versions[key]=versions};versions[version]=&versionInfo{method:method,chunks:cloneChunks(written),recoverable:false}}}
 	for _,no:=range orderedChunkNos(chunks){
 		if err=request.Context.Err();err!=nil{return response,err}
 		ioIndex:=request.IOIndexes[int(no.index())]
@@ -47,7 +48,7 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 		fileKey:=storage.FileKey{ObjectID:request.ObjectID,StripeVersion:version,LayoutID:layoutFor(method,no),StripeID:request.StripeID}
 		_,writeErr:=d.ios[ioIndex].Write(physicalio.WriteRequest{Context:request.Context,Key:fileKey,Data:encodeChunk(uint64(len(request.Data)),chunks[no])})
 		if writeErr!=nil{
-			if len(written)>0 { versions:=d.versions[key]; if versions==nil { versions=make(map[storage.StripeVersion]*versionInfo); d.versions[key]=versions }; versions[version]=&versionInfo{method:method,chunks:cloneChunks(written),recoverable:false} }
+			savePartial()
 			err=fmt.Errorf("write chunk %d to I/O %d: %w",no,ioIndex,writeErr);d.logger.Error("stripe write failed","object_id",request.ObjectID.String(),"stripe_id",request.StripeID,"io_index",ioIndex,"chunk",no,"error",err);return response,err}
 		written[no]=chunkLocation{ioIndex:ioIndex,key:fileKey,data:append([]byte(nil),chunks[no]...),totalLength:uint64(len(request.Data))}
 	}
