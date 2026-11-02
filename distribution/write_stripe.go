@@ -30,7 +30,7 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 	if err=validateIOIndexes(request.IOIndexes,len(d.ios),required);err!=nil{return response,err}
 	if method.distributionType==distributionMirror && len(request.IOIndexes)<int(method.numChunks){return response,errInsufficientChunks}
 	if method.distributionType==distributionParity && len(request.IOIndexes)<required{return response,errInsufficientChunks}
-	key:=stripeKeyInfo{objectID:request.ObjectID,stripeID:request.StripeID}
+	key:=stripeIDKey{objectID:request.ObjectID,stripeID:request.StripeID}
 	version:=d.nextVersion(key)
 	chunks:=make(map[chunkNo][]byte,required)
 	if method.distributionType==distributionMirror{
