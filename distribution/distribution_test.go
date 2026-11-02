@@ -3,8 +3,7 @@ package distribution
 import (
 	"bytes"
 	"context"
-	"os"
-	"path/filepath"
+		"path/filepath"
 	"testing"
 
 	physicalio "github.com/tetsup/flexraid/io"
@@ -15,7 +14,7 @@ import (
 func testObjectID() shared.ObjectID { return shared.ObjectID{0x12,0x34,0x56,0x78,0x9a,0xbc,0x4d,0xef,0x8a,0xbc,0x12,0x34,0x56,0x78,0x90,0xab} }
 func makeIOs(t *testing.T,count int)[]*physicalio.IO{
 	t.Helper();result:=make([]*physicalio.IO,count)
-	for i:=range result{result[i]=physicalio.New(physicalio.NewRequest{Root:filepath.Join(t.TempDir(),"disk")}).Layer}
+	for i:=range result{result[i]=physicalio.New(physicalio.NewRequest{Root:t.TempDir()}).Layer}
 	return result
 }
 
@@ -51,6 +50,4 @@ func TestDeleteObjectRemovesHeaderLastAndAllVersions(t *testing.T){
 	if result.DeletedFiles!=8{t.Fatalf("deleted %d files",result.DeletedFiles)}
 	objects,err:=created.Layer.ListObjects(ListObjectsRequest{Context:ctx});if err!=nil{t.Fatal(err)}
 	if len(objects.ObjectIDs)!=0{t.Fatalf("objects remain: %v",objects.ObjectIDs)}
-	for _,root:=range []string{} {_=root}
-	_ = os.ErrNotExist
 }
