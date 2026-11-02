@@ -19,7 +19,15 @@ func(d *Distribution)Cleanup(request CleanupRequest)(response CleanupResponse,er
 	if request.IncompleteChunks || request.InvalidStripes {
 		for objectID,locations:=range d.orphans {
 			remaining:=locations[:0]
-			for _,location:=range locations { if err=request.Context.Err();err!=nil{return response,err}; _,deleteErr:=d.ios[location.ioIndex].Delete(physicalio.DeleteRequest{Context:request.Context,Key:location.key}); if deleteErr!=nil&&!errors.Is(deleteErr,os.ErrNotExist){remaining=append(remaining,location);err=deleteErr;return response,err}; response.DeletedFiles++ }
+			for _,location:=range locations {
+				current:=d.objects[objectID][location.key.StripeID]
+				remove:=request.InvalidStripes||request.IncompleteChunks||(request.OldVersions&&(current==nil||location.key.StripeVersion<current.version))
+				if !remove{remaining=append(remaining,location);continue}
+				if err=request.Context.Err();err!=nil{return response,err}
+				_,deleteErr:=d.ios[location.ioIndex].Delete(physicalio.DeleteRequest{Context:request.Context,Key:location.key})
+				if deleteErr!=nil&&!errors.Is(deleteErr,os.ErrNotExist){remaining=append(remaining,location);d.orphans[objectID]=remaining;err=deleteErr;return response,err}
+				response.DeletedFiles++
+			}
 			if len(remaining)==0{delete(d.orphans,objectID)}else{d.orphans[objectID]=remaining}
 		}
 	}
