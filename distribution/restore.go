@@ -46,12 +46,16 @@ func validateDistributionMethod(method distributionMethod) error {
 
 func validateChunks(chunks []chunkDataWithInfo, method distributionMethod) (map[chunkNo][]byte, error) {
 	var key stripeKeyInfo
+	var totalLength uint64
 	result := make(map[chunkNo][]byte, len(chunks))
 	for i, chunk := range chunks {
 		if i == 0 {
 			key = chunk.stripeKey
+			totalLength = chunk.totalLength
 		} else if chunk.stripeKey != key {
 			return nil, fmt.Errorf("%w: mixed stripe versions", errInvalidChunk)
+		} else if chunk.totalLength != totalLength {
+			return nil, fmt.Errorf("%w: inconsistent stripe lengths", errInvalidChunk)
 		}
 		if chunk.distributionMethod != method {
 			return nil, fmt.Errorf("%w: mixed distribution methods", errInvalidChunk)
