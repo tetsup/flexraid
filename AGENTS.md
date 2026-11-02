@@ -238,6 +238,7 @@ Distribution の公開 API は論理ストライプ単位の読み書き操作�
 - `ReadStripe` で指定 Stripe が存在しない場合はエラーを返す。復元可能な欠損・破損は復元して成功を返す。復元不能時は上位層に詳細な物理障害情報を露出せず、データ破損を表すエラーコードを返す。
 - `ReadStripe` で破損を検出した場合、修復に使用できる IO index の候補配列を受け取り、必要最低数以上の候補があることを検証したうえで、配列の先頭から順に書き込みを試みる。必要最低数は Mirror 方式では 1、XOR パリティ方式ではデータチャンク数とする。現時点では XOR 以外のパリティ方式は存在しない前提とする。候補の切り替え・再配置方針の判断は Orchestration が行い、Distribution は渡された順序に従って試行する。
 - エラー情報は IO ごとのカウントと全体カウントを持ち、Stripe 単位で破損状態を Distribution の非公開状態として保持する。復元可能な異常は WARNING、復元不能なデータ破損は ERROR として記録する。エラーカウント等の診断状態はメモリ上のみで保持し、定期的にログ出力する。永続化は行わず、外部コマンド向けの取得 API `GetErrorStats` を提供する。getter は内部の map / slice 等を直接変更できない値として返す。必要な長期保存は外部ログ解析ツールに委ねる。
+- `WriteStripeRequest` は配置方式の指定、書き込み先 IO index の配列、論理ストライプのデータ本体を受け取る。配置方式の指定には Mirror / XOR Parity の方式と必要なチャンク数（Mirror の複製数、Parity のデータチャンク数）を含める。Distribution はこの指定と IO index 配列に従ってチャンクを生成・配置する。
 - `WriteStripe` は新 Version の全 Chunk の物理書き込みが完了した場合にのみ、インメモリの最新 Version を更新する。途中失敗時は新 Version を有効化せず、既に物理的に書き込まれた不完全データは破損データとして残す。失敗を ERROR ログに記録し、呼び出し元へエラーを返す。
 - Distribution は `WriteStripe` 成功直後に旧 Version を自動削除しない。不要 Version の削除は `Cleanup` が担う。
 - Distribution 内部では同一トランザクションの処理を並列実行しない。トランザクション間の排他・調停は Orchestration の責務とし、Distribution 内部のロック機構は現時点では実装しない。
