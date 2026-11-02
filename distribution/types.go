@@ -36,7 +36,7 @@ type distributionMethod struct {
 }
 
 func (layout Layout) method() (distributionMethod, error) {
-	if layout.NumChunks == 0 || layout.NumChunks > 8 {
+	if layout.NumChunks == 0 || (layout.Type == LayoutMirror && layout.NumChunks > 9) || (layout.Type == LayoutParity && layout.NumChunks > 8) {
 		return distributionMethod{}, errInvalidDistributionMethod
 	}
 	switch layout.Type {
