@@ -9,6 +9,7 @@ import (
 
 	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/pkg/shared"
+	"github.com/tetsup/flexraid/storage"
 )
 
 type DeleteObjectRequest struct { Context context.Context; ObjectID shared.ObjectID }
@@ -19,30 +20,32 @@ func(d *Distribution)DeleteObject(request DeleteObjectRequest)(response DeleteOb
 	if err=request.Context.Err();err!=nil{return response,err}
 	orphans:=d.orphans[request.ObjectID]
 	for _,location:=range orphans { if location.key.StripeID!=0 { _,deleteErr:=d.ios[location.ioIndex].Delete(physicalio.DeleteRequest{Context:request.Context,Key:location.key}); if deleteErr!=nil&&!errors.Is(deleteErr,os.ErrNotExist){err=deleteErr;return response,err}; response.DeletedFiles++ } }
-	keys:=make([]stripeKeyInfo,0)
-	for key:=range d.versions{if key.objectID==request.ObjectID&&key.stripeID!=0{keys=append(keys,key)}}
-	sort.Slice(keys,func(i,j int)bool{if keys[i].stripeID!=keys[j].stripeID{return keys[i].stripeID<keys[j].stripeID};return keys[i].stripeVersion<keys[j].stripeVersion})
-	for _,key:=range keys{
+	type targetVersion struct{ key stripeIDKey; version storage.StripeVersion }
+	keys:=make([]targetVersion,0)
+	for key,versions:=range d.versions{if key.objectID==request.ObjectID&&key.stripeID!=0{for version:=range versions{keys=append(keys,targetVersion{key:key,version:version})}}}
+	sort.Slice(keys,func(i,j int)bool{if keys[i].key.stripeID!=keys[j].key.stripeID{return keys[i].key.stripeID<keys[j].key.stripeID};return keys[i].version<keys[j].version})
+	for _,target:=range keys{
 		if err=request.Context.Err();err!=nil{return response,err}
-		version:=d.versions[key][key.stripeVersion]
+		version:=d.versions[target.key][target.version]
 		for _,location:=range version.chunks{
 			_,deleteErr:=d.ios[location.ioIndex].Delete(physicalio.DeleteRequest{Context:request.Context,Key:location.key})
 			if deleteErr!=nil&&!errors.Is(deleteErr,os.ErrNotExist){err=deleteErr;return response,err}
 			response.DeletedFiles++
 		}
-		delete(d.versions[key],key.stripeVersion);if len(d.versions[key])==0{delete(d.versions,key)}
+		delete(d.versions[target.key],target.version);if len(d.versions[target.key])==0{delete(d.versions,target.key)}
 	}
 	for _,location:=range orphans { if location.key.StripeID==0 { _,deleteErr:=d.ios[location.ioIndex].Delete(physicalio.DeleteRequest{Context:request.Context,Key:location.key}); if deleteErr!=nil&&!errors.Is(deleteErr,os.ErrNotExist){err=deleteErr;return response,err}; response.DeletedFiles++ } }
 	delete(d.orphans,request.ObjectID)
-	headerKeys:=make([]stripeKeyInfo,0)
-	for key:=range d.versions{if key.objectID==request.ObjectID&&key.stripeID==0{headerKeys=append(headerKeys,key)}}
-	for _,key:=range headerKeys{
-		for _,location:=range d.versions[key][key.stripeVersion].chunks{
+	headerKeys:=make([]targetVersion,0)
+	for key,versions:=range d.versions{if key.objectID==request.ObjectID&&key.stripeID==0{for version:=range versions{headerKeys=append(headerKeys,targetVersion{key:key,version:version})}}}
+	sort.Slice(headerKeys,func(i,j int)bool{return headerKeys[i].version<headerKeys[j].version})
+	for _,target:=range headerKeys{
+		for _,location:=range d.versions[target.key][target.version].chunks{
 			_,deleteErr:=d.ios[location.ioIndex].Delete(physicalio.DeleteRequest{Context:request.Context,Key:location.key})
 			if deleteErr!=nil&&!errors.Is(deleteErr,os.ErrNotExist){err=deleteErr;return response,err}
 			response.DeletedFiles++
 		}
-		delete(d.versions,key)
+		delete(d.versions[target.key],target.version);if len(d.versions[target.key])==0{delete(d.versions,target.key)}
 	}
 	delete(d.objects,request.ObjectID)
 	return response,nil
