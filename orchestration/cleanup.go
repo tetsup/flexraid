@@ -30,7 +30,7 @@ func(layer *Orchestration)Cleanup(request CleanupRequest)(response CleanupRespon
 		delete(layer.headers,objectID)
 		response.DeletedObjects++
 	}
-	result,cleanupErr:=layer.distribution.Cleanup(distribution.CleanupRequest{Context:request.Context,OldVersions:request.OldVersions,InvalidStripes:request.InvalidStripes,IncompleteChunks:request.IncompleteChunks})
+	result,cleanupErr:=layer.distribution.Cleanup(distribution.CleanupRequest{Context:ctx,OldVersions:request.OldVersions,InvalidStripes:request.InvalidStripes,IncompleteChunks:request.IncompleteChunks})
 	response.DeletedFiles+=result.DeletedFiles
 	return response,errors.Join(err,cleanupErr)
 }
