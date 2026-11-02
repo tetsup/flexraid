@@ -140,7 +140,11 @@ func restoreParity(chunks []chunkDataWithInfo, method distributionMethod) ([]byt
 			return nil, errInconsistentParity
 		}
 	}
-	return combineStripe(data), nil
+	result := combineStripe(data)
+	if totalLength := chunks[0].totalLength; totalLength > 0 && totalLength < uint64(len(result)) {
+		result = result[:totalLength]
+	}
+	return result, nil
 }
 
 func generateParity(chunks [][]byte) []byte {
