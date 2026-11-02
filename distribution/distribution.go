@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log/slog"
-	"time"
+	"os"
 
 	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/pkg/shared"
@@ -30,7 +30,7 @@ type chunkLocation struct { ioIndex int; key storage.FileKey; data []byte; total
 
 func New(request NewRequest) (NewResponse, error) {
 	logger := request.Logger
-	if logger == nil { logger = slog.New(slog.NewTextHandler(nil, &slog.HandlerOptions{Level: request.LogLevel})) }
+	if logger == nil { logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: request.LogLevel})) }
 	if len(request.IOs) == 0 { return NewResponse{}, errNoUsableIO }
 	seen := make(map[*physicalio.IO]struct{}, len(request.IOs))
 	for _, layer := range request.IOs {
