@@ -17,10 +17,11 @@ func (layer *IO) walkFiles(ctx context.Context, include func(storage.FileKey)boo
   key,err:=storage.ParseFileKey(filepath.ToSlash(relative))
   if err!=nil{layer.logger.Warn("skipping file with invalid name","path",relative,"error",err);return nil}
   if !include(key){return nil}
+  count++
   data,readErr:=os.ReadFile(path)
   if readErr!=nil { if callbackErr:=callback(ScanEntry{Key:key,Error:readErr});callbackErr!=nil{return callbackErr}; return nil }
   if err:=callback(ScanEntry{Key:key,Data:data});err!=nil{return err}
-  count++;return nil
+  return nil
  })
  return count,err
 }
