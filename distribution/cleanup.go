@@ -49,7 +49,12 @@ func(d *Distribution)Cleanup(request CleanupRequest)(response CleanupResponse,er
 		}
 		if len(versions)==0{delete(d.versions,key)}
 		if current!=nil{
-			if selected:=d.versions[key][current.version];selected==nil{delete(d.objects[key.objectID],key.stripeID)}
+			if selected:=d.versions[key][current.version];selected==nil{
+				var latest storage.StripeVersion
+				var latestInfo *versionInfo
+				for versionNo,candidate:=range d.versions[key]{if candidate.recoverable&&(latestInfo==nil||versionNo>latest){latest,latestInfo=versionNo,candidate}}
+				if latestInfo==nil{delete(d.objects[key.objectID],key.stripeID)}else{d.objects[key.objectID][key.stripeID]=&stripeInfo{version:latest,method:latestInfo.method,chunks:cloneChunks(latestInfo.chunks)}}
+			}
 		}
 	}
 	return response,nil
