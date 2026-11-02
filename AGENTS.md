@@ -241,7 +241,7 @@ Distribution の公開 API は論理ストライプ単位の読み書き操作�
 - `WriteStripe` は新 Version の全 Chunk の物理書き込みが完了した場合にのみ、インメモリの最新 Version を更新する。途中失敗時は新 Version を有効化せず、既に物理的に書き込まれた不完全データは破損データとして残す。失敗を ERROR ログに記録し、呼び出し元へエラーを返す。
 - Distribution は `WriteStripe` 成功直後に旧 Version を自動削除しない。不要 Version の削除は `Cleanup` が担う。
 - Distribution 内部では同一トランザクションの処理を並列実行しない。トランザクション間の排他・調停は Orchestration の責務とし、Distribution 内部のロック機構は現時点では実装しない。
-- Object の論理削除状態と削除対象の管理は Orchestration が担当する。論理削除の確定に必要な Header の更新は通常の `WriteStripe` で行い、書き込みに失敗した場合は論理削除を確定しない。
+- Object の論理削除状態と削除対象の管理は Orchestration が担当する。Distribution 側に削除済み状態を重複して保持したり、物理ファイル名などに別の削除マーカーを設けたりしない。削除済み判定に使う Orchestration の状態の永続化・再構築方法は、既存の Namespace / Header の状態管理と整合させて別途定義する。
 - Orchestration の `Cleanup` は、Orchestration が保持するメモリ上の状態から論理削除済み Object を特定し、対象ごとに Distribution の `DeleteObject` を呼び出す。その後、Distribution の `Cleanup` を呼び出す。
 - Distribution は Header の内容・論理削除状態を解釈せず、`DeleteObject` で指定された Object の物理データを削除する。削除対象の選定や論理削除状態の判定は行わない。
 - `DeleteObject` は Header 以外の Stripe / Version を先に削除し、すべての非 Header データの削除が完了した場合に限り、最後に Header を削除する。途中で削除に失敗した場合は Header を残し、次回の Orchestration `Cleanup` で再試行できるようにする。Header 自身の削除に失敗した場合も同様に Header を残す。
@@ -322,6 +322,7 @@ FUSE 層の具体的な関数一覧は、この議論ではまだ整理してい
 - Storage 情報（一覧、容量、状態）を I/O 層から Orchestration 層へ提供する具体的な API とデータ型。
 - Orchestration が作成する配置計画の具体的な形式、および Distribution のストライプ構成・チャンク枠との対応付け。
 - namespace 操作・属性操作（`Create`、`Unlink`、`GetAttr`、`SetAttr` 等）の最終的なレイヤー境界。
+- Object の論理削除状態を Orchestration のメモリ上でどのように保持し、再起動時にどの永続情報から再構築するかの詳細。
 - HardLinkedFile / HardLink の属性情報の保持場所と FUSE inode / st_nlink への対応。
 - 最後の HardLink 削除時の HardLinkedFile の解放条件、オープン中ファイルの寿命、および参照数の再構築方法。
 - ハードリンク作成・削除など複数 Object の永続化を伴う Namespace 操作の原子性とクラッシュ復旧手順。
