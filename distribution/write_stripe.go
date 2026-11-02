@@ -68,7 +68,6 @@ func validateIOIndexes(indexes []int,total,minimum int)error{
 func splitStripe(data []byte,count uint8)map[chunkNo][]byte{
 	result:=make(map[chunkNo][]byte,count)
 	size:=(len(data)+int(count)-1)/int(count)
-	if size==0{size=1}
 	for i:=0;i<int(count);i++{chunk:=make([]byte,size);start:=i*size;if start<len(data){end:=start+size;if end>len(data){end=len(data)};copy(chunk,data[start:end])};result[chunkNo(i)]=chunk}
 	return result
 }
