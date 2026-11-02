@@ -97,3 +97,11 @@ func TestChunkNoEncoding(t *testing.T) {
 		t.Fatalf("data=%08b parity=%08b", data, parity)
 	}
 }
+
+func TestRestoreMirrorRejectsInconsistentReplicas(t *testing.T) {
+	method := distributionMethod{distributionType: distributionMirror, numChunks: 3}
+	_, err := restoreStripe(testChunks(method, map[chunkNo][]byte{0: []byte("good"), 2: []byte("bad")}))
+	if !errors.Is(err, errInconsistentParity) {
+		t.Fatalf("got %v, want errInconsistentParity", err)
+	}
+}
