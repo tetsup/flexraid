@@ -106,7 +106,7 @@ func TestHeaderUnmarshalRejectsInvalidLengthAndPadding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	namePaddingOffset := 2 + 16 + 1 + 16 + 1 + 1 + 16 + 2 + len([]byte("メディア.bin"))
+	namePaddingOffset := 2 + 1 + 16 + 1 + 16 + 1 + 1 + 16 + 2 + len([]byte("メディア.bin"))
 	b[namePaddingOffset] = 1
 	if err := h.UnmarshalBinary(b); !errors.Is(err, errInvalidHeader) {
 		t.Fatalf("got %v", err)
@@ -118,7 +118,7 @@ func TestHeaderUnmarshalRejectsInvalidUUIDv4(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data[2+6] = (data[2+6] & 0x0f) | 0x10
+	data[2+1+6] = (data[2+6] & 0x0f) | 0x10
 	var got header
 	if err := got.UnmarshalBinary(data); !errors.Is(err, errInvalidHeader) {
 		t.Fatalf("got %v, want errInvalidHeader", err)
@@ -151,7 +151,7 @@ func TestHeaderRejectsInvalidParentPresence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data[2+16] = 2
+	data[2+1+16] = 2
 	var got header
 	if err := got.UnmarshalBinary(data); !errors.Is(err, errInvalidHeader) {
 		t.Fatalf("got %v, want errInvalidHeader", err)
@@ -166,7 +166,7 @@ func TestHeaderRejectsInvalidTargetPresence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	targetPresenceOffset := 2 + 16 + 1 + 16 + 1
+	targetPresenceOffset := 2 + 1 + 16 + 1 + 16 + 1
 	data[targetPresenceOffset] = 2
 	var got header
 	if err := got.UnmarshalBinary(data); !errors.Is(err, errInvalidHeader) {
@@ -182,7 +182,7 @@ func TestHeaderRejectsInvalidTargetUUID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	targetIDOffset := 2 + 16 + 1 + 16 + 1 + 1
+	targetIDOffset := 2 + 1 + 16 + 1 + 16 + 1 + 1
 	data[targetIDOffset+6] = (data[targetIDOffset+6] & 0x0f) | 0x10
 	var got header
 	if err := got.UnmarshalBinary(data); !errors.Is(err, errInvalidHeader) {
@@ -195,7 +195,7 @@ func TestHeaderRejectsInvalidParentUUID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data[2+16+1+6] = (data[2+16+1+6] & 0x0f) | 0x10
+	data[2+1+16+1+6] = (data[2+16+1+6] & 0x0f) | 0x10
 	var got header
 	if err := got.UnmarshalBinary(data); !errors.Is(err, errInvalidHeader) {
 		t.Fatalf("got %v, want errInvalidHeader", err)
