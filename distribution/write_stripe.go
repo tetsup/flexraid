@@ -2,7 +2,6 @@ package distribution
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -47,7 +46,9 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 		if no.isParity(){ioIndex=request.IOIndexes[int(method.numChunks)]}
 		fileKey:=storage.FileKey{ObjectID:request.ObjectID,StripeVersion:version,LayoutID:layoutFor(method,no),StripeID:request.StripeID}
 		_,writeErr:=d.ios[ioIndex].Write(physicalio.WriteRequest{Context:request.Context,Key:fileKey,Data:encodeChunk(uint64(len(request.Data)),chunks[no])})
-		if writeErr!=nil{err=fmt.Errorf("write chunk %d to I/O %d: %w",no,ioIndex,writeErr);d.logger.Error("stripe write failed","object_id",request.ObjectID.String(),"stripe_id",request.StripeID,"io_index",ioIndex,"chunk",no,"error",err);return response,err}
+		if writeErr!=nil{
+			if len(written)>0 { versions:=d.versions[key]; if versions==nil { versions=make(map[storage.StripeVersion]*versionInfo); d.versions[key]=versions }; versions[version]=&versionInfo{method:method,chunks:cloneChunks(written),recoverable:false} }
+			err=fmt.Errorf("write chunk %d to I/O %d: %w",no,ioIndex,writeErr);d.logger.Error("stripe write failed","object_id",request.ObjectID.String(),"stripe_id",request.StripeID,"io_index",ioIndex,"chunk",no,"error",err);return response,err}
 		written[no]=chunkLocation{ioIndex:ioIndex,key:fileKey,data:append([]byte(nil),chunks[no]...),totalLength:uint64(len(request.Data))}
 	}
 	versions:=d.versions[key];if versions==nil{versions=make(map[storage.StripeVersion]*versionInfo);d.versions[key]=versions}
@@ -73,4 +74,3 @@ func splitStripe(data []byte,count uint8)map[chunkNo][]byte{
 }
 func orderedDataChunks(chunks map[chunkNo][]byte,count uint8)[][]byte{result:=make([][]byte,count);for i:=range result{result[i]=chunks[chunkNo(i)]};return result}
 func orderedChunkNos(chunks map[chunkNo][]byte)[]chunkNo{result:=make([]chunkNo,0,len(chunks));for no:=range chunks{result=append(result,no)};for i:=0;i<len(result);i++{for j:=i+1;j<len(result);j++{if result[j]<result[i]{result[i],result[j]=result[j],result[i]}}};return result}
-var _ = errors.Is
