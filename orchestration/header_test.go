@@ -118,7 +118,7 @@ func TestHeaderUnmarshalRejectsInvalidUUIDv4(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data[2+1+6] = (data[2+6] & 0x0f) | 0x10
+	data[2+1+6] = (data[2+1+6] & 0x0f) | 0x10
 	var got header
 	if err := got.UnmarshalBinary(data); !errors.Is(err, errInvalidHeader) {
 		t.Fatalf("got %v, want errInvalidHeader", err)
@@ -195,7 +195,7 @@ func TestHeaderRejectsInvalidParentUUID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data[2+1+16+1+6] = (data[2+16+1+6] & 0x0f) | 0x10
+	data[2+1+16+1+6] = (data[2+1+16+1+6] & 0x0f) | 0x10
 	var got header
 	if err := got.UnmarshalBinary(data); !errors.Is(err, errInvalidHeader) {
 		t.Fatalf("got %v, want errInvalidHeader", err)
