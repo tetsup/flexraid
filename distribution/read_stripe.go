@@ -73,7 +73,7 @@ func(d *Distribution)repairStripe(request ReadStripeRequest,info *stripeInfo,mis
 		for next<len(request.RepairIOIndexes){
 			index:=request.RepairIOIndexes[next];next++
 			_,err:=d.ios[index].Write(physicalio.WriteRequest{Context:request.Context,Key:fileKey,Data:encodeChunk(uint64(len(data)),payload)})
-			if err==nil{info.chunks[no]=chunkLocation{ioIndex:index,key:fileKey,data:payload,totalLength:uint64(len(data))};written=true;break}
+			if err==nil{location:=chunkLocation{ioIndex:index,key:fileKey,data:payload,totalLength:uint64(len(data))};info.chunks[no]=location;stripeKey:=stripeIDKey{objectID:request.ObjectID,stripeID:request.StripeID};if versions:=d.versions[stripeKey];versions!=nil{if version:=versions[info.version];version!=nil{version.chunks[no]=location}};written=true;break}
 			if !errors.Is(err,os.ErrExist){d.recordIOError(index,err)}
 		}
 		if !written{return}
