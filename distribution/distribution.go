@@ -12,7 +12,7 @@ import (
 	"github.com/tetsup/flexraid/storage"
 )
 
-type NewRequest struct { IOs []*physicalio.IO; LogLevel slog.Level; Logger *slog.Logger }
+type NewRequest struct { Context context.Context; IOs []*physicalio.IO; LogLevel slog.Level; Logger *slog.Logger }
 type NewResponse struct { Layer *Distribution }
 
 type Distribution struct {
@@ -32,6 +32,8 @@ type chunkLocation struct { ioIndex int; key storage.FileKey; data []byte; total
 func New(request NewRequest) (NewResponse, error) {
 	logger := request.Logger
 	if logger == nil { logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: request.LogLevel})) }
+	ctx:=request.Context
+	if ctx==nil{ctx=context.Background()}
 	if len(request.IOs) == 0 { return NewResponse{}, errNoUsableIO }
 	seen := make(map[*physicalio.IO]struct{}, len(request.IOs))
 	for _, layer := range request.IOs {
@@ -45,7 +47,7 @@ func New(request NewRequest) (NewResponse, error) {
 		ioErrors: make([]uint64, len(request.IOs)), ioFailures: make([]error, len(request.IOs)), orphans: make(map[shared.ObjectID][]chunkLocation)}
 	usable := 0
 	for index, layer := range d.ios {
-		_, err := layer.ListChunks(physicalio.ListChunksRequest{Context: context.Background(), Callback: func(entry physicalio.ScanEntry) error {
+		_, err := layer.ListChunks(physicalio.ListChunksRequest{Context: ctx, Callback: func(entry physicalio.ScanEntry) error {
 			if entry.Error != nil { d.recordIOError(index, entry.Error); d.orphans[entry.Key.ObjectID]=append(d.orphans[entry.Key.ObjectID],chunkLocation{ioIndex:index,key:entry.Key}); return nil }
 			method, no, methodErr := methodFromLayout(entry.Key.LayoutID)
 			if methodErr != nil { d.recordIOError(index, methodErr); d.orphans[entry.Key.ObjectID]=append(d.orphans[entry.Key.ObjectID],chunkLocation{ioIndex:index,key:entry.Key}); return nil }
