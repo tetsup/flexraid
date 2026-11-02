@@ -3,7 +3,6 @@ package distribution
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"time"
 
@@ -80,4 +79,3 @@ func(d *Distribution)repairStripe(request ReadStripeRequest,info *stripeInfo,mis
 	info.corrupted=false
 }
 func containsChunk(chunks []chunkNo,target chunkNo)bool{for _,no:=range chunks{if no==target{return true}};return false}
-var _ = fmt.Sprintf
