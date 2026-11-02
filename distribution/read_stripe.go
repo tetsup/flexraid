@@ -23,7 +23,7 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest)(response ReadStripe
 	started:=time.Now()
 	defer func(){logOperation(d.logger,"ReadStripe",started,err,"object_id",request.ObjectID.String(),"stripe_id",request.StripeID,"bytes",len(response.Data))}()
 	if err=request.Context.Err();err!=nil{return response,err}
-	stripes:=d.objects[request.ObjectID];if stripes==nil||stripes[request.StripeID]==nil{return response,errStripeNotFound}
+	stripes:=d.objects[request.ObjectID];if stripes==nil||stripes[request.StripeID]==nil{return response,ErrStripeNotFound}
 	info:=stripes[request.StripeID]
 	key:=stripeKeyInfo{objectID:request.ObjectID,stripeID:request.StripeID,stripeVersion:info.version}
 	chunks:=make([]chunkDataWithInfo,0,len(info.chunks))
@@ -41,7 +41,7 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest)(response ReadStripe
 	if restoreErr!=nil{
 		info.corrupted=true;d.totalErrors++
 		d.logger.Error("stripe data corrupted","object_id",request.ObjectID.String(),"stripe_id",request.StripeID,"error",restoreErr)
-		return response,errDataCorrupted
+		return response,ErrDataCorrupted
 	}
 	response.Data=restored;response.Version=info.version
 	if len(missing)>0{
@@ -67,6 +67,8 @@ func(d *Distribution)repairStripe(request ReadStripeRequest,info *stripeInfo,mis
 	for _,no:=range missing{
 		payload,ok:=chunkData[no];if !ok{continue}
 		fileKey:=storage.FileKey{ObjectID:request.ObjectID,StripeVersion:info.version,LayoutID:layoutFor(info.method,no),StripeID:request.StripeID}
+		oldLocation,hadOld:=info.chunks[no]
+		if hadOld { _,removeErr:=d.ios[oldLocation.ioIndex].Delete(physicalio.DeleteRequest{Context:request.Context,Key:oldLocation.key}); if removeErr!=nil&&!errors.Is(removeErr,os.ErrNotExist){d.recordIOError(oldLocation.ioIndex,removeErr);return} }
 		written:=false
 		for next<len(request.RepairIOIndexes){
 			index:=request.RepairIOIndexes[next];next++
