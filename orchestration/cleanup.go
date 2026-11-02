@@ -2,6 +2,7 @@ package orchestration
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/tetsup/flexraid/distribution"
@@ -22,14 +23,14 @@ func(layer *Orchestration)Cleanup(request CleanupRequest)(response CleanupRespon
 		if err=request.Context.Err();err!=nil{return response,err}
 		result,deleteErr:=layer.distribution.DeleteObject(distribution.DeleteObjectRequest{Context:request.Context,ObjectID:objectID})
 		response.DeletedFiles+=result.DeletedFiles
-		if deleteErr!=nil{err=deleteErr;return response,err}
+		if deleteErr!=nil{err=errors.Join(err,deleteErr);continue}
 		delete(layer.deletionQueue,objectID)
 		delete(layer.headers,objectID)
 		response.DeletedObjects++
 	}
-	result,err:=layer.distribution.Cleanup(distribution.CleanupRequest{Context:request.Context,OldVersions:request.OldVersions,InvalidStripes:request.InvalidStripes,IncompleteChunks:request.IncompleteChunks})
+	result,cleanupErr:=layer.distribution.Cleanup(distribution.CleanupRequest{Context:request.Context,OldVersions:request.OldVersions,InvalidStripes:request.InvalidStripes,IncompleteChunks:request.IncompleteChunks})
 	response.DeletedFiles+=result.DeletedFiles
-	return response,err
+	return response,errors.Join(err,cleanupErr)
 }
 
 func logCleanup(logger interface{ Debug(string,...any) },started time.Time,err error,response CleanupResponse){
