@@ -16,6 +16,13 @@ type CleanupResponse struct { DeletedFiles int }
 func(d *Distribution)Cleanup(request CleanupRequest)(response CleanupResponse,err error){
 	started:=time.Now();defer func(){logOperation(d.logger,"Cleanup",started,err,"deleted_files",response.DeletedFiles)}()
 	if err=request.Context.Err();err!=nil{return response,err}
+	if request.IncompleteChunks || request.InvalidStripes {
+		for objectID,locations:=range d.orphans {
+			remaining:=locations[:0]
+			for _,location:=range locations { if err=request.Context.Err();err!=nil{return response,err}; _,deleteErr:=d.ios[location.ioIndex].Delete(physicalio.DeleteRequest{Context:request.Context,Key:location.key}); if deleteErr!=nil&&!errors.Is(deleteErr,os.ErrNotExist){remaining=append(remaining,location);err=deleteErr;return response,err}; response.DeletedFiles++ }
+			if len(remaining)==0{delete(d.orphans,objectID)}else{d.orphans[objectID]=remaining}
+		}
+	}
 	for key,versions:=range d.versions{
 		current:=d.objects[key.objectID][key.stripeID]
 		for versionNo,version:=range versions{
