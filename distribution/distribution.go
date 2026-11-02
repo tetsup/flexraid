@@ -122,3 +122,11 @@ func decodeChunk(data []byte)(uint64,[]byte,error){if len(data)<8{return 0,nil,e
 func cloneChunks(source map[chunkNo]chunkLocation)map[chunkNo]chunkLocation{result:=make(map[chunkNo]chunkLocation,len(source));for no,loc:=range source{loc.data=append([]byte(nil),loc.data...);result[no]=loc};return result}
 func(d *Distribution)recordIOError(index int,err error){if index>=0&&index<len(d.ioErrors){d.ioErrors[index]++};d.totalErrors++;d.logger.Warn("distribution I/O error","io_index",index,"error",err)}
 func(d *Distribution)nextVersion(key stripeIDKey)storage.StripeVersion{var max storage.StripeVersion;for version:=range d.versions[key]{if version>max{max=version}};for _,location:=range d.orphans[key.objectID]{if location.key.StripeID==key.stripeID&&location.key.StripeVersion>max{max=location.key.StripeVersion}};return max+1}
+
+
+func expectedChunkNos(method distributionMethod) []chunkNo {
+	result:=make([]chunkNo,0,int(method.numChunks)+int(method.numParities))
+	for index:=uint8(0);index<method.numChunks;index++{result=append(result,chunkNo(index))}
+	for index:=uint8(0);index<method.numParities;index++{result=append(result,parityFlag|chunkNo(index))}
+	return result
+}
