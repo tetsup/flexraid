@@ -57,8 +57,8 @@ func New(request NewRequest) (NewResponse, error) {
 			key := stripeIDKey{objectID: entry.Key.ObjectID, stripeID: entry.Key.StripeID}
 			versions := d.versions[key]
 			if versions == nil { versions = make(map[storage.StripeVersion]*versionInfo); d.versions[key] = versions }
-			version := versions[key.stripeVersion]
-			if version == nil { version = &versionInfo{method: method, chunks: make(map[chunkNo]chunkLocation)}; versions[key.stripeVersion] = version }
+			version := versions[entry.Key.StripeVersion]
+			if version == nil { version = &versionInfo{method: method, chunks: make(map[chunkNo]chunkLocation)}; versions[entry.Key.StripeVersion] = version }
 			if version.method != method { d.recordIOError(index, errInvalidChunk); d.orphans[entry.Key.ObjectID]=append(d.orphans[entry.Key.ObjectID],chunkLocation{ioIndex:index,key:entry.Key}); return nil }
 			if _, exists := version.chunks[no]; exists { d.recordIOError(index, fmt.Errorf("%w: duplicate chunk", errInvalidChunk)); d.orphans[entry.Key.ObjectID]=append(d.orphans[entry.Key.ObjectID],chunkLocation{ioIndex:index,key:entry.Key}); return nil }
 			version.chunks[no] = chunkLocation{ioIndex: index, key: entry.Key, data: payload, totalLength: total}
