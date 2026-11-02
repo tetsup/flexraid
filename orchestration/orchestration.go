@@ -31,7 +31,7 @@ func New(request NewRequest)(NewResponse,error){
 	objects,err:=request.Distribution.ListObjects(distribution.ListObjectsRequest{Context:ctx})
 	if err!=nil{return NewResponse{},err}
 	for _,objectID:=range objects.ObjectIDs{
-		read,readErr:=request.Distribution.ReadStripe(distribution.ReadStripeRequest{Context:request.Context,ObjectID:objectID,StripeID:0})
+		read,readErr:=request.Distribution.ReadStripe(distribution.ReadStripeRequest{Context:ctx,ObjectID:objectID,StripeID:0})
 		if readErr!=nil{return NewResponse{},fmt.Errorf("read object header %s: %w",objectID.String(),readErr)}
 		if len(read.Data)<headerSize{return NewResponse{},fmt.Errorf("%w: header stripe too short for %s",errInvalidHeader,objectID.String())}
 		var objectHeader header
