@@ -19,12 +19,13 @@ type Distribution struct {
 	ios []*physicalio.IO
 	logger *slog.Logger
 	objects map[shared.ObjectID]map[storage.StripeID]*stripeInfo
-	versions map[stripeKeyInfo]map[storage.StripeVersion]*versionInfo
+	versions map[stripeIDKey]map[storage.StripeVersion]*versionInfo
 	ioErrors []uint64
 	totalErrors uint64
 	ioFailures []error
 	orphans map[shared.ObjectID][]chunkLocation
 }
+type stripeIDKey struct { objectID shared.ObjectID; stripeID storage.StripeID }
 type stripeInfo struct { version storage.StripeVersion; method distributionMethod; chunks map[chunkNo]chunkLocation; corrupted bool }
 type versionInfo struct { method distributionMethod; chunks map[chunkNo]chunkLocation; recoverable bool }
 type chunkLocation struct { ioIndex int; key storage.FileKey; data []byte; totalLength uint64 }
@@ -43,7 +44,7 @@ func New(request NewRequest) (NewResponse, error) {
 	}
 	d := &Distribution{ios: append([]*physicalio.IO(nil), request.IOs...), logger: logger,
 		objects: make(map[shared.ObjectID]map[storage.StripeID]*stripeInfo),
-		versions: make(map[stripeKeyInfo]map[storage.StripeVersion]*versionInfo),
+		versions: make(map[stripeIDKey]map[storage.StripeVersion]*versionInfo),
 		ioErrors: make([]uint64, len(request.IOs)), ioFailures: make([]error, len(request.IOs)), orphans: make(map[shared.ObjectID][]chunkLocation)}
 	usable := 0
 	for index, layer := range d.ios {
@@ -53,7 +54,7 @@ func New(request NewRequest) (NewResponse, error) {
 			if methodErr != nil { d.recordIOError(index, methodErr); d.orphans[entry.Key.ObjectID]=append(d.orphans[entry.Key.ObjectID],chunkLocation{ioIndex:index,key:entry.Key}); return nil }
 			total, payload, decodeErr := decodeChunk(entry.Data)
 			if decodeErr != nil { d.recordIOError(index, decodeErr); d.orphans[entry.Key.ObjectID]=append(d.orphans[entry.Key.ObjectID],chunkLocation{ioIndex:index,key:entry.Key}); return nil }
-			key := stripeKeyInfo{objectID: entry.Key.ObjectID, stripeID: entry.Key.StripeID, stripeVersion: entry.Key.StripeVersion}
+			key := stripeIDKey{objectID: entry.Key.ObjectID, stripeID: entry.Key.StripeID}
 			versions := d.versions[key]
 			if versions == nil { versions = make(map[storage.StripeVersion]*versionInfo); d.versions[key] = versions }
 			version := versions[key.stripeVersion]
@@ -73,7 +74,7 @@ func New(request NewRequest) (NewResponse, error) {
 		for versionNo, version := range versions {
 			chunks := make([]chunkDataWithInfo, 0, len(version.chunks))
 			for no, location := range version.chunks {
-				chunks = append(chunks, chunkDataWithInfo{stripeKey:key, distributionMethod:version.method, chunkNo:no, data:location.data, totalLength:location.totalLength})
+				chunks = append(chunks, chunkDataWithInfo{stripeKey:stripeKeyInfo{objectID:key.objectID,stripeID:key.stripeID,stripeVersion:versionNo}, distributionMethod:version.method, chunkNo:no, data:location.data, totalLength:location.totalLength})
 			}
 			if _, err := restoreStripe(chunks); err != nil { continue }
 			version.recoverable = true
@@ -119,4 +120,4 @@ func encodeChunk(total uint64,data []byte) []byte { result:=make([]byte,8+len(da
 func decodeChunk(data []byte)(uint64,[]byte,error){if len(data)<8{return 0,nil,errInvalidChunk};return binary.BigEndian.Uint64(data[:8]),append([]byte(nil),data[8:]...),nil}
 func cloneChunks(source map[chunkNo]chunkLocation)map[chunkNo]chunkLocation{result:=make(map[chunkNo]chunkLocation,len(source));for no,loc:=range source{loc.data=append([]byte(nil),loc.data...);result[no]=loc};return result}
 func(d *Distribution)recordIOError(index int,err error){if index>=0&&index<len(d.ioErrors){d.ioErrors[index]++};d.totalErrors++;d.logger.Warn("distribution I/O error","io_index",index,"error",err)}
-func(d *Distribution)nextVersion(key stripeKeyInfo)storage.StripeVersion{var max storage.StripeVersion;for version:=range d.versions[key]{if version>max{max=version}};for _,location:=range d.orphans[key.objectID]{if location.key.StripeID==key.stripeID&&location.key.StripeVersion>max{max=location.key.StripeVersion}};return max+1}
+func(d *Distribution)nextVersion(key stripeIDKey)storage.StripeVersion{var max storage.StripeVersion;for version:=range d.versions[key]{if version>max{max=version}};for _,location:=range d.orphans[key.objectID]{if location.key.StripeID==key.stripeID&&location.key.StripeVersion>max{max=location.key.StripeVersion}};return max+1}
