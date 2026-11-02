@@ -28,7 +28,9 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest)(response ReadStripe
 	key:=stripeKeyInfo{objectID:request.ObjectID,stripeID:request.StripeID,stripeVersion:info.version}
 	chunks:=make([]chunkDataWithInfo,0,len(info.chunks))
 	missing:=make([]chunkNo,0)
-	for no,location:=range info.chunks{
+	for _,no:=range expectedChunkNos(info.method){
+		location,exists:=info.chunks[no]
+		if !exists{missing=append(missing,no);continue}
 		read,readErr:=d.ios[location.ioIndex].Read(physicalio.ReadRequest{Context:request.Context,Key:location.key})
 		if readErr!=nil{
 			d.recordIOError(location.ioIndex,readErr);missing=append(missing,no);continue
