@@ -19,7 +19,7 @@ func(d *Distribution)Cleanup(request CleanupRequest)(response CleanupResponse,er
 	for key,versions:=range d.versions{
 		current:=d.objects[key.objectID][key.stripeID]
 		for versionNo,version:=range versions{
-			_,isCurrent:=currentVersion(current,versionNo)
+			isCurrent:=currentVersion(current,versionNo)
 			removeVersion:=request.OldVersions&&!isCurrent||request.InvalidStripes&&!version.recoverable
 			if !removeVersion&&!request.IncompleteChunks{continue}
 			for no,location:=range version.chunks{
@@ -39,4 +39,4 @@ func(d *Distribution)Cleanup(request CleanupRequest)(response CleanupResponse,er
 	}
 	return response,nil
 }
-func currentVersion(info *stripeInfo,version storage.StripeVersion)(bool,bool){return info!=nil&&info.version==version,info!=nil&&info.version==version}
+func currentVersion(info *stripeInfo,version storage.StripeVersion)bool{return info!=nil&&info.version==version}
