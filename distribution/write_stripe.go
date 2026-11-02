@@ -23,7 +23,7 @@ type WriteStripeResponse struct { Version storage.StripeVersion }
 func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteStripeResponse, err error) {
 	started:=time.Now()
 	defer func(){logOperation(d.logger,"WriteStripe",started,err,"object_id",request.ObjectID.String(),"stripe_id",request.StripeID,"bytes",len(request.Data))}()
-	if err=request.Context.Err();err!=nil{savePartial();return response,err}
+	if err=request.Context.Err();err!=nil{return response,err}
 	method,err:=request.Layout.method();if err!=nil{return response,err}
 	required:=int(method.numChunks)
 	if method.distributionType==distributionParity{required++}
@@ -42,7 +42,7 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 	written:=make(map[chunkNo]chunkLocation,len(chunks))
 	savePartial:=func(){if len(written)>0{versions:=d.versions[key];if versions==nil{versions=make(map[storage.StripeVersion]*versionInfo);d.versions[key]=versions};versions[version]=&versionInfo{method:method,chunks:cloneChunks(written),recoverable:false}}}
 	for _,no:=range orderedChunkNos(chunks){
-		if err=request.Context.Err();err!=nil{return response,err}
+		if err=request.Context.Err();err!=nil{savePartial();return response,err}
 		ioIndex:=request.IOIndexes[int(no.index())]
 		if no.isParity(){ioIndex=request.IOIndexes[int(method.numChunks)]}
 		fileKey:=storage.FileKey{ObjectID:request.ObjectID,StripeVersion:version,LayoutID:layoutFor(method,no),StripeID:request.StripeID}
