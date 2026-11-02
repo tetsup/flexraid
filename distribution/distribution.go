@@ -23,6 +23,7 @@ type Distribution struct {
 	ioErrors []uint64
 	totalErrors uint64
 	ioFailures []error
+	orphans map[shared.ObjectID][]chunkLocation
 }
 type stripeInfo struct { version storage.StripeVersion; method distributionMethod; chunks map[chunkNo]chunkLocation; corrupted bool }
 type versionInfo struct { method distributionMethod; chunks map[chunkNo]chunkLocation; recoverable bool }
@@ -41,22 +42,22 @@ func New(request NewRequest) (NewResponse, error) {
 	d := &Distribution{ios: append([]*physicalio.IO(nil), request.IOs...), logger: logger,
 		objects: make(map[shared.ObjectID]map[storage.StripeID]*stripeInfo),
 		versions: make(map[stripeKeyInfo]map[storage.StripeVersion]*versionInfo),
-		ioErrors: make([]uint64, len(request.IOs)), ioFailures: make([]error, len(request.IOs))}
+		ioErrors: make([]uint64, len(request.IOs)), ioFailures: make([]error, len(request.IOs)), orphans: make(map[shared.ObjectID][]chunkLocation)}
 	usable := 0
 	for index, layer := range d.ios {
 		_, err := layer.ListChunks(physicalio.ListChunksRequest{Context: context.Background(), Callback: func(entry physicalio.ScanEntry) error {
-			if entry.Error != nil { d.recordIOError(index, entry.Error); return nil }
+			if entry.Error != nil { d.recordIOError(index, entry.Error); d.orphans[entry.Key.ObjectID]=append(d.orphans[entry.Key.ObjectID],chunkLocation{ioIndex:index,key:entry.Key}); return nil }
 			method, no, methodErr := methodFromLayout(entry.Key.LayoutID)
-			if methodErr != nil { d.recordIOError(index, methodErr); return nil }
+			if methodErr != nil { d.recordIOError(index, methodErr); d.orphans[entry.Key.ObjectID]=append(d.orphans[entry.Key.ObjectID],chunkLocation{ioIndex:index,key:entry.Key}); return nil }
 			total, payload, decodeErr := decodeChunk(entry.Data)
-			if decodeErr != nil { d.recordIOError(index, decodeErr); return nil }
+			if decodeErr != nil { d.recordIOError(index, decodeErr); d.orphans[entry.Key.ObjectID]=append(d.orphans[entry.Key.ObjectID],chunkLocation{ioIndex:index,key:entry.Key}); return nil }
 			key := stripeKeyInfo{objectID: entry.Key.ObjectID, stripeID: entry.Key.StripeID, stripeVersion: entry.Key.StripeVersion}
 			versions := d.versions[key]
 			if versions == nil { versions = make(map[storage.StripeVersion]*versionInfo); d.versions[key] = versions }
 			version := versions[key.stripeVersion]
 			if version == nil { version = &versionInfo{method: method, chunks: make(map[chunkNo]chunkLocation)}; versions[key.stripeVersion] = version }
-			if version.method != method { d.recordIOError(index, errInvalidChunk); return nil }
-			if _, exists := version.chunks[no]; exists { d.recordIOError(index, fmt.Errorf("%w: duplicate chunk", errInvalidChunk)); return nil }
+			if version.method != method { d.recordIOError(index, errInvalidChunk); d.orphans[entry.Key.ObjectID]=append(d.orphans[entry.Key.ObjectID],chunkLocation{ioIndex:index,key:entry.Key}); return nil }
+			if _, exists := version.chunks[no]; exists { d.recordIOError(index, fmt.Errorf("%w: duplicate chunk", errInvalidChunk)); d.orphans[entry.Key.ObjectID]=append(d.orphans[entry.Key.ObjectID],chunkLocation{ioIndex:index,key:entry.Key}); return nil }
 			version.chunks[no] = chunkLocation{ioIndex: index, key: entry.Key, data: payload, totalLength: total}
 			return nil
 		}})
