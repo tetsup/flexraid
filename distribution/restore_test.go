@@ -485,7 +485,6 @@ func TestRestoreParityDoesNotMutateInputChunks(t *testing.T) {
 	}
 }
 
-
 func TestRestoreStripe(t *testing.T) {
 	mirror := distributionMethod{distributionType: distributionMirror, numChunks: 2}
 	parity := distributionMethod{distributionType: distributionParity, numChunks: 2, numParities: 1}
