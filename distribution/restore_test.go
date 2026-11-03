@@ -67,11 +67,14 @@ func TestRestoreParityRejectsTwoMissingChunks(t *testing.T) {
 	}
 }
 
-func TestRestoreParityRejectsInconsistentParity(t *testing.T) {
+func TestRestoreParityDoesNotValidateAvailableDataAgainstParity(t *testing.T) {
 	method := distributionMethod{distributionType: distributionParity, numChunks: 2, numParities: 1}
-	_, err := restoreStripe(testChunks(method, map[chunkNo][]byte{0: []byte("a"), 1: []byte("b"), parityFlag: []byte("x")}))
-	if !errors.Is(err, errInconsistentParity) {
-		t.Fatalf("got %v", err)
+	got, err := restoreStripe(testChunks(method, map[chunkNo][]byte{0: []byte("a"), 1: []byte("b"), parityFlag: []byte("x")}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !bytes.Equal(got, []byte("ab")) {
+		t.Fatalf("got %q, want %q", got, []byte("ab"))
 	}
 }
 
