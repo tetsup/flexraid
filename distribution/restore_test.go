@@ -602,3 +602,70 @@ func TestRestoreParityDoesNotMutateInputChunks(t *testing.T) {
 		t.Fatalf("restoreParity mutated parity input: got %q, want %q", chunks[2].data, before)
 	}
 }
+
+func TestRestoreStripeDispatch(t *testing.T) {
+	mirror := distributionMethod{distributionType: distributionMirror, numChunks: 2}
+	parity := distributionMethod{distributionType: distributionParity, numChunks: 2, numParities: 1}
+
+	tests := []struct {
+		name      string
+		chunks    []chunkDataWithInfo
+		want      []byte
+		wantErr   error
+	}{
+		{
+			name: "dispatches mirror",
+			chunks: testChunks(mirror, map[chunkNo][]byte{1: []byte("m")}),
+			want: []byte("m"),
+		},
+		{
+			name: "dispatches parity",
+			chunks: testChunks(parity, map[chunkNo][]byte{0: []byte("p0"), 1: []byte("p1")}),
+			want: []byte("p0p1"),
+		},
+		{
+			name: "empty chunks",
+			wantErr: errInsufficientChunks,
+		},
+		{
+			name: "invalid method configuration",
+			chunks: testChunks(distributionMethod{distributionType: distributionMirror}, map[chunkNo][]byte{0: []byte("x")}),
+			wantErr: errInvalidDistributionMethod,
+		},
+		{
+			name: "unknown distribution type",
+			chunks: testChunks(distributionMethod{distributionType: distributionType(255), numChunks: 1}, map[chunkNo][]byte{0: []byte("x")}),
+			wantErr: errInvalidDistributionMethod,
+		},
+		{
+			name: "malformed chunk identity is returned by selected restore",
+			chunks: func() []chunkDataWithInfo {
+				chunks := testChunks(mirror, map[chunkNo][]byte{0: []byte("x"), 1: []byte("y")})
+				chunks[1].stripeKey.stripeVersion++
+				return chunks
+			}(),
+			wantErr: errInvalidChunk,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := restoreStripe(tt.chunks)
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("got error %v, want %v", err, tt.wantErr)
+				}
+				if got != nil {
+					t.Fatalf("got result %q on error, want nil", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !bytes.Equal(got, tt.want) {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
