@@ -180,3 +180,66 @@ func TestValidateDistributionMethod(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateChunks(t *testing.T) {
+	method := distributionMethod{distributionType: distributionParity, numChunks: 2, numParities: 1}
+	valid := testChunks(method, map[chunkNo][]byte{
+		0: []byte("first"),
+		1: []byte("second"),
+		parityFlag: []byte("parity"),
+	})
+
+	tests := []struct {
+		name    string
+		chunks  []chunkDataWithInfo
+		method  distributionMethod
+		wantErr bool
+	}{
+		{name: "valid data and parity chunks", chunks: valid, method: method},
+		{name: "empty input", chunks: nil, method: method, wantErr: true},
+		{name: "mixed stripe identity", chunks: func() []chunkDataWithInfo {
+			chunks := append([]chunkDataWithInfo(nil), valid...)
+			chunks[1].stripeKey.stripeVersion++
+			return chunks
+		}(), method: method, wantErr: true},
+		{name: "mixed total lengths", chunks: func() []chunkDataWithInfo {
+			chunks := append([]chunkDataWithInfo(nil), valid...)
+			chunks[1].totalLength++
+			return chunks
+		}(), method: method, wantErr: true},
+		{name: "mixed distribution methods", chunks: func() []chunkDataWithInfo {
+			chunks := append([]chunkDataWithInfo(nil), valid...)
+			chunks[1].distributionMethod.numChunks++
+			return chunks
+		}(), method: method, wantErr: true},
+		{name: "duplicate chunk number", chunks: func() []chunkDataWithInfo {
+			chunks := append([]chunkDataWithInfo(nil), valid...)
+			chunks[1].chunkNo = chunks[0].chunkNo
+			return chunks
+		}(), method: method, wantErr: true},
+		{name: "parity chunk in mirror method", chunks: testChunks(distributionMethod{distributionType: distributionMirror, numChunks: 2}, map[chunkNo][]byte{parityFlag: []byte("p")}), method: distributionMethod{distributionType: distributionMirror, numChunks: 2}, wantErr: true},
+		{name: "parity index out of range", chunks: testChunks(method, map[chunkNo][]byte{parityFlag | 1: []byte("p")}), method: method, wantErr: true},
+		{name: "data index out of range", chunks: testChunks(method, map[chunkNo][]byte{2: []byte("extra")}), method: method, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := validateChunks(tt.chunks, tt.method)
+			if tt.wantErr {
+				if !errors.Is(err, errInvalidChunk) {
+					t.Fatalf("got error %v, want %v", err, errInvalidChunk)
+				}
+				if got != nil {
+					t.Fatalf("got result %#v on invalid input, want nil", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(got) != len(tt.chunks) {
+				t.Fatalf("got %d chunks, want %d", len(got), len(tt.chunks))
+			}
+		})
+	}
+}
