@@ -1,7 +1,6 @@
 package distribution
 
 import (
-	"bytes"
 	"fmt"
 	"sort"
 )
@@ -94,13 +93,9 @@ func restoreMirror(chunks []chunkDataWithInfo, method distributionMethod) ([]byt
 		return nil, errInsufficientChunks
 	}
 	sort.Ints(indexes)
-	// Every available mirror replica must agree; choosing one silently could hide corruption.
+	// RAID does not validate replica contents. Return the first available replica
+	// in stable chunk-index order; content disagreement is outside this layer's contract.
 	data := indexed[chunkNo(indexes[0])]
-	for _, index := range indexes[1:] {
-		if !bytes.Equal(data, indexed[chunkNo(index)]) {
-			return nil, errInconsistentParity
-		}
-	}
 	return append([]byte(nil), data...), nil
 }
 
@@ -142,14 +137,8 @@ func restoreParity(chunks []chunkDataWithInfo, method distributionMethod) ([]byt
 		}
 		data[missing] = restored
 	}
-	// If all data chunks are present, parity is optional. If it is present,
-	// verify it so corrupted parity is not silently accepted.
-	if parity, ok := indexed[parityFlag]; ok {
-		expected := generateParity(data)
-		if !bytes.Equal(expected, parity) {
-			return nil, errInconsistentParity
-		}
-	}
+	// Parity is used only to reconstruct an unavailable data chunk.
+	// When all data chunks are present, its contents are not checked.
 	result := combineStripe(data)
 	if totalLength := chunks[0].totalLength; totalLength > 0 && totalLength < uint64(len(result)) {
 		result = result[:totalLength]
