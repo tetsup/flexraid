@@ -330,3 +330,151 @@ func TestRestoreMirrorReturnsCopy(t *testing.T) {
 		t.Fatalf("restoreMirror result aliases source data: %q", chunks[0].data)
 	}
 }
+
+func TestRestoreParity(t *testing.T) {
+	method := distributionMethod{distributionType: distributionParity, numChunks: 3, numParities: 1}
+	data := [][]byte{[]byte("abc"), []byte("def"), []byte("ghi")}
+	parity := generateParity(data)
+
+	tests := []struct {
+		name    string
+		chunks  []chunkDataWithInfo
+		method  distributionMethod
+		want    []byte
+		wantErr error
+	}{
+		{
+			name: "all data chunks with valid parity",
+			chunks: testChunks(method, map[chunkNo][]byte{0: data[0], 1: data[1], 2: data[2], parityFlag: parity}),
+			method: method,
+			want: []byte("abcdefghi"),
+		},
+		{
+			name: "all data chunks without parity",
+			chunks: testChunks(method, map[chunkNo][]byte{0: data[0], 1: data[1], 2: data[2]}),
+			method: method,
+			want: []byte("abcdefghi"),
+		},
+		{
+			name: "recover missing first data chunk",
+			chunks: testChunks(method, map[chunkNo][]byte{1: data[1], 2: data[2], parityFlag: parity}),
+			method: method,
+			want: []byte("abcdefghi"),
+		},
+		{
+			name: "recover missing middle data chunk",
+			chunks: testChunks(method, map[chunkNo][]byte{0: data[0], 2: data[2], parityFlag: parity}),
+			method: method,
+			want: []byte("abcdefghi"),
+		},
+		{
+			name: "recover missing last data chunk",
+			chunks: testChunks(method, map[chunkNo][]byte{0: data[0], 1: data[1], parityFlag: parity}),
+			method: method,
+			want: []byte("abcdefghi"),
+		},
+		{
+			name: "missing data and parity",
+			chunks: testChunks(method, map[chunkNo][]byte{0: data[0], 2: data[2]}),
+			method: method,
+			wantErr: errInsufficientChunks,
+		},
+		{
+			name: "two missing data chunks",
+			chunks: testChunks(method, map[chunkNo][]byte{0: data[0], parityFlag: parity}),
+			method: method,
+			wantErr: errTooManyMissingChunks,
+		},
+		{
+			name: "inconsistent parity when all data exists",
+			chunks: testChunks(method, map[chunkNo][]byte{0: data[0], 1: data[1], 2: data[2], parityFlag: []byte("bad")}),
+			method: method,
+			wantErr: errInconsistentParity,
+		},
+		{
+			name: "invalid distribution method",
+			chunks: testChunks(distributionMethod{distributionType: distributionParity, numChunks: 0, numParities: 1}, map[chunkNo][]byte{0: []byte("x")}),
+			method: distributionMethod{distributionType: distributionParity, numChunks: 0, numParities: 1},
+			wantErr: errInvalidDistributionMethod,
+		},
+		{
+			name: "wrong distribution type",
+			chunks: testChunks(distributionMethod{distributionType: distributionMirror, numChunks: 1}, map[chunkNo][]byte{0: []byte("x")}),
+			method: distributionMethod{distributionType: distributionMirror, numChunks: 1},
+			wantErr: errInvalidDistributionMethod,
+		},
+		{
+			name: "malformed chunk identity",
+			chunks: func() []chunkDataWithInfo {
+				chunks := testChunks(method, map[chunkNo][]byte{0: data[0], 1: data[1], 2: data[2]})
+				chunks[1].stripeKey.stripeVersion++
+				return chunks
+			}(),
+			method: method,
+			wantErr: errInvalidChunk,
+		},
+		{
+			name: "invalid parity chunk index",
+			chunks: testChunks(method, map[chunkNo][]byte{0: data[0], 1: data[1], 2: data[2], parityFlag | 1: parity}),
+			method: method,
+			wantErr: errInvalidChunk,
+		},
+		{
+			name: "invalid data chunk index",
+			chunks: testChunks(method, map[chunkNo][]byte{0: data[0], 1: data[1], 3: data[2]}),
+			method: method,
+			wantErr: errInvalidChunk,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := restoreParity(tt.chunks, tt.method)
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("got error %v, want %v", err, tt.wantErr)
+				}
+				if got != nil {
+					t.Fatalf("got result %q on error, want nil", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !bytes.Equal(got, tt.want) {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRestoreParityTrimsToTotalLength(t *testing.T) {
+	method := distributionMethod{distributionType: distributionParity, numChunks: 2, numParities: 1}
+	chunks := testChunks(method, map[chunkNo][]byte{0: []byte("abc"), 1: []byte("def")})
+	chunks[0].totalLength = 5
+	chunks[1].totalLength = 5
+
+	got, err := restoreParity(chunks, method)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, []byte("abcde")) {
+		t.Fatalf("got %q, want %q", got, []byte("abcde"))
+	}
+}
+
+func TestRestoreParityDoesNotMutateInputChunks(t *testing.T) {
+	method := distributionMethod{distributionType: distributionParity, numChunks: 3, numParities: 1}
+	data := [][]byte{[]byte("abc"), []byte("def"), []byte("ghi")}
+	parity := generateParity(data)
+	chunks := testChunks(method, map[chunkNo][]byte{0: data[0], 2: data[2], parityFlag: parity})
+	before := append([]byte(nil), chunks[2].data...)
+
+	if _, err := restoreParity(chunks, method); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(chunks[2].data, before) {
+		t.Fatalf("restoreParity mutated parity input: got %q, want %q", chunks[2].data, before)
+	}
+}
