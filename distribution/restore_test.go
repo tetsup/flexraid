@@ -455,6 +455,71 @@ func TestRestoreParity(t *testing.T) {
 	}
 }
 
+func TestGenerateParity(t *testing.T) {
+	tests := []struct {
+		name   string
+		chunks [][]byte
+		want   []byte
+	}{
+		{
+			name: "multiple equal-length chunks",
+			chunks: [][]byte{
+				{0x01, 0x02, 0x03},
+				{0x10, 0x20, 0x30},
+				{0x11, 0x22, 0x33},
+			},
+			want: []byte{0x00, 0x00, 0x00},
+		},
+		{
+			name: "chunks with different lengths",
+			chunks: [][]byte{
+				{0x01, 0x02, 0x03},
+				{0x10},
+			},
+			want: []byte{0x11, 0x02, 0x03},
+		},
+		{
+			name:   "single chunk",
+			chunks: [][]byte{{0xaa, 0xbb}},
+			want:   []byte{0xaa, 0xbb},
+		},
+		{
+			name:   "empty chunks",
+			chunks: [][]byte{{}, {}},
+			want:   []byte{},
+		},
+		{
+			name:   "no chunks",
+			chunks: nil,
+			want:   []byte{},
+		},
+		{
+			name:   "nil and non-empty chunks",
+			chunks: [][]byte{nil, {0x01, 0x02}},
+			want:   []byte{0x01, 0x02},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			before := make([][]byte, len(tt.chunks))
+			for i, chunk := range tt.chunks {
+				before[i] = append([]byte(nil), chunk...)
+			}
+
+			got := generateParity(tt.chunks)
+			if !bytes.Equal(got, tt.want) {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+			for i, chunk := range tt.chunks {
+				if !bytes.Equal(chunk, before[i]) {
+					t.Fatalf("generateParity mutated chunk %d: got %v, want %v", i, chunk, before[i])
+				}
+			}
+		})
+	}
+}
+
 func TestRestoreParityTrimsToTotalLength(t *testing.T) {
 	method := distributionMethod{distributionType: distributionParity, numChunks: 2, numParities: 1}
 	chunks := testChunks(method, map[chunkNo][]byte{0: []byte("abc"), 1: []byte("def")})
