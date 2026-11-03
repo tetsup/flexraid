@@ -98,11 +98,14 @@ func TestChunkNoEncoding(t *testing.T) {
 	}
 }
 
-func TestRestoreMirrorRejectsInconsistentReplicas(t *testing.T) {
+func TestRestoreMirrorDoesNotValidateReplicaContents(t *testing.T) {
 	method := distributionMethod{distributionType: distributionMirror, numChunks: 3}
-	_, err := restoreStripe(testChunks(method, map[chunkNo][]byte{0: []byte("good"), 2: []byte("bad")}))
-	if !errors.Is(err, errInconsistentParity) {
-		t.Fatalf("got %v, want errInconsistentParity", err)
+	got, err := restoreStripe(testChunks(method, map[chunkNo][]byte{2: []byte("bad"), 0: []byte("good")}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, []byte("good")) {
+		t.Fatalf("got %q, want first available replica %q", got, []byte("good"))
 	}
 }
 
@@ -266,10 +269,10 @@ func TestRestoreMirror(t *testing.T) {
 			want: []byte("same"),
 		},
 		{
-			name: "inconsistent replicas",
+			name: "inconsistent replicas return first available copy",
 			chunks: testChunks(method, map[chunkNo][]byte{0: []byte("left"), 1: []byte("right")}),
 			method: method,
-			wantErr: errInconsistentParity,
+			want: []byte("left"),
 		},
 		{
 			name: "no replicas",
@@ -386,10 +389,10 @@ func TestRestoreParity(t *testing.T) {
 			wantErr: errTooManyMissingChunks,
 		},
 		{
-			name: "inconsistent parity when all data exists",
+			name: "all data exists and parity differs",
 			chunks: testChunks(method, map[chunkNo][]byte{0: data[0], 1: data[1], 2: data[2], parityFlag: []byte("bad")}),
 			method: method,
-			wantErr: errInconsistentParity,
+			want: []byte("abcdefghi"),
 		},
 		{
 			name: "invalid distribution method",
