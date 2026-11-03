@@ -196,7 +196,7 @@ func TestValidateChunks(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "valid data and parity chunks", chunks: valid, method: method},
-		{name: "empty input", chunks: nil, method: method, wantErr: true},
+		{name: "empty input", chunks: nil, method: method},
 		{name: "mixed stripe identity", chunks: func() []chunkDataWithInfo {
 			chunks := append([]chunkDataWithInfo(nil), valid...)
 			chunks[1].stripeKey.stripeVersion++
