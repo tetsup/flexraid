@@ -520,6 +520,59 @@ func TestGenerateParity(t *testing.T) {
 	}
 }
 
+func TestCombineStripe(t *testing.T) {
+	tests := []struct {
+		name   string
+		chunks [][]byte
+		want   []byte
+	}{
+		{
+			name:   "multiple chunks preserve order",
+			chunks: [][]byte{[]byte("first"), []byte("second"), []byte("third")},
+			want:   []byte("firstsecondthird"),
+		},
+		{
+			name:   "single chunk",
+			chunks: [][]byte{[]byte("only")},
+			want:   []byte("only"),
+		},
+		{
+			name:   "empty chunks between data",
+			chunks: [][]byte{[]byte("left"), {}, []byte("right")},
+			want:   []byte("leftright"),
+		},
+		{
+			name:   "nil and empty chunks",
+			chunks: [][]byte{nil, {}, nil},
+			want:   []byte{},
+		},
+		{
+			name:   "no chunks",
+			chunks: nil,
+			want:   []byte{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			before := make([][]byte, len(tt.chunks))
+			for i, chunk := range tt.chunks {
+				before[i] = append([]byte(nil), chunk...)
+			}
+
+			got := combineStripe(tt.chunks)
+			if !bytes.Equal(got, tt.want) {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+			for i, chunk := range tt.chunks {
+				if !bytes.Equal(chunk, before[i]) {
+					t.Fatalf("combineStripe mutated chunk %d: got %q, want %q", i, chunk, before[i])
+				}
+			}
+		})
+	}
+}
+
 func TestRestoreParityTrimsToTotalLength(t *testing.T) {
 	method := distributionMethod{distributionType: distributionParity, numChunks: 2, numParities: 1}
 	chunks := testChunks(method, map[chunkNo][]byte{0: []byte("abc"), 1: []byte("def")})
