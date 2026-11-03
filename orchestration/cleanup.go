@@ -9,34 +9,46 @@ import (
 )
 
 type CleanupRequest struct {
-	Context context.Context
-	OldVersions bool
-	InvalidStripes bool
+	Context          context.Context
+	OldVersions      bool
+	InvalidStripes   bool
 	IncompleteChunks bool
 }
-type CleanupResponse struct { DeletedObjects int; DeletedFiles int }
-
-func(layer *Orchestration)Cleanup(request CleanupRequest)(response CleanupResponse,err error){
-	started:=time.Now()
-	ctx:=request.Context
-	if ctx==nil{ctx=context.Background()}
-	defer func(){logCleanup(layer.logger,started,err,response)}()
-	for objectID:=range layer.deletionQueue{
-		if err=ctx.Err();err!=nil{return response,err}
-		result,deleteErr:=layer.distribution.DeleteObject(distribution.DeleteObjectRequest{Context:ctx,ObjectID:objectID})
-		response.DeletedFiles+=result.DeletedFiles
-		if deleteErr!=nil{err=errors.Join(err,deleteErr);continue}
-		delete(layer.deletionQueue,objectID)
-		delete(layer.headers,objectID)
-		response.DeletedObjects++
-	}
-	result,cleanupErr:=layer.distribution.Cleanup(distribution.CleanupRequest{Context:ctx,OldVersions:request.OldVersions,InvalidStripes:request.InvalidStripes,IncompleteChunks:request.IncompleteChunks})
-	response.DeletedFiles+=result.DeletedFiles
-	return response,errors.Join(err,cleanupErr)
+type CleanupResponse struct {
+	DeletedObjects int
+	DeletedFiles   int
 }
 
-func logCleanup(logger interface{ Debug(string,...any) },started time.Time,err error,response CleanupResponse){
-	attrs:=[]any{"duration",time.Since(started),"deleted_objects",response.DeletedObjects,"deleted_files",response.DeletedFiles}
-	if err!=nil{attrs=append(attrs,"error",err)}
-	logger.Debug("Orchestration cleanup completed",attrs...)
+func (layer *Orchestration) Cleanup(request CleanupRequest) (response CleanupResponse, err error) {
+	started := time.Now()
+	ctx := request.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	defer func() { logCleanup(layer.logger, started, err, response) }()
+	for objectID := range layer.deletionQueue {
+		if err = ctx.Err(); err != nil {
+			return response, err
+		}
+		result, deleteErr := layer.distribution.DeleteObject(distribution.DeleteObjectRequest{Context: ctx, ObjectID: objectID})
+		response.DeletedFiles += result.DeletedFiles
+		if deleteErr != nil {
+			err = errors.Join(err, deleteErr)
+			continue
+		}
+		delete(layer.deletionQueue, objectID)
+		delete(layer.headers, objectID)
+		response.DeletedObjects++
+	}
+	result, cleanupErr := layer.distribution.Cleanup(distribution.CleanupRequest{Context: ctx, OldVersions: request.OldVersions, InvalidStripes: request.InvalidStripes, IncompleteChunks: request.IncompleteChunks})
+	response.DeletedFiles += result.DeletedFiles
+	return response, errors.Join(err, cleanupErr)
+}
+
+func logCleanup(logger interface{ Debug(string, ...any) }, started time.Time, err error, response CleanupResponse) {
+	attrs := []any{"duration", time.Since(started), "deleted_objects", response.DeletedObjects, "deleted_files", response.DeletedFiles}
+	if err != nil {
+		attrs = append(attrs, "error", err)
+	}
+	logger.Debug("Orchestration cleanup completed", attrs...)
 }

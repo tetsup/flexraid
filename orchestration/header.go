@@ -13,8 +13,8 @@ import (
 
 const (
 	headerFormatVersion uint16 = 0
-	maxNameSize                 = 255
-	headerSize                  = 2 + 1 + 16 + 1 + 16 + 1 + 1 + 16 + 2 + maxNameSize + 4 + 4 + 4 + 4 + 8 + 8 + 8 + 8 + 1 + 4 + 2 + 2
+	maxNameSize                = 255
+	headerSize                 = 2 + 1 + 16 + 1 + 16 + 1 + 1 + 16 + 2 + maxNameSize + 4 + 4 + 4 + 4 + 8 + 8 + 8 + 8 + 1 + 4 + 2 + 2
 )
 
 var (

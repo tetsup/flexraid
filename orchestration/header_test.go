@@ -12,19 +12,19 @@ import (
 func sampleHeader() header {
 	return header{
 		FormatVersion: headerFormatVersion,
-		ObjectID: shared.ObjectID{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab},
-		ParentID: ptrObjectID(shared.ObjectID{0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x4a, 0x70, 0x80, 0x90, 0xa0, 0xb0, 0xc0, 0xd0, 0xe0, 0xf0}),
-		Kind: objectKindFile,
-		Name: "メディア.bin",
-		Mode: 0644,
-		UID: 1000,
-		GID: 100,
-		Nlink: 1,
-		Size: 987654321,
-		Atime: time.Unix(1700000000, 123456789),
-		Mtime: time.Unix(1700000001, 234567890),
-		Ctime: time.Unix(1700000002, 345678901),
-		Layout: layout{Mode: layoutModeStripe, ChunkSize: 1 << 20, DataChunks: 4, ParityChunks: 1},
+		ObjectID:      shared.ObjectID{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab},
+		ParentID:      ptrObjectID(shared.ObjectID{0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x4a, 0x70, 0x80, 0x90, 0xa0, 0xb0, 0xc0, 0xd0, 0xe0, 0xf0}),
+		Kind:          objectKindFile,
+		Name:          "メディア.bin",
+		Mode:          0644,
+		UID:           1000,
+		GID:           100,
+		Nlink:         1,
+		Size:          987654321,
+		Atime:         time.Unix(1700000000, 123456789),
+		Mtime:         time.Unix(1700000001, 234567890),
+		Ctime:         time.Unix(1700000002, 345678901),
+		Layout:        layout{Mode: layoutModeStripe, ChunkSize: 1 << 20, DataChunks: 4, ParityChunks: 1},
 	}
 }
 
@@ -80,9 +80,15 @@ func TestHeaderMarshalValidation(t *testing.T) {
 		{"invalid utf8", func(h *header) { h.Name = string([]byte{0xff}) }, errInvalidName},
 		{"unknown kind", func(h *header) { h.Kind = shared.ObjectKind(99) }, errInvalidHeader},
 		{"file without parent", func(h *header) { h.ParentID = nil }, errInvalidHeader},
-		{"file with target", func(h *header) { h.TargetID = ptrObjectID(shared.ObjectID{0x21, 0x43, 0x65, 0x87, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab}) }, errInvalidHeader},
+		{"file with target", func(h *header) {
+			h.TargetID = ptrObjectID(shared.ObjectID{0x21, 0x43, 0x65, 0x87, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab})
+		}, errInvalidHeader},
 		{"hard link without target", func(h *header) { h.Kind = objectKindHardLink }, errInvalidHeader},
-		{"hard link without parent", func(h *header) { h.Kind = objectKindHardLink; h.TargetID = ptrObjectID(shared.ObjectID{0x21, 0x43, 0x65, 0x87, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab}); h.ParentID = nil }, errInvalidHeader},
+		{"hard link without parent", func(h *header) {
+			h.Kind = objectKindHardLink
+			h.TargetID = ptrObjectID(shared.ObjectID{0x21, 0x43, 0x65, 0x87, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab})
+			h.ParentID = nil
+		}, errInvalidHeader},
 		{"hard linked file with parent", func(h *header) { h.Kind = objectKindHardLinkedFile }, errInvalidHeader},
 	}
 	for _, tt := range tests {
