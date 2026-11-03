@@ -484,3 +484,91 @@ func TestRestoreParityDoesNotMutateInputChunks(t *testing.T) {
 		t.Fatalf("restoreParity mutated parity input: got %q, want %q", chunks[2].data, before)
 	}
 }
+
+
+func TestRestoreStripe(t *testing.T) {
+	mirror := distributionMethod{distributionType: distributionMirror, numChunks: 2}
+	parity := distributionMethod{distributionType: distributionParity, numChunks: 2, numParities: 1}
+
+	tests := []struct {
+		name    string
+		chunks  []chunkDataWithInfo
+		want    []byte
+		wantErr error
+	}{
+		{
+			name:    "empty input",
+			wantErr: errInsufficientChunks,
+		},
+		{
+			name:   "dispatches to mirror restoration",
+			chunks: testChunks(mirror, map[chunkNo][]byte{1: []byte("mirror")}),
+			want:   []byte("mirror"),
+		},
+		{
+			name:   "dispatches to parity restoration",
+			chunks: testChunks(parity, map[chunkNo][]byte{0: []byte("left"), 1: []byte("right")}),
+			want:   []byte("leftright"),
+		},
+		{
+			name: "rejects invalid mirror method before dispatch",
+			chunks: testChunks(
+				distributionMethod{distributionType: distributionMirror},
+				map[chunkNo][]byte{0: []byte("data")},
+			),
+			wantErr: errInvalidDistributionMethod,
+		},
+		{
+			name: "rejects invalid parity method before dispatch",
+			chunks: testChunks(
+				distributionMethod{distributionType: distributionParity, numChunks: 2},
+				map[chunkNo][]byte{0: []byte("data")},
+			),
+			wantErr: errInvalidDistributionMethod,
+		},
+		{
+			name: "rejects unknown distribution type",
+			chunks: testChunks(
+				distributionMethod{distributionType: distributionType(255), numChunks: 1},
+				map[chunkNo][]byte{0: []byte("data")},
+			),
+			wantErr: errInvalidDistributionMethod,
+		},
+		{
+			name: "propagates mirror chunk validation error",
+			chunks: testChunks(mirror, map[chunkNo][]byte{
+				2: []byte("out of range"),
+			}),
+			wantErr: errInvalidChunk,
+		},
+		{
+			name: "propagates parity restoration error",
+			chunks: testChunks(parity, map[chunkNo][]byte{
+				0:          []byte("left"),
+				parityFlag: []byte("parity"),
+			}),
+			wantErr: errTooManyMissingChunks,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := restoreStripe(tt.chunks)
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("got error %v, want %v", err, tt.wantErr)
+				}
+				if got != nil {
+					t.Fatalf("got result %q on error, want nil", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !bytes.Equal(got, tt.want) {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
