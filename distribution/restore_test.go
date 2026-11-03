@@ -243,3 +243,90 @@ func TestValidateChunks(t *testing.T) {
 		})
 	}
 }
+
+func TestRestoreMirror(t *testing.T) {
+	method := distributionMethod{distributionType: distributionMirror, numChunks: 3}
+	tests := []struct {
+		name    string
+		chunks  []chunkDataWithInfo
+		method  distributionMethod
+		want    []byte
+		wantErr error
+	}{
+		{
+			name: "single available replica",
+			chunks: testChunks(method, map[chunkNo][]byte{2: []byte("replica")}),
+			method: method,
+			want: []byte("replica"),
+		},
+		{
+			name: "multiple matching replicas",
+			chunks: testChunks(method, map[chunkNo][]byte{0: []byte("same"), 2: []byte("same")}),
+			method: method,
+			want: []byte("same"),
+		},
+		{
+			name: "inconsistent replicas",
+			chunks: testChunks(method, map[chunkNo][]byte{0: []byte("left"), 1: []byte("right")}),
+			method: method,
+			wantErr: errInconsistentParity,
+		},
+		{
+			name: "no replicas",
+			method: method,
+			wantErr: errInsufficientChunks,
+		},
+		{
+			name: "invalid distribution method",
+			chunks: testChunks(distributionMethod{distributionType: distributionMirror, numChunks: 0}, map[chunkNo][]byte{0: []byte("x")}),
+			method: distributionMethod{distributionType: distributionMirror},
+			wantErr: errInvalidDistributionMethod,
+		},
+		{
+			name: "wrong distribution type",
+			chunks: testChunks(distributionMethod{distributionType: distributionParity, numChunks: 1, numParities: 1}, map[chunkNo][]byte{0: []byte("x")}),
+			method: distributionMethod{distributionType: distributionParity, numChunks: 1, numParities: 1},
+			wantErr: errInvalidDistributionMethod,
+		},
+		{
+			name: "parity chunk is rejected",
+			chunks: testChunks(method, map[chunkNo][]byte{parityFlag: []byte("p")}),
+			method: method,
+			wantErr: errInvalidChunk,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := restoreMirror(tt.chunks, tt.method)
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("got error %v, want %v", err, tt.wantErr)
+				}
+				if got != nil {
+					t.Fatalf("got result %q on error, want nil", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !bytes.Equal(got, tt.want) {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRestoreMirrorReturnsCopy(t *testing.T) {
+	method := distributionMethod{distributionType: distributionMirror, numChunks: 1}
+	chunks := testChunks(method, map[chunkNo][]byte{0: []byte("data")})
+	got, err := restoreMirror(chunks, method)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got[0] = 'X'
+	if !bytes.Equal(chunks[0].data, []byte("data")) {
+		t.Fatalf("restoreMirror result aliases source data: %q", chunks[0].data)
+	}
+}
