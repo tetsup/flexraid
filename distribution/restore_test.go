@@ -119,54 +119,54 @@ func TestValidateDistributionMethod(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "minimum mirror chunk count",
+			name:   "minimum mirror chunk count",
 			method: distributionMethod{distributionType: distributionMirror, numChunks: 1},
 		},
 		{
-			name: "maximum mirror chunk count",
+			name:   "maximum mirror chunk count",
 			method: distributionMethod{distributionType: distributionMirror, numChunks: 127},
 		},
 		{
-			name: "mirror rejects zero chunks",
-			method: distributionMethod{distributionType: distributionMirror},
+			name:    "mirror rejects zero chunks",
+			method:  distributionMethod{distributionType: distributionMirror},
 			wantErr: true,
 		},
 		{
-			name: "mirror rejects more than 127 chunks",
-			method: distributionMethod{distributionType: distributionMirror, numChunks: 128},
+			name:    "mirror rejects more than 127 chunks",
+			method:  distributionMethod{distributionType: distributionMirror, numChunks: 128},
 			wantErr: true,
 		},
 		{
-			name: "mirror rejects parity chunks",
-			method: distributionMethod{distributionType: distributionMirror, numChunks: 2, numParities: 1},
+			name:    "mirror rejects parity chunks",
+			method:  distributionMethod{distributionType: distributionMirror, numChunks: 2, numParities: 1},
 			wantErr: true,
 		},
 		{
-			name: "minimum parity data chunk count",
+			name:   "minimum parity data chunk count",
 			method: distributionMethod{distributionType: distributionParity, numChunks: 1, numParities: 1},
 		},
 		{
-			name: "maximum parity data chunk count",
+			name:   "maximum parity data chunk count",
 			method: distributionMethod{distributionType: distributionParity, numChunks: 127, numParities: 1},
 		},
 		{
-			name: "parity rejects zero data chunks",
-			method: distributionMethod{distributionType: distributionParity, numParities: 1},
+			name:    "parity rejects zero data chunks",
+			method:  distributionMethod{distributionType: distributionParity, numParities: 1},
 			wantErr: true,
 		},
 		{
-			name: "parity requires exactly one parity chunk",
-			method: distributionMethod{distributionType: distributionParity, numChunks: 2},
+			name:    "parity requires exactly one parity chunk",
+			method:  distributionMethod{distributionType: distributionParity, numChunks: 2},
 			wantErr: true,
 		},
 		{
-			name: "parity rejects multiple parity chunks",
-			method: distributionMethod{distributionType: distributionParity, numChunks: 2, numParities: 2},
+			name:    "parity rejects multiple parity chunks",
+			method:  distributionMethod{distributionType: distributionParity, numChunks: 2, numParities: 2},
 			wantErr: true,
 		},
 		{
-			name: "unknown distribution type",
-			method: distributionMethod{distributionType: distributionType(255), numChunks: 1},
+			name:    "unknown distribution type",
+			method:  distributionMethod{distributionType: distributionType(255), numChunks: 1},
 			wantErr: true,
 		},
 	}
@@ -190,8 +190,8 @@ func TestValidateDistributionMethod(t *testing.T) {
 func TestValidateChunks(t *testing.T) {
 	method := distributionMethod{distributionType: distributionParity, numChunks: 2, numParities: 1}
 	valid := testChunks(method, map[chunkNo][]byte{
-		0: []byte("first"),
-		1: []byte("second"),
+		0:          []byte("first"),
+		1:          []byte("second"),
 		parityFlag: []byte("parity"),
 	})
 
@@ -260,44 +260,44 @@ func TestRestoreMirror(t *testing.T) {
 		wantErr error
 	}{
 		{
-			name: "single available replica",
+			name:   "single available replica",
 			chunks: testChunks(method, map[chunkNo][]byte{2: []byte("replica")}),
 			method: method,
-			want: []byte("replica"),
+			want:   []byte("replica"),
 		},
 		{
-			name: "multiple matching replicas",
+			name:   "multiple matching replicas",
 			chunks: testChunks(method, map[chunkNo][]byte{0: []byte("same"), 2: []byte("same")}),
 			method: method,
-			want: []byte("same"),
+			want:   []byte("same"),
 		},
 		{
-			name: "inconsistent replicas return first available copy",
+			name:   "inconsistent replicas return first available copy",
 			chunks: testChunks(method, map[chunkNo][]byte{0: []byte("left"), 1: []byte("right")}),
 			method: method,
-			want: []byte("left"),
+			want:   []byte("left"),
 		},
 		{
-			name: "no replicas",
-			method: method,
+			name:    "no replicas",
+			method:  method,
 			wantErr: errInsufficientChunks,
 		},
 		{
-			name: "invalid distribution method",
-			chunks: testChunks(distributionMethod{distributionType: distributionMirror, numChunks: 0}, map[chunkNo][]byte{0: []byte("x")}),
-			method: distributionMethod{distributionType: distributionMirror},
+			name:    "invalid distribution method",
+			chunks:  testChunks(distributionMethod{distributionType: distributionMirror, numChunks: 0}, map[chunkNo][]byte{0: []byte("x")}),
+			method:  distributionMethod{distributionType: distributionMirror},
 			wantErr: errInvalidDistributionMethod,
 		},
 		{
-			name: "wrong distribution type",
-			chunks: testChunks(distributionMethod{distributionType: distributionParity, numChunks: 1, numParities: 1}, map[chunkNo][]byte{0: []byte("x")}),
-			method: distributionMethod{distributionType: distributionParity, numChunks: 1, numParities: 1},
+			name:    "wrong distribution type",
+			chunks:  testChunks(distributionMethod{distributionType: distributionParity, numChunks: 1, numParities: 1}, map[chunkNo][]byte{0: []byte("x")}),
+			method:  distributionMethod{distributionType: distributionParity, numChunks: 1, numParities: 1},
 			wantErr: errInvalidDistributionMethod,
 		},
 		{
-			name: "parity chunk is rejected",
-			chunks: testChunks(method, map[chunkNo][]byte{parityFlag: []byte("p")}),
-			method: method,
+			name:    "parity chunk is rejected",
+			chunks:  testChunks(method, map[chunkNo][]byte{parityFlag: []byte("p")}),
+			method:  method,
 			wantErr: errInvalidChunk,
 		},
 	}
@@ -350,63 +350,63 @@ func TestRestoreParity(t *testing.T) {
 		wantErr error
 	}{
 		{
-			name: "all data chunks with valid parity",
+			name:   "all data chunks with valid parity",
 			chunks: testChunks(method, map[chunkNo][]byte{0: data[0], 1: data[1], 2: data[2], parityFlag: parity}),
 			method: method,
-			want: []byte("abcdefghi"),
+			want:   []byte("abcdefghi"),
 		},
 		{
-			name: "all data chunks without parity",
+			name:   "all data chunks without parity",
 			chunks: testChunks(method, map[chunkNo][]byte{0: data[0], 1: data[1], 2: data[2]}),
 			method: method,
-			want: []byte("abcdefghi"),
+			want:   []byte("abcdefghi"),
 		},
 		{
-			name: "recover missing first data chunk",
+			name:   "recover missing first data chunk",
 			chunks: testChunks(method, map[chunkNo][]byte{1: data[1], 2: data[2], parityFlag: parity}),
 			method: method,
-			want: []byte("abcdefghi"),
+			want:   []byte("abcdefghi"),
 		},
 		{
-			name: "recover missing middle data chunk",
+			name:   "recover missing middle data chunk",
 			chunks: testChunks(method, map[chunkNo][]byte{0: data[0], 2: data[2], parityFlag: parity}),
 			method: method,
-			want: []byte("abcdefghi"),
+			want:   []byte("abcdefghi"),
 		},
 		{
-			name: "recover missing last data chunk",
+			name:   "recover missing last data chunk",
 			chunks: testChunks(method, map[chunkNo][]byte{0: data[0], 1: data[1], parityFlag: parity}),
 			method: method,
-			want: []byte("abcdefghi"),
+			want:   []byte("abcdefghi"),
 		},
 		{
-			name: "missing data and parity",
-			chunks: testChunks(method, map[chunkNo][]byte{0: data[0], 2: data[2]}),
-			method: method,
+			name:    "missing data and parity",
+			chunks:  testChunks(method, map[chunkNo][]byte{0: data[0], 2: data[2]}),
+			method:  method,
 			wantErr: errInsufficientChunks,
 		},
 		{
-			name: "two missing data chunks",
-			chunks: testChunks(method, map[chunkNo][]byte{0: data[0], parityFlag: parity}),
-			method: method,
+			name:    "two missing data chunks",
+			chunks:  testChunks(method, map[chunkNo][]byte{0: data[0], parityFlag: parity}),
+			method:  method,
 			wantErr: errTooManyMissingChunks,
 		},
 		{
-			name: "all data exists and parity differs",
+			name:   "all data exists and parity differs",
 			chunks: testChunks(method, map[chunkNo][]byte{0: data[0], 1: data[1], 2: data[2], parityFlag: []byte("bad")}),
 			method: method,
-			want: []byte("abcdefghi"),
+			want:   []byte("abcdefghi"),
 		},
 		{
-			name: "invalid distribution method",
-			chunks: testChunks(distributionMethod{distributionType: distributionParity, numChunks: 0, numParities: 1}, map[chunkNo][]byte{0: []byte("x")}),
-			method: distributionMethod{distributionType: distributionParity, numChunks: 0, numParities: 1},
+			name:    "invalid distribution method",
+			chunks:  testChunks(distributionMethod{distributionType: distributionParity, numChunks: 0, numParities: 1}, map[chunkNo][]byte{0: []byte("x")}),
+			method:  distributionMethod{distributionType: distributionParity, numChunks: 0, numParities: 1},
 			wantErr: errInvalidDistributionMethod,
 		},
 		{
-			name: "wrong distribution type",
-			chunks: testChunks(distributionMethod{distributionType: distributionMirror, numChunks: 1}, map[chunkNo][]byte{0: []byte("x")}),
-			method: distributionMethod{distributionType: distributionMirror, numChunks: 1},
+			name:    "wrong distribution type",
+			chunks:  testChunks(distributionMethod{distributionType: distributionMirror, numChunks: 1}, map[chunkNo][]byte{0: []byte("x")}),
+			method:  distributionMethod{distributionType: distributionMirror, numChunks: 1},
 			wantErr: errInvalidDistributionMethod,
 		},
 		{
@@ -416,19 +416,19 @@ func TestRestoreParity(t *testing.T) {
 				chunks[1].stripeKey.stripeVersion++
 				return chunks
 			}(),
-			method: method,
+			method:  method,
 			wantErr: errInvalidChunk,
 		},
 		{
-			name: "invalid parity chunk index",
-			chunks: testChunks(method, map[chunkNo][]byte{0: data[0], 1: data[1], 2: data[2], parityFlag | 1: parity}),
-			method: method,
+			name:    "invalid parity chunk index",
+			chunks:  testChunks(method, map[chunkNo][]byte{0: data[0], 1: data[1], 2: data[2], parityFlag | 1: parity}),
+			method:  method,
 			wantErr: errInvalidChunk,
 		},
 		{
-			name: "invalid data chunk index",
-			chunks: testChunks(method, map[chunkNo][]byte{0: data[0], 1: data[1], 3: data[2]}),
-			method: method,
+			name:    "invalid data chunk index",
+			chunks:  testChunks(method, map[chunkNo][]byte{0: data[0], 1: data[1], 3: data[2]}),
+			method:  method,
 			wantErr: errInvalidChunk,
 		},
 	}
