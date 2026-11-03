@@ -9,11 +9,51 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
+  format:
+    name: Format Go code
+    runs-on: ubuntu-latest
+    outputs:
+      modified: ${{ steps.git-check.outputs.modified }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Execute gofmt
+        run: find . -type f -name '*.go' -print0 | xargs -0 -r gofmt -w
+
+      - name: Check for modified files
+        id: git-check
+        run: |
+          if git diff-index --quiet HEAD --; then
+            echo "modified=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "modified=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push changes
+        if: github.event_name == 'pull_request' && steps.git-check.outputs.modified == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          git config user.email "bot@example.com"
+          git config user.name "bot"
+          git remote set-url origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
+          git commit -am "Automated gofmt"
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
+
   test:
     name: Test
+    needs: format
+    if: needs.format.outputs.modified == 'false'
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -24,15 +64,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-
-      - name: Check Go formatting
-        run: |
-          files=$(gofmt -l $(find . -type f -name '*.go'))
-          if [ -n "$files" ]; then
-            echo "The following Go files are not formatted:"
-            echo "$files"
-            exit 1
-          fi
 
       - name: Run tests
         run: go test ./...
