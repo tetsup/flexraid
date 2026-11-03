@@ -105,3 +105,78 @@ func TestRestoreMirrorRejectsInconsistentReplicas(t *testing.T) {
 		t.Fatalf("got %v, want errInconsistentParity", err)
 	}
 }
+
+func TestValidateDistributionMethod(t *testing.T) {
+	tests := []struct {
+		name    string
+		method  distributionMethod
+		wantErr bool
+	}{
+		{
+			name: "minimum mirror chunk count",
+			method: distributionMethod{distributionType: distributionMirror, numChunks: 1},
+		},
+		{
+			name: "maximum mirror chunk count",
+			method: distributionMethod{distributionType: distributionMirror, numChunks: 127},
+		},
+		{
+			name: "mirror rejects zero chunks",
+			method: distributionMethod{distributionType: distributionMirror},
+			wantErr: true,
+		},
+		{
+			name: "mirror rejects more than 127 chunks",
+			method: distributionMethod{distributionType: distributionMirror, numChunks: 128},
+			wantErr: true,
+		},
+		{
+			name: "mirror rejects parity chunks",
+			method: distributionMethod{distributionType: distributionMirror, numChunks: 2, numParities: 1},
+			wantErr: true,
+		},
+		{
+			name: "minimum parity data chunk count",
+			method: distributionMethod{distributionType: distributionParity, numChunks: 1, numParities: 1},
+		},
+		{
+			name: "maximum parity data chunk count",
+			method: distributionMethod{distributionType: distributionParity, numChunks: 127, numParities: 1},
+		},
+		{
+			name: "parity rejects zero data chunks",
+			method: distributionMethod{distributionType: distributionParity, numParities: 1},
+			wantErr: true,
+		},
+		{
+			name: "parity requires exactly one parity chunk",
+			method: distributionMethod{distributionType: distributionParity, numChunks: 2},
+			wantErr: true,
+		},
+		{
+			name: "parity rejects multiple parity chunks",
+			method: distributionMethod{distributionType: distributionParity, numChunks: 2, numParities: 2},
+			wantErr: true,
+		},
+		{
+			name: "unknown distribution type",
+			method: distributionMethod{distributionType: distributionType(255), numChunks: 1},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateDistributionMethod(tt.method)
+			if tt.wantErr {
+				if !errors.Is(err, errInvalidDistributionMethod) {
+					t.Fatalf("got error %v, want %v", err, errInvalidDistributionMethod)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
