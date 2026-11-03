@@ -543,7 +543,6 @@ func TestRestoreStripe(t *testing.T) {
 		{
 			name: "propagates parity restoration error",
 			chunks: testChunks(parity, map[chunkNo][]byte{
-				0:          []byte("left"),
 				parityFlag: []byte("parity"),
 			}),
 			wantErr: errTooManyMissingChunks,
