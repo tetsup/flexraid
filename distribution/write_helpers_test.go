@@ -93,10 +93,10 @@ func TestOrderedDataChunks(t *testing.T) {
 func TestOrderedChunkNos(t *testing.T) {
 	chunks := map[chunkNo][]byte{
 		parityFlag | 1: []byte("parity1"),
-		2: []byte("data2"),
-		0: []byte("data0"),
-		parityFlag: []byte("parity0"),
-		1: []byte("data1"),
+		2:              []byte("data2"),
+		0:              []byte("data0"),
+		parityFlag:     []byte("parity0"),
+		1:              []byte("data1"),
 	}
 	got := orderedChunkNos(chunks)
 	want := []chunkNo{0, 1, 2, parityFlag, parityFlag | 1}

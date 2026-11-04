@@ -62,7 +62,7 @@ func TestDecodeChunkReturnsPayloadCopy(t *testing.T) {
 
 func TestCloneChunks(t *testing.T) {
 	source := map[chunkNo]chunkLocation{
-		0: {ioIndex: 2, key: storage.FileKey{StripeVersion: 7}, data: []byte("alpha"), totalLength: 5},
+		0:          {ioIndex: 2, key: storage.FileKey{StripeVersion: 7}, data: []byte("alpha"), totalLength: 5},
 		parityFlag: {ioIndex: 3, key: storage.FileKey{StripeVersion: 8}, data: []byte("parity"), totalLength: 5},
 	}
 	got := cloneChunks(source)
@@ -116,24 +116,24 @@ func TestExpectedChunkNos(t *testing.T) {
 		want   []chunkNo
 	}{
 		{
-			name: "mirror data chunks",
+			name:   "mirror data chunks",
 			method: distributionMethod{distributionType: distributionMirror, numChunks: 3},
-			want: []chunkNo{0, 1, 2},
+			want:   []chunkNo{0, 1, 2},
 		},
 		{
-			name: "parity data and parity chunk",
+			name:   "parity data and parity chunk",
 			method: distributionMethod{distributionType: distributionParity, numChunks: 2, numParities: 1},
-			want: []chunkNo{0, 1, parityFlag},
+			want:   []chunkNo{0, 1, parityFlag},
 		},
 		{
-			name: "multiple parity indexes",
+			name:   "multiple parity indexes",
 			method: distributionMethod{distributionType: distributionParity, numChunks: 1, numParities: 2},
-			want: []chunkNo{0, parityFlag, parityFlag | 1},
+			want:   []chunkNo{0, parityFlag, parityFlag | 1},
 		},
 		{
-			name: "empty method",
+			name:   "empty method",
 			method: distributionMethod{},
-			want: []chunkNo{},
+			want:   []chunkNo{},
 		},
 	}
 	for _, tt := range tests {
