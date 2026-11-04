@@ -1,0 +1,51 @@
+name: Format Go code
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  format:
+    name: Format and trigger tests
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out PR branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Execute gofmt
+        run: find . -type f -name '*.go' -print0 | xargs -0 -r gofmt -w
+
+      - name: Commit formatting changes
+        id: format
+        run: |
+          git add -u
+          if git diff --cached --quiet; then
+            echo "modified=false" >> "$GITHUB_OUTPUT"
+          else
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git config user.name "github-actions[bot]"
+            git commit -m "Automated gofmt"
+            git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
+            echo "modified=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Trigger tests for the formatted branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: gh workflow run test.yml --ref "$BRANCH"
