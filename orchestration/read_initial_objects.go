@@ -26,14 +26,32 @@ func readInitialObjects(ctx context.Context, layer *distribution.Distribution) (
 		if err != nil {
 			return nil, err
 		}
+		objectHeader, err := decodeInitialHeader(objectID, data)
+		if err != nil {
+			return nil, err
+		}
+		if objectHeader.Kind == objectKindSymlink {
+			data, err = readInitialObjectData(ctx, layer, objectID, headerSize+int(objectHeader.Size))
+			if err != nil {
+				return nil, fmt.Errorf("read symlink target %s: %w", objectID.String(), err)
+			}
+		}
 		initialObjects = append(initialObjects, initialObject{objectID: objectID, data: data})
 	}
 	return initialObjects, nil
 }
 
 func readInitialHeaderData(ctx context.Context, layer *distribution.Distribution, objectID shared.ObjectID) ([]byte, error) {
-	headerData := make([]byte, 0, headerSize)
-	for stripeID := uint64(0); len(headerData) < headerSize; stripeID++ {
+	return readInitialObjectData(ctx, layer, objectID, headerSize)
+}
+
+// readInitialObjectData reads the leading bytes of an object across stripe boundaries.
+func readInitialObjectData(ctx context.Context, layer *distribution.Distribution, objectID shared.ObjectID, size int) ([]byte, error) {
+	if size < 0 {
+		return nil, fmt.Errorf("negative object data size")
+	}
+	data := make([]byte, 0, size)
+	for stripeID := uint64(0); len(data) < size; stripeID++ {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -44,12 +62,12 @@ func readInitialHeaderData(ctx context.Context, layer *distribution.Distribution
 			ChunkSize: 4096,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("read object header %s at stripe %d: %w", objectID.String(), stripeID, err)
+			return nil, fmt.Errorf("read object %s at stripe %d: %w", objectID.String(), stripeID, err)
 		}
 		if len(read.Data) == 0 {
-			return nil, fmt.Errorf("%w: empty stripe while reading header for %s", errInvalidHeader, objectID.String())
+			return nil, fmt.Errorf("%w: empty stripe while reading object %s", errInvalidHeader, objectID.String())
 		}
-		headerData = append(headerData, read.Data...)
+		data = append(data, read.Data...)
 	}
-	return headerData[:headerSize], nil
+	return data[:size], nil
 }
