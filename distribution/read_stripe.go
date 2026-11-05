@@ -3,6 +3,7 @@ package distribution
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"time"
 
@@ -15,6 +16,7 @@ type ReadStripeRequest struct {
 	Context         context.Context
 	ObjectID        shared.ObjectID
 	StripeID        storage.StripeID
+	ChunkSize       uint32
 	RepairIOIndexes []int
 }
 type ReadStripeResponse struct {
@@ -27,6 +29,9 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 	defer func() {
 		logOperation(d.logger, "ReadStripe", started, err, "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "bytes", len(response.Data))
 	}()
+	if request.ChunkSize == 0 {
+		return response, fmt.Errorf("chunk size must be positive")
+	}
 	if err = request.Context.Err(); err != nil {
 		return response, err
 	}
@@ -60,6 +65,16 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 			continue
 		}
 		chunks = append(chunks, chunkDataWithInfo{stripeKey: key, distributionMethod: info.method, chunkNo: no, data: payload, totalLength: total})
+	}
+	for _, chunk := range chunks {
+		if info.method.distributionType == distributionParity && len(chunk.data) != int(request.ChunkSize) {
+			info.corrupted = true
+			return response, ErrDataCorrupted
+		}
+		if info.method.distributionType == distributionMirror && len(chunk.data) > int(request.ChunkSize) {
+			info.corrupted = true
+			return response, ErrDataCorrupted
+		}
 	}
 	restored, restoreErr := restoreStripe(chunks)
 	if restoreErr != nil {
