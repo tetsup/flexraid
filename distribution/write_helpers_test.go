@@ -51,8 +51,8 @@ func TestSplitStripe(t *testing.T) {
 	}{
 		{name: "empty payload", data: nil, count: 3, want: [][]byte{{}, {}, {}}},
 		{name: "even split", data: []byte("abcdef"), count: 3, want: [][]byte{[]byte("ab"), []byte("cd"), []byte("ef")}},
-		{name: "uneven split padded", data: []byte("abcde"), count: 3, want: [][]byte{[]byte("ab"), []byte("cd"), []byte("e ")}},
-		{name: "smaller than chunk count", data: []byte("ab"), count: 4, want: [][]byte{[]byte("a"), []byte("b"), []byte(" "), []byte(" ")}},
+		{name: "uneven split padded", data: []byte("abcde"), count: 3, want: [][]byte{[]byte("ab"), []byte("cd"), []byte{'e', 0}}},
+		{name: "smaller than chunk count", data: []byte("ab"), count: 4, want: [][]byte{[]byte("a"), []byte("b"), []byte{0}, []byte{0}}},
 		{name: "one chunk", data: []byte("abc"), count: 1, want: [][]byte{[]byte("abc")}},
 		{name: "zero chunks", data: []byte("abc"), count: 0, want: [][]byte{}},
 	}
