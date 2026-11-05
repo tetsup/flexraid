@@ -231,6 +231,8 @@ Object ツリー、Namespace、リンク
 
 Orchestration の起動時初期化では、公開 `New` が Distribution の `ListObjects` で ObjectID を列挙し、共通の `ReadStripe` API を通じて各 Object の Header を含む先頭データを取得する。`New` は取得した初期データを非公開の `initialize` に渡す。`initialize` は渡されたデータの Header を解析・検証し、Header map と論理削除キューなどのメモリ状態を構築する。`initialize` 自身は Distribution を呼び出さず、I/O を伴うデータ取得とメモリ状態の構築を分離する。
 
+`initialize` は初期データ全体から Runtime Object を生成し、ParentID / Name に基づいて Directory children を構築する。その過程で HardLink の TargetID を解決し、同じ HardLinkedFile を参照する HardLink が同一の Runtime ファイル実体を共有するようにする。Namespace 展開後は非公開 `inspect` を一度呼び出して構築結果全体を検査する。検査には root Directory が一意に定まること、Namespace の親子関係・HardLink 参照の整合性、root から到達できない Object の有無を含める。root を一意に特定できないなど Namespace を復元できない不整合は初期化エラーとする一方、ツリー構造から外れた Object は warning 扱いとし、初期化そのものを失敗させない。読み込み・展開・検査はいずれも `initialize` の一連の初期化プロセスに含め、検査だけを別の起動処理として呼び出す構成にはしない。
+
 Object の Kind は次の種類を持つ。
 
 - File: 通常ファイル。ParentID を持ち、実データを保持する。
