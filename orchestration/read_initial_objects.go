@@ -37,7 +37,7 @@ func readInitialObjects(ctx context.Context, layer *distribution.Distribution) (
 				initialObjects = append(initialObjects, initialObject{objectID: objectID, data: data})
 				continue
 			}
-			targetData, targetErr := readInitialObjectData(ctx, layer, objectID, headerSize+int(objectHeader.Size))
+			targetData, targetErr := readInitialObjectData(ctx, layer, objectID, headerSize+int(objectHeader.Size), objectHeader.Layout.ChunkSize)
 			if targetErr != nil {
 				if ctx.Err() != nil {
 					return nil, ctx.Err()
@@ -54,13 +54,16 @@ func readInitialObjects(ctx context.Context, layer *distribution.Distribution) (
 }
 
 func readInitialHeaderData(ctx context.Context, layer *distribution.Distribution, objectID shared.ObjectID) ([]byte, error) {
-	return readInitialObjectData(ctx, layer, objectID, headerSize)
+	return readInitialObjectData(ctx, layer, objectID, headerSize, 4096)
 }
 
 // readInitialObjectData reads the leading bytes of an object across stripe boundaries.
-func readInitialObjectData(ctx context.Context, layer *distribution.Distribution, objectID shared.ObjectID, size int) ([]byte, error) {
+func readInitialObjectData(ctx context.Context, layer *distribution.Distribution, objectID shared.ObjectID, size int, chunkSize uint32) ([]byte, error) {
 	if size < 0 {
 		return nil, fmt.Errorf("negative object data size")
+	}
+	if chunkSize == 0 {
+		return nil, fmt.Errorf("object chunk size must be positive")
 	}
 	data := make([]byte, 0, size)
 	for stripeID := uint64(0); len(data) < size; stripeID++ {
@@ -71,7 +74,7 @@ func readInitialObjectData(ctx context.Context, layer *distribution.Distribution
 			Context:   ctx,
 			ObjectID:  objectID,
 			StripeID:  storage.StripeID(stripeID),
-			ChunkSize: 4096,
+			ChunkSize: chunkSize,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("read object %s at stripe %d: %w", objectID.String(), stripeID, err)
