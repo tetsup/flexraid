@@ -96,7 +96,7 @@ func TestReadValidatesObjectAndContext(t *testing.T) {
 	if _, err := layer.Read(ReadRequest{Context: ctx, ObjectID: id, Size: 1}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("got %v, want context.Canceled", err)
 	}
-	if _, err := layer.Read(ReadRequest{ObjectID: id, Size: 1}); !errors.Is(err, errors.ErrUnsupported) && err == nil {
+	if _, err := layer.Read(ReadRequest{ObjectID: id, Size: 1}); err == nil {
 		t.Fatal("missing object unexpectedly read")
 	}
 	layer.objects[id] = &runtimeObject{header: testHeader(objectKindDirectory, id, nil, nil, "")}
