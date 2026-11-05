@@ -89,6 +89,9 @@ func TestReadReturnsLogicalRangeAcrossStripesAndHardLinks(t *testing.T) {
 			t.Fatalf("Read offset=%d size=%d returned %d bytes, want %d", tc.offset, tc.size, len(got.Data), end-tc.offset)
 		}
 	}
+	if len(layer.objects[fileID].file.stripeCache) == 0 {
+		t.Fatal("Read did not populate the shared stripe cache")
+	}
 	linkOpen, err := layer.Open(OpenRequest{ObjectID: linkID})
 	if err != nil {
 		t.Fatal(err)
@@ -137,5 +140,52 @@ func TestReadRequiresValidHandle(t *testing.T) {
 	}
 	if _, err := layer.Read(ReadRequest{Handle: opened.Handle, ObjectID: id, Size: 1}); !errors.Is(err, os.ErrInvalid) {
 		t.Fatalf("Read after Release = %v, want os.ErrInvalid", err)
+	}
+}
+
+func TestOpenCreatesIndependentHandlesForSharedRuntimeFile(t *testing.T) {
+	id := testID("32345678-9abc-4def-8abc-1234567890ab")
+	parentID := testID("12345678-9abc-4def-8abc-1234567890ab")
+	h := testHeader(objectKindFile, id, &parentID, nil, "data")
+	file := &runtimeFile{objectID: id, header: h, stripeCache: make(map[uint64]*stripeCacheEntry)}
+	layer := &Orchestration{objects: map[shared.ObjectID]*runtimeObject{id: {header: h, file: file}}}
+
+	first, err := layer.Open(OpenRequest{ObjectID: id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := layer.Open(OpenRequest{ObjectID: id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Handle == second.Handle {
+		t.Fatal("independent Open calls returned the same handle")
+	}
+	if first.Handle.runtimeFile != second.Handle.runtimeFile {
+		t.Fatal("handles do not share the same runtime file")
+	}
+	if len(layer.handles) != 2 {
+		t.Fatalf("tracked %d handles, want 2", len(layer.handles))
+	}
+	if _, err := layer.Release(ReleaseRequest{Handle: first.Handle}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := layer.Release(ReleaseRequest{Handle: first.Handle}); err != nil {
+		t.Fatalf("repeated Release failed: %v", err)
+	}
+	if len(layer.handles) != 1 {
+		t.Fatalf("tracked %d handles after Release, want 1", len(layer.handles))
+	}
+	if _, err := layer.Release(ReleaseRequest{Handle: second.Handle}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOpenRejectsDirectory(t *testing.T) {
+	id := testID("32345678-9abc-4def-8abc-1234567890ab")
+	h := testHeader(objectKindDirectory, id, nil, nil, "")
+	layer := &Orchestration{objects: map[shared.ObjectID]*runtimeObject{id: {header: h}}}
+	if _, err := layer.Open(OpenRequest{ObjectID: id}); !errors.Is(err, os.ErrInvalid) {
+		t.Fatalf("Open directory = %v, want os.ErrInvalid", err)
 	}
 }
