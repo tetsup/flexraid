@@ -342,7 +342,7 @@ FUSE 層の具体的な関数一覧は、この議論ではまだ整理してい
 - HardLinkedFile / HardLink の属性情報の保持場所と FUSE inode / st_nlink への対応。
 - 最後の HardLink 削除時の HardLinkedFile の解放条件、オープン中ファイルの寿命、および参照数の再構築方法。
 - ハードリンク作成・削除など複数 Object の永続化を伴う Namespace 操作の原子性とクラッシュ復旧手順。
-- `inspect` が行う起動時の全体検査の詳細な検査項目、部分的不整合により Cleanup から保護する Object / 実体の追跡方法、warning の記録形式。基本方針として、部分的不整合は該当要素を存在しないものとして扱い初期化を続行するが、関連データは自動削除しない。
+- Namespace の部分的不整合は `protectedObjects` に ObjectID を保持し、Orchestration の Cleanup から Distribution の Cleanup へ除外対象として渡す。Distribution の Cleanup は除外対象 Object の orphan / version / chunk を削除しない。Warning は ObjectID と理由を持つ初期化時の揮発状態として記録する。
 - ストレージ障害・容量変化を踏まえた配置計画の再評価と、既存チャンクの再配置方針。
 - `New` 時の利用可能 IO の判定基準（IO へのアクセスが成功したとみなす条件）と、非公開状態フィールドおよび getter の具体的な名前・戻り値の構造。
 - `GetErrorStats` の Request / Response の具体的なフィールド構成と、定期ログ出力の間隔・出力内容。getter が返す状態スナップショットの具体的な型・構造。

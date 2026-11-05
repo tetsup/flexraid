@@ -1,31 +1,49 @@
 package orchestration
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/tetsup/flexraid/pkg/shared"
 )
 
+var errInvalidNamespace = errors.New("invalid namespace")
+
 func (layer *Orchestration) initialize(initialObjects []initialObject) error {
-	headers := make(map[shared.ObjectID]header, len(initialObjects))
-	deletionQueue := make(map[shared.ObjectID]struct{})
+	state := &Orchestration{
+		logger:          layer.logger,
+		headers:         make(map[shared.ObjectID]header, len(initialObjects)),
+		objects:         make(map[shared.ObjectID]*runtimeObject, len(initialObjects)),
+		deletionQueue:   make(map[shared.ObjectID]struct{}),
+		protectedObjects: make(map[shared.ObjectID]struct{}),
+	}
 
 	for _, initial := range initialObjects {
 		objectHeader, err := decodeInitialHeader(initial.objectID, initial.data)
 		if err != nil {
 			return err
 		}
-		if _, exists := headers[initial.objectID]; exists {
+		if _, exists := state.headers[initial.objectID]; exists {
 			return fmt.Errorf("%w: duplicate object ID %s", errInvalidHeader, initial.objectID.String())
 		}
-		headers[initial.objectID] = objectHeader
+		state.headers[initial.objectID] = objectHeader
+		state.objects[initial.objectID] = &runtimeObject{header: objectHeader}
 		if objectHeader.Deleted {
-			deletionQueue[initial.objectID] = struct{}{}
+			state.deletionQueue[initial.objectID] = struct{}{}
 		}
 	}
 
-	layer.headers = headers
-	layer.deletionQueue = deletionQueue
+	buildNamespace(state.objects, state.protectedObjects)
+	if err := state.inspect(); err != nil {
+		return err
+	}
+
+	layer.headers = state.headers
+	layer.objects = state.objects
+	layer.root = state.root
+	layer.deletionQueue = state.deletionQueue
+	layer.protectedObjects = state.protectedObjects
+	layer.warnings = state.warnings
 	return nil
 }
 

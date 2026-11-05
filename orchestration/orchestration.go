@@ -19,10 +19,14 @@ type NewRequest struct {
 type NewResponse struct{ Layer *Orchestration }
 
 type Orchestration struct {
-	distribution  *distribution.Distribution
-	logger        *slog.Logger
-	headers       map[shared.ObjectID]header
-	deletionQueue map[shared.ObjectID]struct{}
+	distribution    *distribution.Distribution
+	logger          *slog.Logger
+	headers         map[shared.ObjectID]header
+	objects         map[shared.ObjectID]*runtimeObject
+	root            *runtimeObject
+	deletionQueue   map[shared.ObjectID]struct{}
+	protectedObjects map[shared.ObjectID]struct{}
+	warnings        []initializationWarning
 }
 
 func New(request NewRequest) (NewResponse, error) {
@@ -47,14 +51,12 @@ func New(request NewRequest) (NewResponse, error) {
 	}
 
 	layer := &Orchestration{
-		distribution:  request.Distribution,
-		logger:        logger,
-		headers:       make(map[shared.ObjectID]header),
-		deletionQueue: make(map[shared.ObjectID]struct{}),
+		distribution: request.Distribution,
+		logger: logger,
 	}
 	if err := layer.initialize(initialObjects); err != nil {
 		return NewResponse{}, err
 	}
-	logger.Debug("Orchestration initialized", "objects", len(layer.headers), "deletion_queue", len(layer.deletionQueue))
+	logger.Debug("Orchestration initialized", "objects", len(layer.headers), "deletion_queue", len(layer.deletionQueue), "protected_objects", len(layer.protectedObjects), "warnings", len(layer.warnings))
 	return NewResponse{Layer: layer}, nil
 }

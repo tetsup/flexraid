@@ -20,17 +20,29 @@ func TestStartupRebuildsDeletionQueueAndCleanupDeletesObject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id := shared.ObjectID{0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab}
-	h := header{FormatVersion: headerFormatVersion, Deleted: true, ObjectID: id, Kind: objectKindDirectory, Layout: layout{Mode: layoutModeMirror}}
-	headerData, err := h.MarshalBinary()
+	rootID := testID("12345678-9abc-4def-8abc-1234567890ab")
+	deletedID := testID("22345678-9abc-4def-8abc-1234567890ab")
+	root := testHeader(objectKindDirectory, rootID, nil, nil, "")
+	deleted := testHeader(objectKindFile, deletedID, &rootID, nil, "deleted")
+	deleted.Deleted = true
+	headerData, err := deleted.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootData, err := root.MarshalBinary()
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, item := range []struct {
+		id     shared.ObjectID
 		stripe storage.StripeID
 		data   []byte
-	}{{0, headerData[:100]}, {1, headerData[100:]}, {2, []byte("payload")}} {
-		if _, err := initial.Layer.WriteStripe(distribution.WriteStripeRequest{Context: ctx, ObjectID: id, StripeID: item.stripe, ChunkSize: 4096, Layout: distribution.Layout{Type: distribution.LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: item.data}); err != nil {
+	}{{rootID, 0, rootData}, {deletedID, 0, headerData}, {deletedID, 1, []byte("payload")}} {
+		if _, err := initial.Layer.WriteStripe(distribution.WriteStripeRequest{
+			Context: ctx, ObjectID: item.id, StripeID: item.stripe, ChunkSize: 4096,
+			Layout: distribution.Layout{Type: distribution.LayoutMirror, NumChunks: 2},
+			IOIndexes: []int{0, 1}, Data: item.data,
+		}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -56,7 +68,7 @@ func TestStartupRebuildsDeletionQueueAndCleanupDeletesObject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(objects.ObjectIDs) != 0 {
-		t.Fatalf("objects remain: %v", objects.ObjectIDs)
+	if len(objects.ObjectIDs) != 1 || objects.ObjectIDs[0] != rootID {
+		t.Fatalf("unexpected remaining objects: %v", objects.ObjectIDs)
 	}
 }

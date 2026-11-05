@@ -7,6 +7,7 @@ import (
 	"time"
 
 	physicalio "github.com/tetsup/flexraid/io"
+	"github.com/tetsup/flexraid/pkg/shared"
 	"github.com/tetsup/flexraid/storage"
 )
 
@@ -15,6 +16,7 @@ type CleanupRequest struct {
 	OldVersions      bool
 	InvalidStripes   bool
 	IncompleteChunks bool
+	ExcludeObjectIDs []shared.ObjectID
 }
 type CleanupResponse struct{ DeletedFiles int }
 
@@ -24,8 +26,15 @@ func (d *Distribution) Cleanup(request CleanupRequest) (response CleanupResponse
 	if err = request.Context.Err(); err != nil {
 		return response, err
 	}
+	excluded := make(map[shared.ObjectID]struct{}, len(request.ExcludeObjectIDs))
+	for _, id := range request.ExcludeObjectIDs {
+		excluded[id] = struct{}{}
+	}
 	if request.IncompleteChunks || request.InvalidStripes || request.OldVersions {
 		for objectID, locations := range d.orphans {
+			if _, skip := excluded[objectID]; skip {
+				continue
+			}
 			remaining := locations[:0]
 			for _, location := range locations {
 				current := d.objects[objectID][location.key.StripeID]
@@ -54,6 +63,9 @@ func (d *Distribution) Cleanup(request CleanupRequest) (response CleanupResponse
 		}
 	}
 	for key, versions := range d.versions {
+		if _, skip := excluded[key.objectID]; skip {
+			continue
+		}
 		current := d.objects[key.objectID][key.stripeID]
 		for versionNo, version := range versions {
 			isCurrent := currentVersion(current, versionNo)

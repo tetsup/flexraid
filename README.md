@@ -231,7 +231,7 @@ Object ツリー、Namespace、リンク
 
 Orchestration の起動時初期化では、公開 `New` が Distribution の `ListObjects` で ObjectID を列挙し、共通の `ReadStripe` API を通じて各 Object の Header を含む先頭データを取得する。`New` は取得した初期データを非公開の `initialize` に渡す。`initialize` は渡されたデータの Header を解析・検証し、Header map と論理削除キューなどのメモリ状態を構築する。`initialize` 自身は Distribution を呼び出さず、I/O を伴うデータ取得とメモリ状態の構築を分離する。
 
-`initialize` は初期データ全体から Runtime Object を生成し、ParentID / Name に基づいて Directory children を構築する。その過程で HardLink の TargetID を解決し、同じ HardLinkedFile を参照する HardLink が同一の Runtime ファイル実体を共有するようにする。Namespace 展開後は非公開 `inspect` を一度呼び出して構築結果全体を検査する。root Directory が一意に定まらないなど Namespace 全体を復元できない不整合は初期化エラーとする。一方、壊れた HardLink やツリー外 Object など、一部の機能に限定された不整合は該当要素を Namespace 上に存在しないものとして扱い、warning を出して初期化を続行する。ただし、該当する HardLink / Object と関連する実体は Cleanup の削除対象から保護し、誤って消去しない。部分的不整合を理由に永続データを自動削除したり、論理削除状態へ変更したりしてはならない。読み込み・展開・検査はいずれも `initialize` の一連の初期化プロセスに含め、検査だけを別の起動処理として呼び出す構成にはしない。
+`initialize` は初期データ全体から Runtime Object を生成し、ParentID / Name に基づいて Directory children を構築する。その過程で HardLink の TargetID を解決し、同じ HardLinkedFile を参照する HardLink が同一の Runtime ファイル実体を共有するようにする。Namespace 展開後は非公開 `inspect` を一度呼び出して構築結果全体を検査する。root Directory が一意に定まらないなど Namespace 全体を復元できない不整合は初期化エラーとする。一方、壊れた HardLink やツリー外 Object など、一部の機能に限定された不整合は該当要素を Namespace 上に存在しないものとして扱い、warning を出して初期化を続行する。ただし、該当する HardLink / Object と関連する実体は Cleanup の削除対象から保護し、誤って消去しない。保護対象 ObjectID は Orchestration が保持し、Cleanup 時に Distribution の Cleanup へ除外対象として渡す。Distribution は除外対象に属する orphan / version / chunk を削除しない。部分的不整合を理由に永続データを自動削除したり、論理削除状態へ変更したりしてはならない。読み込み・展開・検査はいずれも `initialize` の一連の初期化プロセスに含め、検査だけを別の起動処理として呼び出す構成にはしない。
 
 Object の Kind は次の種類を持つ。
 
