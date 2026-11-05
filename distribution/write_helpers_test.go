@@ -121,3 +121,9 @@ func containsText(value, substring string) bool {
 	}
 	return false
 }
+
+func TestSplitStripeWithExplicitSize(t *testing.T) {
+ got := splitStripeWithSize([]byte("abcde"), 3, 2)
+ want := [][]byte{[]byte("ab"), []byte("cd"), []byte{'e', 0}}
+ for i := range want { if !bytes.Equal(got[chunkNo(i)], want[i]) { t.Fatalf("chunk %d: got %v want %v", i, got[chunkNo(i)], want[i]) } }
+}
