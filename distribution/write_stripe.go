@@ -36,7 +36,11 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 	if err != nil {
 		return response, err
 	}
-	if len(request.Data) > int(request.ChunkSize)*int(method.numChunks) {
+	capacity := int(request.ChunkSize) * int(method.numChunks)
+	if method.distributionType == distributionMirror {
+		capacity = int(request.ChunkSize)
+	}
+	if len(request.Data) > capacity {
 		return response, fmt.Errorf("stripe data exceeds chunk capacity")
 	}
 	required := int(method.numChunks)
