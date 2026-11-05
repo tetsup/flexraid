@@ -3,7 +3,6 @@ package orchestration
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"time"
 
@@ -126,4 +125,3 @@ func (layer *Orchestration) Read(request ReadRequest) (response ReadResponse, er
 	return response, nil
 }
 
-var _ = slog.LevelDebug
