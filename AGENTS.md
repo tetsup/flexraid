@@ -150,7 +150,7 @@ fuse/
 - 永続化された Object の Header から ParentID / Name に基づいてメモリ上の Directory children を構築し、HardLink の TargetID を解決して同一の Runtime ファイル実体を共有させる。
 - Distribution 層から論理データを読み出し、その先頭に含まれる Header を解析して、ObjectID・ParentID・論理サイズ・ファイル属性などの論理ファイル情報を管理する。
 - Header の定義、生成、解析、シリアライズ、および Header に保持する論理ファイル属性の更新・永続化を担当する。Header / Layout の内部表現、Kind 定数、Header 固有のエラーやサイズ定数は Orchestration パッケージ内に閉じ込め、外部へ公開しない。
-- 起動時には Distribution 層が列挙した ObjectID をもとに、共通のストライプ読み出し API で論理データを取得し、Header を解析して論理ファイルシステムの状態を再構築する。
+- 起動時の初期化では、公開 `New` が Distribution の `ListObjects` で ObjectID を列挙し、共通の `ReadStripe` API で Header を含む初期データを取得する。取得したデータを非公開 `initialize` に渡し、`initialize` は Header の解析・検証とメモリ状態の構築だけを行う。`initialize` から Distribution の読み出し API を呼び出さない。I/O を伴う取得は `New` 側、状態の組み立ては `initialize` 側の責務とする。
 - Header を含む論理データは通常のストライプ読み書き API で扱う。Header 専用のストライプ処理経路は設けない。
 - 論理ファイルに対する操作を受け付け、Header とファイルデータの整合性を保ちながら Distribution 層を利用する。
 - ファイルごとの配置ポリシーを選択し、各ドライブの容量・状態や書き込みサイズなどを踏まえて、どのドライブ群にどう分散するかという配置方針を決定する。
@@ -287,7 +287,7 @@ Distribution の公開 API は論理ストライプ単位の読み書き操作�
 
 | 関数 | 位置付け | 内容 |
 |---|---|---|
-| `New` | 候補 | Distribution の `ListObjects` で ObjectID を列挙し、共通の `ReadStripe` で論理データを読み出して Header を解析し、Orchestration の State を同期的に構築したインスタンスを返す。初期化に失敗した場合は error を返す |
+| `New` | 公開 API・初期化フロー確定 | Distribution の `ListObjects` で ObjectID を列挙し、共通の `ReadStripe` で各 Object の Header を含む初期データを取得する。取得データを非公開 `initialize` に渡し、初期化済み Orchestration インスタンスを返す。取得または初期化に失敗した場合は error を返す。`New` が I/O を伴う取得を担当し、`initialize` は Distribution を呼ばずメモリ状態を構築する |
 | `Open` | 既存設計の操作候補 | Object を開く |
 | `Read` | 既存設計の操作候補 | Object の指定範囲を読み込む |
 | `Write` | 既存設計の操作候補 | Object の指定範囲を書き込む |
@@ -314,6 +314,10 @@ Distribution の公開 API は論理ストライプ単位の読み書き操作�
 
 | 関数 | 内容 |
 |---|---|
+| `readInitialObjects` | Distribution の `ListObjects` で ObjectID を列挙し、各 Object の初期 Header データを取得する。`New` から呼び出す |
+| `readInitialHeaderData` | 共通 `ReadStripe` API を用いて Header サイズ分の初期データを取得する。Distribution への I/O を担当する |
+| `initialize` | `New` から受け取った初期データを解析・検証し、Header map や削除キューなどのメモリ状態を構築する。Distribution の API は呼び出さない |
+| `decodeInitialHeader` | 初期データから Header をデコードし、ObjectID の一致と Header データの妥当性を検証する |
 | `selectStorages` | 配置方針に使用する Storage を選択する |
 | `planPlacement` | データサイズ・容量・状態・配置ポリシーから配置計画を作成する |
 | `getStorageCapacity` | Storage の容量情報を取得する |

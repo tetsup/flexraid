@@ -229,6 +229,8 @@ Object ツリー、Namespace、リンク
 
 ディレクトリの children は永続化しない。永続化される各 Object の Header を読み込み、ParentID と Name から Orchestration 層のメモリ上に children（名前から Object への対応）を構築する。root の ObjectID は固定値や予約値で識別せず、ParentID が nil である唯一の Directory Object として特定する。root が一意に特定できない場合は Namespace を正常に復元できないものとして扱う。
 
+Orchestration の起動時初期化では、公開 `New` が Distribution の `ListObjects` で ObjectID を列挙し、共通の `ReadStripe` API を通じて各 Object の Header を含む先頭データを取得する。`New` は取得した初期データを非公開の `initialize` に渡す。`initialize` は渡されたデータの Header を解析・検証し、Header map と論理削除キューなどのメモリ状態を構築する。`initialize` 自身は Distribution を呼び出さず、I/O を伴うデータ取得とメモリ状態の構築を分離する。
+
 Object の Kind は次の種類を持つ。
 
 - File: 通常ファイル。ParentID を持ち、実データを保持する。
