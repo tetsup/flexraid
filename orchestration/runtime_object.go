@@ -17,9 +17,9 @@ type runtimeObject struct {
 type runtimeFile struct {
 	mu sync.RWMutex
 
-	objectID     shared.ObjectID
-	header       header
-	stripeCache  map[uint64]*stripeCacheEntry
+	objectID    shared.ObjectID
+	header      header
+	stripeCache map[uint64]*stripeCacheEntry
 }
 
 type stripeCacheEntry struct {
