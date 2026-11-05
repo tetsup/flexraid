@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"testing"
 
 	"github.com/tetsup/flexraid/distribution"
@@ -61,6 +62,12 @@ func TestReadReturnsLogicalRangeAcrossStripesAndHardLinks(t *testing.T) {
 		file:   layer.objects[fileID].file,
 	}
 
+	openResponse, err := layer.Open(OpenRequest{ObjectID: fileID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer layer.Release(ReleaseRequest{Handle: openResponse.Handle})
+
 	for _, tc := range []struct {
 		offset uint64
 		size   uint32
@@ -70,7 +77,7 @@ func TestReadReturnsLogicalRangeAcrossStripesAndHardLinks(t *testing.T) {
 		{offset: uint64(len(payload) - 11), size: 40},
 		{offset: uint64(len(payload)), size: 10},
 	} {
-		got, err := layer.Read(ReadRequest{Context: ctx, ObjectID: fileID, Offset: tc.offset, Size: tc.size})
+		got, err := layer.Read(ReadRequest{Context: ctx, Handle: openResponse.Handle, ObjectID: fileID, Offset: tc.offset, Size: tc.size})
 		if err != nil {
 			t.Fatalf("Read offset=%d size=%d: %v", tc.offset, tc.size, err)
 		}
@@ -82,7 +89,12 @@ func TestReadReturnsLogicalRangeAcrossStripesAndHardLinks(t *testing.T) {
 			t.Fatalf("Read offset=%d size=%d returned %d bytes, want %d", tc.offset, tc.size, len(got.Data), end-tc.offset)
 		}
 	}
-	got, err := layer.Read(ReadRequest{Context: ctx, ObjectID: linkID, Offset: 9, Size: 100})
+	linkOpen, err := layer.Open(OpenRequest{ObjectID: linkID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer layer.Release(ReleaseRequest{Handle: linkOpen.Handle})
+	got, err := layer.Read(ReadRequest{Context: ctx, Handle: linkOpen.Handle, ObjectID: linkID, Offset: 9, Size: 100})
 	if err != nil || !bytes.Equal(got.Data, payload[9:109]) {
 		t.Fatalf("HardLink Read = %d bytes, %v", len(got.Data), err)
 	}
@@ -102,5 +114,28 @@ func TestReadValidatesObjectAndContext(t *testing.T) {
 	layer.objects[id] = &runtimeObject{header: testHeader(objectKindDirectory, id, nil, nil, "")}
 	if _, err := layer.Read(ReadRequest{ObjectID: id, Size: 1}); err == nil {
 		t.Fatal("directory unexpectedly readable")
+	}
+}
+
+func TestReadRequiresValidHandle(t *testing.T) {
+	id := testID("32345678-9abc-4def-8abc-1234567890ab")
+	file := &runtimeFile{objectID: id, header: sampleHeader()}
+	objectHeader := testHeader(objectKindFile, id, ptrObjectID(testID("12345678-9abc-4def-8abc-1234567890ab")), nil, "data")
+	objectHeader.Layout = layout{Mode: layoutModeMirror, ChunkSize: 64, DataChunks: 2}
+	file.header = objectHeader
+	layer := &Orchestration{objects: map[shared.ObjectID]*runtimeObject{id: {header: objectHeader, file: file}}}
+
+	if _, err := layer.Read(ReadRequest{ObjectID: id, Size: 1}); !errors.Is(err, os.ErrInvalid) {
+		t.Fatalf("Read without handle = %v, want os.ErrInvalid", err)
+	}
+	opened, err := layer.Open(OpenRequest{ObjectID: id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := layer.Release(ReleaseRequest{Handle: opened.Handle}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := layer.Read(ReadRequest{Handle: opened.Handle, ObjectID: id, Size: 1}); !errors.Is(err, os.ErrInvalid) {
+		t.Fatalf("Read after Release = %v, want os.ErrInvalid", err)
 	}
 }
