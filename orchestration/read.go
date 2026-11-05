@@ -96,10 +96,10 @@ func (layer *Orchestration) Read(request ReadRequest) (response ReadResponse, er
 		}
 		layout = distribution.Layout{Type: distribution.LayoutMirror, NumChunks: uint8(fileHeader.Layout.DataChunks)}
 	case layoutModeStripe:
-		if file.header.Layout.ParityChunks != 1 {
+		if fileHeader.Layout.ParityChunks != 1 {
 			return response, fmt.Errorf("%w: stripe layout requires one parity chunk", errInvalidHeader)
 		}
-		layout = distribution.Layout{Type: distribution.LayoutParity, NumChunks: uint8(file.header.Layout.DataChunks)}
+		layout = distribution.Layout{Type: distribution.LayoutParity, NumChunks: uint8(fileHeader.Layout.DataChunks)}
 	default:
 		return response, fmt.Errorf("%w: unknown layout mode", errInvalidHeader)
 	}
