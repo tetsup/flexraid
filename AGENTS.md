@@ -381,3 +381,54 @@ FUSE 層の具体的な関数一覧は、この議論ではまだ整理してい
 - 既存 Pull Request と今回の変更が無関係で、独立した作業として扱うべき場合に限り、新しい Pull Request を作成する。
 - 既存 Pull Request が複数ある場合は、変更内容に対応する Pull Request を選ぶ。判断できない場合は、作業を進める前に確認する。
 - Pull Request を作成した後も、その Pull Request が Open の間は、同じ作業に関する修正・追加を同じブランチに積む。
+
+## 10. FUSE open / file-handle lifecycle and synchronization
+
+The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing or changing FUSE file operations, follow the callback contracts and capability semantics of this pinned version rather than introducing an independent FUSE lifecycle.
+
+### 10.1 File open and handle ownership
+
+- A regular-file open is represented by go-fuse `fs.NodeOpener.Open(ctx, flags)`. It is optional in go-fuse, but FlexRAID requires a non-nil Orchestration file handle for regular-file Read / Write operations. Therefore the FUSE adapter must implement Open and return the handle created by Orchestration.
+- The Orchestration package owns the concrete FileHandle type and its private state. The FUSE package only passes that handle through; it must not duplicate cursor, dirty-stripe, or logical-file state.
+- go-fuse's `fs.FileHandle` is an opaque `any`. If Open is not implemented or returns no handle, `NodeReader` / `NodeWriter` can receive nil. This is not allowed by the FlexRAID contract: Read / Write without a valid handle must fail rather than silently fall back to ObjectID-only I/O.
+- Prefer implementing the go-fuse `fs.FileReader`, `fs.FileWriter`, `fs.FileFlusher`, `fs.FileFsyncer`, and `fs.FileReleaser` interfaces on the Orchestration handle (or thin FUSE adapters around Orchestration operations). Do not implement both inode-level and handle-level variants for the same operation without a deliberate dispatch reason.
+- `fs.NodeCreater.Create` and `fs.NodeTmpfiler.Tmpfile` also return a FileHandle. They must create/obtain the same kind of Orchestration handle as Open when those operations are supported; they must not create a handle with different lifetime or synchronization semantics.
+- Each successful independent Open creates an independent FileHandle and virtual cursor. A duplicated descriptor (dup) shares the same open-file description and therefore the same FUSE handle; do not create another Orchestration handle for dup.
+- The offset supplied to Read / Write is authoritative. The per-handle virtual cursor is only a write-buffer locality hint; it is not a replacement for the kernel-provided offset and must not impose sequential-only I/O.
+
+### 10.2 Flush, Fsync, and Release
+
+- go-fuse `NodeFlusher.Flush` / `fs.FileFlusher.Flush` may be called more than once for the same FileHandle, including when a descriptor was duplicated. Flush must therefore be safe to call repeatedly and must not release the handle.
+- Flush is the place to report errors from work required by close(2), because the kernel ignores the return value of Release. Any Dirty Stripe data that must be persisted before close must be committed by Flush, with failures returned there.
+- go-fuse `NodeFsyncer.Fsync` / `fs.FileFsyncer.Fsync` represents the request to flush data to stable storage. FlexRAID must persist all pending dirty data covered by the handle before reporting success.
+- go-fuse `NodeReleaser.Release` / `fs.FileReleaser.Release` is final handle cleanup. It must be idempotent/robust against teardown and must not be the only place where fallible persistence occurs. Release invalidates the handle; subsequent Read / Write / Flush / Fsync through it must fail.
+- Do not treat Flush, Fsync, and Release as synonyms: Flush can repeat, Fsync is an explicit durability request, and Release is final resource cleanup.
+
+### 10.3 Other callbacks associated with an open handle
+
+- `fs.NodeGetattrer.Getattr` may receive a FileHandle parameter, but go-fuse documents that the kernel normally does not send a handle even for fstat. GetAttr must therefore work without one and must not depend on open-specific state.
+- `fs.NodeSetattrer.Setattr` may receive a handle. Attribute changes such as size changes (truncate) must be synchronized with data I/O and must preserve the logical Header / file-size invariants. Do not assume a handle is always present.
+- `fs.NodeLseeker.Lseek` / `fs.FileLseeker.Lseek` is for `SEEK_DATA` / `SEEK_HOLE` semantics. Ordinary file-position movement is represented by the offset passed to Read / Write; FlexRAID does not need a separate stateful Seek cursor.
+- `fs.NodeAllocater.Allocate` / `fs.FileAllocater.Allocate` is a space-allocation operation, not a substitute for Write. If supported, it must synchronize with file-size and stripe allocation changes.
+- Directory handles are separate from regular-file handles. `NodeOpendirer.Opendir` is a validation-only callback; `NodeOpendirHandler.OpendirHandle` can return a directory FileHandle and flags. Directory stream callbacks (`Readdir`, `Readdirent`, `Seekdir`, `Releasedir`) must not reuse the regular-file FileHandle contract.
+
+### 10.4 Lock callbacks and mount options
+
+- go-fuse `fuse.MountOptions.EnableLocks` asks the kernel to forward advisory file-lock requests to FUSE. When enabled, implement the corresponding `Getlk`, `Setlk`, and `Setlkw` callbacks (on the inode or FileHandle as appropriate). This is POSIX/application-visible advisory locking; it is not the internal lock that protects FlexRAID's data structures. Do not enable it until those callbacks and their lock-owner/range semantics are implemented and tested.
+- `fuse.MountOptions.SyncRead` disables asynchronous reads for a FileHandle: the kernel sends at most one read request per handle at a time and orders them by offset. When unset (the default), concurrent reads and readahead requests may reach userspace. This option only serializes reads per handle; it does not serialize reads against writes, different handles, metadata operations, or other files. FlexRAID must remain correct with the default asynchronous-read behavior; do not use SyncRead as a substitute for Orchestration synchronization.
+- Do not set `fuse.FOPEN_PARALLEL_DIRECT_WRITES` in Open flags. It opts into parallel direct writes for that open handle and would bypass the conservative write serialization expected by the initial implementation.
+- Do not set `fuse.FOPEN_DIRECT_IO` or `fuse.FOPEN_KEEP_CACHE` without an explicit data-cache policy. DIRECT_IO changes page-cache behavior; KEEP_CACHE asks the kernel to retain cached file contents across opens. Cache coherency must be designed before either is enabled.
+- Keep `fuse.MountOptions.ExplicitDataCacheControl` disabled unless FlexRAID explicitly implements and tests cache invalidation/notification. Enabling it transfers responsibility for data-cache invalidation to the filesystem.
+- `fuse.FOPEN_NOFLUSH` must not be used because FlexRAID relies on Flush to report errors while committing pending dirty data.
+- These options do not provide a general inode-wide mutex. Internal synchronization remains an Orchestration responsibility, keyed by the shared Runtime file object so HardLinks coordinate through the same backing object. The initial implementation should serialize conflicting mutations and ensure reads observe the latest logically committed or dirty data; it must not hold a file lock for the entire open lifetime.
+- Advisory POSIX locks enabled through EnableLocks and internal consistency locks are separate mechanisms. One must never be used as a replacement for the other.
+
+### 10.5 Initial FlexRAID policy
+
+- Require a valid Orchestration FileHandle for every regular-file Read / Write.
+- Keep one independent virtual cursor per FileHandle; use the kernel-provided offset for every operation.
+- Keep dirty-write buffering and logical file state in Orchestration, not in the FUSE adapter.
+- Preserve go-fuse's default asynchronous read capability and do not opt into parallel direct writes.
+- Do not enable advisory lock forwarding, Direct I/O, KEEP_CACHE, or explicit data-cache control until their complete behavior is implemented and tested.
+- Implement Flush, Fsync, and Release with their distinct go-fuse lifecycle semantics described above.
+
