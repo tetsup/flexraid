@@ -31,9 +31,21 @@ func readInitialObjects(ctx context.Context, layer *distribution.Distribution) (
 			return nil, err
 		}
 		if objectHeader.Kind == objectKindSymlink {
-			data, err = readInitialObjectData(ctx, layer, objectID, headerSize+int(objectHeader.Size))
-			if err != nil {
-				return nil, fmt.Errorf("read symlink target %s: %w", objectID.String(), err)
+			if objectHeader.Size > uint64(int(^uint(0)>>1)-headerSize) {
+				// Preserve the Header so initialization can exclude and protect the
+				// symlink instead of making the entire namespace unavailable.
+				initialObjects = append(initialObjects, initialObject{objectID: objectID, data: data})
+				continue
+			}
+			targetData, targetErr := readInitialObjectData(ctx, layer, objectID, headerSize+int(objectHeader.Size))
+			if targetErr != nil {
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				// A broken symlink target is a localized namespace issue. Keep
+				// its Header; initialize will mark the target unavailable.
+			} else {
+				data = targetData
 			}
 		}
 		initialObjects = append(initialObjects, initialObject{objectID: objectID, data: data})
