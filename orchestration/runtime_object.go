@@ -1,6 +1,10 @@
 package orchestration
 
-import "github.com/tetsup/flexraid/pkg/shared"
+import (
+	"sync"
+
+	"github.com/tetsup/flexraid/pkg/shared"
+)
 
 type runtimeObject struct {
 	header           header
@@ -11,9 +15,24 @@ type runtimeObject struct {
 }
 
 type runtimeFile struct {
-	objectID shared.ObjectID
-	header   header
+	mu sync.RWMutex
+
+	objectID     shared.ObjectID
+	header       header
+	stripeCache  map[uint64]*stripeCacheEntry
 }
+
+type stripeCacheEntry struct {
+	data  []byte
+	state stripeCacheState
+}
+
+type stripeCacheState uint8
+
+const (
+	stripeCacheClean stripeCacheState = iota
+	stripeCacheDirty
+)
 
 type initializationWarning struct {
 	objectID shared.ObjectID
