@@ -11,25 +11,31 @@ import (
 )
 
 type ReadDirRequest struct {
-	Context context.Context
+	Context  context.Context
 	ObjectID shared.ObjectID
 }
 
 type DirectoryEntry struct {
 	ObjectID shared.ObjectID
-	Kind shared.ObjectKind
-	Name string
+	Kind     shared.ObjectKind
+	Name     string
 }
 
-type ReadDirResponse struct { Entries []DirectoryEntry }
+type ReadDirResponse struct{ Entries []DirectoryEntry }
 
 // ReadDir returns the immediate children of a directory in name order.
 func (layer *Orchestration) ReadDir(request ReadDirRequest) (ReadDirResponse, error) {
 	ctx := request.Context
-	if ctx == nil { ctx = context.Background() }
-	if err := ctx.Err(); err != nil { return ReadDirResponse{}, err }
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return ReadDirResponse{}, err
+	}
 	object, exists := layer.objects[request.ObjectID]
-	if !exists || object.header.Deleted { return ReadDirResponse{}, os.ErrNotExist }
+	if !exists || object.header.Deleted {
+		return ReadDirResponse{}, os.ErrNotExist
+	}
 	if object.header.Kind != objectKindDirectory {
 		return ReadDirResponse{}, fmt.Errorf("object %s: %w", request.ObjectID.String(), errNotDirectory)
 	}
