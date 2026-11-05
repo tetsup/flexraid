@@ -19,6 +19,7 @@ type runtimeFile struct {
 
 	objectID    shared.ObjectID
 	header      header
+	openCount   uint64
 	stripeCache map[uint64]*stripeCacheEntry
 }
 
