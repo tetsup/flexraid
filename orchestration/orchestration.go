@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"sync"
 
 	"github.com/tetsup/flexraid/distribution"
 	"github.com/tetsup/flexraid/pkg/shared"
@@ -28,9 +27,6 @@ type Orchestration struct {
 	deletionQueue    map[shared.ObjectID]struct{}
 	protectedObjects map[shared.ObjectID]struct{}
 	warnings         []initializationWarning
-
-	handlesMu sync.Mutex
-	handles   map[*FileHandle]struct{}
 }
 
 func New(request NewRequest) (NewResponse, error) {
@@ -57,7 +53,6 @@ func New(request NewRequest) (NewResponse, error) {
 	layer := &Orchestration{
 		distribution: request.Distribution,
 		logger:       logger,
-		handles:      make(map[*FileHandle]struct{}),
 	}
 	if err := layer.initialize(initialObjects); err != nil {
 		return NewResponse{}, err
