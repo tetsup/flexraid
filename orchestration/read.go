@@ -148,7 +148,7 @@ func (layer *Orchestration) getStripeData(ctx context.Context, file *runtimeFile
 	file.mu.RLock()
 	entry := file.stripeCache[key]
 	if entry != nil {
-		data := entry.data
+		data := append([]byte(nil), entry.data...)
 		file.mu.RUnlock()
 		return data, nil
 	}
@@ -160,7 +160,7 @@ func (layer *Orchestration) getStripeData(ctx context.Context, file *runtimeFile
 		file.stripeCache = make(map[uint64]*stripeCacheEntry)
 	}
 	if entry = file.stripeCache[key]; entry != nil {
-		return entry.data, nil
+		return append([]byte(nil), entry.data...), nil
 	}
 
 	stripe, err := layer.distribution.ReadStripe(distribution.ReadStripeRequest{
@@ -174,5 +174,5 @@ func (layer *Orchestration) getStripeData(ctx context.Context, file *runtimeFile
 	}
 	entry = &stripeCacheEntry{data: append([]byte(nil), stripe.Data...), state: stripeCacheClean}
 	file.stripeCache[key] = entry
-	return entry.data, nil
+	return append([]byte(nil), entry.data...), nil
 }
