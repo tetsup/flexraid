@@ -50,7 +50,7 @@ func newWriteFixture(t *testing.T) writeFixture {
 		}
 		_, err = distributed.Layer.WriteStripe(distribution.WriteStripeRequest{
 			Context: ctx, ObjectID: fileID, StripeID: stripeID, ChunkSize: h.Layout.ChunkSize,
-			Layout: distribution.Layout{Type: distribution.LayoutMirror, NumChunks: 2},
+			Layout:    distribution.Layout{Type: distribution.LayoutMirror, NumChunks: 2},
 			IOIndexes: []int{0, 1}, Data: logical[offset:end],
 		})
 		if err != nil {
@@ -149,7 +149,7 @@ func TestWriteAppendUsesSharedCurrentSize(t *testing.T) {
 	second := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_WRONLY|syscall.O_APPEND))
 	for _, item := range []struct {
 		handle *FileHandle
-		data []byte
+		data   []byte
 	}{{first, []byte("one")}, {second, []byte("two")}} {
 		if _, err := fixture.layer.Write(WriteRequest{Handle: item.handle, ObjectID: fixture.fileID, Data: item.data}); err != nil {
 			t.Fatal(err)
