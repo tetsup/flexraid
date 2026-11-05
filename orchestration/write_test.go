@@ -115,8 +115,18 @@ func TestWriteUpdatesSharedCacheVisibleToOtherHandle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(persisted.Data, patch) {
-		t.Fatal("Write persisted data before Flush/Fsync")
+	originalHeader, err := fixture.layer.objects[fixture.fileID].file.header.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := append(originalHeader, fixture.payload...)
+	stripeStart := uint64((headerSize + 53) / 64 * 64)
+	stripeEnd := stripeStart + 64
+	if stripeEnd > uint64(len(original)) {
+		stripeEnd = uint64(len(original))
+	}
+	if !bytes.Equal(persisted.Data, original[stripeStart:stripeEnd]) {
+		t.Fatal("Write changed persisted data before Flush/Fsync")
 	}
 }
 
