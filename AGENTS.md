@@ -382,7 +382,7 @@ FUSE 層の具体的な関数一覧は、この議論ではまだ整理してい
 - 既存 Pull Request が複数ある場合は、変更内容に対応する Pull Request を選ぶ。判断できない場合は、作業を進める前に確認する。
 - Pull Request を作成した後も、その Pull Request が Open の間は、同じ作業に関する修正・追加を同じブランチに積む。
 
-## 10. FUSE open / file-handle lifecycle and synchronization
+## 11. FUSE open / file-handle lifecycle and synchronization
 
 The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing or changing FUSE file operations, follow the callback contracts and capability semantics of this pinned version rather than introducing an independent FUSE lifecycle.
 
