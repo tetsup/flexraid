@@ -52,7 +52,7 @@ func New(request NewRequest) (NewResponse, error) {
 			if err := ctx.Err(); err != nil {
 				return NewResponse{}, err
 			}
-			read, readErr := request.Distribution.ReadStripe(distribution.ReadStripeRequest{Context: ctx, ObjectID: objectID, StripeID: storage.StripeID(stripeID)})
+			read, readErr := request.Distribution.ReadStripe(distribution.ReadStripeRequest{Context: ctx, ObjectID: objectID, StripeID: storage.StripeID(stripeID), ChunkSize: 4096})
 			if readErr != nil {
 				return NewResponse{}, fmt.Errorf("read object header %s at stripe %d: %w", objectID.String(), stripeID, readErr)
 			}

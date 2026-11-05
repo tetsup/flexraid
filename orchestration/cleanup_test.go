@@ -30,7 +30,7 @@ func TestStartupRebuildsDeletionQueueAndCleanupDeletesObject(t *testing.T) {
 		stripe storage.StripeID
 		data   []byte
 	}{{0, headerData[:100]}, {1, headerData[100:]}, {2, []byte("payload")}} {
-		if _, err := initial.Layer.WriteStripe(distribution.WriteStripeRequest{Context: ctx, ObjectID: id, StripeID: item.stripe, Layout: distribution.Layout{Type: distribution.LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: item.data}); err != nil {
+		if _, err := initial.Layer.WriteStripe(distribution.WriteStripeRequest{Context: ctx, ObjectID: id, StripeID: item.stripe, ChunkSize: 4096, Layout: distribution.Layout{Type: distribution.LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: item.data}); err != nil {
 			t.Fatal(err)
 		}
 	}
