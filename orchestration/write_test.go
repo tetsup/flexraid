@@ -18,7 +18,8 @@ type writeFixture struct {
 	layer   *Orchestration
 	fileID  shared.ObjectID
 	linkID  shared.ObjectID
-	payload []byte
+	payload    []byte
+	headerData []byte
 }
 
 func newWriteFixture(t *testing.T) writeFixture {
@@ -67,7 +68,7 @@ func newWriteFixture(t *testing.T) writeFixture {
 			linkID: {header: testHeader(objectKindHardLink, linkID, &parentID, &fileID, "alias"), file: file},
 		},
 	}
-	return writeFixture{layer: layer, fileID: fileID, linkID: linkID, payload: payload}
+	return writeFixture{layer: layer, fileID: fileID, linkID: linkID, payload: payload, headerData: append([]byte(nil), headerData...)}
 }
 
 func openWriteHandle(t *testing.T, layer *Orchestration, id shared.ObjectID, flags uint32) *FileHandle {
@@ -115,11 +116,7 @@ func TestWriteUpdatesSharedCacheVisibleToOtherHandle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	originalHeader, err := fixture.layer.objects[fixture.fileID].file.header.MarshalBinary()
-	if err != nil {
-		t.Fatal(err)
-	}
-	original := append(originalHeader, fixture.payload...)
+	original := append(append([]byte(nil), fixture.headerData...), fixture.payload...)
 	stripeStart := uint64((headerSize + 53) / 64 * 64)
 	stripeEnd := stripeStart + 64
 	if stripeEnd > uint64(len(original)) {
