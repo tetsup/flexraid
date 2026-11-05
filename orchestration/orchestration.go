@@ -8,7 +8,6 @@ import (
 
 	"github.com/tetsup/flexraid/distribution"
 	"github.com/tetsup/flexraid/pkg/shared"
-	"github.com/tetsup/flexraid/storage"
 )
 
 type NewRequest struct {
@@ -20,10 +19,14 @@ type NewRequest struct {
 type NewResponse struct{ Layer *Orchestration }
 
 type Orchestration struct {
-	distribution  *distribution.Distribution
-	logger        *slog.Logger
-	headers       map[shared.ObjectID]header
-	deletionQueue map[shared.ObjectID]struct{}
+	distribution     *distribution.Distribution
+	logger           *slog.Logger
+	headers          map[shared.ObjectID]header
+	objects          map[shared.ObjectID]*runtimeObject
+	root             *runtimeObject
+	deletionQueue    map[shared.ObjectID]struct{}
+	protectedObjects map[shared.ObjectID]struct{}
+	warnings         []initializationWarning
 }
 
 func New(request NewRequest) (NewResponse, error) {
@@ -41,38 +44,19 @@ func New(request NewRequest) (NewResponse, error) {
 	if err := ctx.Err(); err != nil {
 		return NewResponse{}, err
 	}
-	layer := &Orchestration{distribution: request.Distribution, logger: logger, headers: make(map[shared.ObjectID]header), deletionQueue: make(map[shared.ObjectID]struct{})}
-	objects, err := request.Distribution.ListObjects(distribution.ListObjectsRequest{Context: ctx})
+
+	initialObjects, err := readInitialObjects(ctx, request.Distribution)
 	if err != nil {
 		return NewResponse{}, err
 	}
-	for _, objectID := range objects.ObjectIDs {
-		headerData := make([]byte, 0, headerSize)
-		for stripeID := uint64(0); len(headerData) < headerSize; stripeID++ {
-			if err := ctx.Err(); err != nil {
-				return NewResponse{}, err
-			}
-			read, readErr := request.Distribution.ReadStripe(distribution.ReadStripeRequest{Context: ctx, ObjectID: objectID, StripeID: storage.StripeID(stripeID), ChunkSize: 4096})
-			if readErr != nil {
-				return NewResponse{}, fmt.Errorf("read object header %s at stripe %d: %w", objectID.String(), stripeID, readErr)
-			}
-			if len(read.Data) == 0 {
-				return NewResponse{}, fmt.Errorf("%w: empty stripe while reading header for %s", errInvalidHeader, objectID.String())
-			}
-			headerData = append(headerData, read.Data...)
-		}
-		var objectHeader header
-		if err := objectHeader.UnmarshalBinary(headerData[:headerSize]); err != nil {
-			return NewResponse{}, fmt.Errorf("decode object header %s: %w", objectID.String(), err)
-		}
-		if objectHeader.ObjectID != objectID {
-			return NewResponse{}, fmt.Errorf("%w: object ID mismatch", errInvalidHeader)
-		}
-		layer.headers[objectID] = objectHeader
-		if objectHeader.Deleted {
-			layer.deletionQueue[objectID] = struct{}{}
-		}
+
+	layer := &Orchestration{
+		distribution: request.Distribution,
+		logger:       logger,
 	}
-	logger.Debug("Orchestration initialized", "objects", len(layer.headers), "deletion_queue", len(layer.deletionQueue))
+	if err := layer.initialize(initialObjects); err != nil {
+		return NewResponse{}, err
+	}
+	logger.Debug("Orchestration initialized", "objects", len(layer.headers), "deletion_queue", len(layer.deletionQueue), "protected_objects", len(layer.protectedObjects), "warnings", len(layer.warnings))
 	return NewResponse{Layer: layer}, nil
 }

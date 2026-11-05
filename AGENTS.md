@@ -150,7 +150,7 @@ fuse/
 - 永続化された Object の Header から ParentID / Name に基づいてメモリ上の Directory children を構築し、HardLink の TargetID を解決して同一の Runtime ファイル実体を共有させる。
 - Distribution 層から論理データを読み出し、その先頭に含まれる Header を解析して、ObjectID・ParentID・論理サイズ・ファイル属性などの論理ファイル情報を管理する。
 - Header の定義、生成、解析、シリアライズ、および Header に保持する論理ファイル属性の更新・永続化を担当する。Header / Layout の内部表現、Kind 定数、Header 固有のエラーやサイズ定数は Orchestration パッケージ内に閉じ込め、外部へ公開しない。
-- 起動時には Distribution 層が列挙した ObjectID をもとに、共通のストライプ読み出し API で論理データを取得し、Header を解析して論理ファイルシステムの状態を再構築する。
+- 起動時の初期化では、公開 `New` が Distribution の `ListObjects` で ObjectID を列挙し、共通の `ReadStripe` API で各 Object の Header を含む初期データを取得して、非公開 `initialize` に渡す。`initialize` は全 Header を解析・検証し、Runtime Object を生成して ParentID / Name から Directory children を構築し、HardLink の TargetID を解決する。その後、単一の非公開 `inspect` で構築結果全体を検査する。root が一意に定まらないなど Namespace 全体を復元できない不整合は初期化エラーとする。一方、壊れた HardLink や Namespace ツリー外の Object など、一部の機能に限定された不整合は該当要素を Namespace 上に存在しないものとして扱い、warning を出して初期化を続行する。この場合、該当する HardLink / Object および関連する実体を Cleanup の削除対象にしてはならない。部分的不整合を理由に永続データを自動削除・論理削除扱いへ変更してはならない。Distribution への I/O は `New` が担当し、`initialize` は受け取ったデータを使って構築・検査する。
 - Header を含む論理データは通常のストライプ読み書き API で扱う。Header 専用のストライプ処理経路は設けない。
 - 論理ファイルに対する操作を受け付け、Header とファイルデータの整合性を保ちながら Distribution 層を利用する。
 - ファイルごとの配置ポリシーを選択し、各ドライブの容量・状態や書き込みサイズなどを踏まえて、どのドライブ群にどう分散するかという配置方針を決定する。
@@ -287,7 +287,7 @@ Distribution の公開 API は論理ストライプ単位の読み書き操作�
 
 | 関数 | 位置付け | 内容 |
 |---|---|---|
-| `New` | 候補 | Distribution の `ListObjects` で ObjectID を列挙し、共通の `ReadStripe` で論理データを読み出して Header を解析し、Orchestration の State を同期的に構築したインスタンスを返す。初期化に失敗した場合は error を返す |
+| `New` | 公開 API・初期化フロー確定 | Distribution の `ListObjects` で ObjectID を列挙し、共通の `ReadStripe` で各 Object の Header を含む初期データを取得する。取得データを非公開 `initialize` に渡し、初期化済み Orchestration インスタンスを返す。取得または初期化に失敗した場合は error を返す。`New` が I/O を伴う取得を担当し、`initialize` は Distribution を呼ばずメモリ状態を構築する |
 | `Open` | 既存設計の操作候補 | Object を開く |
 | `Read` | 既存設計の操作候補 | Object の指定範囲を読み込む |
 | `Write` | 既存設計の操作候補 | Object の指定範囲を書き込む |
@@ -314,6 +314,12 @@ Distribution の公開 API は論理ストライプ単位の読み書き操作�
 
 | 関数 | 内容 |
 |---|---|
+| `readInitialObjects` | Distribution の `ListObjects` で ObjectID を列挙し、各 Object の初期 Header データを取得する。`New` から呼び出す |
+| `readInitialHeaderData` | 共通 `ReadStripe` API を用いて Header サイズ分の初期データを取得する。Distribution への I/O を担当する |
+| `initialize` | `New` から受け取った全 Object の初期データを解析し、Runtime Object を生成する。ParentID / Name から Namespace の親子関係を構築し、HardLink の TargetID を解決して実体参照を共有させた後、`inspect` で構築結果を検査する。Distribution の API は呼び出さない |
+| `decodeInitialHeader` | 初期データから Header をデコードし、ObjectID の一致と Header データの妥当性を検証する |
+| `buildNamespace` | 初期化対象の Header / Runtime Object から Directory children を構築し、HardLink の TargetID を解決する |
+| `inspect` | 初期化後の状態全体を検査する。root を復元できない不整合は初期化エラーとする。一部機能に限定された不整合（壊れた HardLink、ツリー外 Object など）は該当要素を Namespace 上は存在しないものとして warning 報告し、関連 Object / 実体を Cleanup 対象から保護する。検査を複数の公開・非公開関数に分散させない |
 | `selectStorages` | 配置方針に使用する Storage を選択する |
 | `planPlacement` | データサイズ・容量・状態・配置ポリシーから配置計画を作成する |
 | `getStorageCapacity` | Storage の容量情報を取得する |
@@ -336,7 +342,7 @@ FUSE 層の具体的な関数一覧は、この議論ではまだ整理してい
 - HardLinkedFile / HardLink の属性情報の保持場所と FUSE inode / st_nlink への対応。
 - 最後の HardLink 削除時の HardLinkedFile の解放条件、オープン中ファイルの寿命、および参照数の再構築方法。
 - ハードリンク作成・削除など複数 Object の永続化を伴う Namespace 操作の原子性とクラッシュ復旧手順。
-- root の一意性検証、および Namespace から到達できない Object を起動時にどう扱うか。
+- Namespace の部分的不整合は `protectedObjects` に ObjectID を保持し、Orchestration の Cleanup から Distribution の Cleanup へ除外対象として渡す。Distribution の Cleanup は除外対象 Object の orphan / version / chunk を削除しない。Warning は ObjectID と理由を持つ初期化時の揮発状態として記録する。
 - ストレージ障害・容量変化を踏まえた配置計画の再評価と、既存チャンクの再配置方針。
 - `New` 時の利用可能 IO の判定基準（IO へのアクセスが成功したとみなす条件）と、非公開状態フィールドおよび getter の具体的な名前・戻り値の構造。
 - `GetErrorStats` の Request / Response の具体的なフィールド構成と、定期ログ出力の間隔・出力内容。getter が返す状態スナップショットの具体的な型・構造。
