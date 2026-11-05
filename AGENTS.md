@@ -355,6 +355,7 @@ FUSE 層の具体的な関数一覧は、この議論ではまだ整理してい
 - Symlink のリンク先文字列取得は `ReadLink`（POSIX の `readlink` 相当）として提供し、保存されたパス文字列をそのまま返す。リンク先を Orchestration 内部で展開・解決しない。
 - Symlink を介したパス参照、およびリンク先の絶対パス・相対パスの解決は POSIX/FUSE のパス解決に委ねる。Orchestration の Namespace root を POSIX の `/` と同一視してはならない。
 - Orchestration の Namespace 参照 API は ObjectID / 親子関係を参照するものであり、symlink の追跡や循環検出を独自に実装しない。FUSE 層は通常のパス参照とリンク自身の属性取得を区別する。
+- Initialize は symlink のリンク先データだけを `ReadStripe` で先読みし、Runtime Object にキャッシュする。`ReadLink` はキャッシュを返して追加 I/O を行わない。リンク先データが欠落・破損している symlink は Namespace から除外して保護し、他の Object の初期化は継続する。
 - HardLink は Symlink と異なり、リンク先文字列を持たない。HardLink の属性およびデータ参照は共有する HardLinkedFile 実体に基づく。
 
 ## 9. テスト
