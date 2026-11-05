@@ -164,9 +164,9 @@ func (layer *Orchestration) getStripeData(ctx context.Context, file *runtimeFile
 	}
 
 	stripe, err := layer.distribution.ReadStripe(distribution.ReadStripeRequest{
-		Context: ctx,
-		ObjectID: file.objectID,
-		StripeID: stripeID,
+		Context:   ctx,
+		ObjectID:  file.objectID,
+		StripeID:  stripeID,
 		ChunkSize: file.header.Layout.ChunkSize,
 	})
 	if err != nil {
