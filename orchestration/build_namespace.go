@@ -11,9 +11,9 @@ func buildNamespace(objects map[shared.ObjectID]*runtimeObject, protected map[sh
 		}
 		switch object.header.Kind {
 		case objectKindFile:
-			object.file = &runtimeFile{objectID: id, header: object.header}
+			object.file = &runtimeFile{objectID: id, header: object.header, stripeCache: make(map[uint64]*stripeCacheEntry)}
 		case objectKindHardLinkedFile:
-			object.file = &runtimeFile{objectID: id, header: object.header}
+			object.file = &runtimeFile{objectID: id, header: object.header, stripeCache: make(map[uint64]*stripeCacheEntry)}
 		case objectKindDirectory:
 			object.children = make(map[string]*runtimeObject)
 		}
