@@ -112,3 +112,80 @@ func TestResolvePath(t *testing.T) {
 		t.Fatalf("got %v, want errNotDirectory", err)
 	}
 }
+
+func TestReadLinkReturnsCachedTargetAndSymlinkAttributes(t *testing.T) {
+	rootID := testID("12345678-9abc-4def-8abc-1234567890ab")
+	linkID := testID("22345678-9abc-4def-8abc-1234567890ab")
+	root := testHeader(objectKindDirectory, rootID, nil, nil, "")
+	link := testHeader(objectKindSymlink, linkID, &rootID, nil, "shortcut")
+	target := "../target/file"
+	link.Size = uint64(len(target))
+	data, err := link.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = append(data, []byte(target)...)
+
+	layer := &Orchestration{}
+	if err := layer.initialize([]initialObject{
+		{objectID: rootID, data: mustMarshalHeader(t, root)},
+		{objectID: linkID, data: data},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := layer.ReadLink(ReadLinkRequest{ObjectID: linkID})
+	if err != nil || got.Target != target {
+		t.Fatalf("ReadLink = %#v, %v; want target %q", got, err, target)
+	}
+	attr, err := layer.GetAttr(GetAttrRequest{ObjectID: linkID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attr.Attributes.Kind != objectKindSymlink || attr.Attributes.Size != uint64(len(target)) {
+		t.Fatalf("GetAttr did not return symlink attributes: %#v", attr.Attributes)
+	}
+	if _, err := layer.ReadLink(ReadLinkRequest{ObjectID: rootID}); err == nil {
+		t.Fatal("ReadLink accepted a non-symlink")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := layer.ReadLink(ReadLinkRequest{Context: ctx, ObjectID: linkID}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("ReadLink canceled context: got %v, want context.Canceled", err)
+	}
+}
+
+func TestInitializeSkipsSymlinkWithUnavailableTarget(t *testing.T) {
+	rootID := testID("12345678-9abc-4def-8abc-1234567890ab")
+	linkID := testID("22345678-9abc-4def-8abc-1234567890ab")
+	root := testHeader(objectKindDirectory, rootID, nil, nil, "")
+	link := testHeader(objectKindSymlink, linkID, &rootID, nil, "broken")
+	link.Size = 12
+	data := mustMarshalHeader(t, link)
+
+	layer := &Orchestration{}
+	if err := layer.initialize([]initialObject{
+		{objectID: rootID, data: mustMarshalHeader(t, root)},
+		{objectID: linkID, data: data},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := layer.root.children["broken"]; exists {
+		t.Fatal("symlink with unavailable target was exposed in namespace")
+	}
+	if _, err := layer.ReadLink(ReadLinkRequest{ObjectID: linkID}); err == nil {
+		t.Fatal("ReadLink returned an unavailable target")
+	}
+	if _, protected := layer.protectedObjects[linkID]; !protected {
+		t.Fatal("symlink with unavailable target was not protected")
+	}
+}
+
+func mustMarshalHeader(t *testing.T, h header) []byte {
+	t.Helper()
+	data, err := h.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
