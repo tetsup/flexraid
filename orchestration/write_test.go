@@ -105,8 +105,11 @@ func TestWriteUpdatesSharedCacheVisibleToOtherHandle(t *testing.T) {
 		t.Fatalf("logical size = %d, want %d", file.header.Size, len(fixture.payload))
 	}
 	for stripeID, entry := range file.stripeCache {
-		if entry.state != stripeCacheDirty {
-			t.Errorf("stripe %d state = %d, want dirty", stripeID, entry.state)
+		if stripeID <= 6 && entry.state != stripeCacheDirty {
+			t.Errorf("modified stripe %d state = %d, want dirty", stripeID, entry.state)
+		}
+		if stripeID == 7 && entry.state != stripeCacheClean {
+			t.Errorf("read-only prefetched stripe 7 state = %d, want clean", entry.state)
 		}
 	}
 	persisted, err := fixture.layer.distribution.ReadStripe(distribution.ReadStripeRequest{
