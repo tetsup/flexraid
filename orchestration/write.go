@@ -233,16 +233,16 @@ func extendStagedRange(staged map[uint64]*stripeCacheEntry, capacity, start, end
 		if entry == nil {
 			return fmt.Errorf("missing staged stripe %d: %w", stripeID, distribution.ErrDataCorrupted)
 		}
-		stripeEnd := (stripeID + 1) * capacity
-		segmentEnd := end
-		if segmentEnd > stripeEnd {
-			segmentEnd = stripeEnd
+		localStart := position % capacity
+		count := capacity - localStart
+		if remaining := end - position; count > remaining {
+			count = remaining
 		}
-		localEnd := int(segmentEnd - stripeID*capacity)
+		localEnd := int(localStart + count)
 		if len(entry.data) < localEnd {
 			entry.data = append(entry.data, make([]byte, localEnd-len(entry.data))...)
 		}
-		position = segmentEnd
+		position += count
 	}
 	return nil
 }
