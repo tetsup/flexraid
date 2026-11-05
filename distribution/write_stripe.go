@@ -14,6 +14,7 @@ type WriteStripeRequest struct {
 	Context   context.Context
 	ObjectID  shared.ObjectID
 	StripeID  storage.StripeID
+	ChunkSize uint32
 	Layout    Layout
 	IOIndexes []int
 	Data      []byte
@@ -25,6 +26,9 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 	defer func() {
 		logOperation(d.logger, "WriteStripe", started, err, "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "bytes", len(request.Data))
 	}()
+	if request.ChunkSize == 0 {
+		return response, fmt.Errorf("chunk size must be positive")
+	}
 	if err = request.Context.Err(); err != nil {
 		return response, err
 	}
@@ -53,7 +57,7 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 			chunks[chunkNo(i)] = append([]byte(nil), request.Data...)
 		}
 	} else {
-		chunks = splitStripe(request.Data, method.numChunks)
+		chunks = splitStripeWithSize(request.Data, method.numChunks, int(request.ChunkSize))
 		chunks[parityFlag] = generateParity(orderedDataChunks(chunks, method.numChunks))
 	}
 	written := make(map[chunkNo]chunkLocation, len(chunks))
@@ -119,8 +123,15 @@ func validateIOIndexes(indexes []int, total, minimum int) error {
 	return nil
 }
 func splitStripe(data []byte, count uint8) map[chunkNo][]byte {
-	result := make(map[chunkNo][]byte, count)
 	size := (len(data) + int(count) - 1) / int(count)
+	return splitStripeWithSize(data, count, size)
+}
+
+func splitStripeWithSize(data []byte, count uint8, size int) map[chunkNo][]byte {
+	result := make(map[chunkNo][]byte, count)
+	if count == 0 || size < 0 || len(data) > size*int(count) {
+		return result
+	}
 	for i := 0; i < int(count); i++ {
 		chunk := make([]byte, size)
 		start := i * size
