@@ -20,7 +20,7 @@ func testHeader(kind shared.ObjectKind, id shared.ObjectID, parent, target *shar
 	h := sampleHeader()
 	h.Kind, h.ObjectID, h.ParentID, h.TargetID, h.Name = kind, id, parent, target, name
 	h.Deleted = false
-	if kind == objectKindDirectory || kind == objectKindHardLinkedFile {
+	if kind == objectKindHardLinkedFile {
 		h.ParentID = nil
 	}
 	if kind != objectKindHardLink {
