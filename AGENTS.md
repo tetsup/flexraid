@@ -449,3 +449,35 @@ The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing 
 - `activeStripeID` is only a per-handle write-locality hint. Until stripe persistence and placement planning are implemented, changing this hint does not flush or discard dirty entries. Dirty entries remain shared and visible to all handles.
 - `O_SYNC` / `O_DSYNC` writes must not report success before their required persistence is implemented. Until then, reject such writes explicitly rather than silently treating them as buffered writes.
 - The initial Write implementation serializes writes for one runtime file. Do not add a separate writer-owner ID or `writing` flag; the runtime-file mutex is the serialization mechanism.
+
+
+## 配置計画とチャンクサイズ
+
+配置計画の再計算・チャンクサイズ決定は Orchestration 層の責務とする。Distribution 層は渡された配置計画に従ってストライプを物理配置し、論理ファイルサイズや Header の意味から独自に配置方針を決定しない。
+
+### 既存オブジェクトと新規オブジェクト
+
+- 既存オブジェクトは、原則として既に確定している配置計画を踏襲する。ファイルが成長するたびに配置先や分散方式を再選択してはならない。
+- ただし、truncate などにより既存オブジェクトの論理サイズが小さくなる場合は、配置計画を再計算する。
+- ストライプ数が 2 以下のオブジェクトは、永続化の都度、現在の論理サイズに基づいて配置計画を再計算する。
+- 新規オブジェクトは、初期状態では永続化せず、メモリ上でデータを保持する。初回の永続化時に配置計画を決定する。
+- 初回永続化後に配置計画を確定・記録する方式、および再計算時の既存データ移行・旧データ整理の手順は別途定義する。配置計画の再計算だけで永続データを破壊してはならない。
+
+### 先頭ストライプ
+
+- 先頭ストライプは 4096 バイト単位のチャンクで構成する。
+- 先頭チャンクの先頭 1024 バイトは Header 予約領域であり、データ領域は最大 3072 バイトとする。
+- 先頭チャンク以外のチャンクは、4096 バイト全体をデータ領域として使用する。
+- データ領域が先頭ストライプに収まる場合、ストライプ数は 1 とする。先頭ストライプに収まらない場合は、先頭ストライプに加えて後続ストライプを配置する。
+- 先頭チャンクのデータが 3072 バイト以内である間は、2 台へのミラーリングを使用する。これを超える場合の分散方式・データ分散数は全体設定に従う。
+
+### 後続ストライプと可変チャンクサイズ
+
+- 後続ストライプのデータ分散数（データチャンク数）は全体設定で固定する。ファイルサイズに応じてデータ分散数を増減させない。
+- 後続ストライプのチャンクサイズは可変とし、4096 バイトの倍数にする。最大チャンクサイズは設定値で制限する（例: 2 MiB）。この上限を超えるサイズは採用せず、上限サイズを使用する。
+- 後続ストライプのサイズを計算するときは、まず論理ファイルサイズから先頭ストライプに格納するデータ量を差し引く。残りを 4096 バイトブロック数として扱い、固定データ分散数に均等配分したブロック数からチャンクサイズを求める。チャンクサイズは配分ブロック数に 4096 を乗じた値とする。
+- 最大チャンクサイズに達するまでは、残余データ量に応じてチャンクサイズを増加させる。上限に達した後はチャンクサイズを上限値に固定し、必要に応じて後続ストライプ数を増やす。
+- 2つ目のストライプの各データチャンクは同じサイズとし、各チャンク末尾の不足分はゼロパディングする。パディングは物理チャンクのサイズを揃えるためのものであり、論理ファイルデータには含めない。
+- 論理データはチャンク番号順に、各チャンクの容量を満たすまで順に格納する。データ量を均等にする目的で、チャンク間のデータを移動・再配置してはならない。
+- ストライプ数、データ分散数、チャンクサイズ、パディング量の境界条件（空ファイル、ちょうど境界のサイズ、最大値超過など）は、配置計画ロジックのテストで検証する。
+
