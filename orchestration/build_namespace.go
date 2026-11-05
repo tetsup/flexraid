@@ -41,6 +41,10 @@ func buildNamespace(objects map[shared.ObjectID]*runtimeObject, protected map[sh
 		if h.Deleted || h.Kind == objectKindHardLinkedFile || (h.Kind == objectKindDirectory && h.ParentID == nil) {
 			continue
 		}
+		if h.Kind == objectKindSymlink && !object.linkTargetLoaded {
+			protected[id] = struct{}{}
+			continue
+		}
 		if h.Kind == objectKindHardLink && object.file == nil {
 			continue
 		}

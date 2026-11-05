@@ -24,7 +24,18 @@ func (layer *Orchestration) initialize(initialObjects []initialObject) error {
 			return fmt.Errorf("%w: duplicate object ID %s", errInvalidHeader, initial.objectID.String())
 		}
 		state.headers[initial.objectID] = objectHeader
-		state.objects[initial.objectID] = &runtimeObject{header: objectHeader}
+		object := &runtimeObject{header: objectHeader}
+		if objectHeader.Kind == objectKindSymlink {
+			target, targetErr := decodeSymlinkTarget(initial.data, objectHeader.Size)
+			if targetErr != nil {
+				state.protectedObjects[initial.objectID] = struct{}{}
+				state.addInitializationWarning(initial.objectID, "Symlink target data is incomplete or invalid")
+			} else {
+				object.linkTarget = target
+				object.linkTargetLoaded = true
+			}
+		}
+		state.objects[initial.objectID] = object
 		if objectHeader.Deleted {
 			state.deletionQueue[initial.objectID] = struct{}{}
 		}

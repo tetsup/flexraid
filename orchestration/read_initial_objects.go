@@ -26,14 +26,47 @@ func readInitialObjects(ctx context.Context, layer *distribution.Distribution) (
 		if err != nil {
 			return nil, err
 		}
+		objectHeader, err := decodeInitialHeader(objectID, data)
+		if err != nil {
+			return nil, err
+		}
+		if objectHeader.Kind == objectKindSymlink {
+			if objectHeader.Size > uint64(int(^uint(0)>>1)-headerSize) {
+				// Preserve the Header so initialization can exclude and protect the
+				// symlink instead of making the entire namespace unavailable.
+				initialObjects = append(initialObjects, initialObject{objectID: objectID, data: data})
+				continue
+			}
+			targetData, targetErr := readInitialObjectData(ctx, layer, objectID, headerSize+int(objectHeader.Size), objectHeader.Layout.ChunkSize)
+			if targetErr != nil {
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				// A broken symlink target is a localized namespace issue. Keep
+				// its Header; initialize will mark the target unavailable.
+			} else {
+				data = targetData
+			}
+		}
 		initialObjects = append(initialObjects, initialObject{objectID: objectID, data: data})
 	}
 	return initialObjects, nil
 }
 
 func readInitialHeaderData(ctx context.Context, layer *distribution.Distribution, objectID shared.ObjectID) ([]byte, error) {
-	headerData := make([]byte, 0, headerSize)
-	for stripeID := uint64(0); len(headerData) < headerSize; stripeID++ {
+	return readInitialObjectData(ctx, layer, objectID, headerSize, 4096)
+}
+
+// readInitialObjectData reads the leading bytes of an object across stripe boundaries.
+func readInitialObjectData(ctx context.Context, layer *distribution.Distribution, objectID shared.ObjectID, size int, chunkSize uint32) ([]byte, error) {
+	if size < 0 {
+		return nil, fmt.Errorf("negative object data size")
+	}
+	if chunkSize == 0 {
+		return nil, fmt.Errorf("object chunk size must be positive")
+	}
+	data := make([]byte, 0, size)
+	for stripeID := uint64(0); len(data) < size; stripeID++ {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -41,15 +74,15 @@ func readInitialHeaderData(ctx context.Context, layer *distribution.Distribution
 			Context:   ctx,
 			ObjectID:  objectID,
 			StripeID:  storage.StripeID(stripeID),
-			ChunkSize: 4096,
+			ChunkSize: chunkSize,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("read object header %s at stripe %d: %w", objectID.String(), stripeID, err)
+			return nil, fmt.Errorf("read object %s at stripe %d: %w", objectID.String(), stripeID, err)
 		}
 		if len(read.Data) == 0 {
-			return nil, fmt.Errorf("%w: empty stripe while reading header for %s", errInvalidHeader, objectID.String())
+			return nil, fmt.Errorf("%w: empty stripe while reading object %s", errInvalidHeader, objectID.String())
 		}
-		headerData = append(headerData, read.Data...)
+		data = append(data, read.Data...)
 	}
-	return headerData[:headerSize], nil
+	return data[:size], nil
 }
