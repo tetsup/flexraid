@@ -11,10 +11,10 @@ var errInvalidNamespace = errors.New("invalid namespace")
 
 func (layer *Orchestration) initialize(initialObjects []initialObject) error {
 	state := &Orchestration{
-		logger:          layer.logger,
-		headers:         make(map[shared.ObjectID]header, len(initialObjects)),
-		objects:         make(map[shared.ObjectID]*runtimeObject, len(initialObjects)),
-		deletionQueue:   make(map[shared.ObjectID]struct{}),
+		logger:           layer.logger,
+		headers:          make(map[shared.ObjectID]header, len(initialObjects)),
+		objects:          make(map[shared.ObjectID]*runtimeObject, len(initialObjects)),
+		deletionQueue:    make(map[shared.ObjectID]struct{}),
 		protectedObjects: make(map[shared.ObjectID]struct{}),
 	}
 

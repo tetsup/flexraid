@@ -16,9 +16,9 @@ func TestCleanupSkipsExcludedObjects(t *testing.T) {
 		t.Fatal(err)
 	}
 	layer := &Distribution{
-		logger: slog.Default(),
-		ios: []*physicalio.IO{nil},
-		objects: make(map[shared.ObjectID]map[storage.StripeID]*stripeInfo),
+		logger:   slog.Default(),
+		ios:      []*physicalio.IO{nil},
+		objects:  make(map[shared.ObjectID]map[storage.StripeID]*stripeInfo),
 		versions: make(map[stripeIDKey]map[storage.StripeVersion]*versionInfo),
 		orphans: map[shared.ObjectID][]chunkLocation{
 			id: {{ioIndex: 0}},

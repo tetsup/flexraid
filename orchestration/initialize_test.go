@@ -61,10 +61,10 @@ func TestDecodeInitialHeaderRejectsInvalidInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	tests := []struct {
-		name string
+		name     string
 		objectID shared.ObjectID
-		data []byte
-		wantErr error
+		data     []byte
+		wantErr  error
 	}{
 		{name: "short data", objectID: want.ObjectID, data: data[:headerSize-1], wantErr: errInvalidHeader},
 		{name: "object ID mismatch", objectID: testID("22345678-9abc-4def-8abc-1234567890ab"), data: data, wantErr: errInvalidHeader},
@@ -143,7 +143,7 @@ func TestInitializeRejectsMissingOrMultipleRoots(t *testing.T) {
 	rootID := testID("12345678-9abc-4def-8abc-1234567890ab")
 	otherRootID := testID("22345678-9abc-4def-8abc-1234567890ab")
 	tests := []struct {
-		name string
+		name    string
 		objects []initialObject
 	}{
 		{name: "missing root"},
