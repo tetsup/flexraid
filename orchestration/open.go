@@ -108,12 +108,9 @@ func (layer *Orchestration) Open(request OpenRequest) (response OpenResponse, er
 		append:      request.Flags&uint32(syscall.O_APPEND) != 0,
 		syncMode:    syncMode,
 	}
-	layer.handlesMu.Lock()
-	if layer.handles == nil {
-		layer.handles = make(map[*FileHandle]struct{})
-	}
-	layer.handles[handle] = struct{}{}
-	layer.handlesMu.Unlock()
+	object.file.mu.Lock()
+	object.file.openCount++
+	object.file.mu.Unlock()
 	return OpenResponse{Handle: handle}, nil
 }
 
@@ -138,11 +135,12 @@ func (layer *Orchestration) Release(request ReleaseRequest) (response ReleaseRes
 	}
 	handle.closed = true
 	handle.hasActiveStripeID = false
+	handle.runtimeFile.mu.Lock()
+	if handle.runtimeFile.openCount > 0 {
+		handle.runtimeFile.openCount--
+	}
+	handle.runtimeFile.mu.Unlock()
 	handle.mu.Unlock()
-
-	layer.handlesMu.Lock()
-	delete(layer.handles, handle)
-	layer.handlesMu.Unlock()
 
 	if layer.logger != nil {
 		layer.logger.Debug("Orchestration Release completed", "duration", time.Since(started))
