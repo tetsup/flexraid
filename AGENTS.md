@@ -432,3 +432,14 @@ The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing 
 - Do not enable advisory lock forwarding, Direct I/O, KEEP_CACHE, or explicit data-cache control until their complete behavior is implemented and tested.
 - Implement Flush, Fsync, and Release with their distinct go-fuse lifecycle semantics described above.
 
+### 10.6 Orchestration handle and stripe-cache ownership
+
+- `FileHandle` is created for each independent `Open` and stores only open-specific state: the shared runtime-file pointer, closed state, access mode, append/sync flags, and a per-handle active write-stripe hint.
+- The runtime file backing is created once per data-bearing ObjectID (`File` or `HardLinkedFile`). Every `HardLink` targeting the same `HardLinkedFile` must reference that same runtime-file instance.
+- Stripe data cache belongs to the runtime-file backing, never to an individual `FileHandle`. The cache is keyed by StripeID and is shared by all handles referring to the same backing ObjectID.
+- Use one per-stripe cache entry type for both read-loaded / read-ahead data and modified data. Its state distinguishes clean data (matching persisted data) from dirty data (modified and not yet persisted). Read-loaded and read-ahead entries are clean; Write transitions the corresponding entry to dirty.
+- Clean cache entries may be evicted and reloaded. Dirty entries must not be discarded until persistence succeeds.
+- Reads must consult the shared stripe cache before Distribution. A read through another handle must observe a dirty cache entry rather than stale persisted data.
+- Runtime-file synchronization protects cache map membership, cache entry data/state, and logical file metadata. A write operation is serialized against reads and other writes for the same runtime file in the initial implementation. Do not add a separate `writing` flag or owner-handle ID merely to duplicate mutex state.
+- Handle-local locking protects closed state and handle-local cursor hints. Always acquire the handle lock before the runtime-file lock; do not acquire them in the reverse order.
+- A read/readahead request populates the same clean cache map. Kernel-issued readahead requests are ordinary handle-backed Reads; do not create a separate read-ahead cache.
