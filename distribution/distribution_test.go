@@ -30,10 +30,10 @@ func TestWriteReadMirrorAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	data := []byte("mirror stripe")
-	if _, err := created.Layer.WriteStripe(WriteStripeRequest{Context: ctx, ObjectID: testObjectID(), StripeID: 0, Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: data}); err != nil {
+	if _, err := created.Layer.WriteStripe(WriteStripeRequest{Context: ctx, ObjectID: testObjectID(), StripeID: 0, ChunkSize: 16, Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: data}); err != nil {
 		t.Fatal(err)
 	}
-	read, err := created.Layer.ReadStripe(ReadStripeRequest{Context: ctx, ObjectID: testObjectID(), StripeID: 0})
+	read, err := created.Layer.ReadStripe(ReadStripeRequest{Context: ctx, ObjectID: testObjectID(), StripeID: 0, ChunkSize: 16})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestWriteReadMirrorAndRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	read, err = restarted.Layer.ReadStripe(ReadStripeRequest{Context: ctx, ObjectID: testObjectID(), StripeID: 0})
+	read, err = restarted.Layer.ReadStripe(ReadStripeRequest{Context: ctx, ObjectID: testObjectID(), StripeID: 0, ChunkSize: 16})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestWriteReadParityAndRecoverMissingChunk(t *testing.T) {
 		t.Fatal(err)
 	}
 	data := []byte("parity data!")
-	written, err := created.Layer.WriteStripe(WriteStripeRequest{Context: ctx, ObjectID: testObjectID(), StripeID: 4, Layout: Layout{Type: LayoutParity, NumChunks: 3}, IOIndexes: []int{0, 1, 2, 3}, Data: data})
+	written, err := created.Layer.WriteStripe(WriteStripeRequest{Context: ctx, ObjectID: testObjectID(), StripeID: 4, ChunkSize: 4, Layout: Layout{Type: LayoutParity, NumChunks: 3}, IOIndexes: []int{0, 1, 2, 3}, Data: data})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestWriteReadParityAndRecoverMissingChunk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	read, err := restarted.Layer.ReadStripe(ReadStripeRequest{Context: ctx, ObjectID: testObjectID(), StripeID: 4, RepairIOIndexes: []int{4, 0, 1}})
+	read, err := restarted.Layer.ReadStripe(ReadStripeRequest{Context: ctx, ObjectID: testObjectID(), StripeID: 4, ChunkSize: 4, RepairIOIndexes: []int{4, 0, 1}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestDeleteObjectRemovesHeaderLastAndAllVersions(t *testing.T) {
 	id := testObjectID()
 	for _, stripe := range []storage.StripeID{0, 1} {
 		for i := 0; i < 2; i++ {
-			_, err = created.Layer.WriteStripe(WriteStripeRequest{Context: ctx, ObjectID: id, StripeID: stripe, Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: []byte{byte(stripe), byte(i)}})
+			_, err = created.Layer.WriteStripe(WriteStripeRequest{Context: ctx, ObjectID: id, StripeID: stripe, ChunkSize: 4, Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: []byte{byte(stripe), byte(i)}})
 			if err != nil {
 				t.Fatal(err)
 			}
