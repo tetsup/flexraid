@@ -3,7 +3,6 @@ package orchestration
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"sync"
 	"syscall"
