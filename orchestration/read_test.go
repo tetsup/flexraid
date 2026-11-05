@@ -6,8 +6,8 @@ import (
 	"errors"
 	"testing"
 
-	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/distribution"
+	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/pkg/shared"
 	"github.com/tetsup/flexraid/storage"
 )
@@ -40,7 +40,7 @@ func TestReadReturnsLogicalRangeAcrossStripesAndHardLinks(t *testing.T) {
 		}
 		_, err := distributed.Layer.WriteStripe(distribution.WriteStripeRequest{
 			Context: ctx, ObjectID: fileID, StripeID: stripeID, ChunkSize: h.Layout.ChunkSize,
-			Layout: distribution.Layout{Type: distribution.LayoutMirror, NumChunks: uint8(h.Layout.DataChunks)},
+			Layout:    distribution.Layout{Type: distribution.LayoutMirror, NumChunks: uint8(h.Layout.DataChunks)},
 			IOIndexes: []int{0, 1}, Data: logical[offset:end],
 		})
 		if err != nil {
@@ -58,12 +58,12 @@ func TestReadReturnsLogicalRangeAcrossStripesAndHardLinks(t *testing.T) {
 	linkID := testID("42345678-9abc-4def-8abc-1234567890ab")
 	layer.objects[linkID] = &runtimeObject{
 		header: testHeader(objectKindHardLink, linkID, h.ParentID, &fileID, "alias"),
-		file: layer.objects[fileID].file,
+		file:   layer.objects[fileID].file,
 	}
 
 	for _, tc := range []struct {
 		offset uint64
-		size uint32
+		size   uint32
 	}{
 		{offset: 0, size: 20},
 		{offset: 17, size: 130},
