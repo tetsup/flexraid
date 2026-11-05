@@ -126,6 +126,9 @@ func validateIOIndexes(indexes []int, total, minimum int) error {
 	return nil
 }
 func splitStripe(data []byte, count uint8) map[chunkNo][]byte {
+	if count == 0 {
+		return map[chunkNo][]byte{}
+	}
 	size := (len(data) + int(count) - 1) / int(count)
 	return splitStripeWithSize(data, count, size)
 }
