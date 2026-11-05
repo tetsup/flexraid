@@ -15,9 +15,9 @@ import (
 )
 
 type writeFixture struct {
-	layer   *Orchestration
-	fileID  shared.ObjectID
-	linkID  shared.ObjectID
+	layer      *Orchestration
+	fileID     shared.ObjectID
+	linkID     shared.ObjectID
 	payload    []byte
 	headerData []byte
 }
