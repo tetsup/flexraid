@@ -1,13 +1,10 @@
 package orchestration
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/tetsup/flexraid/pkg/shared"
 )
-
-var errInvalidNamespace = errors.New("invalid namespace")
 
 func (layer *Orchestration) initialize(initialObjects []initialObject) error {
 	state := &Orchestration{
