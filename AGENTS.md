@@ -526,3 +526,68 @@ The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing 
 - サイズ拡張・縮小時の Stripe 単位再構築、拡張 gap のゼロ埋め、縮小後のデータ切り捨て。
 - サイズ不変上書きで Layout / ChunkSize が維持され、Flush / Fsync で論理配置計画が再計算されないこと。
 - 既存 IO 配置の再利用、IO 配置がない場合の容量降順選択、同容量時の IO index 順の決定性。
+
+## NLink の扱い
+
+### 基本方針
+
+- NLink は永続化属性ではなく、現在の Namespace 構造から導出する実行時属性とする。
+- Header のバイナリ形式に NLink のフィールドを含めない。`MarshalBinary` は NLink を書き出さず、`UnmarshalBinary` は NLink を永続データから復元しない。
+- Header の読み込み後、`initialize` / `buildNamespace` が ParentID / Name と HardLink の TargetID から Namespace を復元した時点で、NLink を導出できる状態にする。
+- NLink は Namespace の派生値であり、独立したカウンターとして永続化・更新しない。Namespace を変更する操作は親子関係・HardLink 参照関係だけを正しく更新する。NLink の取得時は、その時点の Namespace から導出した値を返す。キャッシュする場合も Namespace と同じ更新単位で一貫性を保てる場合に限り、永続化してはならない。
+- Header / Runtime の内部構造に NLink フィールドを残す場合、それは導出済みの一時的な値に限る。永続化データの正として扱わず、読み込んだ値を信用してはならない。
+- NLink は POSIX の `st_nlink` として FUSE 層へ返す値であり、Namespace 上の名前・参照数を表す。open handle 数や物理チャンク数、Stripe 数とは無関係とする。
+
+### 種類ごとの導出ルール
+
+| Namespace 上の Kind | NLink | 導出方法・条件 |
+|---|---:|---|
+| Directory | `2 + 直下の Directory 数` | `.` と `..` の 2 に、直下の子 Directory ごとに親 Directory へのリンク 1 を加える。root も同じ式を使う |
+| File | 1 | HardLink 化されていない通常ファイルは Namespace 上の名前を 1 つ持つ |
+| Symlink | 1 | Symlink 自体の Namespace エントリ数。リンク先の状態には依存しない |
+| HardLink | 参照先 HardLinkedFile を指す HardLink の総数 | root から到達可能で、同一の HardLinkedFile を TargetID で直接参照する HardLink を数える |
+| HardLinkedFile | Namespace 属性として返さない | Namespace ツリー外のデータ実体。NLink は、その実体を参照する HardLink 群から導出する |
+
+- Directory の子として数えるのは Kind が Directory の直接の子だけとする。File、Symlink、HardLink は親 Directory の NLink を増やさない。
+- HardLink の NLink は、同じ HardLinkedFile を参照する Namespace 上の HardLink エントリすべてに同じ値を返す。別の HardLinkedFile を参照する HardLink は数えない。
+- HardLink の連鎖は認めないため、TargetID の直接参照先である HardLinkedFile を単位として数える。Directory / Symlink は HardLink の対象外とする。
+- Namespace から到達できない Object、初期化時に不整合として除外・保護された Object は NLink の計算対象に含めない。
+- NLink は 0 を通常の Namespace エントリに返す用途ではない。最後の HardLink が削除された実体は Namespace から参照されなくなり、open handle の寿命・Cleanup の規則に従って解放する。
+
+### 関数ごとの責務と挙動
+
+| 関数 | NLink との関係 | 判定・操作の挙動 |
+|---|---|---|
+| `header.MarshalBinary` | 永続化しない | NLink をシリアライズ対象から除外する |
+| `header.UnmarshalBinary` | 永続データから復元しない | NLink を読み取らない。Namespace 構築後に導出する |
+| `New` / `readInitialObjects` / `decodeInitialHeader` | 直接計算しない | Header と Object の初期データを取得・検証する。Namespace の参照数を確定する前段階とする |
+| `initialize` | 導出の初期化フロー | Header 読み込み後に Namespace を構築し、構築された Namespace から NLink を導出可能にする |
+| `buildNamespace` | 導出元を構築する | Directory children と HardLink の実体参照を解決する。NLink の計算は、この構築結果だけを根拠に行う |
+| `inspect` | 計算対象の妥当性を確定する | root の一意性、到達可能性、HardLink の参照先などを検査する。不整合で Namespace から除外した要素を NLink に含めない |
+| `GetAttr` | NLink を返す | Kind に応じた上記の式で、現在の Namespace から導出した NLink を返す。Header や HardLinkedFile の保存値をコピーしてはならない |
+| `Lookup` / `ReadDir` | NLink を直接計算しない | Namespace の名前・親子関係を読み取る。返すエントリは NLink 導出の対象となる現在の Namespace と一致させる |
+| `Mkdir` | Directory NLink に影響する | 新しい Directory を親の children に追加する。新 Directory は NLink 2、親 Directory は直下の Directory が 1 つ増えた結果として NLink が 1 増える。NLink の Header 更新・永続化は行わない |
+| `Create`（未実装） | File NLink に影響する | 新しい File を親の children に追加する。File の NLink は 1。親 Directory の NLink は変わらない |
+| `Symlink` | Symlink NLink に影響する | Symlink を親の children に追加する。Symlink の NLink は 1。親 Directory の NLink は変わらない |
+| `Link`（未実装） | HardLink NLink に影響する | File 実体を HardLinkedFile として共有する Namespace 構造へ移行し、元の名前と新しい名前の HardLink を登録する。両方の NLink は 2 となる。追加の HardLink ごとに同じ実体を参照する全 HardLink の導出値が 1 増える。親 Directory の NLink は変わらない |
+| `Unlink`（未実装） | File / Symlink / HardLink NLink に影響する | 対象の Namespace エントリを親の children から取り除く。HardLink の場合、同じ実体を参照する残りの HardLink の NLink は 1 減る。最後の HardLink がなくなった実体の削除は open handle の寿命・Cleanup の規則に従う。File / Symlink の削除で親 Directory の NLink は変わらない |
+| `Rmdir`（未実装） | 親 Directory NLink に影響する | 空 Directory の Namespace エントリを取り除く。親 Directory の NLink は直下の Directory が 1 つ減った結果として 1 減る。File / Symlink / HardLink が残る Directory は削除できない |
+| `Rename`（未実装） | Directory の移動・置換時に影響する | 同じ親の中での名前変更では Directory NLink は変わらない。Directory を別の親へ移動すると、移動元の親は 1 減り、移動先の親は 1 増える。File / Symlink / HardLink の移動では親 Directory NLink は変わらない。移動先 Directory の置換を許す場合は、置換される空 Directory の削除分も移動先親の導出値へ反映する |
+| `SetAttr` | NLink を変更しない | NLink を SetAttr の入力・変更対象にしない。Mode / UID / GID / Size / 時刻などの属性変更で NLink は変わらない |
+| `Open` / `Read` / `Write` / `Flush` / `Fsync` / `Release` / `Truncate` | NLink を変更しない | open handle 数やデータ更新は Namespace の名前・参照数ではないため、NLink に反映しない |
+| `ReadLink` | NLink を変更しない | Symlink のリンク先文字列を返すだけであり、NLink に影響しない |
+| `Cleanup` | NLink を計算・更新しない | 論理削除済み Object や物理データを整理する。Namespace の参照関係・NLink の判定を Cleanup の都合で変更しない |
+
+### Namespace 更新時の原則
+
+- Namespace 操作の成功条件は、対象の親子関係・HardLink 参照関係が一貫した状態で更新されることとする。NLink の数値を個別にインクリメント／デクリメントして帳尻を合わせてはならない。
+- Directory の NLink は children の Kind を数えて導出する。Directory を追加・削除・移動した場合も、children の更新だけで導出結果が変わるようにする。
+- HardLink の NLink は HardLinkedFile ごとの参照元 HardLink を数えて導出する。HardLink の追加・削除時に参照数カウンターを永続化してはならない。
+- Namespace の更新に失敗した場合は、部分的な親子関係・参照関係を公開しない。複数 Object の永続化を伴う操作の原子性・クラッシュ復旧は別途定義するが、その都合で NLink を永続化属性にしてはならない。
+- NLink の計算は Orchestration の責務とする。FUSE 層は Orchestration が返す NLink を `st_nlink` に設定し、独自に再計算しない。
+
+### 現行実装との差分
+
+- 現行コードの `header` は NLink を保持し、`MarshalBinary` / `UnmarshalBinary` が永続化対象として扱っている。また `GetAttr` は Header の NLink をそのまま返し、`Mkdir` / `Symlink` は固定値を設定している。
+- これらは本節の確定仕様と一致しない。今後の実装修正では Header バイナリから NLink を除外し、Namespace から導出する方式へ変更する。既存データとの後方互換性はリリース前のため考慮しない。Header の固定サイズ定数・テスト fixture も合わせて更新する。
+
