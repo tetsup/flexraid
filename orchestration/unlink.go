@@ -186,8 +186,8 @@ func (layer *Orchestration) persistObjectHeader(ctx context.Context, next header
 	// Namespace-only objects (HardLink and Symlink) have their own Header
 	// storage but no shared data runtime.
 	file := &runtimeFile{
-		objectID: next.ObjectID,
-		header: next,
+		objectID:    next.ObjectID,
+		header:      next,
 		stripeCache: make(map[uint64]*stripeCacheEntry),
 	}
 	file.mu.Lock()

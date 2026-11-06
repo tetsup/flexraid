@@ -9,9 +9,13 @@ import (
 func TestUnlinkHardLinkedFileClearsParentOnly(t *testing.T) {
 	fixture := newNamespaceFixture(t)
 	file, err := fixture.layer.Create(CreateRequest{ParentID: fixture.rootID, Name: "a"})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	alias, err := fixture.layer.Link(LinkRequest{SourceID: file.ObjectID, ParentID: fixture.rootID, Name: "b"})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if _, err := fixture.layer.Unlink(UnlinkRequest{ParentID: fixture.rootID, Name: "a"}); err != nil {
 		t.Fatal(err)
@@ -34,11 +38,19 @@ func TestUnlinkHardLinkedFileClearsParentOnly(t *testing.T) {
 func TestUnlinkDetachedHardLinkedFileReturnsError(t *testing.T) {
 	fixture := newNamespaceFixture(t)
 	file, err := fixture.layer.Create(CreateRequest{ParentID: fixture.rootID, Name: "a"})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	alias, err := fixture.layer.Link(LinkRequest{SourceID: file.ObjectID, ParentID: fixture.rootID, Name: "b"})
-	if err != nil { t.Fatal(err) }
-	if _, err := fixture.layer.Unlink(UnlinkRequest{ParentID: fixture.rootID, Name: "a"}); err != nil { t.Fatal(err) }
-	if _, err := fixture.layer.Unlink(UnlinkRequest{ParentID: fixture.rootID, Name: "b"}); err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.layer.Unlink(UnlinkRequest{ParentID: fixture.rootID, Name: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.layer.Unlink(UnlinkRequest{ParentID: fixture.rootID, Name: "b"}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := fixture.layer.Unlink(UnlinkRequest{ParentID: fixture.rootID, Name: "b"}); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("unlinked alias no longer exists: %v", err)
 	}
@@ -51,9 +63,13 @@ func TestUnlinkDetachedHardLinkedFileReturnsError(t *testing.T) {
 func TestUnlinkLastHardLinkPromotesDirectFile(t *testing.T) {
 	fixture := newNamespaceFixture(t)
 	file, err := fixture.layer.Create(CreateRequest{ParentID: fixture.rootID, Name: "a"})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	alias, err := fixture.layer.Link(LinkRequest{SourceID: file.ObjectID, ParentID: fixture.rootID, Name: "b"})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := fixture.layer.Unlink(UnlinkRequest{ParentID: fixture.rootID, Name: "b"}); err != nil {
 		t.Fatal(err)
 	}
