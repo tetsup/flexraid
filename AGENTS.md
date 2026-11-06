@@ -535,7 +535,7 @@ The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing 
 - Header のバイナリ形式に NLink のフィールドを含めない。`MarshalBinary` は NLink を書き出さず、`UnmarshalBinary` は NLink を永続データから復元しない。
 - Header の読み込み後、`initialize` / `buildNamespace` が ParentID / Name と HardLink の TargetID から Namespace を復元した時点で、NLink を導出できる状態にする。
 - NLink は Namespace の派生値であり、独立したカウンターとして永続化・更新しない。Namespace を変更する操作は親子関係・HardLink 参照関係だけを正しく更新する。NLink の取得時は、その時点の Namespace から導出した値を返す。キャッシュする場合も Namespace と同じ更新単位で一貫性を保てる場合に限り、永続化してはならない。
-- Header / Runtime の内部構造に NLink フィールドを残す場合、それは導出済みの一時的な値に限る。永続化データの正として扱わず、読み込んだ値を信用してはならない。
+- Header / Runtime の内部構造に NLink フィールドを持たせない。NLink は Namespace から必要時に導出し、Header や Runtime に保持しない。
 - NLink は POSIX の `st_nlink` として FUSE 層へ返す値であり、Namespace 上の名前・参照数を表す。open handle 数や物理チャンク数、Stripe 数とは無関係とする。
 
 ### 種類ごとの導出ルール
