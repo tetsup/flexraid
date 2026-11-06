@@ -10,6 +10,7 @@ import (
 	"github.com/tetsup/flexraid/distribution"
 	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/pkg/shared"
+	cfg "github.com/tetsup/flexraid/pkg/shared/config"
 )
 
 func TestReadReturnsLogicalRangeAcrossStripesAndHardLinks(t *testing.T) {
@@ -32,7 +33,9 @@ func TestReadReturnsLogicalRangeAcrossStripesAndHardLinks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	logical := append(headerBytes, payload...)
+	logical := make([]byte, int(cfg.HeaderReservedSize)+len(payload))
+	copy(logical, headerBytes)
+	copy(logical[int(cfg.HeaderReservedSize):], payload)
 	_, err = distributed.Layer.WriteStripe(distribution.WriteStripeRequest{
 		Context: ctx, ObjectID: fileID, StripeID: 0, ChunkSize: 4096,
 		Layout:    distribution.Layout{Type: distribution.LayoutMirror, NumChunks: uint8(h.Layout.DataChunks)},
