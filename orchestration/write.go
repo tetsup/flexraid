@@ -159,9 +159,10 @@ func (layer *Orchestration) Write(request WriteRequest) (response WriteResponse,
 	if marshalErr != nil {
 		return response, marshalErr
 	}
-	headerEntry, loadErr := layer.loadStripeForWriteLocked(ctx, file, mustGeometry(nextHeader, 0))
-	if loadErr != nil {
-		return response, loadErr
+	headerEntry := dirty[0]
+	if headerEntry == nil {
+		headerEntry, loadErr = layer.loadStripeForWriteLocked(ctx, file, mustGeometry(nextHeader, 0))
+		if loadErr != nil { return response, loadErr }
 	}
 	if len(headerEntry.data) < int(cfg.HeaderReservedSize) {
 		headerEntry.data = append(headerEntry.data, make([]byte, int(cfg.HeaderReservedSize)-len(headerEntry.data))...)
