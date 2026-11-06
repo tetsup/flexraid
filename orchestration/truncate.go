@@ -58,29 +58,12 @@ func (layer *Orchestration) Truncate(request TruncateRequest) (TruncateResponse,
 	if err := ctx.Err(); err != nil {
 		return TruncateResponse{}, err
 	}
-	data, err := layer.readFileDataLocked(ctx, file, file.header)
-	if err != nil {
-		return TruncateResponse{}, fmt.Errorf("read file before truncate: %w", err)
-	}
-	if request.Size < uint64(len(data)) {
-		data = data[:int(request.Size)]
-	} else {
-		data = append(data, make([]byte, int(request.Size)-len(data))...)
-	}
 	next, err := updateHeader(file.header, request.Size, time.Now())
-	if err != nil {
-		return TruncateResponse{}, err
-	}
+	if err != nil { return TruncateResponse{}, err }
 	plan, err := planPlacement(request.Size, cfg.DefaultPlacement())
-	if err != nil {
-		return TruncateResponse{}, err
-	}
-	if len(plan) > 1 {
-		next.Layout.ChunkSize = plan[1].ChunkSize
-	} else {
-		next.Layout.ChunkSize = cfg.MinimumChunkSize
-	}
-	if err := layer.rebuildFileCache(ctx, file, next, data, plan); err != nil {
+	if err != nil { return TruncateResponse{}, err }
+	if len(plan) > 1 { next.Layout.ChunkSize = plan[1].ChunkSize } else { next.Layout.ChunkSize = cfg.MinimumChunkSize }
+	if err := layer.rebuildFileCacheFromStripes(ctx, file, file.header, next, plan, ^uint64(0), nil); err != nil {
 		return TruncateResponse{}, err
 	}
 	file.header = next
