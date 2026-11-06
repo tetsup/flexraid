@@ -40,22 +40,3 @@ func (d *Distribution) AvailableIOBytes() ([]uint64, error) {
 	return result, nil
 }
 
-// SelectIOIndexes chooses exactly count devices, preferring the largest available capacity.
-// Ties retain the original I/O index order for deterministic results.
-func (d *Distribution) SelectIOIndexes(count int) ([]int, error) {
-	available, err := d.AvailableIOBytes()
-	if err != nil {
-		return nil, err
-	}
-	if count < 1 || count > len(available) {
-		return nil, fmt.Errorf("cannot select %d I/Os from %d", count, len(available))
-	}
-	indexes := make([]int, len(available))
-	for index := range indexes {
-		indexes[index] = index
-	}
-	sort.SliceStable(indexes, func(i, j int) bool {
-		return available[indexes[i]] > available[indexes[j]]
-	})
-	return indexes[:count], nil
-}
