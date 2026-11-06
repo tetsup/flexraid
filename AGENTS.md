@@ -567,12 +567,12 @@ The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing 
 | `GetAttr` | NLink を返す | Kind に応じた上記の式で、現在の Namespace から導出した NLink を返す。Header や HardLinkedFile の保存値をコピーしてはならない |
 | `Lookup` / `ReadDir` | NLink を直接計算しない | Namespace の名前・親子関係を読み取る。返すエントリは NLink 導出の対象となる現在の Namespace と一致させる |
 | `Mkdir` | Directory NLink に影響する | 新しい Directory を親の children に追加する。新 Directory は NLink 2、親 Directory は直下の Directory が 1 つ増えた結果として NLink が 1 増える。NLink の Header 更新・永続化は行わない |
-| `Create`（未実装） | File NLink に影響する | 新しい File を親の children に追加する。File の NLink は 1。親 Directory の NLink は変わらない |
+| `Create` | File NLink に影響する | 新しい File を親の children に追加する。File の NLink は 1。親 Directory の NLink は変わらない |
 | `Symlink` | Symlink NLink に影響する | Symlink を親の children に追加する。Symlink の NLink は 1。親 Directory の NLink は変わらない |
-| `Link`（未実装） | HardLink NLink に影響する | File 実体を HardLinkedFile として共有する Namespace 構造へ移行し、元の名前と新しい名前の HardLink を登録する。両方の NLink は 2 となる。追加の HardLink ごとに同じ実体を参照する全 HardLink の導出値が 1 増える。親 Directory の NLink は変わらない |
-| `Unlink`（未実装） | File / Symlink / HardLink NLink に影響する | 対象の Namespace エントリを親の children から取り除く。HardLink の場合、同じ実体を参照する残りの HardLink の NLink は 1 減る。最後の HardLink がなくなった実体の削除は open handle の寿命・Cleanup の規則に従う。File / Symlink の削除で親 Directory の NLink は変わらない |
-| `Rmdir`（未実装） | 親 Directory NLink に影響する | 空 Directory の Namespace エントリを取り除く。親 Directory の NLink は直下の Directory が 1 つ減った結果として 1 減る。File / Symlink / HardLink が残る Directory は削除できない |
-| `Rename`（未実装） | Directory の移動・置換時に影響する | 同じ親の中での名前変更では Directory NLink は変わらない。Directory を別の親へ移動すると、移動元の親は 1 減り、移動先の親は 1 増える。File / Symlink / HardLink の移動では親 Directory NLink は変わらない。移動先 Directory の置換を許す場合は、置換される空 Directory の削除分も移動先親の導出値へ反映する |
+| `Link` | HardLink NLink に影響する | File 実体を HardLinkedFile として共有する Namespace 構造へ移行し、元の名前と新しい名前の HardLink を登録する。両方の NLink は 2 となる。追加の HardLink ごとに同じ実体を参照する全 HardLink の導出値が 1 増える。親 Directory の NLink は変わらない |
+| `Unlink` | File / Symlink / HardLink NLink に影響する | 対象の Namespace エントリを親の children から取り除く。HardLink の場合、同じ実体を参照する残りの HardLink の NLink は 1 減る。最後の HardLink がなくなった実体の削除は open handle の寿命・Cleanup の規則に従う。File / Symlink の削除で親 Directory の NLink は変わらない |
+| `Rmdir` | 親 Directory NLink に影響する | 空 Directory の Namespace エントリを取り除く。親 Directory の NLink は直下の Directory が 1 つ減った結果として 1 減る。File / Symlink / HardLink が残る Directory は削除できない |
+| `Rename` | Directory の移動・置換時に影響する | 同じ親の中での名前変更では Directory NLink は変わらない。Directory を別の親へ移動すると、移動元の親は 1 減り、移動先の親は 1 増える。File / Symlink / HardLink の移動では親 Directory NLink は変わらない。移動先 Directory の置換を許す場合は、置換される空 Directory の削除分も移動先親の導出値へ反映する |
 | `SetAttr` | NLink を変更しない | NLink を SetAttr の入力・変更対象にしない。Mode / UID / GID / Size / 時刻などの属性変更で NLink は変わらない |
 | `Open` / `Read` / `Write` / `Flush` / `Fsync` / `Release` / `Truncate` | NLink を変更しない | open handle 数やデータ更新は Namespace の名前・参照数ではないため、NLink に反映しない |
 | `ReadLink` | NLink を変更しない | Symlink のリンク先文字列を返すだけであり、NLink に影響しない |
@@ -585,9 +585,3 @@ The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing 
 - HardLink の NLink は HardLinkedFile ごとの参照元 HardLink を数えて導出する。HardLink の追加・削除時に参照数カウンターを永続化してはならない。
 - Namespace の更新に失敗した場合は、部分的な親子関係・参照関係を公開しない。複数 Object の永続化を伴う操作の原子性・クラッシュ復旧は別途定義するが、その都合で NLink を永続化属性にしてはならない。
 - NLink の計算は Orchestration の責務とする。FUSE 層は Orchestration が返す NLink を `st_nlink` に設定し、独自に再計算しない。
-
-### 現行実装との差分
-
-- 現行コードの `header` は NLink を保持し、`MarshalBinary` / `UnmarshalBinary` が永続化対象として扱っている。また `GetAttr` は Header の NLink をそのまま返し、`Mkdir` / `Symlink` は固定値を設定している。
-- これらは本節の確定仕様と一致しない。今後の実装修正では Header バイナリから NLink を除外し、Namespace から導出する方式へ変更する。既存データとの後方互換性はリリース前のため考慮しない。Header の固定サイズ定数・テスト fixture も合わせて更新する。
-
