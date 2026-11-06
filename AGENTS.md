@@ -98,7 +98,10 @@ fuse/
 - ハードリンク作成時は、元の File Object を同じ ObjectID の HardLinkedFile に変換し、元の ParentID / Name を維持する。新しい名前は HardLink Object として追加し、その TargetID は HardLinkedFile を直接指す。これにより元の名前と追加された名前は対等に同じ実体を参照する。既に HardLinkedFile である元ファイルへの追加 Link は、同じ実体を指す HardLink を追加する。HardLinkedFile の ParentID は、元の名前が削除された後に nil となり得る。
 - 永続化時は実体と各 Namespace Object を個別の Object として保存する。メモリ展開時は Directory の children を構築し、各 HardLink Node が同じ Runtime ファイル実体を共有するように解決する。
 - データ実体の Distribution 上の冗長化・配置は HardLinkedFile 単位とし、Namespace と Runtime の参照関係は Orchestration が管理する。
-- HardLinkedFile は、ParentID による Namespace への直接所属、または到達可能な HardLink からの参照の少なくとも一方を持つことを基本不変条件とする。ParentID が nil であることだけを理由に孤立・削除可能と判定してはならない。実体を削除できるのは直接所属も到達可能な HardLink 参照もなく、かつ open handle の寿命条件も満たした場合に限る。
+- HardLinkedFile は、ParentID による Namespace への直接所属、または到達可能な HardLink からの参照の少なくとも一方を持つことを基本不変条件とする。ParentID が nil であることだけを理由に孤立・削除可能と判定してはならない。
+- `UnlinkHardLinkedFile` は ParentID が nil の場合エラーを返す。ParentID がある場合は Header の ParentID を nil にするだけで、Deleted や削除キューを操作せず、実体を保持する。
+- `UnlinkHardLink` は対象 HardLink の名前を外した後、参照先 HardLinkedFile の残りの Namespace 参照を確認して更新する。HardLink が残る場合は実体を維持し、HardLink がなく ParentID がある場合は実体を通常の File に戻す。ParentID も HardLink 参照もない場合は Deleted=true として Cleanup 対象にする。
+- HardLink と参照先 Header の更新はシリアルに永続化し、複数 Header 更新をまたぐ Atomic 性は要求しない。中断時に一時的な不整合が残り得ることを前提とする。
 
 ## 6. 関数と共通処理
 
