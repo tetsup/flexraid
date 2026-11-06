@@ -161,6 +161,7 @@ func (layer *Orchestration) Write(request WriteRequest) (response WriteResponse,
 	}
 	headerEntry := dirty[0]
 	if headerEntry == nil {
+		var loadErr error
 		headerEntry, loadErr = layer.loadStripeForWriteLocked(ctx, file, mustGeometry(nextHeader, 0))
 		if loadErr != nil { return response, loadErr }
 	}
