@@ -82,7 +82,7 @@ func (layer *Orchestration) unlinkNamedObject(ctx context.Context, parent, objec
 	object.header = next
 	layer.headers[next.ObjectID] = next
 	delete(parent.children, next.Name)
-	layer.deletionQueue[next.ObjectID] = struct{}{}
+	layer.enqueueDeletion(next.ObjectID)
 	return nil
 }
 
@@ -129,7 +129,7 @@ func (layer *Orchestration) unlinkHardLink(ctx context.Context, parent, object *
 	object.header = nextLink
 	layer.headers[nextLink.ObjectID] = nextLink
 	delete(parent.children, nextLink.Name)
-	layer.deletionQueue[nextLink.ObjectID] = struct{}{}
+	layer.enqueueDeletion(nextLink.ObjectID)
 
 	// Derive remaining namespace links after the alias has been unpublished.
 	remaining := layer.deriveHardLinkCount(target.header.ObjectID)
@@ -156,13 +156,20 @@ func (layer *Orchestration) unlinkHardLink(ctx context.Context, parent, object *
 	target.header = nextTarget
 	layer.headers[nextTarget.ObjectID] = nextTarget
 	if nextTarget.Deleted {
-		layer.deletionQueue[nextTarget.ObjectID] = struct{}{}
+		layer.enqueueDeletion(nextTarget.ObjectID)
 	}
 	return nil
 }
 
 // persistObjectHeader persists a Header for its own ObjectID, not necessarily
 // the shared data-bearing runtimeFile used by HardLink names.
+func (layer *Orchestration) enqueueDeletion(objectID shared.ObjectID) {
+	if layer.deletionQueue == nil {
+		layer.deletionQueue = make(map[shared.ObjectID]struct{})
+	}
+	layer.deletionQueue[objectID] = struct{}{}
+}
+
 func (layer *Orchestration) persistObjectHeader(ctx context.Context, next header) error {
 	// Data-bearing objects have a shared runtimeFile. Persist their Header
 	// through that cache so pending stripe writes are not overwritten by a
