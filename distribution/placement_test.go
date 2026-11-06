@@ -25,12 +25,12 @@ func TestStripeIOIndexesReturnsDataOrderThenParity(t *testing.T) {
 			},
 		},
 	}
-	got, err := d.StripeIOIndexes(objectID, 0)
+	got, err := d.StripeIOIndexes(StripeIOIndexesRequest{ObjectID: objectID, StripeID: 0})
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []int{2, 0, 3, 1}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("indexes = %v, want %v", got, want)
+	if !reflect.DeepEqual(got.IOIndexes, want) {
+		t.Fatalf("indexes = %v, want %v", got.IOIndexes, want)
 	}
 }
