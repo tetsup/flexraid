@@ -62,3 +62,12 @@ func orderIOIndexes(available []uint64, count int) ([]int, error) {
 	})
 	return indexes[:count], nil
 }
+
+ // SelectIOIndexes chooses exactly count devices, preferring the largest available capacity.
+func (d *Distribution) SelectIOIndexes(count int) ([]int, error) {
+	available, err := d.AvailableIOBytes()
+	if err != nil {
+		return nil, err
+	}
+	return orderIOIndexes(available, count)
+}
