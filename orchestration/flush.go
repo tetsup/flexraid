@@ -44,8 +44,12 @@ func (o *Orchestration) Flush(r FlushRequest) (FlushResponse, error) {
 		}
 	}
 	sort.Slice(ids, func(i, j int) bool {
-		if ids[i] == 0 { return false }
-		if ids[j] == 0 { return true }
+		if ids[i] == 0 {
+			return false
+		}
+		if ids[j] == 0 {
+			return true
+		}
 		return ids[i] < ids[j]
 	})
 	for _, id := range ids {
