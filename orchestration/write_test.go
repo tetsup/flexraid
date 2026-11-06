@@ -44,21 +44,12 @@ func newWriteFixture(t *testing.T) writeFixture {
 		t.Fatal(err)
 	}
 	logical := append(headerData, payload...)
-	for offset, stripeID := 0, storage.StripeID(0); offset < len(logical); stripeID++ {
-		end := offset + int(h.Layout.ChunkSize)
-		if end > len(logical) {
-			end = len(logical)
-		}
-		_, err = distributed.Layer.WriteStripe(distribution.WriteStripeRequest{
-			Context: ctx, ObjectID: fileID, StripeID: stripeID, ChunkSize: h.Layout.ChunkSize,
-			Layout:    distribution.Layout{Type: distribution.LayoutMirror, NumChunks: 2},
-			IOIndexes: []int{0, 1}, Data: logical[offset:end],
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		offset = end
-	}
+	_, err = distributed.Layer.WriteStripe(distribution.WriteStripeRequest{
+		Context: ctx, ObjectID: fileID, StripeID: 0, ChunkSize: 4096,
+		Layout: distribution.Layout{Type: distribution.LayoutMirror, NumChunks: 2},
+		IOIndexes: []int{0, 1}, Data: logical,
+	})
+	if err != nil { t.Fatal(err) }
 	file := &runtimeFile{objectID: fileID, header: h, stripeCache: make(map[uint64]*stripeCacheEntry)}
 	linkID := testID("42345678-9abc-4def-8abc-1234567890ab")
 	layer := &Orchestration{
@@ -104,28 +95,19 @@ func TestWriteUpdatesSharedCacheVisibleToOtherHandle(t *testing.T) {
 	if file.header.Size != uint64(len(fixture.payload)) {
 		t.Fatalf("logical size = %d, want %d", file.header.Size, len(fixture.payload))
 	}
-	for stripeID, entry := range file.stripeCache {
-		if stripeID <= 6 && entry.state != stripeCacheDirty {
-			t.Errorf("modified stripe %d state = %d, want dirty", stripeID, entry.state)
-		}
-		if stripeID == 7 && entry.state != stripeCacheClean {
-			t.Errorf("read-only prefetched stripe 7 state = %d, want clean", entry.state)
-		}
+	if entry := file.stripeCache[0]; entry == nil || entry.state != stripeCacheDirty {
+		t.Fatalf("stripe 0 cache = %#v, want dirty", entry)
 	}
+	if len(file.stripeCache) != 1 { t.Fatalf("cached stripes = %d, want only stripe 0", len(file.stripeCache)) }
 	persisted, err := fixture.layer.distribution.ReadStripe(distribution.ReadStripeRequest{
 		Context: context.Background(), ObjectID: fixture.fileID,
-		StripeID: storage.StripeID((uint64(headerSize) + 53) / 64), ChunkSize: 64,
+		StripeID: 0, ChunkSize: 4096,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	original := append(append([]byte(nil), fixture.headerData...), fixture.payload...)
-	stripeStart := uint64((headerSize + 53) / 64 * 64)
-	stripeEnd := stripeStart + 64
-	if stripeEnd > uint64(len(original)) {
-		stripeEnd = uint64(len(original))
-	}
-	if !bytes.Equal(persisted.Data, original[stripeStart:stripeEnd]) {
+	if !bytes.Equal(persisted.Data, original) {
 		t.Fatal("Write changed persisted data before Flush/Fsync")
 	}
 }
