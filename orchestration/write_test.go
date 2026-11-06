@@ -11,6 +11,7 @@ import (
 	"github.com/tetsup/flexraid/distribution"
 	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/pkg/shared"
+	cfg "github.com/tetsup/flexraid/pkg/shared/config"
 )
 
 type writeFixture struct {
@@ -44,7 +45,9 @@ func newWriteFixture(t *testing.T) writeFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	logical := append(headerData, payload...)
+	logical := make([]byte, int(cfg.HeaderReservedSize)+len(payload))
+	copy(logical, headerData)
+	copy(logical[int(cfg.HeaderReservedSize):], payload)
 	_, err = distributed.Layer.WriteStripe(distribution.WriteStripeRequest{
 		Context: ctx, ObjectID: fileID, StripeID: 0, ChunkSize: 4096,
 		Layout:    distribution.Layout{Type: distribution.LayoutMirror, NumChunks: 2},
@@ -111,7 +114,9 @@ func TestWriteUpdatesSharedCacheVisibleToOtherHandle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	original := append(append([]byte(nil), fixture.headerData...), fixture.payload...)
+	original := make([]byte, int(cfg.HeaderReservedSize)+len(fixture.payload))
+	copy(original, fixture.headerData)
+	copy(original[int(cfg.HeaderReservedSize):], fixture.payload)
 	if !bytes.Equal(persisted.Data, original) {
 		t.Fatal("Write changed persisted data before Flush/Fsync")
 	}
