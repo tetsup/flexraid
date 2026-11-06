@@ -117,7 +117,7 @@ func TestSymlinkPersistsTargetAcrossStripesAndRestart(t *testing.T) {
 
 func TestMkdirAndSymlinkRejectInvalidRequests(t *testing.T) {
 	fixture := newNamespaceFixture(t)
-	created, err := fixture.layer.Mkdir(MkdirRequest{ParentID: fixture.rootID, Name: "existing", Mode: 0755})
+	_, err := fixture.layer.Mkdir(MkdirRequest{ParentID: fixture.rootID, Name: "existing", Mode: 0755})
 	if err != nil {
 		t.Fatal(err)
 	}
