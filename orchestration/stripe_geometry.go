@@ -71,3 +71,20 @@ func locateFileOffset(header header, offset uint64) (stripeGeometry, uint64, err
 	}
 	return geometry, relative % regularCapacity, nil
 }
+
+func distributionLayout(v layout) (distribution.Layout, error) {
+	switch v.Mode {
+	case layoutModeMirror:
+		if v.DataChunks == 0 || v.DataChunks > 9 || v.ParityChunks != 0 {
+			return distribution.Layout{}, errInvalidHeader
+		}
+		return distribution.Layout{Type: distribution.LayoutMirror, NumChunks: uint8(v.DataChunks)}, nil
+	case layoutModeStripe:
+		if v.DataChunks == 0 || v.DataChunks > 8 || v.ParityChunks != 1 {
+			return distribution.Layout{}, errInvalidHeader
+		}
+		return distribution.Layout{Type: distribution.LayoutParity, NumChunks: uint8(v.DataChunks)}, nil
+	default:
+		return distribution.Layout{}, errInvalidHeader
+	}
+}
