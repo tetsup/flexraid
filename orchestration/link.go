@@ -6,7 +6,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/tetsup/flexraid/distribution"
 	"github.com/tetsup/flexraid/pkg/shared"
 	"github.com/tetsup/flexraid/storage"
 	cfg "github.com/tetsup/flexraid/pkg/shared/config"
@@ -23,9 +22,10 @@ type LinkResponse struct {
 	ObjectID shared.ObjectID
 }
 
-// Link creates a namespace entry that shares the source file's data backing.
-// The first Link converts the original File into a HardLinkedFile and replaces
-// its original namespace entry with a HardLink. Later Links reuse that backing.
+// Link adds a new namespace name for a regular file's data object.
+// The first Link changes the existing File object into a HardLinkedFile while
+// preserving its ObjectID, ParentID, and Name. Subsequent Links target that
+// same data object directly.
 func (layer *Orchestration) Link(request LinkRequest) (response LinkResponse, err error) {
 	started := time.Now()
 	ctx := request.Context
@@ -50,7 +50,6 @@ func (layer *Orchestration) Link(request LinkRequest) (response LinkResponse, er
 	if err = validateNewObjectName(request.Name); err != nil {
 		return response, err
 	}
-
 	parent, exists := layer.objects[request.ParentID]
 	if !exists || parent.header.Deleted {
 		return response, os.ErrNotExist
@@ -72,32 +71,32 @@ func (layer *Orchestration) Link(request LinkRequest) (response LinkResponse, er
 	if _, protected := layer.protectedObjects[request.SourceID]; protected {
 		return response, os.ErrNotExist
 	}
-	if source.header.Kind != objectKindFile && source.header.Kind != objectKindHardLink {
+	if source.header.Kind != objectKindFile && source.header.Kind != objectKindHardLinkedFile && source.header.Kind != objectKindHardLink {
 		return response, fmt.Errorf("source %s is not a regular file: %w", request.SourceID.String(), os.ErrInvalid)
 	}
 	if source.file == nil {
 		return response, fmt.Errorf("source file backing is unavailable: %w", os.ErrNotExist)
 	}
-	if source.header.Kind == objectKindHardLink && source.header.TargetID == nil {
-		return response, fmt.Errorf("source HardLink has no target: %w", errInvalidHeader)
-	}
 
 	file := source.file
 	file.mu.Lock()
 	defer file.mu.Unlock()
-
 	if err = ctx.Err(); err != nil {
 		return response, err
 	}
+
 	backingID := file.objectID
 	backingHeader := file.header
-	firstLink := source.header.Kind == objectKindFile
-	if firstLink {
+	if source.header.Kind == objectKindFile {
+		// Preserve the original namespace entry. A crash after this write still
+		// leaves a valid name directly attached to the HardLinkedFile.
 		backingHeader.Kind = objectKindHardLinkedFile
-		backingHeader.ParentID = nil
-		backingHeader.TargetID = nil
-		backingHeader.Name = ""
 		backingHeader.Ctime = time.Now()
+		if err = layer.persistHeaderUpdateLocked(ctx, file, backingHeader); err != nil {
+			return response, fmt.Errorf("persist HardLinkedFile header: %w", err)
+		}
+		source.header = backingHeader
+		layer.headers[backingID] = backingHeader
 	}
 
 	linkID, err := shared.NewObjectID()
@@ -127,62 +126,15 @@ func (layer *Orchestration) Link(request LinkRequest) (response LinkResponse, er
 		return response, fmt.Errorf("persist HardLink %q: %w", request.Name, err)
 	}
 
-	var originalLink *runtimeObject
-	if firstLink {
-		originalID, idErr := shared.NewObjectID()
-		if idErr != nil {
-			return response, fmt.Errorf("generate original HardLink ObjectID: %w", idErr)
-		}
-		originalParentID := *source.header.ParentID
-		originalHeader := header{
-			FormatVersion: headerFormatVersion,
-			ObjectID:      originalID,
-			ParentID:      &originalParentID,
-			TargetID:      &backingID,
-			Kind:          objectKindHardLink,
-			Name:          source.header.Name,
-			Mode:          backingHeader.Mode,
-			UID:           backingHeader.UID,
-			GID:           backingHeader.GID,
-			Size:          backingHeader.Size,
-			Atime:         backingHeader.Atime,
-			Mtime:         backingHeader.Mtime,
-			Ctime:         now,
-			Layout:        backingHeader.Layout,
-		}
-		originalHeader, err = layer.persistNewObject(ctx, originalHeader, nil)
-		if err != nil {
-			return response, fmt.Errorf("persist original HardLink %q: %w", source.header.Name, err)
-		}
-		originalLink = &runtimeObject{header: originalHeader, file: file}
-		if err = layer.persistHeaderUpdateLocked(ctx, file, backingHeader); err != nil {
-			return response, fmt.Errorf("persist HardLinkedFile header: %w", err)
-		}
-	}
-
 	newLink := &runtimeObject{header: linkHeader, file: file}
-	if layer.objects == nil {
-		layer.objects = make(map[shared.ObjectID]*runtimeObject)
-	}
-	if layer.headers == nil {
-		layer.headers = make(map[shared.ObjectID]header)
-	}
-	if firstLink {
-		oldName := source.header.Name
-		parent.children[oldName] = originalLink
-		layer.objects[originalLink.header.ObjectID] = originalLink
-		layer.headers[originalLink.header.ObjectID] = originalLink.header
-		source.header = backingHeader
-		layer.headers[backingID] = backingHeader
-	}
 	parent.children[request.Name] = newLink
 	layer.objects[linkID] = newLink
 	layer.headers[linkID] = linkHeader
 	return LinkResponse{ObjectID: linkID}, nil
 }
 
-// persistHeaderUpdateLocked updates only Stripe 0's reserved Header bytes.
-// The caller holds file.mu and the in-memory Header is changed only on success.
+// persistHeaderUpdateLocked writes the authoritative Header to Stripe 0.
+// The caller holds file.mu; the in-memory Header changes only after persistence.
 func (layer *Orchestration) persistHeaderUpdateLocked(ctx context.Context, file *runtimeFile, next header) error {
 	headerBytes, err := next.MarshalBinary()
 	if err != nil {
@@ -205,7 +157,7 @@ func (layer *Orchestration) persistHeaderUpdateLocked(ctx context.Context, file 
 	copy(entry.data[:len(headerBytes)], headerBytes)
 
 	required := int(geometry.Layout.NumChunks)
-	if geometry.Layout.Type == distribution.LayoutParity {
+	if geometry.Layout.Type == 2 { // parity layout
 		required++
 	}
 	placement, placementErr := layer.distribution.StripeIOIndexes(distribution.StripeIOIndexesRequest{
