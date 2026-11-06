@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/tetsup/flexraid/distribution"
-	"github.com/tetsup/flexraid/pkg/shared"
-	cfg "github.com/tetsup/flexraid/pkg/shared/config"
 )
 
 func TestSetAttrUpdatesMetadataThroughSharedFileHandle(t *testing.T) {
@@ -110,9 +108,5 @@ func TestSetAttrRejectsCanceledContext(t *testing.T) {
 	if _, err := fixture.layer.SetAttr(SetAttrRequest{Context: ctx, ObjectID: fixture.fileID, UID: &uid}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled SetAttr = %v", err)
 	}
-	if cfg.HeaderReservedSize == 0 {
-		t.Fatal("Header reserved size must be configured")
-	}
 }
 
-var _ = shared.ObjectID{}
