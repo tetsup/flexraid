@@ -70,7 +70,6 @@ func (layer *Orchestration) GetAttr(request GetAttrRequest) (GetAttrResponse, er
 	return GetAttrResponse{Attributes: attributes}, nil
 }
 
-
 // deriveNlink calculates POSIX st_nlink from the currently reachable Namespace.
 func (layer *Orchestration) deriveNlink(object *runtimeObject) uint32 {
 	switch object.header.Kind {
