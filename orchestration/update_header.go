@@ -7,9 +7,8 @@ import (
 	cfg "github.com/tetsup/flexraid/pkg/shared/config"
 )
 
-// updateHeader updates logical metadata and selects a placement only when the
-// current plan is absent, a mirror crosses its capacity, or the file shrinks.
-// Growth of an already-striped object preserves its established chunk size.
+// updateHeader updates logical metadata and recalculates placement whenever
+// the logical file size changes. Persistence operations never replan placement.
 func updateHeader(current header, size uint64, now time.Time, overrides ...cfg.Placement) (header, error) {
 	policy := cfg.DefaultPlacement()
 	if len(overrides) > 1 {
@@ -23,9 +22,7 @@ func updateHeader(current header, size uint64, now time.Time, overrides ...cfg.P
 	}
 
 	next := current
-	replan := current.Layout.ChunkSize == 0 ||
-		(current.Layout.Mode == layoutModeMirror && size > cfg.HeaderDataCapacity) ||
-		size < current.Size
+	replan := current.Layout.ChunkSize == 0 || size != current.Size
 	if replan {
 		plan, err := planPlacement(size, policy)
 		if err != nil {
