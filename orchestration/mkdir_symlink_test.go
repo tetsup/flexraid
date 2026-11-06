@@ -137,7 +137,11 @@ func TestMkdirAndSymlinkRejectInvalidRequests(t *testing.T) {
 	if _, err := fixture.layer.Symlink(SymlinkRequest{ParentID: fixture.rootID, Name: "empty", Target: ""}); !errors.Is(err, os.ErrInvalid) {
 		t.Fatalf("empty Symlink target = %v, want os.ErrInvalid", err)
 	}
-	if _, err := fixture.layer.Mkdir(MkdirRequest{ParentID: created.ObjectID, Name: "child"}); !errors.Is(err, errNotDirectory) {
+	nonDirectory, err := fixture.layer.Symlink(SymlinkRequest{ParentID: fixture.rootID, Name: "not-directory", Target: "target"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.layer.Mkdir(MkdirRequest{ParentID: nonDirectory.ObjectID, Name: "child"}); !errors.Is(err, errNotDirectory) {
 		t.Fatalf("Mkdir under non-directory = %v, want errNotDirectory", err)
 	}
 	missing := testID("22345678-9abc-4def-8abc-1234567890ab")
