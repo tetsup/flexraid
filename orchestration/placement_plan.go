@@ -2,8 +2,8 @@ package orchestration
 
 import (
 	"fmt"
-	"sort"
 	cfg "github.com/tetsup/flexraid/pkg/shared/config"
+	"sort"
 )
 
 type stripePlacement struct {
@@ -65,7 +65,9 @@ func selectIOIndexes(available []uint64, count int) ([]int, error) {
 		return nil, fmt.Errorf("cannot select %d I/Os from %d", count, len(available))
 	}
 	indexes := make([]int, len(available))
-	for index := range indexes { indexes[index] = index }
+	for index := range indexes {
+		indexes[index] = index
+	}
 	sort.SliceStable(indexes, func(i, j int) bool {
 		return available[indexes[i]] > available[indexes[j]]
 	})

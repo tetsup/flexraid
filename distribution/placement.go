@@ -39,4 +39,3 @@ func (d *Distribution) AvailableIOBytes() ([]uint64, error) {
 	}
 	return result, nil
 }
-
