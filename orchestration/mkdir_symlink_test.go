@@ -33,7 +33,7 @@ func newNamespaceFixture(t *testing.T) namespaceFixture {
 	}
 	rootID := testID("12345678-9abc-4def-8abc-1234567890ab")
 	rootHeader := testHeader(objectKindDirectory, rootID, nil, nil, "")
-	rootHeader.Mode, rootHeader.UID, rootHeader.GID, rootHeader.Nlink, rootHeader.Size = 0755, 100, 200, 2, 0
+	rootHeader.Mode, rootHeader.UID, rootHeader.GID, rootHeader.Size = 0755, 100, 200, 0
 	layer := &Orchestration{distribution: distributed.Layer}
 	rootHeader, err = layer.persistNewObject(context.Background(), rootHeader, nil)
 	if err != nil {
