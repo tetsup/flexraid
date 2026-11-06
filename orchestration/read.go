@@ -84,55 +84,27 @@ func (layer *Orchestration) Read(request ReadRequest) (response ReadResponse, er
 	if readSize > remaining {
 		readSize = remaining
 	}
-	if fileHeader.Layout.ChunkSize == 0 {
-		return response, fmt.Errorf("%w: zero chunk size", errInvalidHeader)
-	}
-
-	var layout distribution.Layout
-	switch fileHeader.Layout.Mode {
-	case layoutModeMirror:
-		if fileHeader.Layout.ParityChunks != 0 {
-			return response, fmt.Errorf("%w: mirror layout has parity chunks", errInvalidHeader)
-		}
-		layout = distribution.Layout{Type: distribution.LayoutMirror, NumChunks: uint8(fileHeader.Layout.DataChunks)}
-	case layoutModeStripe:
-		if fileHeader.Layout.ParityChunks != 1 {
-			return response, fmt.Errorf("%w: stripe layout requires one parity chunk", errInvalidHeader)
-		}
-		layout = distribution.Layout{Type: distribution.LayoutParity, NumChunks: uint8(fileHeader.Layout.DataChunks)}
-	default:
-		return response, fmt.Errorf("%w: unknown layout mode", errInvalidHeader)
-	}
-	if layout.NumChunks == 0 {
-		return response, fmt.Errorf("%w: zero data chunks", errInvalidHeader)
-	}
-
-	stripeCapacity := uint64(fileHeader.Layout.ChunkSize)
-	if layout.Type == distribution.LayoutParity {
-		stripeCapacity *= uint64(layout.NumChunks)
-	}
-	if stripeCapacity == 0 {
-		return response, fmt.Errorf("%w: invalid stripe capacity", errInvalidHeader)
-	}
-
 	response.Data = make([]byte, 0, int(readSize))
 	position := request.Offset
 	for uint64(len(response.Data)) < readSize {
 		if err = ctx.Err(); err != nil {
 			return ReadResponse{}, err
 		}
-		logicalOffset := uint64(headerSize) + position
-		stripeID := storage.StripeID(logicalOffset / stripeCapacity)
-		stripeOffset := logicalOffset % stripeCapacity
-
-		stripeData, readErr := layer.getStripeData(ctx, file, stripeID)
+		geometry, stripeOffset, locateErr := locateFileOffset(fileHeader, position)
+		if locateErr != nil {
+			return ReadResponse{}, locateErr
+		}
+		stripeData, readErr := layer.getStripeData(ctx, file, geometry)
 		if readErr != nil {
-			return ReadResponse{}, fmt.Errorf("read object %s stripe %d: %w", file.objectID.String(), stripeID, readErr)
+			return ReadResponse{}, fmt.Errorf("read object %s stripe %d: %w", file.objectID.String(), geometry.StripeID, readErr)
 		}
 		if stripeOffset >= uint64(len(stripeData)) {
-			return ReadResponse{}, fmt.Errorf("stripe %d does not contain requested offset: %w", stripeID, distribution.ErrDataCorrupted)
+			return ReadResponse{}, fmt.Errorf("stripe %d does not contain requested offset: %w", geometry.StripeID, distribution.ErrDataCorrupted)
 		}
-		available := uint64(len(stripeData)) - stripeOffset
+		available := geometry.Capacity - (stripeOffset - geometry.DataOffset)
+		if actual := uint64(len(stripeData)) - stripeOffset; available > actual {
+			available = actual
+		}
 		count := readSize - uint64(len(response.Data))
 		if count > available {
 			count = available
@@ -143,7 +115,8 @@ func (layer *Orchestration) Read(request ReadRequest) (response ReadResponse, er
 	return response, nil
 }
 
-func (layer *Orchestration) getStripeData(ctx context.Context, file *runtimeFile, stripeID storage.StripeID) ([]byte, error) {
+func (layer *Orchestration) getStripeData(ctx context.Context, file *runtimeFile, geometry stripeGeometry) ([]byte, error) {
+	stripeID := geometry.StripeID
 	key := uint64(stripeID)
 
 	file.mu.RLock()
@@ -168,7 +141,7 @@ func (layer *Orchestration) getStripeData(ctx context.Context, file *runtimeFile
 		Context:   ctx,
 		ObjectID:  file.objectID,
 		StripeID:  stripeID,
-		ChunkSize: file.header.Layout.ChunkSize,
+		ChunkSize: geometry.ChunkSize,
 	})
 	if err != nil {
 		return nil, err
