@@ -2,7 +2,6 @@ package distribution
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/tetsup/flexraid/pkg/shared"
 	"github.com/tetsup/flexraid/storage"
