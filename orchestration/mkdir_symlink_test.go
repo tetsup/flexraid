@@ -188,3 +188,47 @@ func TestMkdirPersistenceFailureDoesNotPublish(t *testing.T) {
 		t.Fatalf("objects = %d, want only root", len(fixture.layer.objects))
 	}
 }
+
+func TestNamespaceCreationDerivesNlinkFromCurrentChildren(t *testing.T) {
+	fixture := newNamespaceFixture(t)
+	getNlink := func(id shared.ObjectID) uint32 {
+		t.Helper()
+		attr, err := fixture.layer.GetAttr(GetAttrRequest{ObjectID: id})
+		if err != nil {
+			t.Fatalf("GetAttr(%s): %v", id, err)
+		}
+		return attr.Attributes.Nlink
+	}
+
+	if got := getNlink(fixture.rootID); got != 2 {
+		t.Fatalf("empty root Nlink = %d, want 2", got)
+	}
+	first, err := fixture.layer.Mkdir(MkdirRequest{ParentID: fixture.rootID, Name: "first"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := getNlink(fixture.rootID); got != 3 {
+		t.Fatalf("root Nlink after child Directory = %d, want 3", got)
+	}
+	if got := getNlink(first.ObjectID); got != 2 {
+		t.Fatalf("new Directory Nlink = %d, want 2", got)
+	}
+
+	_, err = fixture.layer.Mkdir(MkdirRequest{ParentID: first.ObjectID, Name: "nested"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := getNlink(fixture.rootID); got != 3 {
+		t.Fatalf("root Nlink after nested Directory = %d, want 3", got)
+	}
+	if got := getNlink(first.ObjectID); got != 3 {
+		t.Fatalf("parent Directory Nlink after child Directory = %d, want 3", got)
+	}
+
+	if _, err := fixture.layer.Symlink(SymlinkRequest{ParentID: fixture.rootID, Name: "link", Target: "target"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := getNlink(fixture.rootID); got != 3 {
+		t.Fatalf("root Nlink after Symlink = %d, want 3", got)
+	}
+}
