@@ -98,7 +98,6 @@ func (layer *Orchestration) deriveNlink(object *runtimeObject) uint32 {
 	}
 }
 
-
 // deriveHardLinkCount counts reachable HardLink names and does not count a
 // HardLinkedFile's own ParentID entry. That direct entry is added by GetAttr
 // for a parented HardLinkedFile.
