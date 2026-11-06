@@ -10,7 +10,6 @@ import (
 	"github.com/tetsup/flexraid/distribution"
 	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/pkg/shared"
-	"github.com/tetsup/flexraid/storage"
 )
 
 func TestReadReturnsLogicalRangeAcrossStripesAndHardLinks(t *testing.T) {
