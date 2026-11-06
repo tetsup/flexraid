@@ -43,7 +43,11 @@ func (o *Orchestration) Flush(r FlushRequest) (FlushResponse, error) {
 			ids = append(ids, id)
 		}
 	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	sort.Slice(ids, func(i, j int) bool {
+		if ids[i] == 0 { return false }
+		if ids[j] == 0 { return true }
+		return ids[i] < ids[j]
+	})
 	for _, id := range ids {
 		if err := ctx.Err(); err != nil {
 			return out, err
