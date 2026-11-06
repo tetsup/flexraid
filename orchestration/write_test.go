@@ -28,6 +28,8 @@ func newWriteFixture(t *testing.T) writeFixture {
 	ios := []*physicalio.IO{
 		physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer,
 		physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer,
+		physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer,
+		physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer,
 	}
 	distributed, err := distribution.New(distribution.NewRequest{IOs: ios})
 	if err != nil {
@@ -194,5 +196,51 @@ func TestWriteCancellationDoesNotChangeCache(t *testing.T) {
 	defer file.mu.RUnlock()
 	if len(file.stripeCache) != 0 || file.header.Size != uint64(len(fixture.payload)) {
 		t.Fatal("canceled Write changed runtime file state")
+	}
+}
+
+func TestWriteReplansAndFlushesAcrossMirrorParityBoundary(t *testing.T) {
+	fixture := newWriteFixture(t)
+	writer := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDWR))
+	if _, err := fixture.layer.Write(WriteRequest{Handle: writer, ObjectID: fixture.fileID, Offset: 3072, Data: []byte("x")}); err != nil {
+		t.Fatal(err)
+	}
+	file := fixture.layer.objects[fixture.fileID].file
+	file.mu.RLock()
+	if file.header.Size != 3073 || file.header.Layout.Mode != layoutModeStripe {
+		file.mu.RUnlock()
+		t.Fatalf("updated header = %+v", file.header)
+	}
+	file.mu.RUnlock()
+	flushed, err := fixture.layer.Flush(FlushRequest{Handle: writer})
+	if err != nil || flushed.PersistedStripes != 1 {
+		t.Fatalf("Flush = %+v, %v", flushed, err)
+	}
+	file.mu.Lock()
+	file.stripeCache = make(map[uint64]*stripeCacheEntry)
+	file.mu.Unlock()
+	reader := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDONLY))
+	got, err := fixture.layer.Read(ReadRequest{Handle: reader, ObjectID: fixture.fileID, Offset: 3072, Size: 1})
+	if err != nil || !bytes.Equal(got.Data, []byte("x")) {
+		t.Fatalf("Read after replan+Flush = %q, %v", got.Data, err)
+	}
+}
+
+func TestTruncateReplansAndZeroFillsGrowth(t *testing.T) {
+	fixture := newWriteFixture(t)
+	writer := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDWR))
+	if _, err := fixture.layer.Truncate(TruncateRequest{Handle: writer, ObjectID: fixture.fileID, Size: 100}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.layer.Truncate(TruncateRequest{Handle: writer, ObjectID: fixture.fileID, Size: 120}); err != nil {
+		t.Fatal(err)
+	}
+	reader := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDONLY))
+	got, err := fixture.layer.Read(ReadRequest{Handle: reader, ObjectID: fixture.fileID, Offset: 100, Size: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got.Data, make([]byte, 20)) {
+		t.Fatalf("truncate growth = %v, want zero-filled bytes", got.Data)
 	}
 }
