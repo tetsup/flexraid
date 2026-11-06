@@ -81,7 +81,7 @@ fuse/
 - ObjectID のゼロ値を特別な識別子、root、未設定値、無効値などとして扱わない。ゼロ値判定やゼロ値を利用した分岐を設けない。
 - `ParentID` は nullable とする。通常の Namespace Object は有効な UUIDv4 の親 ID を持つが、root Directory と Namespace に直接所属しない HardLinkedFile は `nil` を持つ。HardLinkedFile は Namespace に直接所属する場合も、HardLink 経由でのみ参照される場合もある。
 - root 自身も通常の Object として有効な ObjectID を持つ。root は ParentID が nil の唯一の Directory Object として識別し、root の子の ParentID には root 自身の ObjectID を設定する。
-- HardLinkedFile も ParentID が nil になるため、ParentID の nil だけで root と判定してはならない。必ず Kind と組み合わせて判定する。
+- HardLinkedFile は ParentID が nil になる場合があるため、ParentID の nil だけで root と判定してはならない。必ず Kind と組み合わせて判定する。
 - nullable な識別子を永続化するときは、ゼロ UUID を null の代用にせず、存在フラグなどで有無を明示する。存在する場合の ID は必ず UUIDv4 として検証する。
 
 ### ObjectKind、Namespace、HardLink
@@ -180,7 +180,7 @@ fuse/
 
 - Namespace は各 Object の Header にある ParentID と Name から復元する。Directory の children は永続化せず、起動時に Orchestration のメモリ上で構築する。
 - root は ParentID が nil の唯一の Directory Object として識別する。HardLinkedFile も ParentID が nil だが、Kind によって root と区別する。
-- Object Kind は File / Directory / Symlink / HardLinkedFile / HardLink を区別する。HardLinkedFile は Namespace 外で実データを保持し、HardLink は ParentID と TargetID を持つ Namespace Object で実データを保持しない。
+- Object Kind は File / Directory / Symlink / HardLinkedFile / HardLink を区別する。HardLinkedFile は ParentID があれば Namespace に直接所属し、nil なら HardLink 経由で参照される実データ実体とする。HardLink は ParentID と TargetID を持つ Namespace Object で実データを保持しない。
 - HardLink の TargetID は HardLinkedFile を直接指す。HardLink の連鎖、Directory / Symlink への参照、Directory のハードリンクは認めない。
 - Symlink のリンク先パスは Header ではなく通常の論理データとして保持する。
 - 永続化時は HardLinkedFile と各 HardLink を個別 Object として保存し、メモリ展開時は複数の HardLink Node が同一の Runtime ファイル実体を共有する。Distribution 上のデータ冗長化・配置単位は HardLinkedFile とする。
@@ -582,6 +582,6 @@ The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing 
 
 - Namespace 操作の成功条件は、対象の親子関係・HardLink 参照関係が一貫した状態で更新されることとする。NLink の数値を個別にインクリメント／デクリメントして帳尻を合わせてはならない。
 - Directory の NLink は children の Kind を数えて導出する。Directory を追加・削除・移動した場合も、children の更新だけで導出結果が変わるようにする。
-- HardLink の NLink は HardLinkedFile ごとの参照元 HardLink を数えて導出する。HardLink の追加・削除時に参照数カウンターを永続化してはならない。
+- HardLink / HardLinkedFile の NLink は、HardLinkedFile の ParentID による直接所属名（存在する場合）と、同じ実体を参照する到達可能な HardLink の数を合算して導出する。HardLink の追加・削除時に参照数カウンターを永続化してはならない。
 - Namespace の更新に失敗した場合は、部分的な親子関係・参照関係を公開しない。複数 Object の永続化を伴う操作の原子性・クラッシュ復旧は別途定義するが、その都合で NLink を永続化属性にしてはならない。
 - NLink の計算は Orchestration の責務とする。FUSE 層は Orchestration が返す NLink を `st_nlink` に設定し、独自に再計算しない。
