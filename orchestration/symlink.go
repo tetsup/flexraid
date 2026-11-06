@@ -80,7 +80,6 @@ func (layer *Orchestration) Symlink(request SymlinkRequest) (response SymlinkRes
 		Mode:          0777,
 		UID:           request.UID,
 		GID:           request.GID,
-		Nlink:         1,
 		Size:          uint64(len(request.Target)),
 		Atime:         now,
 		Mtime:         now,

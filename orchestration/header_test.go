@@ -19,7 +19,6 @@ func sampleHeader() header {
 		Mode:          0644,
 		UID:           1000,
 		GID:           100,
-		Nlink:         1,
 		Size:          987654321,
 		Atime:         time.Unix(1700000000, 123456789),
 		Mtime:         time.Unix(1700000001, 234567890),
@@ -47,7 +46,7 @@ func TestHeaderBinaryRoundTrip(t *testing.T) {
 	if got.Deleted != want.Deleted || got.ObjectID != want.ObjectID || !equalOptionalObjectID(got.ParentID, want.ParentID) ||
 		!equalOptionalObjectID(got.TargetID, want.TargetID) || got.FormatVersion != want.FormatVersion ||
 		got.Kind != want.Kind || got.Name != want.Name || got.Mode != want.Mode || got.UID != want.UID ||
-		got.GID != want.GID || got.Nlink != want.Nlink || got.Size != want.Size ||
+		got.GID != want.GID || got.Size != want.Size ||
 		!got.Atime.Equal(want.Atime) || !got.Mtime.Equal(want.Mtime) || !got.Ctime.Equal(want.Ctime) || got.Layout != want.Layout {
 		t.Fatalf("got %#v want %#v", got, want)
 	}

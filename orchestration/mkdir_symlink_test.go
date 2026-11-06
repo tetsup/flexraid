@@ -33,7 +33,7 @@ func newNamespaceFixture(t *testing.T) namespaceFixture {
 	}
 	rootID := testID("12345678-9abc-4def-8abc-1234567890ab")
 	rootHeader := testHeader(objectKindDirectory, rootID, nil, nil, "")
-	rootHeader.Mode, rootHeader.UID, rootHeader.GID, rootHeader.Nlink, rootHeader.Size = 0755, 100, 200, 2, 0
+	rootHeader.Mode, rootHeader.UID, rootHeader.GID, rootHeader.Size = 0755, 100, 200, 0
 	layer := &Orchestration{distribution: distributed.Layer}
 	rootHeader, err = layer.persistNewObject(context.Background(), rootHeader, nil)
 	if err != nil {
@@ -186,5 +186,49 @@ func TestMkdirPersistenceFailureDoesNotPublish(t *testing.T) {
 	}
 	if len(fixture.layer.objects) != 1 {
 		t.Fatalf("objects = %d, want only root", len(fixture.layer.objects))
+	}
+}
+
+func TestNamespaceCreationDerivesNlinkFromCurrentChildren(t *testing.T) {
+	fixture := newNamespaceFixture(t)
+	getNlink := func(id shared.ObjectID) uint32 {
+		t.Helper()
+		attr, err := fixture.layer.GetAttr(GetAttrRequest{ObjectID: id})
+		if err != nil {
+			t.Fatalf("GetAttr(%s): %v", id, err)
+		}
+		return attr.Attributes.Nlink
+	}
+
+	if got := getNlink(fixture.rootID); got != 2 {
+		t.Fatalf("empty root Nlink = %d, want 2", got)
+	}
+	first, err := fixture.layer.Mkdir(MkdirRequest{ParentID: fixture.rootID, Name: "first"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := getNlink(fixture.rootID); got != 3 {
+		t.Fatalf("root Nlink after child Directory = %d, want 3", got)
+	}
+	if got := getNlink(first.ObjectID); got != 2 {
+		t.Fatalf("new Directory Nlink = %d, want 2", got)
+	}
+
+	_, err = fixture.layer.Mkdir(MkdirRequest{ParentID: first.ObjectID, Name: "nested"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := getNlink(fixture.rootID); got != 3 {
+		t.Fatalf("root Nlink after nested Directory = %d, want 3", got)
+	}
+	if got := getNlink(first.ObjectID); got != 3 {
+		t.Fatalf("parent Directory Nlink after child Directory = %d, want 3", got)
+	}
+
+	if _, err := fixture.layer.Symlink(SymlinkRequest{ParentID: fixture.rootID, Name: "link", Target: "target"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := getNlink(fixture.rootID); got != 3 {
+		t.Fatalf("root Nlink after Symlink = %d, want 3", got)
 	}
 }

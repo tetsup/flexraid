@@ -19,7 +19,7 @@ func initializedReadLayer(t *testing.T) (*Orchestration, shared.ObjectID, shared
 	root := testHeader(objectKindDirectory, rootID, nil, nil, "")
 	dir := testHeader(objectKindDirectory, dirID, &rootID, nil, "docs")
 	file := testHeader(objectKindFile, fileID, &dirID, nil, "readme")
-	file.Mode, file.UID, file.GID, file.Nlink, file.Size = 0644, 100, 200, 1, 123
+	file.Mode, file.UID, file.GID, file.Size = 0644, 100, 200, 123
 	layer := &Orchestration{}
 	if err := layer.initialize([]initialObject{encodeInitial(t, file), encodeInitial(t, root), encodeInitial(t, dir)}); err != nil {
 		t.Fatal(err)
@@ -191,4 +191,40 @@ func mustMarshalHeader(t *testing.T, h header) []byte {
 		t.Fatal(err)
 	}
 	return data
+}
+
+func TestGetAttrDerivesDirectoryAndHardLinkCounts(t *testing.T) {
+	rootID := testID("12345678-9abc-4def-8abc-1234567890ab")
+	childDirID := testID("22345678-9abc-4def-8abc-1234567890ab")
+	nestedDirID := testID("32345678-9abc-4def-8abc-1234567890ab")
+	backingID := testID("42345678-9abc-4def-8abc-1234567890ab")
+	linkAID := testID("52345678-9abc-4def-8abc-1234567890ab")
+	linkBID := testID("62345678-9abc-4def-8abc-1234567890ab")
+
+	root := testHeader(objectKindDirectory, rootID, nil, nil, "")
+	childDir := testHeader(objectKindDirectory, childDirID, &rootID, nil, "docs")
+	nestedDir := testHeader(objectKindDirectory, nestedDirID, &childDirID, nil, "nested")
+	backing := testHeader(objectKindHardLinkedFile, backingID, nil, nil, "")
+	linkA := testHeader(objectKindHardLink, linkAID, &rootID, &backingID, "a")
+	linkB := testHeader(objectKindHardLink, linkBID, &childDirID, &backingID, "b")
+
+	layer := &Orchestration{}
+	if err := layer.initialize([]initialObject{
+		encodeInitial(t, root), encodeInitial(t, childDir), encodeInitial(t, nestedDir),
+		encodeInitial(t, backing), encodeInitial(t, linkA), encodeInitial(t, linkB),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for id, want := range map[shared.ObjectID]uint32{
+		rootID: 3, childDirID: 3, nestedDirID: 2, linkAID: 2, linkBID: 2,
+	} {
+		got, err := layer.GetAttr(GetAttrRequest{ObjectID: id})
+		if err != nil {
+			t.Fatalf("GetAttr(%s): %v", id, err)
+		}
+		if got.Attributes.Nlink != want {
+			t.Errorf("GetAttr(%s).Nlink = %d, want %d", id, got.Attributes.Nlink, want)
+		}
+	}
 }

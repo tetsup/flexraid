@@ -44,6 +44,9 @@ func (layer *Orchestration) GetAttr(request GetAttrRequest) (GetAttrResponse, er
 	if !exists || object.header.Deleted {
 		return GetAttrResponse{}, os.ErrNotExist
 	}
+	if _, protected := layer.protectedObjects[request.ObjectID]; protected {
+		return GetAttrResponse{}, os.ErrNotExist
+	}
 	if object.header.Kind == objectKindHardLinkedFile {
 		return GetAttrResponse{}, fmt.Errorf("HardLinkedFile %s is not a namespace object: %w", request.ObjectID.String(), os.ErrNotExist)
 	}
@@ -52,17 +55,61 @@ func (layer *Orchestration) GetAttr(request GetAttrRequest) (GetAttrResponse, er
 		object.file.mu.RLock()
 		backing := object.file.header
 		h.Mode, h.UID, h.GID = backing.Mode, backing.UID, backing.GID
-		h.Nlink, h.Size = backing.Nlink, backing.Size
+		h.Size = backing.Size
 		h.Atime, h.Mtime, h.Ctime = backing.Atime, backing.Mtime, backing.Ctime
 		object.file.mu.RUnlock()
 	}
 	attributes := ObjectAttributes{
 		ObjectID: h.ObjectID, Kind: h.Kind, Name: h.Name, Mode: h.Mode,
-		UID: h.UID, GID: h.GID, Nlink: h.Nlink, Size: h.Size,
+		UID: h.UID, GID: h.GID, Nlink: layer.deriveNlink(object), Size: h.Size,
 		Atime: h.Atime, Mtime: h.Mtime, Ctime: h.Ctime,
 	}
 	if layer.logger != nil {
 		layer.logger.Debug("orchestration GetAttr completed", slog.String("object_id", request.ObjectID.String()), slog.String("kind", fmt.Sprint(h.Kind)))
 	}
 	return GetAttrResponse{Attributes: attributes}, nil
+}
+
+// deriveNlink calculates POSIX st_nlink from the currently reachable Namespace.
+func (layer *Orchestration) deriveNlink(object *runtimeObject) uint32 {
+	switch object.header.Kind {
+	case objectKindDirectory:
+		nlink := uint32(2)
+		for _, child := range object.children {
+			if child.header.Kind == objectKindDirectory && !child.header.Deleted {
+				nlink++
+			}
+		}
+		return nlink
+	case objectKindFile, objectKindSymlink:
+		return 1
+	case objectKindHardLink:
+		if object.header.TargetID == nil || layer.root == nil {
+			return 0
+		}
+		targetID := *object.header.TargetID
+		var nlink uint32
+		queue := []*runtimeObject{layer.root}
+		visited := make(map[*runtimeObject]struct{})
+		for len(queue) > 0 {
+			current := queue[0]
+			queue = queue[1:]
+			if _, exists := visited[current]; exists {
+				continue
+			}
+			visited[current] = struct{}{}
+			if current.header.Kind == objectKindHardLink &&
+				current.header.TargetID != nil && *current.header.TargetID == targetID {
+				nlink++
+			}
+			if current.header.Kind == objectKindDirectory {
+				for _, child := range current.children {
+					queue = append(queue, child)
+				}
+			}
+		}
+		return nlink
+	default:
+		return 0
+	}
 }
