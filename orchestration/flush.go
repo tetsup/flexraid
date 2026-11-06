@@ -68,13 +68,13 @@ func (o *Orchestration) Flush(r FlushRequest) (FlushResponse, error) {
 		if geometry.Layout.Type == distribution.LayoutParity {
 			required++
 		}
-		indexes, placementErr := o.distribution.StripeIOIndexes(f.objectID, storage.StripeID(id))
-		if placementErr != nil || len(indexes) != required {
-			available, capacityErr := o.distribution.AvailableIOBytes()
+		placement, placementErr := o.distribution.StripeIOIndexes(distribution.StripeIOIndexesRequest{ObjectID: f.objectID, StripeID: storage.StripeID(id)})
+		if placementErr != nil || len(indexes.IOIndexes) != required {
+			available, capacityErr := o.distribution.AvailableIOBytes(distribution.AvailableIOBytesRequest{})
 			if capacityErr != nil {
 				return out, fmt.Errorf("read I/O capacities for stripe %d: %w", id, capacityErr)
 			}
-			indexes, err = selectIOIndexes(available, required)
+			indexes, err = selectIOIndexes(available.Bytes, required)
 			if err != nil {
 				return out, fmt.Errorf("select I/O devices for stripe %d: %w", id, err)
 			}
