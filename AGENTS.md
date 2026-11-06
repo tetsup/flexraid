@@ -139,6 +139,9 @@ fuse/
 - Orchestration から受け取るのは論理ストライプ単位のデータであり、論理ファイルの offset、ファイルサイズ、ファイル内の位置関係を扱わない。
 - `ReadStripe` / `WriteStripe` の StripeID は、Orchestration が論理ファイルの offset と Header の配置計画から決定する。Distribution は StripeID を識別子として扱い、論理 offset への変換を行わない。
 - `WriteStripe` は受け取ったストライプデータを指定 ChunkSize と Layout に従ってチャンクへ分割し、必要なパリティを生成して、指定された IO index へ永続化する。論理ファイルの書き込み範囲の分割や既存ストライプデータとのマージは行わない。
+- Orchestration が論理ファイル offset を StripeID とストライプ内 offset に変換する際は、Header 予約領域 1 KiB をファイル本体 offset から分離する。Stripe 0 の物理チャンクサイズは 4 KiB 固定とし、論理データチャンク数を N としたとき、Stripe 0 のファイル本体容量 S0 は `4 KiB × N - 1 KiB` とする。Mirror の N は 1（複製数ではない）、XOR Parity の N はデータチャンク数とする。
+- Stripe 0 の先頭 1 KiB に Header を格納し、残りをファイル本体に使用する。Stripe 1 以降のチャンクサイズ C は Header に保持し、通常ストライプの論理容量は `C × N` とする。ファイル本体 offset x が S0 未満なら StripeID 0、StripeID 0 内のデータ offset は `1 KiB + x`。x が S0 以上なら StripeID は `1 + (x - S0) / (C × N)`、ストライプ内 offset は `(x - S0) % (C × N)` とする。
+- Header の配置計画を変更するのは論理ファイルサイズが変わるときだけとする。サイズを変えない上書きでは再計画しない。Flush / Fsync は Header に確定済みの配置計画を使用し、配置を再計算・上書きしてはならない。サイズ変更で配置計画が変わる場合は、既存データを新しいストライプ境界・チャンクサイズへ移行してから Header とデータを一貫した状態にする。
 
 - ミラーリング、ストライピング、パリティ、データ復旧、配置移行を担当する。
 - Header の形式や内容を知らず、Header を含む論理データを通常のバイト列として扱う。
