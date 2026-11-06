@@ -2,6 +2,7 @@ package orchestration
 
 import (
 	"fmt"
+	"sort"
 	cfg "github.com/tetsup/flexraid/pkg/shared/config"
 )
 
@@ -9,7 +10,6 @@ type stripePlacement struct {
 	StripeID  uint64
 	ChunkSize uint32
 	Layout    layout
-	IOIndexes []int
 	DataSize  uint64
 }
 
@@ -28,13 +28,11 @@ func planPlacement(size uint64, overrides ...cfg.Placement) ([]stripePlacement, 
 	first := stripePlacement{StripeID: 0, ChunkSize: cfg.MinimumChunkSize}
 	if size <= cfg.HeaderDataCapacity {
 		first.Layout = layout{Mode: layoutModeMirror, ChunkSize: cfg.MinimumChunkSize, DataChunks: 2}
-		first.IOIndexes = []int{0, 1}
 		first.DataSize = size
 		return []stripePlacement{first}, nil
 	}
 	firstCap := cfg.HeaderDataCapacity + uint64(p.DataChunks-1)*uint64(cfg.MinimumChunkSize)
 	first.Layout = layout{Mode: layoutModeStripe, ChunkSize: cfg.MinimumChunkSize, DataChunks: uint16(p.DataChunks), ParityChunks: uint16(p.ParityChunks)}
-	first.IOIndexes = placementIndexes(p.DiskCount, 0)
 	first.DataSize = size
 	if first.DataSize > firstCap {
 		first.DataSize = firstCap
@@ -57,15 +55,19 @@ func planPlacement(size uint64, overrides ...cfg.Placement) ([]stripePlacement, 
 		if n > capacity {
 			n = capacity
 		}
-		plan = append(plan, stripePlacement{StripeID: id, ChunkSize: uint32(chunk), Layout: layout{Mode: layoutModeStripe, ChunkSize: uint32(chunk), DataChunks: uint16(p.DataChunks), ParityChunks: uint16(p.ParityChunks)}, IOIndexes: placementIndexes(p.DiskCount, int(id)), DataSize: n})
+		plan = append(plan, stripePlacement{StripeID: id, ChunkSize: uint32(chunk), Layout: layout{Mode: layoutModeStripe, ChunkSize: uint32(chunk), DataChunks: uint16(p.DataChunks), ParityChunks: uint16(p.ParityChunks)}, DataSize: n})
 		remaining -= n
 	}
 	return plan, nil
 }
-func placementIndexes(count, rotation int) []int {
-	r := make([]int, count)
-	for i := range r {
-		r[i] = (i + rotation) % count
+func selectIOIndexes(available []uint64, count int) ([]int, error) {
+	if count < 1 || count > len(available) {
+		return nil, fmt.Errorf("cannot select %d I/Os from %d", count, len(available))
 	}
-	return r
+	indexes := make([]int, len(available))
+	for index := range indexes { indexes[index] = index }
+	sort.SliceStable(indexes, func(i, j int) bool {
+		return available[indexes[i]] > available[indexes[j]]
+	})
+	return indexes[:count], nil
 }
