@@ -3,8 +3,7 @@ package orchestration
 import (
 	"context"
 	"fmt"
-	"math"
-	"os"
+		"os"
 	"syscall"
 	"time"
 
@@ -38,7 +37,7 @@ func (layer *Orchestration) Write(request WriteRequest) (response WriteResponse,
 	if request.Handle == nil {
 		return response, os.ErrInvalid
 	}
-	if uint64(len(request.Data)) > math.MaxUint32 {
+	if uint64(len(request.Data)) > uint64(^uint32(0)) {
 		return response, fmt.Errorf("write request exceeds maximum size: %w", os.ErrInvalid)
 	}
 	handle := request.Handle
