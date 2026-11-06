@@ -47,6 +47,9 @@ func (layer *Orchestration) GetAttr(request GetAttrRequest) (GetAttrResponse, er
 	if _, protected := layer.protectedObjects[request.ObjectID]; protected {
 		return GetAttrResponse{}, os.ErrNotExist
 	}
+	if object.header.Kind == objectKindHardLinkedFile && object.header.ParentID == nil {
+		return GetAttrResponse{}, os.ErrNotExist
+	}
 	h := object.header
 	if object.file != nil {
 		object.file.mu.RLock()
