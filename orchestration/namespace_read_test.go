@@ -19,7 +19,7 @@ func initializedReadLayer(t *testing.T) (*Orchestration, shared.ObjectID, shared
 	root := testHeader(objectKindDirectory, rootID, nil, nil, "")
 	dir := testHeader(objectKindDirectory, dirID, &rootID, nil, "docs")
 	file := testHeader(objectKindFile, fileID, &dirID, nil, "readme")
-	file.Mode, file.UID, file.GID, file.Nlink, file.Size = 0644, 100, 200, 1, 123
+	file.Mode, file.UID, file.GID, file.Size = 0644, 100, 200, 123
 	layer := &Orchestration{}
 	if err := layer.initialize([]initialObject{encodeInitial(t, file), encodeInitial(t, root), encodeInitial(t, dir)}); err != nil {
 		t.Fatal(err)
