@@ -3,8 +3,7 @@ package orchestration
 import (
 	"context"
 	"fmt"
-	"math"
-	"os"
+		"os"
 	"time"
 
 	"github.com/tetsup/flexraid/pkg/shared"
@@ -46,7 +45,7 @@ func (layer *Orchestration) Truncate(request TruncateRequest) (TruncateResponse,
 	if (object.header.Kind != objectKindFile && object.header.Kind != objectKindHardLink) || object.file == nil || object.file != handle.runtimeFile {
 		return TruncateResponse{}, fmt.Errorf("handle does not refer to writable file %s: %w", request.ObjectID.String(), os.ErrInvalid)
 	}
-	if request.Size > uint64(math.MaxInt) {
+	if request.Size > uint64(int(^uint(0)>>1)) {
 		return TruncateResponse{}, fmt.Errorf("truncate size exceeds addressable memory: %w", os.ErrInvalid)
 	}
 
