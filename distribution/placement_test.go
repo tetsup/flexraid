@@ -9,7 +9,8 @@ import (
 )
 
 func TestStripeIOIndexesReturnsDataOrderThenParity(t *testing.T) {
-	objectID := shared.NewObjectID()
+	objectID, err := shared.NewObjectID()
+	if err != nil { t.Fatal(err) }
 	d := &Distribution{
 		objects: map[shared.ObjectID]map[storage.StripeID]*stripeInfo{
 			objectID: {
