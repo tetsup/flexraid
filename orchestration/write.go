@@ -223,7 +223,8 @@ func (layer *Orchestration) rebuildFileCacheFromStripes(
 		}
 
 		// Preserve only the old file range that overlaps this destination stripe.
-		preserveEnd := destinationOffset + placement.DataSize
+		destinationEnd := destinationOffset + placement.DataSize
+		preserveEnd := destinationEnd
 		if preserveEnd > oldHeader.Size {
 			preserveEnd = oldHeader.Size
 		}
@@ -241,7 +242,7 @@ func (layer *Orchestration) rebuildFileCacheFromStripes(
 		if writeOffset > overlapStart {
 			overlapStart = writeOffset
 		}
-		overlapEnd := preserveEnd
+		overlapEnd := destinationEnd
 		if writeEnd < overlapEnd {
 			overlapEnd = writeEnd
 		}
