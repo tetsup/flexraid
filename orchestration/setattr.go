@@ -105,6 +105,11 @@ func (layer *Orchestration) SetAttr(request SetAttrRequest) (response SetAttrRes
 				return response, err
 			}
 			if next == file.header {
+				if handle == nil {
+					if err = layer.persistDirtyStripesLocked(ctx, file); err != nil {
+						return response, err
+					}
+				}
 				return response, nil
 			}
 			if err = layer.updateHeaderStripeLocked(ctx, file, next); err != nil {
