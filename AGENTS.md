@@ -136,6 +136,10 @@ fuse/
 
 ### Distribution 層
 
+- Orchestration から受け取るのは論理ストライプ単位のデータであり、論理ファイルの offset、ファイルサイズ、ファイル内の位置関係を扱わない。
+- `ReadStripe` / `WriteStripe` の StripeID は、Orchestration が論理ファイルの offset と Header の配置計画から決定する。Distribution は StripeID を識別子として扱い、論理 offset への変換を行わない。
+- `WriteStripe` は受け取ったストライプデータを指定 ChunkSize と Layout に従ってチャンクへ分割し、必要なパリティを生成して、指定された IO index へ永続化する。論理ファイルの書き込み範囲の分割や既存ストライプデータとのマージは行わない。
+
 - ミラーリング、ストライピング、パリティ、データ復旧、配置移行を担当する。
 - Header の形式や内容を知らず、Header を含む論理データを通常のバイト列として扱う。
 - チャンク・ストライプ・バージョン・物理配置の情報を管理する。
