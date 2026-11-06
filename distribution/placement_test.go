@@ -10,7 +10,9 @@ import (
 
 func TestStripeIOIndexesReturnsDataOrderThenParity(t *testing.T) {
 	objectID, err := shared.NewObjectID()
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	d := &Distribution{
 		objects: map[shared.ObjectID]map[storage.StripeID]*stripeInfo{
 			objectID: {
@@ -24,7 +26,11 @@ func TestStripeIOIndexesReturnsDataOrderThenParity(t *testing.T) {
 		},
 	}
 	got, err := d.StripeIOIndexes(objectID, 0)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := []int{2, 0, 3, 1}
-	if !reflect.DeepEqual(got, want) { t.Fatalf("indexes = %v, want %v", got, want) }
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("indexes = %v, want %v", got, want)
+	}
 }
