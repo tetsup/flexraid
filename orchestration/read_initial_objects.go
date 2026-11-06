@@ -6,8 +6,8 @@ import (
 
 	"github.com/tetsup/flexraid/distribution"
 	"github.com/tetsup/flexraid/pkg/shared"
-	"github.com/tetsup/flexraid/storage"
 	cfg "github.com/tetsup/flexraid/pkg/shared/config"
+	"github.com/tetsup/flexraid/storage"
 )
 
 type initialObject struct {
