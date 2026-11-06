@@ -117,6 +117,9 @@ func (layer *Orchestration) SetAttr(request SetAttrRequest) (response SetAttrRes
 			}
 		}
 		file.header = next
+		if layer.headers == nil {
+			layer.headers = make(map[shared.ObjectID]header)
+		}
 		layer.headers[file.objectID] = next
 		if handle == nil {
 			if err = layer.persistDirtyStripesLocked(ctx, file); err != nil {
@@ -150,6 +153,9 @@ func (layer *Orchestration) SetAttr(request SetAttrRequest) (response SetAttrRes
 		return response, err
 	}
 	object.header = next
+	if layer.headers == nil {
+		layer.headers = make(map[shared.ObjectID]header)
+	}
 	layer.headers[request.ObjectID] = next
 	return response, nil
 }
