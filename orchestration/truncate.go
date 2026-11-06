@@ -59,10 +59,18 @@ func (layer *Orchestration) Truncate(request TruncateRequest) (TruncateResponse,
 		return TruncateResponse{}, err
 	}
 	next, err := updateHeader(file.header, request.Size, time.Now())
-	if err != nil { return TruncateResponse{}, err }
+	if err != nil {
+		return TruncateResponse{}, err
+	}
 	plan, err := planPlacement(request.Size, cfg.DefaultPlacement())
-	if err != nil { return TruncateResponse{}, err }
-	if len(plan) > 1 { next.Layout.ChunkSize = plan[1].ChunkSize } else { next.Layout.ChunkSize = cfg.MinimumChunkSize }
+	if err != nil {
+		return TruncateResponse{}, err
+	}
+	if len(plan) > 1 {
+		next.Layout.ChunkSize = plan[1].ChunkSize
+	} else {
+		next.Layout.ChunkSize = cfg.MinimumChunkSize
+	}
 	if err := layer.rebuildFileCacheFromStripes(ctx, file, file.header, next, plan, ^uint64(0), nil); err != nil {
 		return TruncateResponse{}, err
 	}
