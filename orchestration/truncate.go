@@ -42,7 +42,7 @@ func (layer *Orchestration) Truncate(request TruncateRequest) (TruncateResponse,
 	if !exists || object.header.Deleted {
 		return TruncateResponse{}, os.ErrNotExist
 	}
-	if (object.header.Kind != objectKindFile && object.header.Kind != objectKindHardLink) || object.file == nil || object.file != handle.runtimeFile {
+	if (object.header.Kind != objectKindFile && object.header.Kind != objectKindHardLinkedFile && object.header.Kind != objectKindHardLink) || object.file == nil || object.file != handle.runtimeFile {
 		return TruncateResponse{}, fmt.Errorf("handle does not refer to writable file %s: %w", request.ObjectID.String(), os.ErrInvalid)
 	}
 	if request.Size > uint64(int(^uint(0)>>1)) {
