@@ -47,9 +47,11 @@ func (layer *Orchestration) inspect() error {
 		}
 		switch object.header.Kind {
 		case objectKindHardLinkedFile:
-			if _, referenced := reachableHardLinkedFiles[id]; !referenced {
+			_, directlyReachable := reachable[id]
+			_, referenced := reachableHardLinkedFiles[id]
+			if !directlyReachable && !referenced {
 				layer.protectedObjects[id] = struct{}{}
-				layer.addInitializationWarning(id, "HardLinkedFile has no reachable HardLink")
+				layer.addInitializationWarning(id, "HardLinkedFile has neither a reachable parent entry nor a reachable HardLink")
 			}
 		default:
 			if _, exists := reachable[id]; !exists {
