@@ -87,7 +87,7 @@ func (layer *Orchestration) deriveNlink(object *runtimeObject) uint32 {
 		if object.header.ParentID == nil {
 			return 0
 		}
-		return layer.deriveHardLinkCount(object.header.ObjectID) + 1
+		return layer.deriveHardLinkCount(object.header.ObjectID)
 	case objectKindHardLink:
 		if object.header.TargetID == nil {
 			return 0
@@ -116,6 +116,9 @@ func (layer *Orchestration) deriveHardLinkCount(targetID shared.ObjectID) uint32
 			continue
 		}
 		visited[current] = struct{}{}
+		if current.header.Kind == objectKindHardLinkedFile && current.header.ObjectID == targetID && current.header.ParentID != nil {
+			nlink++
+		}
 		if current.header.Kind == objectKindHardLink &&
 			current.header.TargetID != nil && *current.header.TargetID == targetID {
 			nlink++
