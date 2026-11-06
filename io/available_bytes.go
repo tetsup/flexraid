@@ -7,7 +7,7 @@ import (
 )
 
 type AvailableBytesRequest struct{}
-type AvailableBytesResponse struct { Bytes uint64 }
+type AvailableBytesResponse struct{ Bytes uint64 }
 
 // AvailableBytes returns the filesystem's currently available bytes for this I/O root.
 func (layer *IO) AvailableBytes(AvailableBytesRequest) (AvailableBytesResponse, error) {

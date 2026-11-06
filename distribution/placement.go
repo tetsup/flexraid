@@ -12,9 +12,9 @@ type StripeIOIndexesRequest struct {
 	ObjectID shared.ObjectID
 	StripeID storage.StripeID
 }
-type StripeIOIndexesResponse struct { IOIndexes []int }
+type StripeIOIndexesResponse struct{ IOIndexes []int }
 type AvailableIOBytesRequest struct{}
-type AvailableIOBytesResponse struct { Bytes []uint64 }
+type AvailableIOBytesResponse struct{ Bytes []uint64 }
 
 // StripeIOIndexes returns persisted physical I/O indexes in logical chunk order,
 // with parity last. The returned slice contains only the devices used by the stripe.
