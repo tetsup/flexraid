@@ -116,7 +116,7 @@ func (layer *Orchestration) Link(request LinkRequest) (response LinkResponse, er
 		Mode:          backingHeader.Mode,
 		UID:           backingHeader.UID,
 		GID:           backingHeader.GID,
-		Size:          backingHeader.Size,
+		Size:          0,
 		Atime:         backingHeader.Atime,
 		Mtime:         backingHeader.Mtime,
 		Ctime:         now,
