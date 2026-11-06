@@ -69,7 +69,8 @@ func (o *Orchestration) Flush(r FlushRequest) (FlushResponse, error) {
 			required++
 		}
 		placement, placementErr := o.distribution.StripeIOIndexes(distribution.StripeIOIndexesRequest{ObjectID: f.objectID, StripeID: storage.StripeID(id)})
-		if placementErr != nil || len(indexes.IOIndexes) != required {
+		indexes := placement.IOIndexes
+		if placementErr != nil || len(indexes) != required {
 			available, capacityErr := o.distribution.AvailableIOBytes(distribution.AvailableIOBytesRequest{})
 			if capacityErr != nil {
 				return out, fmt.Errorf("read I/O capacities for stripe %d: %w", id, capacityErr)
