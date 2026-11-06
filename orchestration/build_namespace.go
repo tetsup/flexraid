@@ -38,7 +38,7 @@ func buildNamespace(objects map[shared.ObjectID]*runtimeObject, protected map[sh
 
 	for id, object := range objects {
 		h := object.header
-		if h.Deleted || h.Kind == objectKindHardLinkedFile || (h.Kind == objectKindDirectory && h.ParentID == nil) {
+		if h.Deleted || (h.Kind == objectKindHardLinkedFile && h.ParentID == nil) || (h.Kind == objectKindDirectory && h.ParentID == nil) {
 			continue
 		}
 		if h.Kind == objectKindSymlink && !object.linkTargetLoaded {
