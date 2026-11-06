@@ -63,7 +63,7 @@ func (layer *Orchestration) Read(request ReadRequest) (response ReadResponse, er
 	if !exists || object.header.Deleted {
 		return response, os.ErrNotExist
 	}
-	if object.header.Kind != objectKindFile && object.header.Kind != objectKindHardLink {
+	if object.header.Kind != objectKindFile && object.header.Kind != objectKindHardLinkedFile && object.header.Kind != objectKindHardLink {
 		return response, fmt.Errorf("object %s is not a readable regular file: %w", request.ObjectID.String(), os.ErrInvalid)
 	}
 	if object.file == nil || object.file != handle.runtimeFile {
