@@ -73,3 +73,14 @@ func selectIOIndexes(available []uint64, count int) ([]int, error) {
 	})
 	return indexes[:count], nil
 }
+
+func validatePersistencePlacement(p cfg.Placement) error {
+	if p.DiskCount < 1 || p.DiskCount > 9 || p.DataChunks < 1 || p.DataChunks > 8 ||
+		p.ParityChunks != 1 || p.DiskCount < p.DataChunks+p.ParityChunks {
+		return fmt.Errorf("invalid placement layout")
+	}
+	if p.MaxChunkSize < cfg.MinimumChunkSize || p.MaxChunkSize%cfg.MinimumChunkSize != 0 {
+		return fmt.Errorf("invalid maximum chunk size")
+	}
+	return nil
+}
