@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/tetsup/flexraid/distribution"
 	"github.com/tetsup/flexraid/pkg/shared"
 	"github.com/tetsup/flexraid/storage"
 	cfg "github.com/tetsup/flexraid/pkg/shared/config"
@@ -157,7 +158,7 @@ func (layer *Orchestration) persistHeaderUpdateLocked(ctx context.Context, file 
 	copy(entry.data[:len(headerBytes)], headerBytes)
 
 	required := int(geometry.Layout.NumChunks)
-	if geometry.Layout.Type == 2 { // parity layout
+	if geometry.Layout.Type == distribution.LayoutParity {
 		required++
 	}
 	placement, placementErr := layer.distribution.StripeIOIndexes(distribution.StripeIOIndexesRequest{
