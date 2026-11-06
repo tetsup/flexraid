@@ -109,4 +109,3 @@ func TestSetAttrRejectsCanceledContext(t *testing.T) {
 		t.Fatalf("canceled SetAttr = %v", err)
 	}
 }
-

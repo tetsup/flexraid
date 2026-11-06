@@ -13,16 +13,16 @@ import (
 )
 
 type SetAttrRequest struct {
-	Context context.Context
+	Context  context.Context
 	ObjectID shared.ObjectID
-	Handle *FileHandle
+	Handle   *FileHandle
 
-	Mode *uint32
-	UID *uint32
-	GID *uint32
-	Size *uint64
-	Atime *time.Time
-	Mtime *time.Time
+	Mode     *uint32
+	UID      *uint32
+	GID      *uint32
+	Size     *uint64
+	Atime    *time.Time
+	Mtime    *time.Time
 	AtimeNow bool
 	MtimeNow bool
 }
@@ -139,8 +139,8 @@ func (layer *Orchestration) SetAttr(request SetAttrRequest) (response SetAttrRes
 		return response, nil
 	}
 	temporary := &runtimeFile{
-		objectID: request.ObjectID,
-		header: next,
+		objectID:    request.ObjectID,
+		header:      next,
 		stripeCache: make(map[uint64]*stripeCacheEntry),
 	}
 	if err = layer.updateHeaderStripeLocked(ctx, temporary, next); err != nil {
