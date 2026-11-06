@@ -1,6 +1,9 @@
 name: Go Tests
 
 on:
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -11,10 +14,10 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      - name: Check out dispatched ref
+      - name: Check out pull request or dispatched ref
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Go
         uses: actions/setup-go@v6

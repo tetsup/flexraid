@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   format:
-    name: Format and trigger tests
+    name: Format Go code
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
@@ -30,22 +30,10 @@ jobs:
       - name: Execute gofmt
         run: find . -type f -name '*.go' -print0 | xargs -0 -r gofmt -w
 
-      - name: Commit formatting changes
-        id: format
+      - name: Verify formatting did not modify files
         run: |
-          git add -u
-          if git diff --cached --quiet; then
-            echo "modified=false" >> "$GITHUB_OUTPUT"
-          else
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git config user.name "github-actions[bot]"
-            git commit -m "Automated gofmt"
-            git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
-            echo "modified=true" >> "$GITHUB_OUTPUT"
+          if ! git diff --quiet; then
+            echo "::error::gofmt changed files. Run gofmt and commit the result."
+            git diff
+            exit 1
           fi
-
-      - name: Trigger tests for the formatted branch
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BRANCH: ${{ github.event.pull_request.head.ref }}
-        run: gh workflow run test.yml --ref "$BRANCH"
