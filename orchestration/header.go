@@ -247,7 +247,7 @@ func validateHeaderReferences(kind shared.ObjectKind, parentID, targetID *shared
 			return errInvalidHeader
 		}
 	case objectKindHardLinkedFile:
-		if parentID != nil || targetID != nil {
+		if targetID != nil {
 			return errInvalidHeader
 		}
 	case objectKindHardLink:
