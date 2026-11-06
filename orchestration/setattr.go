@@ -8,6 +8,7 @@ import (
 
 	"github.com/tetsup/flexraid/distribution"
 	"github.com/tetsup/flexraid/pkg/shared"
+	cfg "github.com/tetsup/flexraid/pkg/shared/config"
 	"github.com/tetsup/flexraid/storage"
 )
 
@@ -198,7 +199,7 @@ func (layer *Orchestration) updateHeaderStripeLocked(ctx context.Context, file *
 	if err != nil {
 		return err
 	}
-	if len(entry.data) < int(cfgHeaderReservedSize()) {
+	if len(entry.data) < int(cfg.HeaderReservedSize) {
 		entry.data = append(entry.data, make([]byte, int(cfgHeaderReservedSize())-len(entry.data))...)
 	}
 	copy(entry.data[:len(headerBytes)], headerBytes)
