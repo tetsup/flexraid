@@ -205,7 +205,7 @@ func (layer *Orchestration) updateHeaderStripeLocked(ctx context.Context, file *
 		return err
 	}
 	if len(entry.data) < int(cfg.HeaderReservedSize) {
-		entry.data = append(entry.data, make([]byte, int(cfgHeaderReservedSize())-len(entry.data))...)
+		entry.data = append(entry.data, make([]byte, int(cfg.HeaderReservedSize)-len(entry.data))...)
 	}
 	copy(entry.data[:len(headerBytes)], headerBytes)
 	entry.state = stripeCacheDirty
