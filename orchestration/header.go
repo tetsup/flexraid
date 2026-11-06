@@ -14,7 +14,7 @@ import (
 const (
 	headerFormatVersion uint16 = 0
 	maxNameSize                = 255
-	headerSize                 = 2 + 1 + 16 + 1 + 16 + 1 + 1 + 16 + 2 + maxNameSize + 4 + 4 + 4 + 4 + 8 + 8 + 8 + 8 + 1 + 4 + 2 + 2
+	headerSize                 = 2 + 1 + 16 + 1 + 16 + 1 + 1 + 16 + 2 + maxNameSize + 4 + 4 + 4 + 8 + 8 + 8 + 8 + 1 + 4 + 2 + 2
 )
 
 var (
@@ -58,7 +58,6 @@ type header struct {
 	Mode          uint32
 	UID           uint32
 	GID           uint32
-	Nlink         uint32
 	Size          uint64
 	Atime         time.Time
 	Mtime         time.Time
@@ -113,7 +112,7 @@ func (h header) MarshalBinary() ([]byte, error) {
 	}
 	b.Write(name)
 	b.Write(make([]byte, maxNameSize-len(name)))
-	values = []any{h.Mode, h.UID, h.GID, h.Nlink, h.Size, h.Atime.UnixNano(), h.Mtime.UnixNano(), h.Ctime.UnixNano(), uint8(h.Layout.Mode), h.Layout.ChunkSize, h.Layout.DataChunks, h.Layout.ParityChunks}
+	values = []any{h.Mode, h.UID, h.GID, h.Size, h.Atime.UnixNano(), h.Mtime.UnixNano(), h.Ctime.UnixNano(), uint8(h.Layout.Mode), h.Layout.ChunkSize, h.Layout.DataChunks, h.Layout.ParityChunks}
 	for _, v := range values {
 		if err := binary.Write(b, binary.BigEndian, v); err != nil {
 			return nil, err
@@ -190,7 +189,7 @@ func (h *header) UnmarshalBinary(data []byte) error {
 	out.Name = string(name)
 	var at, mt, ct int64
 	var lm uint8
-	for _, v := range []any{&out.Mode, &out.UID, &out.GID, &out.Nlink, &out.Size, &at, &mt, &ct, &lm, &out.Layout.ChunkSize, &out.Layout.DataChunks, &out.Layout.ParityChunks} {
+	for _, v := range []any{&out.Mode, &out.UID, &out.GID, &out.Size, &at, &mt, &ct, &lm, &out.Layout.ChunkSize, &out.Layout.DataChunks, &out.Layout.ParityChunks} {
 		if err := read(v); err != nil {
 			return fmt.Errorf("%w: %v", errInvalidHeader, err)
 		}
