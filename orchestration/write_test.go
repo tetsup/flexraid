@@ -46,10 +46,12 @@ func newWriteFixture(t *testing.T) writeFixture {
 	logical := append(headerData, payload...)
 	_, err = distributed.Layer.WriteStripe(distribution.WriteStripeRequest{
 		Context: ctx, ObjectID: fileID, StripeID: 0, ChunkSize: 4096,
-		Layout: distribution.Layout{Type: distribution.LayoutMirror, NumChunks: 2},
+		Layout:    distribution.Layout{Type: distribution.LayoutMirror, NumChunks: 2},
 		IOIndexes: []int{0, 1}, Data: logical,
 	})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	file := &runtimeFile{objectID: fileID, header: h, stripeCache: make(map[uint64]*stripeCacheEntry)}
 	linkID := testID("42345678-9abc-4def-8abc-1234567890ab")
 	layer := &Orchestration{
@@ -98,7 +100,9 @@ func TestWriteUpdatesSharedCacheVisibleToOtherHandle(t *testing.T) {
 	if entry := file.stripeCache[0]; entry == nil || entry.state != stripeCacheDirty {
 		t.Fatalf("stripe 0 cache = %#v, want dirty", entry)
 	}
-	if len(file.stripeCache) != 1 { t.Fatalf("cached stripes = %d, want only stripe 0", len(file.stripeCache)) }
+	if len(file.stripeCache) != 1 {
+		t.Fatalf("cached stripes = %d, want only stripe 0", len(file.stripeCache))
+	}
 	persisted, err := fixture.layer.distribution.ReadStripe(distribution.ReadStripeRequest{
 		Context: context.Background(), ObjectID: fixture.fileID,
 		StripeID: 0, ChunkSize: 4096,

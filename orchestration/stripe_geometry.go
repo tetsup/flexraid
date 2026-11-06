@@ -9,12 +9,12 @@ import (
 )
 
 type stripeGeometry struct {
-	StripeID  storage.StripeID
+	StripeID   storage.StripeID
 	FileOffset uint64
-	Capacity  uint64
+	Capacity   uint64
 	DataOffset uint64
-	ChunkSize uint32
-	Layout distribution.Layout
+	ChunkSize  uint32
+	Layout     distribution.Layout
 }
 
 func geometryFor(header header, stripeID storage.StripeID) (stripeGeometry, error) {

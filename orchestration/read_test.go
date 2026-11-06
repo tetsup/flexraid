@@ -36,10 +36,12 @@ func TestReadReturnsLogicalRangeAcrossStripesAndHardLinks(t *testing.T) {
 	logical := append(headerBytes, payload...)
 	_, err = distributed.Layer.WriteStripe(distribution.WriteStripeRequest{
 		Context: ctx, ObjectID: fileID, StripeID: 0, ChunkSize: 4096,
-		Layout: distribution.Layout{Type: distribution.LayoutMirror, NumChunks: uint8(h.Layout.DataChunks)},
+		Layout:    distribution.Layout{Type: distribution.LayoutMirror, NumChunks: uint8(h.Layout.DataChunks)},
 		IOIndexes: []int{0, 1}, Data: logical,
 	})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	layer := &Orchestration{
 		distribution: distributed.Layer,
