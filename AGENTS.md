@@ -136,6 +136,13 @@ fuse/
 
 ### Distribution 層
 
+- Orchestration から受け取るのは論理ストライプ単位のデータであり、論理ファイルの offset、ファイルサイズ、ファイル内の位置関係を扱わない。
+- `ReadStripe` / `WriteStripe` の StripeID は、Orchestration が論理ファイルの offset と Header の配置計画から決定する。Distribution は StripeID を識別子として扱い、論理 offset への変換を行わない。
+- `WriteStripe` は受け取ったストライプデータを指定 ChunkSize と Layout に従ってチャンクへ分割し、必要なパリティを生成して、指定された IO index へ永続化する。論理ファイルの書き込み範囲の分割や既存ストライプデータとのマージは行わない。
+- Orchestration が論理ファイル offset を StripeID とストライプ内 offset に変換する際は、Header 予約領域 1 KiB をファイル本体 offset から分離する。Stripe 0 の物理チャンクサイズは 4 KiB 固定とし、論理データチャンク数を N としたとき、Stripe 0 のファイル本体容量 S0 は `4 KiB × N - 1 KiB` とする。Mirror の N は 1（複製数ではない）、XOR Parity の N はデータチャンク数とする。
+- Stripe 0 の先頭 1 KiB に Header を格納し、残りをファイル本体に使用する。Stripe 1 以降のチャンクサイズ C は Header に保持し、通常ストライプの論理容量は `C × N` とする。ファイル本体 offset x が S0 未満なら StripeID 0、StripeID 0 内のデータ offset は `1 KiB + x`。x が S0 以上なら StripeID は `1 + (x - S0) / (C × N)`、ストライプ内 offset は `(x - S0) % (C × N)` とする。
+- Header の配置計画を変更するのは論理ファイルサイズが変わるときだけとする。サイズを変えない上書きでは再計画しない。Flush / Fsync は Header に確定済みの配置計画を使用し、配置を再計算・上書きしてはならない。サイズ変更で配置計画が変わる場合は、既存データを新しいストライプ境界・チャンクサイズへ移行してから Header とデータを一貫した状態にする。
+
 - ミラーリング、ストライピング、パリティ、データ復旧、配置移行を担当する。
 - Header の形式や内容を知らず、Header を含む論理データを通常のバイト列として扱う。
 - チャンク・ストライプ・バージョン・物理配置の情報を管理する。
@@ -154,6 +161,8 @@ fuse/
 - Header を含む論理データは通常のストライプ読み書き API で扱う。Header 専用のストライプ処理経路は設けない。
 - 論理ファイルに対する操作を受け付け、Header とファイルデータの整合性を保ちながら Distribution 層を利用する。
 - ファイルごとの配置ポリシーを選択し、各ドライブの容量・状態や書き込みサイズなどを踏まえて、どのドライブ群にどう分散するかという配置方針を決定する。
+- 既にストライプが永続化されている場合は、Distribution が保持する各チャンクの配置情報から、データチャンク順・パリティ最後の IO index 配列を取得して再利用する。必要なチャンク数分だけを渡し、余分な IO index は渡さない。
+- 新規ストライプなど配置が未確定の場合は、Distribution から IO ごとの利用可能容量を取得し、Orchestration が残容量の多い順に並べ、必要なチャンク数分だけを選択する。同容量の場合は IO index 順を維持し、決定的な結果にする。
 - Distribution 層に配置方針を渡し、各層の処理を調整する。
 - 容量管理やストレージ障害に対するシステム全体の対応を扱う。
 
@@ -381,3 +390,103 @@ FUSE 層の具体的な関数一覧は、この議論ではまだ整理してい
 - 既存 Pull Request と今回の変更が無関係で、独立した作業として扱うべき場合に限り、新しい Pull Request を作成する。
 - 既存 Pull Request が複数ある場合は、変更内容に対応する Pull Request を選ぶ。判断できない場合は、作業を進める前に確認する。
 - Pull Request を作成した後も、その Pull Request が Open の間は、同じ作業に関する修正・追加を同じブランチに積む。
+
+## 11. FUSE open / file-handle lifecycle and synchronization
+
+The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing or changing FUSE file operations, follow the callback contracts and capability semantics of this pinned version rather than introducing an independent FUSE lifecycle.
+
+### 10.1 File open and handle ownership
+
+- A regular-file open is represented by go-fuse `fs.NodeOpener.Open(ctx, flags)`. It is optional in go-fuse, but FlexRAID requires a non-nil Orchestration file handle for regular-file Read / Write operations. Therefore the FUSE adapter must implement Open and return the handle created by Orchestration.
+- The Orchestration package owns the concrete FileHandle type and its private state. The FUSE package only passes that handle through; it must not duplicate cursor, dirty-stripe, or logical-file state.
+- go-fuse's `fs.FileHandle` is an opaque `any`. If Open is not implemented or returns no handle, `NodeReader` / `NodeWriter` can receive nil. This is not allowed by the FlexRAID contract: Read / Write without a valid handle must fail rather than silently fall back to ObjectID-only I/O.
+- Prefer implementing the go-fuse `fs.FileReader`, `fs.FileWriter`, `fs.FileFlusher`, `fs.FileFsyncer`, and `fs.FileReleaser` interfaces on the Orchestration handle (or thin FUSE adapters around Orchestration operations). Do not implement both inode-level and handle-level variants for the same operation without a deliberate dispatch reason.
+- `fs.NodeCreater.Create` and `fs.NodeTmpfiler.Tmpfile` also return a FileHandle. They must create/obtain the same kind of Orchestration handle as Open when those operations are supported; they must not create a handle with different lifetime or synchronization semantics.
+- Each successful independent Open creates an independent FileHandle and virtual cursor. A duplicated descriptor (dup) shares the same open-file description and therefore the same FUSE handle; do not create another Orchestration handle for dup.
+- The offset supplied to Read / Write is authoritative. The per-handle virtual cursor is only a write-buffer locality hint; it is not a replacement for the kernel-provided offset and must not impose sequential-only I/O.
+
+### 10.2 Flush, Fsync, and Release
+
+- go-fuse `NodeFlusher.Flush` / `fs.FileFlusher.Flush` may be called more than once for the same FileHandle, including when a descriptor was duplicated. Flush must therefore be safe to call repeatedly and must not release the handle.
+- Flush is the place to report errors from work required by close(2), because the kernel ignores the return value of Release. Any Dirty Stripe data that must be persisted before close must be committed by Flush, with failures returned there.
+- go-fuse `NodeFsyncer.Fsync` / `fs.FileFsyncer.Fsync` represents the request to flush data to stable storage. FlexRAID must persist all pending dirty data covered by the handle before reporting success.
+- go-fuse `NodeReleaser.Release` / `fs.FileReleaser.Release` is final handle cleanup. It must be idempotent/robust against teardown and must not be the only place where fallible persistence occurs. Release invalidates the handle; subsequent Read / Write / Flush / Fsync through it must fail.
+- Do not treat Flush, Fsync, and Release as synonyms: Flush can repeat, Fsync is an explicit durability request, and Release is final resource cleanup.
+
+### 10.3 Other callbacks associated with an open handle
+
+- `fs.NodeGetattrer.Getattr` may receive a FileHandle parameter, but go-fuse documents that the kernel normally does not send a handle even for fstat. GetAttr must therefore work without one and must not depend on open-specific state.
+- `fs.NodeSetattrer.Setattr` may receive a handle. Attribute changes such as size changes (truncate) must be synchronized with data I/O and must preserve the logical Header / file-size invariants. Do not assume a handle is always present.
+- `fs.NodeLseeker.Lseek` / `fs.FileLseeker.Lseek` is for `SEEK_DATA` / `SEEK_HOLE` semantics. Ordinary file-position movement is represented by the offset passed to Read / Write; FlexRAID does not need a separate stateful Seek cursor.
+- `fs.NodeAllocater.Allocate` / `fs.FileAllocater.Allocate` is a space-allocation operation, not a substitute for Write. If supported, it must synchronize with file-size and stripe allocation changes.
+- Directory handles are separate from regular-file handles. `NodeOpendirer.Opendir` is a validation-only callback; `NodeOpendirHandler.OpendirHandle` can return a directory FileHandle and flags. Directory stream callbacks (`Readdir`, `Readdirent`, `Seekdir`, `Releasedir`) must not reuse the regular-file FileHandle contract.
+
+### 10.4 Lock callbacks and mount options
+
+- go-fuse `fuse.MountOptions.EnableLocks` asks the kernel to forward advisory file-lock requests to FUSE. When enabled, implement the corresponding `Getlk`, `Setlk`, and `Setlkw` callbacks (on the inode or FileHandle as appropriate). This is POSIX/application-visible advisory locking; it is not the internal lock that protects FlexRAID's data structures. Do not enable it until those callbacks and their lock-owner/range semantics are implemented and tested.
+- `fuse.MountOptions.SyncRead` disables asynchronous reads for a FileHandle: the kernel sends at most one read request per handle at a time and orders them by offset. When unset (the default), concurrent reads and readahead requests may reach userspace. This option only serializes reads per handle; it does not serialize reads against writes, different handles, metadata operations, or other files. FlexRAID must remain correct with the default asynchronous-read behavior; do not use SyncRead as a substitute for Orchestration synchronization.
+- Do not set `fuse.FOPEN_PARALLEL_DIRECT_WRITES` in Open flags. It opts into parallel direct writes for that open handle and would bypass the conservative write serialization expected by the initial implementation.
+- Do not set `fuse.FOPEN_DIRECT_IO` or `fuse.FOPEN_KEEP_CACHE` without an explicit data-cache policy. DIRECT_IO changes page-cache behavior; KEEP_CACHE asks the kernel to retain cached file contents across opens. Cache coherency must be designed before either is enabled.
+- Keep `fuse.MountOptions.ExplicitDataCacheControl` disabled unless FlexRAID explicitly implements and tests cache invalidation/notification. Enabling it transfers responsibility for data-cache invalidation to the filesystem.
+- `fuse.FOPEN_NOFLUSH` must not be used because FlexRAID relies on Flush to report errors while committing pending dirty data.
+- These options do not provide a general inode-wide mutex. Internal synchronization remains an Orchestration responsibility, keyed by the shared Runtime file object so HardLinks coordinate through the same backing object. The initial implementation should serialize conflicting mutations and ensure reads observe the latest logically committed or dirty data; it must not hold a file lock for the entire open lifetime.
+- Advisory POSIX locks enabled through EnableLocks and internal consistency locks are separate mechanisms. One must never be used as a replacement for the other.
+
+### 10.5 Initial FlexRAID policy
+
+- Require a valid Orchestration FileHandle for every regular-file Read / Write.
+- Keep one independent virtual cursor per FileHandle; use the kernel-provided offset for every operation.
+- Keep dirty-write buffering and logical file state in Orchestration, not in the FUSE adapter.
+- Preserve go-fuse's default asynchronous read capability and do not opt into parallel direct writes.
+- Do not enable advisory lock forwarding, Direct I/O, KEEP_CACHE, or explicit data-cache control until their complete behavior is implemented and tested.
+- Implement Flush, Fsync, and Release with their distinct go-fuse lifecycle semantics described above.
+
+### 10.6 Orchestration handle and stripe-cache ownership
+
+- `FileHandle` is created for each independent `Open` and stores only open-specific state: the shared runtime-file pointer, closed state, access mode, append/sync flags, and a per-handle active write-stripe hint.
+- The runtime file backing is created once per data-bearing ObjectID (`File` or `HardLinkedFile`). Every `HardLink` targeting the same `HardLinkedFile` must reference that same runtime-file instance.
+- Stripe data cache belongs to the runtime-file backing, never to an individual `FileHandle`. The cache is keyed by StripeID and is shared by all handles referring to the same backing ObjectID.
+- Use one per-stripe cache entry type for both read-loaded / read-ahead data and modified data. Its state distinguishes clean data (matching persisted data) from dirty data (modified and not yet persisted). Read-loaded and read-ahead entries are clean; Write transitions the corresponding entry to dirty.
+- Clean cache entries may be evicted and reloaded. Dirty entries must not be discarded until persistence succeeds.
+- Reads must consult the shared stripe cache before Distribution. A read through another handle must observe a dirty cache entry rather than stale persisted data.
+- Runtime-file synchronization protects cache map membership, cache entry data/state, and logical file metadata. A write operation is serialized against reads and other writes for the same runtime file in the initial implementation. Do not add a separate `writing` flag or owner-handle ID merely to duplicate mutex state.
+- Handle-local locking protects closed state and handle-local cursor hints. Always acquire the handle lock before the runtime-file lock; do not acquire them in the reverse order.
+- A read/readahead request populates the same clean cache map. Kernel-issued readahead requests are ordinary handle-backed Reads; do not create a separate read-ahead cache.
+
+- `Write` stages all affected stripes and the Header in temporary copies while holding the handle mutex followed by the runtime-file exclusive mutex. It publishes the staged entries and updated logical Header together only after the entire in-memory operation succeeds; cancellation or read/validation failure must not partially update the shared cache.
+- `Write` uses the kernel-provided offset, except `O_APPEND` where EOF is selected under the runtime-file exclusive mutex. Writes extending EOF zero-fill any gap. File size and mtime/ctime are updated in the runtime-file Header and the serialized Header bytes in the shared stripe cache.
+- `activeStripeID` is only a per-handle write-locality hint. Until stripe persistence and placement planning are implemented, changing this hint does not flush or discard dirty entries. Dirty entries remain shared and visible to all handles.
+- `O_SYNC` / `O_DSYNC` writes must not report success before their required persistence is implemented. Until then, reject such writes explicitly rather than silently treating them as buffered writes.
+- The initial Write implementation serializes writes for one runtime file. Do not add a separate writer-owner ID or `writing` flag; the runtime-file mutex is the serialization mechanism.
+
+
+## 配置計画とチャンクサイズ
+
+配置計画の再計算・チャンクサイズ決定は Orchestration 層の責務とする。Distribution 層は渡された配置計画に従ってストライプを物理配置し、論理ファイルサイズや Header の意味から独自に配置方針を決定しない。
+
+### 既存オブジェクトと新規オブジェクト
+
+- 既存オブジェクトは、原則として既に確定している配置計画を踏襲する。ファイルが成長するたびに配置先や分散方式を再選択してはならない。
+- ただし、truncate などにより既存オブジェクトの論理サイズが小さくなる場合は、配置計画を再計算する。
+- ストライプ数が 2 以下のオブジェクトは、永続化の都度、現在の論理サイズに基づいて配置計画を再計算する。
+- 新規オブジェクトは、初期状態では永続化せず、メモリ上でデータを保持する。初回の永続化時に配置計画を決定する。
+- 初回永続化後に配置計画を確定・記録する方式、および再計算時の既存データ移行・旧データ整理の手順は別途定義する。配置計画の再計算だけで永続データを破壊してはならない。
+
+### 先頭ストライプ
+
+- 先頭ストライプは 4096 バイト単位のチャンクで構成する。
+- 先頭チャンクの先頭 1024 バイトは Header 予約領域であり、データ領域は最大 3072 バイトとする。
+- 先頭チャンク以外のチャンクは、4096 バイト全体をデータ領域として使用する。
+- データ領域が先頭ストライプに収まる場合、ストライプ数は 1 とする。先頭ストライプに収まらない場合は、先頭ストライプに加えて後続ストライプを配置する。
+- 先頭チャンクのデータが 3072 バイト以内である間は、2 台へのミラーリングを使用する。これを超える場合の分散方式・データ分散数は全体設定に従う。
+
+### 後続ストライプと可変チャンクサイズ
+
+- 後続ストライプのデータ分散数（データチャンク数）は全体設定で固定する。ファイルサイズに応じてデータ分散数を増減させない。
+- 後続ストライプのチャンクサイズは可変とし、4096 バイトの倍数にする。最大チャンクサイズは設定値で制限する（例: 2 MiB）。この上限を超えるサイズは採用せず、上限サイズを使用する。
+- 後続ストライプのサイズを計算するときは、まず論理ファイルサイズから先頭ストライプに格納するデータ量を差し引く。残りを 4096 バイトブロック数として扱い、固定データ分散数に均等配分したブロック数からチャンクサイズを求める。チャンクサイズは配分ブロック数に 4096 を乗じた値とする。
+- 最大チャンクサイズに達するまでは、残余データ量に応じてチャンクサイズを増加させる。上限に達した後はチャンクサイズを上限値に固定し、必要に応じて後続ストライプ数を増やす。
+- 2つ目のストライプの各データチャンクは同じサイズとし、各チャンク末尾の不足分はゼロパディングする。パディングは物理チャンクのサイズを揃えるためのものであり、論理ファイルデータには含めない。
+- 論理データはチャンク番号順に、各チャンクの容量を満たすまで順に格納する。データ量を均等にする目的で、チャンク間のデータを移動・再配置してはならない。
+- ストライプ数、データ分散数、チャンクサイズ、パディング量の境界条件（空ファイル、ちょうど境界のサイズ、最大値超過など）は、配置計画ロジックのテストで検証する。
+

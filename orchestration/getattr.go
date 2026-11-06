@@ -48,16 +48,18 @@ func (layer *Orchestration) GetAttr(request GetAttrRequest) (GetAttrResponse, er
 		return GetAttrResponse{}, fmt.Errorf("HardLinkedFile %s is not a namespace object: %w", request.ObjectID.String(), os.ErrNotExist)
 	}
 	h := object.header
+	if object.file != nil {
+		object.file.mu.RLock()
+		backing := object.file.header
+		h.Mode, h.UID, h.GID = backing.Mode, backing.UID, backing.GID
+		h.Nlink, h.Size = backing.Nlink, backing.Size
+		h.Atime, h.Mtime, h.Ctime = backing.Atime, backing.Mtime, backing.Ctime
+		object.file.mu.RUnlock()
+	}
 	attributes := ObjectAttributes{
 		ObjectID: h.ObjectID, Kind: h.Kind, Name: h.Name, Mode: h.Mode,
 		UID: h.UID, GID: h.GID, Nlink: h.Nlink, Size: h.Size,
 		Atime: h.Atime, Mtime: h.Mtime, Ctime: h.Ctime,
-	}
-	if object.file != nil && h.Kind == objectKindHardLink {
-		backing := object.file.header
-		attributes.Mode, attributes.UID, attributes.GID = backing.Mode, backing.UID, backing.GID
-		attributes.Nlink, attributes.Size = backing.Nlink, backing.Size
-		attributes.Atime, attributes.Mtime, attributes.Ctime = backing.Atime, backing.Mtime, backing.Ctime
 	}
 	if layer.logger != nil {
 		layer.logger.Debug("orchestration GetAttr completed", slog.String("object_id", request.ObjectID.String()), slog.String("kind", fmt.Sprint(h.Kind)))
