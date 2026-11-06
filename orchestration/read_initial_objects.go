@@ -6,6 +6,7 @@ import (
 
 	"github.com/tetsup/flexraid/distribution"
 	"github.com/tetsup/flexraid/pkg/shared"
+	cfg "github.com/tetsup/flexraid/pkg/shared/config"
 	"github.com/tetsup/flexraid/storage"
 )
 
@@ -31,13 +32,13 @@ func readInitialObjects(ctx context.Context, layer *distribution.Distribution) (
 			return nil, err
 		}
 		if objectHeader.Kind == objectKindSymlink {
-			if objectHeader.Size > uint64(int(^uint(0)>>1)-headerSize) {
+			if objectHeader.Size > uint64(int(^uint(0)>>1))-cfg.HeaderReservedSize {
 				// Preserve the Header so initialization can exclude and protect the
 				// symlink instead of making the entire namespace unavailable.
 				initialObjects = append(initialObjects, initialObject{objectID: objectID, data: data})
 				continue
 			}
-			targetData, targetErr := readInitialObjectData(ctx, layer, objectID, headerSize+int(objectHeader.Size), objectHeader.Layout.ChunkSize)
+			targetData, targetErr := readInitialObjectData(ctx, layer, objectID, int(cfg.HeaderReservedSize)+int(objectHeader.Size), objectHeader.Layout.ChunkSize)
 			if targetErr != nil {
 				if ctx.Err() != nil {
 					return nil, ctx.Err()

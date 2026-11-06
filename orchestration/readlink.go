@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/tetsup/flexraid/pkg/shared"
+	cfg "github.com/tetsup/flexraid/pkg/shared/config"
 )
 
 type ReadLinkRequest struct {
@@ -45,10 +46,11 @@ func (layer *Orchestration) ReadLink(request ReadLinkRequest) (ReadLinkResponse,
 }
 
 func decodeSymlinkTarget(data []byte, size uint64) (string, error) {
-	if len(data) < headerSize || size > uint64(len(data)-headerSize) {
+	offset := int(cfg.HeaderReservedSize)
+	if len(data) < offset || size > uint64(len(data)-offset) {
 		return "", fmt.Errorf("symlink target data is incomplete")
 	}
-	target := data[headerSize : headerSize+int(size)]
+	target := data[offset : offset+int(size)]
 	if len(target) == 0 {
 		return "", fmt.Errorf("symlink target is empty")
 	}

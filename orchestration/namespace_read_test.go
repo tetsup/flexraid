@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/tetsup/flexraid/pkg/shared"
+	cfg "github.com/tetsup/flexraid/pkg/shared/config"
 )
 
 func initializedReadLayer(t *testing.T) (*Orchestration, shared.ObjectID, shared.ObjectID, shared.ObjectID) {
@@ -120,11 +121,13 @@ func TestReadLinkReturnsCachedTargetAndSymlinkAttributes(t *testing.T) {
 	link := testHeader(objectKindSymlink, linkID, &rootID, nil, "shortcut")
 	target := "../target/file"
 	link.Size = uint64(len(target))
-	data, err := link.MarshalBinary()
+	headerBytes, err := link.MarshalBinary()
 	if err != nil {
 		t.Fatal(err)
 	}
-	data = append(data, []byte(target)...)
+	data := make([]byte, int(cfg.HeaderReservedSize)+len(target))
+	copy(data, headerBytes)
+	copy(data[int(cfg.HeaderReservedSize):], target)
 
 	layer := &Orchestration{}
 	if err := layer.initialize([]initialObject{
