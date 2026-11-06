@@ -8,15 +8,8 @@ import (
 	"github.com/tetsup/flexraid/storage"
 )
 
-package distribution
-
-import (
-	"fmt"
-	"sort"
-)
-
-// StripeIOIndexes returns the persisted physical I/O order for a stripe.
-// Data chunks are returned in logical chunk order; parity is last.
+// StripeIOIndexes returns persisted physical I/O indexes in logical chunk order,
+// with parity last. The returned slice contains only the devices used by the stripe.
 func (d *Distribution) StripeIOIndexes(objectID shared.ObjectID, stripeID storage.StripeID) ([]int, error) {
 	stripes := d.objects[objectID]
 	if stripes == nil || stripes[stripeID] == nil {
@@ -34,7 +27,7 @@ func (d *Distribution) StripeIOIndexes(objectID shared.ObjectID, stripeID storag
 	return indexes, nil
 }
 
-// AvailableIOBytes reports currently available bytes for each I/O layer in index order.
+// AvailableIOBytes reports available bytes for each I/O layer in index order.
 func (d *Distribution) AvailableIOBytes() ([]uint64, error) {
 	result := make([]uint64, len(d.ios))
 	for index, layer := range d.ios {
@@ -47,9 +40,13 @@ func (d *Distribution) AvailableIOBytes() ([]uint64, error) {
 	return result, nil
 }
 
-// orderIOIndexes returns exactly count indexes, preferring I/Os with the most free space.
-// Ties retain their original index order for deterministic placement.
-func orderIOIndexes(available []uint64, count int) ([]int, error) {
+// SelectIOIndexes chooses exactly count devices, preferring the largest available capacity.
+// Ties retain the original I/O index order for deterministic results.
+func (d *Distribution) SelectIOIndexes(count int) ([]int, error) {
+	available, err := d.AvailableIOBytes()
+	if err != nil {
+		return nil, err
+	}
 	if count < 1 || count > len(available) {
 		return nil, fmt.Errorf("cannot select %d I/Os from %d", count, len(available))
 	}
@@ -61,13 +58,4 @@ func orderIOIndexes(available []uint64, count int) ([]int, error) {
 		return available[indexes[i]] > available[indexes[j]]
 	})
 	return indexes[:count], nil
-}
-
- // SelectIOIndexes chooses exactly count devices, preferring the largest available capacity.
-func (d *Distribution) SelectIOIndexes(count int) ([]int, error) {
-	available, err := d.AvailableIOBytes()
-	if err != nil {
-		return nil, err
-	}
-	return orderIOIndexes(available, count)
 }
