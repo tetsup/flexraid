@@ -155,9 +155,6 @@ func (layer *Orchestration) unlinkHardLink(ctx context.Context, parent, object *
 	}
 	target.header = nextTarget
 	layer.headers[nextTarget.ObjectID] = nextTarget
-	target.file.mu.Lock()
-	target.file.header = nextTarget
-	target.file.mu.Unlock()
 	if nextTarget.Deleted {
 		layer.deletionQueue[nextTarget.ObjectID] = struct{}{}
 	}
@@ -167,6 +164,20 @@ func (layer *Orchestration) unlinkHardLink(ctx context.Context, parent, object *
 // persistObjectHeader persists a Header for its own ObjectID, not necessarily
 // the shared data-bearing runtimeFile used by HardLink names.
 func (layer *Orchestration) persistObjectHeader(ctx context.Context, next header) error {
+	// Data-bearing objects have a shared runtimeFile. Persist their Header
+	// through that cache so pending stripe writes are not overwritten by a
+	// stale read from Distribution.
+	if next.Kind == objectKindFile || next.Kind == objectKindHardLinkedFile {
+		if object := layer.objects[next.ObjectID]; object != nil && object.file != nil {
+			file := object.file
+			file.mu.Lock()
+			defer file.mu.Unlock()
+			return layer.persistHeaderUpdateLocked(ctx, file, next)
+		}
+	}
+
+	// Namespace-only objects (HardLink and Symlink) have their own Header
+	// storage but no shared data runtime.
 	file := &runtimeFile{
 		objectID: next.ObjectID,
 		header: next,
