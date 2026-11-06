@@ -44,10 +44,10 @@ func (layer *Orchestration) SetAttr(request SetAttrRequest) (response SetAttrRes
 	}
 
 	object, exists := layer.objects[request.ObjectID]
-	if !exists || object.header.Deleted || object.header.Kind == objectKindHardLinkedFile {
+	if !exists || object.header.Deleted {
 		return response, os.ErrNotExist
 	}
-	if request.Size != nil && object.header.Kind != objectKindFile && object.header.Kind != objectKindHardLink {
+	if request.Size != nil && object.header.Kind != objectKindFile && object.header.Kind != objectKindHardLinkedFile && object.header.Kind != objectKindHardLink {
 		return response, fmt.Errorf("object %s does not support size changes: %w", request.ObjectID.String(), os.ErrInvalid)
 	}
 	if request.Mode != nil && object.header.Kind == objectKindSymlink {
