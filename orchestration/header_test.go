@@ -88,7 +88,7 @@ func TestHeaderMarshalValidation(t *testing.T) {
 			h.TargetID = ptrObjectID(shared.ObjectID{0x21, 0x43, 0x65, 0x87, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab})
 			h.ParentID = nil
 		}, errInvalidHeader},
-		{"hard linked file with parent", func(h *header) { h.Kind = objectKindHardLinkedFile }, errInvalidHeader},
+		
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -253,5 +253,21 @@ func TestHeaderUnmarshalRejectsInvalidDeletedFlag(t *testing.T) {
 	var got header
 	if err := got.UnmarshalBinary(data); !errors.Is(err, errInvalidHeader) {
 		t.Fatalf("got %v, want errInvalidHeader", err)
+	}
+}
+
+func TestHeaderAllowsParentedHardLinkedFile(t *testing.T) {
+	h := sampleHeader()
+	h.Kind = objectKindHardLinkedFile
+	data, err := h.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got header
+	if err := got.UnmarshalBinary(data); err != nil {
+		t.Fatal(err)
+	}
+	if got.Kind != objectKindHardLinkedFile || !equalOptionalObjectID(got.ParentID, h.ParentID) || got.Name != h.Name {
+		t.Fatalf("round trip = %+v, want parented HardLinkedFile %+v", got, h)
 	}
 }
