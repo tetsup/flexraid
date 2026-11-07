@@ -11,7 +11,7 @@ type CapacityRequest struct{}
 type CapacityResponse struct{ Capacity shared.Capacity }
 
 // Capacity returns the physical filesystem capacity for this I/O root.
-func (layer *IO) Capacity(CapacityRequest) (CapacityResponse, error) {
+func (layer *IO) GetCapacity(CapacityRequest) (CapacityResponse, error) {
 	var stat unix.Statfs_t
 	if err := unix.Statfs(layer.root, &stat); err != nil {
 		return CapacityResponse{}, fmt.Errorf("stat filesystem capacity: %w", err)
