@@ -248,7 +248,7 @@ func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file 
 		placement, placementErr := layer.distribution.StripeIOIndexes(distribution.StripeIOIndexesRequest{ObjectID: file.objectID, StripeID: storage.StripeID(id)})
 		indexes := placement.IOIndexes
 		if placementErr != nil || len(indexes) != required {
-			capacity, capacityErr := layer.distribution.Capacity(distribution.CapacityRequest{})
+			capacity, capacityErr := layer.distribution.GetCapacity(distribution.CapacityRequest{})
 			if capacityErr != nil {
 				return fmt.Errorf("read I/O capacities for stripe %d: %w", id, capacityErr)
 			}
