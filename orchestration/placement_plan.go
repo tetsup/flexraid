@@ -2,9 +2,10 @@ package orchestration
 
 import (
 	"fmt"
+	"sort"
+
 	"github.com/tetsup/flexraid/pkg/shared"
 	cfg "github.com/tetsup/flexraid/pkg/shared/config"
-	"sort"
 )
 
 type stripePlacement struct {
@@ -65,7 +66,7 @@ func selectIOIndexes(capacities []shared.Capacity, count int) ([]int, error) {
 	if count < 1 || count > len(capacities) {
 		return nil, fmt.Errorf("cannot select %d I/Os from %d", count, len(capacities))
 	}
-	indexes := make([]int, len(available))
+	indexes := make([]int, len(capacities))
 	for index := range indexes {
 		indexes[index] = index
 	}
