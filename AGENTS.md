@@ -165,7 +165,7 @@ fuse/
 - 論理ファイルに対する操作を受け付け、Header とファイルデータの整合性を保ちながら Distribution 層を利用する。
 - ファイルごとの配置ポリシーを選択し、各ドライブの容量・状態や書き込みサイズなどを踏まえて、どのドライブ群にどう分散するかという配置方針を決定する。
 - 既にストライプが永続化されている場合は、Distribution が保持する各チャンクの配置情報から、データチャンク順・パリティ最後の IO index 配列を取得して再利用する。必要なチャンク数分だけを渡し、余分な IO index は渡さない。
-- 新規ストライプなど配置が未確定の場合は、Distribution から IO ごとの利用可能容量を取得し、Orchestration が残容量の多い順に並べ、必要なチャンク数分だけを選択する。同容量の場合は IO index 順を維持し、決定的な結果にする。
+- 新規ストライプなど配置が未確定の場合は、Distribution の `Capacity` から IO ごとの `shared.Capacity` を取得し、`AvailableBytes` の大きい順に並べ、必要なチャンク数分だけを選択する。同容量の場合は IO index 順を維持し、決定的な結果にする。
 - Distribution 層に配置方針を渡し、各層の処理を調整する。
 - 容量管理やストレージ障害に対するシステム全体の対応を扱う。
 - 論理ファイルシステムの判断に必要なストレージ情報（容量・状態など）は Orchestration が集約する。StatFs の応答に必要な物理容量情報は、その都度 I/O 層の公開 API から取得して集計し、Orchestration にキャッシュしない。Object 数など Namespace から導出できる論理情報は Orchestration がメモリ上で保持・更新する。
@@ -236,7 +236,7 @@ fuse/
 | `Delete` | 既存 API | 指定 Storage の物理ファイルを削除する |
 | `ScanHeaders` | 既存 Scan の改名案 | StripeID 0 の物理ファイルを列挙し、物理ファイルデータを返す。Header 構造体には解析しない |
 | `ListChunks` | 追加する API 案 | 全 StripeID の物理ファイルを列挙し、物理ファイルデータを返す。Distribution の起動時全展開に使う |
-| Storage 情報取得 | API 未確定 | Orchestration が配置方針を決めるために必要な Storage 一覧・容量・状態などを提供する手段。関数名・取得範囲は未確定 |
+| `Capacity` | 公開 API | `shared.Capacity` として、この IO root の `TotalBytes` / `FreeBytes` / `AvailableBytes` を bytes 単位で返す |
 
 I/O の列挙結果には、Distribution が物理ファイルを識別して配置情報を構築できる情報が必要である。ただし、I/O 層は FileKey 等の物理識別情報を超えて Header やチャンクの意味を解析しない。
 
@@ -247,6 +247,7 @@ I/O の列挙結果には、Distribution が物理ファイルを識別して配
 | 関数 | 位置付け | 内容 |
 |---|---|---|
 | `New` | 公開 API | `NewRequest.IOs []*io.IO` を受け取り、スライスの index を IO の識別子として使用する。全 IO の `ListChunks` を走査し、読み込めた Stripe 情報と障害状態を Distribution インスタンスの非公開状態フィールドに構築する。外部からの参照には公開 getter を使用する。戻り値は初期化成功またはクリティカルなエラーのみとし、IO 単位・Stripe 単位の部分障害は戻り値ではなく、公開 getter を通じて参照できるようにする。利用可能な IO が 1 つもない場合はクリティカルな初期化エラーとする。 |
+| `Capacity` | 公開 API | 各 IO の `Capacity` を取得し、`shared.Capacity` の配列を IO index 順に返す。容量情報の中継に限定し、配置方針は決定しない |
 | `ListObjects` | 公開 API | Distribution が把握している ObjectID を列挙する。Header の読み出し・解析は行わない |
 | `ReadStripe` | 公開 API | 指定 Stripe の論理データを読み込み、必要に応じて復元して返す。復元可能な欠損・破損は成功として扱い、WARNING ログと IO ごとのエラーカウントを記録する。復元不能な場合は上位層にデータ破損を表すエラーコードを返し、ERROR ログ、IO ごと・全体のエラーカウント、および Stripe 単位の破損状態を記録する |
 | `WriteStripe` | 公開 API | 配置方式（Mirror / XOR Parity とチャンク数）、IO index 配列、論理ストライプデータを受け取る。Chunk の種類・番号・分割・配置は Distribution が決定する。全 Chunk の書き込み成功後にのみ新 Version をインメモリ上で有効化する。IO index は重複せず有効範囲内であることを検証する |
@@ -544,7 +545,7 @@ The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing 
 ### 物理 IO 配置の選択と再利用
 
 - 既に Distribution に物理配置が記録されている Stripe は、`StripeIOIndexes` で取得した IO index 配列を再利用する。配列の順序は Distribution の契約に従い、Orchestration はチャンク内部の種類・番号・配置を解釈しない。
-- 既存配置が取得できない場合、または必要なチャンク数と IO index 数が一致しない場合は、`AvailableBytes` で各 IO の利用可能容量を取得し、利用可能容量の大きい順に必要数を選択する。
+- 既存配置が取得できない場合、または必要なチャンク数と IO index 数が一致しない場合は、`Capacity` で各 IO の `shared.Capacity` を取得し、`AvailableBytes` の大きい順に必要数を選択する。
 - 利用可能容量が同じ IO は元の IO index 順を維持し、選択結果を決定的にする。
 - 必要な IO index 数は Mirror では複製数、XOR Parity ではデータチャンク数 + パリティチャンク数とする。余分な IO index を Distribution に渡さない。
 - 物理 IO 配置の選択は dirty Stripe の `Flush` 時に行う。論理配置計画の再計算とは別の処理であり、Flush が論理 Layout / ChunkSize を変更することはない。
@@ -649,13 +650,16 @@ The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing 
 - f_bavail は物理空き容量ではなく、FlexRAID が実際にデータを配置できる論理ブロック数を表す。Mirror / Parity の各配置可能容量を Distribution から取得し、その小さい方を採用する。
 - 管理用領域を特権ユーザー用の予約領域として扱わない。管理用領域を理由に f_bfree と f_bavail を補正しない。
 - f_bfree と f_bavail は意味が異なるため、両者の大小関係を契約上の前提にしない。
-- 物理容量の取得または配置可能容量の算出に失敗した場合、古いキャッシュ値や一部 IO の値だけで成功応答を返さず、StatFs 全体をエラーとする。
+- Distribution 経由の物理容量取得または配置可能容量の算出に失敗した場合、古いキャッシュ値や一部 IO の値だけで成功応答を返さず、StatFs 全体をエラーとする。
 
 ### I/O 層と Distribution 層の公開情報
 
-- I/O 層は各 IO の物理ファイルシステム容量を bytes 単位で返す公開 API を提供する。少なくとも TotalBytes（総容量）と FreeBytes（物理空き容量）を返す。
-- I/O 層の `AvailableBytes` は、各 IO の `statfs(2)` における `Bavail × Bsize` を bytes 単位で返し、新規ストライプの物理配置先選択に使用する。この値は各 IO の利用可能容量であり、FlexRAID 全体の論理配置可能容量や StatFs の `f_bavail` ではない。
-- Orchestration は I/O 層から全 IO の TotalBytes / FreeBytes を StatFs 呼び出しごとに取得し、それぞれを合計する。
+- I/O 層の `Capacity` は各 IO root の物理ファイルシステム容量を `shared.Capacity` として返す。各フィールドの単位は bytes とする。
+  - `TotalBytes`: `statfs(2)` の `Blocks × Bsize`。
+  - `FreeBytes`: `statfs(2)` の `Bfree × Bsize`。
+  - `AvailableBytes`: `statfs(2)` の `Bavail × Bsize`。一般ユーザーが利用可能な容量であり、新規ストライプの物理配置先選択に使用する。FlexRAID 全体の論理配置可能容量や StatFs の `f_bavail` とは異なる。
+- Distribution 層の `Capacity` は各 IO の `shared.Capacity` を IO index 順の配列として返す。容量情報の取得・中継を担い、配置方針は決定しない。
+- Orchestration は Distribution の `Capacity` から全 IO の `TotalBytes` / `FreeBytes` を StatFs 呼び出しごとに取得し、それぞれを合計する。
 - Distribution 層は Mirror と Parity の配置方式ごとに、現時点で新たに配置可能な論理データブロック数を Orchestration へ返す。物理 bytes と論理 blocks の単位を混在させない。
 - Orchestration は Mirror / Parity の配置可能ブロック数の小さい方を f_bavail とする。
 
