@@ -166,11 +166,11 @@ func (layer *Orchestration) persistHeaderUpdateLocked(ctx context.Context, file 
 	})
 	indexes := placement.IOIndexes
 	if placementErr != nil || len(indexes) != required {
-		available, capacityErr := layer.distribution.AvailableIOBytes(distribution.AvailableIOBytesRequest{})
+		capacity, capacityErr := layer.distribution.GetCapacity(distribution.CapacityRequest{})
 		if capacityErr != nil {
 			return fmt.Errorf("read I/O capacities: %w", capacityErr)
 		}
-		indexes, err = selectIOIndexes(available.Bytes, required)
+		indexes, err = selectIOIndexes(capacity.Capacities, required)
 		if err != nil {
 			return err
 		}

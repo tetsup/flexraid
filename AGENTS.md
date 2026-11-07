@@ -165,12 +165,12 @@ fuse/
 - 論理ファイルに対する操作を受け付け、Header とファイルデータの整合性を保ちながら Distribution 層を利用する。
 - ファイルごとの配置ポリシーを選択し、各ドライブの容量・状態や書き込みサイズなどを踏まえて、どのドライブ群にどう分散するかという配置方針を決定する。
 - 既にストライプが永続化されている場合は、Distribution が保持する各チャンクの配置情報から、データチャンク順・パリティ最後の IO index 配列を取得して再利用する。必要なチャンク数分だけを渡し、余分な IO index は渡さない。
-- 新規ストライプなど配置が未確定の場合は、Distribution から IO ごとの利用可能容量を取得し、Orchestration が残容量の多い順に並べ、必要なチャンク数分だけを選択する。同容量の場合は IO index 順を維持し、決定的な結果にする。
+- 新規ストライプなど配置が未確定の場合は、Distribution の `GetCapacity` から IO ごとの `shared.Capacity` を取得し、`AvailableBytes` の大きい順に並べ、必要なチャンク数分だけを選択する。同容量の場合は IO index 順を維持し、決定的な結果にする。
 - Distribution 層に配置方針を渡し、各層の処理を調整する。
 - 容量管理やストレージ障害に対するシステム全体の対応を扱う。
-- 論理ファイルシステムの判断に必要なストレージ情報（容量・状態など）は Orchestration に集約する。I/O 層から取得すべき物理情報は下位 API を通じて取得し、配置・容量判断に使いやすい形で Orchestration のメモリ上にキャッシュする。キャッシュは Storage の実状態そのものではなく判断用スナップショットであり、更新・再取得条件を管理する。
+- 論理ファイルシステムの判断に必要なストレージ情報（容量・状態など）は Orchestration が集約する。StatFs の応答に必要な物理容量情報は、その都度 Distribution の `GetCapacity` を通じて I/O 層から取得して集計し、Orchestration にキャッシュしない。Object 数など Namespace から導出できる論理情報は Orchestration がメモリ上で保持・更新する。
 - FUSE \`Access\` は \`GetAttr\` の属性と要求元 credentials を使ってアクセス可否を判定する。Access 専用の Orchestration API は設けない。ただし \`GetAttr\` の成功だけをアクセス許可とみなしてはならない。
-- FUSE \`StatFs\` は Orchestration が集約・キャッシュした容量情報を返す。\`GetAttr\` は Object 単体の属性 API であり、StatFs の代替ではない。容量情報の取得・集計・利用可能容量の意味づけは Orchestration の責務とし、FUSE は値を statfs 応答へ写像する。
+- FUSE StatFs は Orchestration が集約した統計情報を返す。物理容量の取得・集計、配置可能容量の算出、Namespace 上の Object 数の管理は Orchestration の責務とし、FUSE は値を statfs 応答へ写像する。
 
 ### FUSE 層
 
@@ -236,7 +236,7 @@ fuse/
 | `Delete` | 既存 API | 指定 Storage の物理ファイルを削除する |
 | `ScanHeaders` | 既存 Scan の改名案 | StripeID 0 の物理ファイルを列挙し、物理ファイルデータを返す。Header 構造体には解析しない |
 | `ListChunks` | 追加する API 案 | 全 StripeID の物理ファイルを列挙し、物理ファイルデータを返す。Distribution の起動時全展開に使う |
-| Storage 情報取得 | API 未確定 | Orchestration が配置方針を決めるために必要な Storage 一覧・容量・状態などを提供する手段。関数名・取得範囲は未確定 |
+| `GetCapacity` | 公開 API | `shared.Capacity` として、この IO root の `TotalBytes` / `FreeBytes` / `AvailableBytes` を bytes 単位で返す |
 
 I/O の列挙結果には、Distribution が物理ファイルを識別して配置情報を構築できる情報が必要である。ただし、I/O 層は FileKey 等の物理識別情報を超えて Header やチャンクの意味を解析しない。
 
@@ -247,6 +247,7 @@ I/O の列挙結果には、Distribution が物理ファイルを識別して配
 | 関数 | 位置付け | 内容 |
 |---|---|---|
 | `New` | 公開 API | `NewRequest.IOs []*io.IO` を受け取り、スライスの index を IO の識別子として使用する。全 IO の `ListChunks` を走査し、読み込めた Stripe 情報と障害状態を Distribution インスタンスの非公開状態フィールドに構築する。外部からの参照には公開 getter を使用する。戻り値は初期化成功またはクリティカルなエラーのみとし、IO 単位・Stripe 単位の部分障害は戻り値ではなく、公開 getter を通じて参照できるようにする。利用可能な IO が 1 つもない場合はクリティカルな初期化エラーとする。 |
+| `GetCapacity` | 公開 API | 各 IO の `GetCapacity` を取得し、`shared.Capacity` の配列を IO index 順に返す。容量情報の中継に限定し、配置方針は決定しない |
 | `ListObjects` | 公開 API | Distribution が把握している ObjectID を列挙する。Header の読み出し・解析は行わない |
 | `ReadStripe` | 公開 API | 指定 Stripe の論理データを読み込み、必要に応じて復元して返す。復元可能な欠損・破損は成功として扱い、WARNING ログと IO ごとのエラーカウントを記録する。復元不能な場合は上位層にデータ破損を表すエラーコードを返し、ERROR ログ、IO ごと・全体のエラーカウント、および Stripe 単位の破損状態を記録する |
 | `WriteStripe` | 公開 API | 配置方式（Mirror / XOR Parity とチャンク数）、IO index 配列、論理ストライプデータを受け取る。Chunk の種類・番号・分割・配置は Distribution が決定する。全 Chunk の書き込み成功後にのみ新 Version をインメモリ上で有効化する。IO index は重複せず有効範囲内であることを検証する |
@@ -320,7 +321,7 @@ Distribution の公開 API は論理ストライプ単位の読み書き操作�
 | \`Rmdir\` | 未実装 | 空 Directory の検証・削除を行う独立操作 |
 | \`Rename\` | 未実装 | Namespace entry の改名・親移動・destination 置換 |
 | \`Allocate\` / \`Lseek\` | 未実装 | \`Fallocate\` / \`Lseek\`。それぞれ空間確保、\`SEEK_DATA\` / \`SEEK_HOLE\` |
-| StatFs 用容量 API | 要追加 | \`Statfs\`。Orchestration の容量スナップショットを返す |
+| `StatFs` | 要追加 | Orchestration の統計情報を返す |
 | Access 専用 API | 不要 | \`Access\`。GetAttr 属性と request credentials で FUSE 側判定 |
 | Directory handle API | 未整理 | regular-file FileHandle と分離 |
 | advisory lock API | 未対応 | \`Getlk\` / \`Setlk\` / \`Setlkw\`。実装・テスト前に mount option を有効化しない |
@@ -544,7 +545,7 @@ The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing 
 ### 物理 IO 配置の選択と再利用
 
 - 既に Distribution に物理配置が記録されている Stripe は、`StripeIOIndexes` で取得した IO index 配列を再利用する。配列の順序は Distribution の契約に従い、Orchestration はチャンク内部の種類・番号・配置を解釈しない。
-- 既存配置が取得できない場合、または必要なチャンク数と IO index 数が一致しない場合は、`AvailableIOBytes` で各 IO の利用可能容量を取得し、利用可能容量の大きい順に必要数を選択する。
+- 既存配置が取得できない場合、または必要なチャンク数と IO index 数が一致しない場合は、`GetCapacity` で各 IO の `shared.Capacity` を取得し、`AvailableBytes` の大きい順に必要数を選択する。
 - 利用可能容量が同じ IO は元の IO index 順を維持し、選択結果を決定的にする。
 - 必要な IO index 数は Mirror では複製数、XOR Parity ではデータチャンク数 + パリティチャンク数とする。余分な IO index を Distribution に渡さない。
 - 物理 IO 配置の選択は dirty Stripe の `Flush` 時に行う。論理配置計画の再計算とは別の処理であり、Flush が論理 Layout / ChunkSize を変更することはない。
@@ -617,3 +618,63 @@ The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing 
 - HardLink / HardLinkedFile の NLink は、HardLinkedFile の ParentID による直接所属名（存在する場合）と、同じ実体を参照する到達可能な HardLink の数を合算して導出する。HardLink の追加・削除時に参照数カウンターを永続化してはならない。
 - Namespace の更新に失敗した場合は、部分的な親子関係・参照関係を公開しない。複数 Object の永続化を伴う操作の原子性・クラッシュ復旧は別途定義するが、その都合で NLink を永続化属性にしてはならない。
 - NLink の計算は Orchestration の責務とする。FUSE 層は Orchestration が返す NLink を `st_nlink` に設定し、独自に再計算しない。
+
+
+## StatFs の統計情報契約
+
+### 基本方針
+
+- StatFs の統計情報は Orchestration が構築し、FUSE は Linux FUSE の statfs 応答へ写像するだけとする。
+- 統計情報のうち、物理ストレージの状態に依存する値は StatFs の呼び出しごとに下位層へ問い合わせて再計算する。Orchestration は物理容量情報をキャッシュしない。
+- Namespace から導出できる論理情報は Orchestration がメモリ上で保持する。物理情報と論理情報で更新方法を分ける。
+
+### ブロックサイズと単位
+
+- ファイルシステムが StatFs で使用するブロックサイズは 4 KiB とする。
+- 4 KiB は pkg/shared/config の BlockSize を唯一の正とし、各レイヤーで同じ値を再定義しない。
+- StatFs のブロック数フィールドは、すべて BlockSize 単位のブロック数とする。
+- I/O 層が返す物理容量は bytes 単位とする。Orchestration が BlockSize で除算してブロック数へ変換し、端数は切り捨てる。
+- Distribution 層が返す配置可能容量は、BlockSize 単位の論理データブロック数とする。
+
+### 各容量フィールド
+
+| Linux statfs field | 意味 | 算出元・算出方法 |
+|---|---|---|
+| f_blocks | 全 IO の物理総容量 | 各 IO の TotalBytes を合計し、BlockSize で除算 |
+| f_bfree | 全 IO の物理空き容量 | 各 IO の FreeBytes を合計し、BlockSize で除算 |
+| f_bavail | FlexRAID が新たに配置可能な論理データ容量 | Mirror と Parity それぞれの配置可能ブロック数の小さい方 |
+| f_bsize | ファイルシステムのブロックサイズ | shared/config.BlockSize |
+| f_frsize | フラグメントサイズ | shared/config.BlockSize |
+
+- f_blocks と f_bfree は物理容量を表し、冗長化による容量減少を差し引かない。全 IO の値を単純合計する。
+- f_bavail は物理空き容量ではなく、FlexRAID が実際にデータを配置できる論理ブロック数を表す。Mirror / Parity の各配置可能容量を Distribution から取得し、その小さい方を採用する。
+- 管理用領域を特権ユーザー用の予約領域として扱わない。管理用領域を理由に f_bfree と f_bavail を補正しない。
+- f_bfree と f_bavail は意味が異なるため、両者の大小関係を契約上の前提にしない。
+- Distribution 経由の物理容量取得または配置可能容量の算出に失敗した場合、古いキャッシュ値や一部 IO の値だけで成功応答を返さず、StatFs 全体をエラーとする。
+
+### I/O 層と Distribution 層の公開情報
+
+- I/O 層の `GetCapacity` は各 IO root の物理ファイルシステム容量を `shared.Capacity` として返す。各フィールドの単位は bytes とする。
+  - `TotalBytes`: `statfs(2)` の `Blocks × Bsize`。
+  - `FreeBytes`: `statfs(2)` の `Bfree × Bsize`。
+  - `AvailableBytes`: `statfs(2)` の `Bavail × Bsize`。一般ユーザーが利用可能な容量であり、新規ストライプの物理配置先選択に使用する。FlexRAID 全体の論理配置可能容量や StatFs の `f_bavail` とは異なる。
+- Distribution 層の `GetCapacity` は各 IO の `shared.Capacity` を IO index 順の配列として返す。容量情報の取得・中継を担い、配置方針は決定しない。
+- Orchestration は Distribution の `GetCapacity` から全 IO の `TotalBytes` / `FreeBytes` を StatFs 呼び出しごとに取得し、それぞれを合計する。
+- Distribution 層は Mirror と Parity の配置方式ごとに、現時点で新たに配置可能な論理データブロック数を Orchestration へ返す。物理 bytes と論理 blocks の単位を混在させない。
+- Orchestration は Mirror / Parity の配置可能ブロック数の小さい方を f_bavail とする。
+
+### Object 数と Namespace の整合性
+
+- f_files は Orchestration が管理する、現在のインメモリ Namespace から参照可能な論理 Object の数とする。永続化済み Object の総数や物理チャンク数ではない。
+- Directory、通常 File、Symlink、および HardLinkedFile の実体を数える。HardLink の名前は独立した inode / 実体ではないため、参照先 HardLinkedFile を一度だけ数え、HardLink エントリごとには加算しない。
+- Namespace から参照されない Object、初期化時の不整合により Namespace から除外された Object は f_files に含めない。
+- 初期化時に、構築・検査が完了したインメモリ Namespace を基準に f_files を一度カウントする。
+- 以後はインメモリ Namespace の変更に合わせて f_files を更新する。Object が Namespace に追加された時点で加算し、Namespace から参照されなくなった時点で減算する。
+- f_files の更新は永続化の成否とは独立させる。StatFs が表すのは永続データのスナップショットではなく、その時点で Orchestration が公開しているインメモリ Namespace の状態である。Namespace の変更が失敗してメモリ状態を公開しない場合はカウンターも変更しない。
+- HardLink の追加・削除だけでは、参照先実体が Namespace から消えない限り f_files を増減させない。HardLinkedFile の直接の Namespace 所属が外れても HardLink 参照が残る場合はカウントを維持し、最後の参照が外れて Namespace から消えた時点で減算する。
+- f_ffree は Object 数の上限を設けないため、意味のある空き数を算出しない。FUSE の statfs 構造体で該当フィールドが符号なし整数であることを踏まえ、負数を設定せず 0 を返す。これは「空き Object が 0」という容量制限を意味せず、未定義値として扱う。
+- f_files のカウンターは Orchestration の Namespace 更新と同じ同期単位で更新し、Namespace とカウンターが外部から不整合な状態で観測されないようにする。永続化完了を更新条件にしない。
+
+### その他の statfs fields
+
+- f_namemax など本契約で意味を定義していないフィールドは、FUSE / 実装ライブラリの既定値に委ねる。FUSE 層で独自の容量計算や推測値を設定しない。

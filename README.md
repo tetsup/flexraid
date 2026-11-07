@@ -57,6 +57,8 @@ FUSE を通じて単一の階層型ファイルシステムを提供し、デー
 
 論理データと物理ファイルの対応付けは Distribution 層が管理し、必要な I/O 操作を呼び出す。
 
+I/O 層は `GetCapacity` API で、各 IO の物理ファイルシステム容量を `shared.Capacity` として返す。`TotalBytes` は総容量、`FreeBytes` は物理空き容量、`AvailableBytes` は一般ユーザーが利用可能な容量を表し、すべて bytes 単位とする。容量値は `statfs(2)` の `Blocks` / `Bfree` / `Bavail` に `Bsize` を乗じて算出する。
+
 2. Distribution 層
 
 責務
@@ -68,6 +70,7 @@ FUSE を通じて単一の階層型ファイルシステムを提供し、デー
 - 冗長性の範囲内で可能な、物理 I/O 障害からのデータ復旧。
 - 配置方式間のデータ移行。
 - 各ファイルの物理配置を解釈するために必要なメタデータの管理。
+- I/O 層の `GetCapacity` API を通じて各 IO の `shared.Capacity` を取得し、IO index 順の一覧として Orchestration に提供する。容量情報の中継のみを行い、配置先の選択方針は決定しない。
 - Header を含む論理データを、Header の形式や意味を解釈せず通常のバイト列として処理する。
 
 配置方式
@@ -129,7 +132,7 @@ FUSE を通じて単一の階層型ファイルシステムを提供し、デー
 - ファイルごとに適用する配置ポリシーの選択。
 - 論理ファイル操作を Distribution 層への要求に変換する。
 - 各層の処理の調整。
-- 利用可能容量および書き込み可能なストレージの管理。
+- `shared.Capacity` の `AvailableBytes` を使った配置先の選択、および利用可能容量・書き込み可能なストレージの管理。`TotalBytes` / `FreeBytes` は StatFs の物理容量集計に使用する。
 - ストレージ状態と物理障害情報の集約。
 - ストレージ障害に対するシステム全体の対応方針の決定。
 - 下位層への不要な I/O を避けて要求に応答するための、メモリ上の状態管理。
@@ -266,3 +269,16 @@ ParentID が nil になる Object は root Directory と HardLinkedFile の2種�
 - 致命的なエラーの分類と障害状態の遷移。
 
 これらの決定は、4層アーキテクチャと、設定変更後も既存ファイルを読み出せることを損なわないように行う。
+
+
+容量情報
+
+各 I/O root の物理容量は、I/O 層の `GetCapacity` API が共通型 `shared.Capacity` で返す。全フィールドの単位は bytes とする。
+
+| フィールド | 意味 | 算出元 |
+|---|---|---|
+| `TotalBytes` | ファイルシステムの総容量 | `statfs(2)` の `Blocks × Bsize` |
+| `FreeBytes` | ファイルシステムの物理空き容量 | `statfs(2)` の `Bfree × Bsize` |
+| `AvailableBytes` | 一般ユーザーが利用可能な容量 | `statfs(2)` の `Bavail × Bsize` |
+
+Distribution 層の `GetCapacity` API は、各 IO の `shared.Capacity` を IO index 順にまとめて Orchestration へ返す。Orchestration は新規ストライプの配置先選択に `AvailableBytes` を使用し、StatFs の物理容量集計には `TotalBytes` と `FreeBytes` を使用する。Distribution は容量情報を集約・中継するが、配置方針は決定しない。
