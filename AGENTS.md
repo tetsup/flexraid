@@ -168,12 +168,19 @@ fuse/
 - 新規ストライプなど配置が未確定の場合は、Distribution から IO ごとの利用可能容量を取得し、Orchestration が残容量の多い順に並べ、必要なチャンク数分だけを選択する。同容量の場合は IO index 順を維持し、決定的な結果にする。
 - Distribution 層に配置方針を渡し、各層の処理を調整する。
 - 容量管理やストレージ障害に対するシステム全体の対応を扱う。
+- 論理ファイルシステムの判断に必要なストレージ情報（容量・状態など）は Orchestration に集約する。I/O 層から取得すべき物理情報は下位 API を通じて取得し、配置・容量判断に使いやすい形で Orchestration のメモリ上にキャッシュする。キャッシュは Storage の実状態そのものではなく判断用スナップショットであり、更新・再取得条件を管理する。
+- FUSE \`Access\` は \`GetAttr\` の属性と要求元 credentials を使ってアクセス可否を判定する。Access 専用の Orchestration API は設けない。ただし \`GetAttr\` の成功だけをアクセス許可とみなしてはならない。
+- FUSE \`StatFs\` は Orchestration が集約・キャッシュした容量情報を返す。\`GetAttr\` は Object 単体の属性 API であり、StatFs の代替ではない。容量情報の取得・集計・利用可能容量の意味づけは Orchestration の責務とし、FUSE は値を statfs 応答へ写像する。
 
 ### FUSE 層
 
 - FUSE を通じたファイルシステムインターフェースを担当する。
-- OS からの要求を Orchestration 層への要求に変換し、結果を返す。
+- OS からの要求を Orchestration API に変換し、結果を返す。Namespace / metadata / file data の状態や判断を FUSE 内に複製しない。
 - 配置方式や物理ストレージの内部実装を持たない。
+- \`Access\` は \`GetAttr\` で得た mode / UID / GID 等と要求元 credentials（UID / GID / supplementary groups）および POSIX の root 規則で判定する。属性取得成功だけで Access 成功としない。
+- \`StatFs\` は Orchestration が返す容量スナップショットを statfs fields に写像する。FUSE が I/O 層へ直接問い合わせたり、独自に容量を集計したりしない。
+- \`Unlink\` と \`Rmdir\` は POSIX 上別操作とする。通常 File / Symlink / HardLink の名前削除は Orchestration \`Unlink\`、Directory 削除は空判定など Directory 固有契約を持つ \`Rmdir\` に対応づける。内部 helper の共有は可能だが、公開操作・種別検証・エラー意味は混同しない。
+- \`Rename\` は POSIX rename（\`mv\` 相当）であり、名前変更だけでなく親 Directory 間の移動を含む。FUSE は source / destination を Orchestration に渡し、種別別状態遷移を実装しない。
 
 ## 9. 現在の設計議論と関数一覧
 
@@ -295,32 +302,35 @@ Distribution の公開 API は論理ストライプ単位の読み書き操作�
 
 ### 9.4 Orchestration 層の関数一覧
 
-#### 公開 API 候補
+#### 公開 API の実装状況と FUSE 対応
 
-| 関数 | 位置付け | 内容 |
+この表は現時点の Orchestration 公開 API を整理する。\`ReadLink\` の PascalCase を正式名とし、\`Readlink\` は使用しない。実装済みは API の存在を示し、POSIX / FUSE の全エッジケース実装・テスト完了を意味しない。
+
+| Orchestration API | 状況 | FUSE 操作・責務 |
 |---|---|---|
-| `New` | 公開 API・初期化フロー確定 | Distribution の `ListObjects` で ObjectID を列挙し、共通の `ReadStripe` で各 Object の Header を含む初期データを取得する。取得データを非公開 `initialize` に渡し、初期化済み Orchestration インスタンスを返す。取得または初期化に失敗した場合は error を返す。`New` が I/O を伴う取得を担当し、`initialize` は Distribution を呼ばずメモリ状態を構築する |
-| `Open` | 既存設計の操作候補 | Object を開く |
-| `Read` | 既存設計の操作候補 | Object の指定範囲を読み込む |
-| `Write` | 既存設計の操作候補 | Object の指定範囲を書き込む |
-| `Truncate` | 既存設計の操作候補 | Object のサイズを変更する |
-| `Fsync` | 既存設計の操作候補 | Object の変更を永続化する |
-| `Allocate` | 既存設計の操作候補 | Object の領域を確保する |
-| `Lseek` | 既存設計の操作候補 | Object 内のデータ領域を探索する |
-| `Release` | 候補 | Object のハンドルを解放する |
-| `GetAttr` | 候補・責務要確認 | 属性を取得する |
-| `SetAttr` | 候補・責務要確認 | 属性を変更する |
-| `Create` | 候補・責務要確認 | Object を作成する |
-| `Mkdir` | 候補 | Directory を作成する |
-| `Rmdir` | 候補 | 空の Directory を削除する |
-| `Rename` | 候補 | Namespace 上の Object 名・親を変更する |
-| `Link` | 候補 | 既存ファイル実体への HardLink を作成する |
-| `Symlink` | 候補 | Symlink Object とリンク先パスデータを作成する |
-| `Readlink` | 候補 | Symlink のリンク先パスデータを取得する |
-| `Unlink` | 候補・責務要確認 | Namespace 上の名前を削除し、必要に応じて実体の論理削除状態を更新する |
-| `Cleanup` | 公開 API 候補 | メモリ上の状態から論理削除済み Object を特定し、各 Object に `Distribution.DeleteObject` を実行した後、`Distribution.Cleanup` を呼び出す |
+| \`New\` | 実装済み | Filesystem / mount 初期化 |
+| \`Lookup\` / \`GetAttr\` / \`ReadDir\` | 実装済み | \`Lookup\` / \`Getattr\` / \`Readdir\`。GetAttr は handle 非依存 |
+| \`Create\` / \`Mkdir\` / \`Symlink\` | 実装済み | 同名 callbacks。Create は FileHandle を返す |
+| \`ReadLink\` | 実装済み | \`Readlink\`。リンク先文字列を返し、追跡しない |
+| \`Link\` / \`Unlink\` | 実装済み | HardLink 作成、通常 File / Symlink / HardLink 名の削除。Unlink は Directory 対象外 |
+| \`Open\` / \`Read\` / \`Write\` | 実装済み | handle-backed file operations |
+| \`Flush\` / \`Fsync\` / \`Release\` | 実装済み | 同名 callbacks。lifecycle semantics は Section 11 |
+| \`Truncate\` / \`SetAttr\` | 実装済み | \`Setattr\`。サイズ変更は data I/O と同期 |
+| \`Cleanup\` | 実装済み | FUSE callback ではなく Orchestration 管理処理 |
+| \`Rmdir\` | 未実装 | 空 Directory の検証・削除を行う独立操作 |
+| \`Rename\` | 未実装 | Namespace entry の改名・親移動・destination 置換 |
+| \`Allocate\` / \`Lseek\` | 未実装 | \`Fallocate\` / \`Lseek\`。それぞれ空間確保、\`SEEK_DATA\` / \`SEEK_HOLE\` |
+| StatFs 用容量 API | 要追加 | \`Statfs\`。Orchestration の容量スナップショットを返す |
+| Access 専用 API | 不要 | \`Access\`。GetAttr 属性と request credentials で FUSE 側判定 |
+| Directory handle API | 未整理 | regular-file FileHandle と分離 |
+| advisory lock API | 未対応 | \`Getlk\` / \`Setlk\` / \`Setlkw\`。実装・テスト前に mount option を有効化しない |
+| \`Mknod\` / \`Tmpfile\` | 方針未確定 | callback を有効化する前に Object kind / handle 契約を定義 |
 
-上記の公開 API 一覧は議論時点の候補であり、すべてが確定したわけではない。特に namespace 操作・属性操作の最終的な責務境界は README.md および今後の設計合意に従う。
+\`Access\` は属性取得 API とは別の判定だが、Orchestration の新規公開 API は不要とする。FUSE は GetAttr の mode / UID / GID 等と request credentials を用いる。\`StatFs\` は filesystem 全体の容量情報を必要とするため、Orchestration に容量情報取得 API を追加する。
+
+\`Unlink\` は通常 File / Symlink / HardLink の Namespace name removal を扱い、Directory は対象外とする。\`Rmdir\` は独立公開操作として空 Directory の条件、親 Directory NLink の派生、Directory 固有のエラーを扱う。内部 helper の共有は可能だが、公開 API / POSIX semantics を Unlink に吸収しない。
+
+\`Rename\` は POSIX rename / \`mv\` 相当であり、同じ親内の改名に限らない。source の Name を destination name に更新し、親が変わる場合は ParentID も destination parent に付け替える。HardLink entry 自身の移動・改名ではその Namespace entry の ParentID / Name を変更し、Target の HardLinkedFile の親子関係や実体データは変更しない。File / Symlink / HardLinkedFile direct entry / HardLink / Directory では永続化・参照関係が異なるため種別別に処理する。Directory 移動では自身または子孫の下への移動を拒否し、親 Directory NLink は children から導出する。destination が既存の場合の置換条件、source / destination Kind の組み合わせ、POSIX errno 詳細は Rename 実装前に契約を確定する。
 
 #### 内部処理候補
 
@@ -342,29 +352,48 @@ Distribution の公開 API は論理ストライプ単位の読み書き操作�
 
 配置計画を Distribution に渡す具体的な Request 型・フィールド・チャンク枠との対応関係は未確定。Orchestration がチャンク内部情報を持つ設計にはしない。Distribution は配置計画を実際のチャンク配置へ対応付ける。
 
-### 9.5 FUSE 層
+### 9.5 FUSE callback と Orchestration の対応
 
-FUSE 層の具体的な関数一覧は、この議論ではまだ整理していない。OS/FUSE の操作を Orchestration の公開 API に変換する責務のみを確定事項とする。
+FUSE callback は OS ABI / go-fuse の契約に従う。FUSE 層に Namespace / metadata state を複製しない。
+
+| FUSE callback / operation | Orchestration との対応 |
+|---|---|
+| \`Lookup\` | \`Lookup\` |
+| \`Getattr\` | \`GetAttr\`。Symlink 自身の属性を返す lstat 相当 |
+| \`Access\` | \`GetAttr\` 属性と request credentials を用いて FUSE 側判定。専用 API 不要 |
+| \`Readdir\` | \`ReadDir\` |
+| \`Open\` / \`Read\` / \`Write\` | \`Open\` と handle-backed Read / Write。kernel offset を尊重 |
+| \`Flush\` / \`Fsync\` / \`Release\` | 同名 Orchestration 操作。lifecycle semantics は Section 11 |
+| \`Create\` / \`Mkdir\` / \`Unlink\` / \`Rmdir\` / \`Rename\` | 同名操作。Rmdir / Rename は現状未実装 |
+| \`Link\` / \`Symlink\` / \`Readlink\` | \`Link\` / \`Symlink\` / \`ReadLink\` |
+| \`Setattr\` | \`SetAttr\`。truncate / metadata update |
+| \`Statfs\` | Orchestration の容量スナップショット取得 API（追加が必要） |
+| \`Fallocate\` / \`Lseek\` | \`Allocate\` / \`Lseek\`（未実装） |
+| \`Opendir\` / \`Readdir\` / \`Releasedir\` | regular-file handle と分離した Directory handle 契約が必要 |
+| \`Mknod\` / \`Tmpfile\` | サポート方針と Orchestration Object / handle 契約が未確定 |
+| \`Getlk\` / \`Setlk\` / \`Setlkw\` | advisory lock の仕様・実装・テストまで mount option を有効にしない |
+
+\`Statfs\` の total / free / available capacity は Orchestration が I/O / Distribution から取得・集約した値を基にする。値の意味（物理合計、冗長化後の論理容量、利用可能容量など）と更新タイミングは容量 API の契約に明示し、FUSE adapter が独自に推定しない。
 
 ### 9.6 未決事項・今後決めること
 
-- Storage 情報（一覧、容量、状態）を I/O 層から Orchestration 層へ提供する具体的な API とデータ型。
+- Storage 情報の下位 API の具体的な名前・データ型、容量スナップショットの更新・失効タイミング。
 - Orchestration が作成する配置計画の具体的な形式、および Distribution のストライプ構成・チャンク枠との対応付け。
-- namespace 操作・属性操作（`Create`、`Unlink`、`GetAttr`、`SetAttr` 等）の最終的なレイヤー境界。
-- HardLinkedFile / HardLink の属性情報の保持場所と FUSE inode / st_nlink への対応。
 - 最後の HardLink 削除時の HardLinkedFile の解放条件、オープン中ファイルの寿命、および参照数の再構築方法。
 - ハードリンク作成・削除など複数 Object の永続化を伴う Namespace 操作の原子性とクラッシュ復旧手順。
-- Namespace の部分的不整合は `protectedObjects` に ObjectID を保持し、Orchestration の Cleanup から Distribution の Cleanup へ除外対象として渡す。Distribution の Cleanup は除外対象 Object の orphan / version / chunk を削除しない。Warning は ObjectID と理由を持つ初期化時の揮発状態として記録する。
+- Namespace の部分的不整合は \`protectedObjects\` に ObjectID を保持し、Orchestration Cleanup から Distribution Cleanup へ除外対象として渡す。Distribution Cleanup は除外対象 Object の orphan / version / chunk を削除しない。Warning は ObjectID と理由を持つ初期化時の揮発状態として記録する。
 - ストレージ障害・容量変化を踏まえた配置計画の再評価と、既存チャンクの再配置方針。
-- `New` 時の利用可能 IO の判定基準（IO へのアクセスが成功したとみなす条件）と、非公開状態フィールドおよび getter の具体的な名前・戻り値の構造。
-- `GetErrorStats` の Request / Response の具体的なフィールド構成と、定期ログ出力の間隔・出力内容。getter が返す状態スナップショットの具体的な型・構造。
+- \`New\` 時の利用可能 IO の判定基準と、非公開状態フィールドおよび getter の具体的な名前・戻り値の構造。
+- \`GetErrorStats\` の Request / Response の具体的なフィールド構成と、定期ログ出力の間隔・出力内容。
 - 上位層向けエラーコードの一覧と、内部診断情報との分離方法。
 - ストライプ書き込みの原子性をプロセス停止・電源断などのクラッシュ時にも保証する具体的な確定・復旧手順。
+- \`Rename\` の destination 置換条件、source / destination Kind 組み合わせ、エラーコード、複数 Header 更新時のクラッシュ復旧契約。
+- \`Rmdir\` と \`Unlink\` の内部共通 removal primitive をどこまで共有するか。公開 API と POSIX semantics は別操作として維持する。
 
 ## Symlink の POSIX 契約
 
 - Symlink Object 自体の属性取得はリンク自身の属性を返す（POSIX の `lstat` 相当）。参照先の属性に置き換えない。
-- Symlink のリンク先文字列取得は `ReadLink`（POSIX の `readlink` 相当）として提供し、保存されたパス文字列をそのまま返す。リンク先を Orchestration 内部で展開・解決しない。
+- Symlink のリンク先文字列取得は `ReadLink`（POSIX の `readlink` 相当）として提供し、保存されたパス文字列をそのまま返す。API 名は Go の PascalCase に合わせて `ReadLink` に統一し、`Readlink` は使用しない。リンク先を Orchestration 内部で展開・解決しない。
 - Symlink を介したパス参照、およびリンク先の絶対パス・相対パスの解決は POSIX/FUSE のパス解決に委ねる。Orchestration の Namespace root を POSIX の `/` と同一視してはならない。
 - Orchestration の Namespace 参照 API は ObjectID / 親子関係を参照するものであり、symlink の追跡や循環検出を独自に実装しない。FUSE 層は通常のパス参照とリンク自身の属性取得を区別する。
 - Initialize は symlink のリンク先データだけを `ReadStripe` で先読みし、Runtime Object にキャッシュする。`ReadLink` はキャッシュを返して追加 I/O を行わない。リンク先データが欠落・破損している symlink は Namespace から除外して保護し、他の Object の初期化は継続する。
