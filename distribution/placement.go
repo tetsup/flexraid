@@ -13,8 +13,8 @@ type StripeIOIndexesRequest struct {
 	StripeID storage.StripeID
 }
 type StripeIOIndexesResponse struct{ IOIndexes []int }
-type AvailableIOBytesRequest struct{}
-type AvailableIOBytesResponse struct{ Bytes []uint64 }
+type AvailableBytesRequest struct{}
+type AvailableBytesResponse struct{ Bytes []uint64 }
 
 // StripeIOIndexes returns persisted physical I/O indexes in logical chunk order,
 // with parity last. The returned slice contains only the devices used by the stripe.
@@ -35,15 +35,15 @@ func (d *Distribution) StripeIOIndexes(request StripeIOIndexesRequest) (StripeIO
 	return StripeIOIndexesResponse{IOIndexes: indexes}, nil
 }
 
-// AvailableIOBytes reports available bytes for each I/O layer in index order.
-func (d *Distribution) AvailableIOBytes(AvailableIOBytesRequest) (AvailableIOBytesResponse, error) {
+// AvailableBytes reports available bytes for each I/O layer in index order.
+func (d *Distribution) AvailableBytes(AvailableBytesRequest) (AvailableBytesResponse, error) {
 	result := make([]uint64, len(d.ios))
 	for index, layer := range d.ios {
 		available, err := layer.AvailableBytes(physicalio.AvailableBytesRequest{})
 		if err != nil {
-			return AvailableIOBytesResponse{}, fmt.Errorf("get available capacity for I/O %d: %w", index, err)
+			return AvailableBytesResponse{}, fmt.Errorf("get available capacity for I/O %d: %w", index, err)
 		}
 		result[index] = available.Bytes
 	}
-	return AvailableIOBytesResponse{Bytes: result}, nil
+	return AvailableBytesResponse{Bytes: result}, nil
 }
