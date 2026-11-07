@@ -544,7 +544,7 @@ The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing 
 ### 物理 IO 配置の選択と再利用
 
 - 既に Distribution に物理配置が記録されている Stripe は、`StripeIOIndexes` で取得した IO index 配列を再利用する。配列の順序は Distribution の契約に従い、Orchestration はチャンク内部の種類・番号・配置を解釈しない。
-- 既存配置が取得できない場合、または必要なチャンク数と IO index 数が一致しない場合は、`AvailableIOBytes` で各 IO の利用可能容量を取得し、利用可能容量の大きい順に必要数を選択する。
+- 既存配置が取得できない場合、または必要なチャンク数と IO index 数が一致しない場合は、`AvailableBytes` で各 IO の利用可能容量を取得し、利用可能容量の大きい順に必要数を選択する。
 - 利用可能容量が同じ IO は元の IO index 順を維持し、選択結果を決定的にする。
 - 必要な IO index 数は Mirror では複製数、XOR Parity ではデータチャンク数 + パリティチャンク数とする。余分な IO index を Distribution に渡さない。
 - 物理 IO 配置の選択は dirty Stripe の `Flush` 時に行う。論理配置計画の再計算とは別の処理であり、Flush が論理 Layout / ChunkSize を変更することはない。
@@ -654,7 +654,7 @@ The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing 
 ### I/O 層と Distribution 層の公開情報
 
 - I/O 層は各 IO の物理ファイルシステム容量を bytes 単位で返す公開 API を提供する。少なくとも TotalBytes（総容量）と FreeBytes（物理空き容量）を返す。
-- I/O 層は f_bavail 用の論理配置可能容量を算出しない。また、特権ユーザー向け予約領域を考慮した AvailableBytes を FlexRAID の空き容量として提供する必要はない。
+- I/O 層の `AvailableBytes` は、各 IO の `statfs(2)` における `Bavail × Bsize` を bytes 単位で返し、新規ストライプの物理配置先選択に使用する。この値は各 IO の利用可能容量であり、FlexRAID 全体の論理配置可能容量や StatFs の `f_bavail` ではない。
 - Orchestration は I/O 層から全 IO の TotalBytes / FreeBytes を StatFs 呼び出しごとに取得し、それぞれを合計する。
 - Distribution 層は Mirror と Parity の配置方式ごとに、現時点で新たに配置可能な論理データブロック数を Orchestration へ返す。物理 bytes と論理 blocks の単位を混在させない。
 - Orchestration は Mirror / Parity の配置可能ブロック数の小さい方を f_bavail とする。
