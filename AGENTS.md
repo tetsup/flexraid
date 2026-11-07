@@ -673,5 +673,4 @@ The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing 
 
 ### その他の statfs fields
 
-- f_fsid の生成・永続化方式は未確定とし、この契約では値の意味や永続化方法を決めない。実装時にプラットフォーム既定値を利用するか、FlexRAID 固有 ID を導入するかを別途決定する。
 - f_namemax など本契約で意味を定義していないフィールドは、FUSE / 実装ライブラリの既定値に委ねる。FUSE 層で独自の容量計算や推測値を設定しない。
