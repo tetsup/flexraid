@@ -10,11 +10,11 @@ import (
 type CapacityRequest struct{}
 type CapacityResponse struct{ Capacities []shared.Capacity }
 
-// Capacity returns physical capacities for all I/O layers in index order.
-func (d *Distribution) Capacity(CapacityRequest) (CapacityResponse, error) {
+// GetCapacity returns physical capacities for all I/O layers in index order.
+func (d *Distribution) GetCapacity(CapacityRequest) (CapacityResponse, error) {
 	result := make([]shared.Capacity, len(d.ios))
 	for index, layer := range d.ios {
-		capacity, err := layer.Capacity(physicalio.CapacityRequest{})
+		capacity, err := layer.GetCapacity(physicalio.CapacityRequest{})
 		if err != nil {
 			return CapacityResponse{}, fmt.Errorf("get capacity for I/O %d: %w", index, err)
 		}
