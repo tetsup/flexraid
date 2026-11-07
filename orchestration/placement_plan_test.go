@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	cfg "github.com/tetsup/flexraid/pkg/shared/config"
+	"github.com/tetsup/flexraid/pkg/shared"
 )
 
 func TestPlanPlacementMirrorBoundary(t *testing.T) {
@@ -50,7 +51,7 @@ func TestPlanPlacementRejectsInvalidOverride(t *testing.T) {
 }
 
 func TestSelectIOIndexesUsesDescendingCapacityAndExactCount(t *testing.T) {
-	got, err := selectIOIndexes([]uint64{100, 900, 500, 900, 1}, 3)
+	got, err := selectIOIndexes([]shared.Capacity{{AvailableBytes: 100}, {AvailableBytes: 900}, {AvailableBytes: 500}, {AvailableBytes: 900}, {AvailableBytes: 1}}, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
