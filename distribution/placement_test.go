@@ -1,9 +1,11 @@
 package distribution
 
 import (
+	"os"
 	"reflect"
 	"testing"
 
+	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/pkg/shared"
 	"github.com/tetsup/flexraid/storage"
 )
@@ -32,5 +34,38 @@ func TestStripeIOIndexesReturnsDataOrderThenParity(t *testing.T) {
 	want := []int{2, 0, 3, 1}
 	if !reflect.DeepEqual(got.IOIndexes, want) {
 		t.Fatalf("indexes = %v, want %v", got.IOIndexes, want)
+	}
+}
+
+
+func TestAvailableBytesReturnsEachIOCapacityInIndexOrder(t *testing.T) {
+	first := physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer
+	second := physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer
+	d := &Distribution{ios: []*physicalio.IO{first, second}}
+
+	got, err := d.AvailableBytes(AvailableBytesRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Bytes) != 2 {
+		t.Fatalf("capacity count = %d, want 2", len(got.Bytes))
+	}
+	for index, capacity := range got.Bytes {
+		if capacity == 0 {
+			t.Fatalf("capacity[%d] = 0, want available bytes", index)
+		}
+	}
+}
+
+func TestAvailableBytesReturnsErrorWhenAnyIOFails(t *testing.T) {
+	root := t.TempDir()
+	layer := physicalio.New(physicalio.NewRequest{Root: root}).Layer
+	if err := os.Remove(root); err != nil {
+		t.Fatal(err)
+	}
+	d := &Distribution{ios: []*physicalio.IO{layer}}
+
+	if _, err := d.AvailableBytes(AvailableBytesRequest{}); err == nil {
+		t.Fatal("AvailableBytes succeeded although an I/O root is unavailable")
 	}
 }
