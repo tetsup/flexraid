@@ -3,6 +3,7 @@ package orchestration
 import (
 	"fmt"
 	cfg "github.com/tetsup/flexraid/pkg/shared/config"
+	"github.com/tetsup/flexraid/pkg/shared"
 	"sort"
 )
 
@@ -60,16 +61,16 @@ func planPlacement(size uint64, overrides ...cfg.Placement) ([]stripePlacement, 
 	}
 	return plan, nil
 }
-func selectIOIndexes(available []uint64, count int) ([]int, error) {
-	if count < 1 || count > len(available) {
-		return nil, fmt.Errorf("cannot select %d I/Os from %d", count, len(available))
+func selectIOIndexes(capacities []shared.Capacity, count int) ([]int, error) {
+	if count < 1 || count > len(capacities) {
+		return nil, fmt.Errorf("cannot select %d I/Os from %d", count, len(capacities))
 	}
 	indexes := make([]int, len(available))
 	for index := range indexes {
 		indexes[index] = index
 	}
 	sort.SliceStable(indexes, func(i, j int) bool {
-		return available[indexes[i]] > available[indexes[j]]
+		return capacities[indexes[i]].AvailableBytes > capacities[indexes[j]].AvailableBytes
 	})
 	return indexes[:count], nil
 }
