@@ -7,7 +7,7 @@ import (
 
 func TestCapacityReportsFilesystemCapacity(t *testing.T) {
 	layer := New(NewRequest{Root: t.TempDir()}).Layer
-	result, err := layer.Capacity(CapacityRequest{})
+	result, err := layer.GetCapacity(CapacityRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +28,7 @@ func TestCapacityReturnsErrorWhenIORootIsUnavailable(t *testing.T) {
 	if err := os.Remove(root); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := layer.Capacity(CapacityRequest{}); err == nil {
-		t.Fatal("Capacity succeeded although the I/O root is unavailable")
+	if _, err := layer.GetCapacity(CapacityRequest{}); err == nil {
+		t.Fatal("GetCapacity succeeded although the I/O root is unavailable")
 	}
 }
