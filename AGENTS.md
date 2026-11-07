@@ -168,7 +168,7 @@ fuse/
 - 新規ストライプなど配置が未確定の場合は、Distribution の `Capacity` から IO ごとの `shared.Capacity` を取得し、`AvailableBytes` の大きい順に並べ、必要なチャンク数分だけを選択する。同容量の場合は IO index 順を維持し、決定的な結果にする。
 - Distribution 層に配置方針を渡し、各層の処理を調整する。
 - 容量管理やストレージ障害に対するシステム全体の対応を扱う。
-- 論理ファイルシステムの判断に必要なストレージ情報（容量・状態など）は Orchestration が集約する。StatFs の応答に必要な物理容量情報は、その都度 I/O 層の公開 API から取得して集計し、Orchestration にキャッシュしない。Object 数など Namespace から導出できる論理情報は Orchestration がメモリ上で保持・更新する。
+- 論理ファイルシステムの判断に必要なストレージ情報（容量・状態など）は Orchestration が集約する。StatFs の応答に必要な物理容量情報は、その都度 Distribution の `Capacity` を通じて I/O 層から取得して集計し、Orchestration にキャッシュしない。Object 数など Namespace から導出できる論理情報は Orchestration がメモリ上で保持・更新する。
 - FUSE \`Access\` は \`GetAttr\` の属性と要求元 credentials を使ってアクセス可否を判定する。Access 専用の Orchestration API は設けない。ただし \`GetAttr\` の成功だけをアクセス許可とみなしてはならない。
 - FUSE StatFs は Orchestration が集約した統計情報を返す。物理容量の取得・集計、配置可能容量の算出、Namespace 上の Object 数の管理は Orchestration の責務とし、FUSE は値を statfs 応答へ写像する。
 
