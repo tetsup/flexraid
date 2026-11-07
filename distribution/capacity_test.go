@@ -7,7 +7,7 @@ import (
 	physicalio "github.com/tetsup/flexraid/io"
 )
 
-func TestCapacityReturnsEachIOCapacityInIndexOrder(t *testing.T) {
+func TestGetCapacityReturnsEachIOCapacityInIndexOrder(t *testing.T) {
 	first := physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer
 	second := physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer
 	d := &Distribution{ios: []*physicalio.IO{first, second}}
@@ -26,7 +26,7 @@ func TestCapacityReturnsEachIOCapacityInIndexOrder(t *testing.T) {
 	}
 }
 
-func TestCapacityReturnsErrorWhenAnyIOFails(t *testing.T) {
+func TestGetCapacityReturnsErrorWhenAnyIOFails(t *testing.T) {
 	root := t.TempDir()
 	layer := physicalio.New(physicalio.NewRequest{Root: root}).Layer
 	if err := os.Remove(root); err != nil {
