@@ -47,8 +47,8 @@ func (layer *Orchestration) GetAttr(request GetAttrRequest) (GetAttrResponse, er
 	if _, protected := layer.protectedObjects[request.ObjectID]; protected {
 		return GetAttrResponse{}, os.ErrNotExist
 	}
-	if object.header.Kind == objectKindHardLinkedFile {
-		return GetAttrResponse{}, fmt.Errorf("HardLinkedFile %s is not a namespace object: %w", request.ObjectID.String(), os.ErrNotExist)
+	if object.header.Kind == objectKindHardLinkedFile && object.header.ParentID == nil {
+		return GetAttrResponse{}, os.ErrNotExist
 	}
 	h := object.header
 	if object.file != nil {
@@ -83,33 +83,50 @@ func (layer *Orchestration) deriveNlink(object *runtimeObject) uint32 {
 		return nlink
 	case objectKindFile, objectKindSymlink:
 		return 1
-	case objectKindHardLink:
-		if object.header.TargetID == nil || layer.root == nil {
+	case objectKindHardLinkedFile:
+		if object.header.ParentID == nil {
 			return 0
 		}
-		targetID := *object.header.TargetID
-		var nlink uint32
-		queue := []*runtimeObject{layer.root}
-		visited := make(map[*runtimeObject]struct{})
-		for len(queue) > 0 {
-			current := queue[0]
-			queue = queue[1:]
-			if _, exists := visited[current]; exists {
-				continue
-			}
-			visited[current] = struct{}{}
-			if current.header.Kind == objectKindHardLink &&
-				current.header.TargetID != nil && *current.header.TargetID == targetID {
-				nlink++
-			}
-			if current.header.Kind == objectKindDirectory {
-				for _, child := range current.children {
-					queue = append(queue, child)
-				}
-			}
+		return layer.deriveHardLinkCount(object.header.ObjectID)
+	case objectKindHardLink:
+		if object.header.TargetID == nil {
+			return 0
 		}
-		return nlink
+		return layer.deriveHardLinkCount(*object.header.TargetID)
 	default:
 		return 0
 	}
+}
+
+// deriveHardLinkCount counts reachable HardLink names and does not count a
+// HardLinkedFile's own ParentID entry. That direct entry is added by GetAttr
+// for a parented HardLinkedFile.
+func (layer *Orchestration) deriveHardLinkCount(targetID shared.ObjectID) uint32 {
+	if layer.root == nil {
+		return 0
+	}
+	var nlink uint32
+	queue := []*runtimeObject{layer.root}
+	visited := make(map[*runtimeObject]struct{})
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		if _, exists := visited[current]; exists {
+			continue
+		}
+		visited[current] = struct{}{}
+		if current.header.Kind == objectKindHardLinkedFile && current.header.ObjectID == targetID && current.header.ParentID != nil {
+			nlink++
+		}
+		if current.header.Kind == objectKindHardLink &&
+			current.header.TargetID != nil && *current.header.TargetID == targetID {
+			nlink++
+		}
+		if current.header.Kind == objectKindDirectory {
+			for _, child := range current.children {
+				queue = append(queue, child)
+			}
+		}
+	}
+	return nlink
 }
