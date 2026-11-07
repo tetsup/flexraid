@@ -37,7 +37,6 @@ func TestStripeIOIndexesReturnsDataOrderThenParity(t *testing.T) {
 	}
 }
 
-
 func TestAvailableBytesReturnsEachIOCapacityInIndexOrder(t *testing.T) {
 	first := physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer
 	second := physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer
