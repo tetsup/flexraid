@@ -12,7 +12,7 @@ func TestCapacityReturnsEachIOCapacityInIndexOrder(t *testing.T) {
 	second := physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer
 	d := &Distribution{ios: []*physicalio.IO{first, second}}
 
-	got, err := d.Capacity(CapacityRequest{})
+	got, err := d.GetCapacity(CapacityRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func TestCapacityReturnsErrorWhenAnyIOFails(t *testing.T) {
 	}
 	d := &Distribution{ios: []*physicalio.IO{layer}}
 
-	if _, err := d.Capacity(CapacityRequest{}); err == nil {
-		t.Fatal("Capacity succeeded although an I/O root is unavailable")
+	if _, err := d.GetCapacity(CapacityRequest{}); err == nil {
+		t.Fatal("GetCapacity succeeded although an I/O root is unavailable")
 	}
 }
