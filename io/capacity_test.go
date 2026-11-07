@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestCapacityReportsFilesystemCapacity(t *testing.T) {
+func TestGetCapacityReportsFilesystemCapacity(t *testing.T) {
 	layer := New(NewRequest{Root: t.TempDir()}).Layer
 	result, err := layer.GetCapacity(CapacityRequest{})
 	if err != nil {
@@ -22,7 +22,7 @@ func TestCapacityReportsFilesystemCapacity(t *testing.T) {
 	}
 }
 
-func TestCapacityReturnsErrorWhenIORootIsUnavailable(t *testing.T) {
+func TestGetCapacityReturnsErrorWhenIORootIsUnavailable(t *testing.T) {
 	root := t.TempDir()
 	layer := New(NewRequest{Root: root}).Layer
 	if err := os.Remove(root); err != nil {
