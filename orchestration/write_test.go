@@ -179,11 +179,30 @@ func TestWriteRejectsInvalidHandleAndAccessMode(t *testing.T) {
 	}
 }
 
-func TestWriteRejectsSyncModeUntilPersistenceExists(t *testing.T) {
-	fixture := newWriteFixture(t)
-	writer := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_WRONLY|syscall.O_SYNC))
-	if _, err := fixture.layer.Write(WriteRequest{Handle: writer, ObjectID: fixture.fileID, Data: []byte("x")}); !errors.Is(err, syscall.ENOTSUP) {
-		t.Fatalf("synchronous Write = %v, want ENOTSUP", err)
+func TestWriteSyncModesPersistBeforeReturning(t *testing.T) {
+	for _, mode := range []struct {
+		name  string
+		flag  uint32
+	}{
+		{name: "O_SYNC", flag: uint32(syscall.O_SYNC)},
+		{name: "O_DSYNC", flag: uint32(syscall.O_DSYNC)},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			fixture := newWriteFixture(t)
+			writer := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_WRONLY)|mode.flag)
+			if got, err := fixture.layer.Write(WriteRequest{Handle: writer, ObjectID: fixture.fileID, Data: []byte("x")}); err != nil || got.Written != 1 {
+				t.Fatalf("synchronous Write = %+v, %v; want one byte, success", got, err)
+			}
+			persisted, err := fixture.layer.distribution.ReadStripe(distribution.ReadStripeRequest{
+				Context: context.Background(), ObjectID: fixture.fileID, StripeID: 0, ChunkSize: 4096,
+			})
+			if err != nil {
+				t.Fatalf("read persisted stripe: %v", err)
+			}
+			if got := persisted.Data[int(cfg.HeaderReservedSize)]; got != 'x' {
+				t.Errorf("persisted first data byte = %q, want x", got)
+			}
+		})
 	}
 }
 
