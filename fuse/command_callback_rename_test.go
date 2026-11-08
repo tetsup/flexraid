@@ -70,3 +70,56 @@ func TestRenameCallbackDirectorySemantics(t *testing.T) {
 	}
 }
 
+
+func TestRenameCallbackReplacesNonDirectoryKinds(t *testing.T) {
+	adapter, ctx := newCallbackTestFilesystem(t)
+	root := adapter.root
+
+	fileInode, fileHandle, _, errno := root.Create(ctx, "file-source", uint32(syscall.O_RDWR), 0600, &fuse.EntryOut{})
+	if errno != 0 {
+		t.Fatalf("Create file source: %v", errno)
+	}
+	if _, errno := root.Symlink(ctx, "old-target", "symlink-destination", &fuse.EntryOut{}); errno != 0 {
+		t.Fatalf("Symlink destination: %v", errno)
+	}
+	if errno := root.Rename(ctx, "file-source", root, "symlink-destination", 0); errno != 0 {
+		t.Fatalf("Rename file over symlink: %v", errno)
+	}
+	var replacedFile fuse.EntryOut
+	if _, errno := root.Lookup(ctx, "symlink-destination", &replacedFile); errno != 0 {
+		t.Fatalf("Lookup file-over-symlink destination: %v", errno)
+	}
+	if replacedFile.Attr.Mode&syscall.S_IFMT != syscall.S_IFREG {
+		t.Errorf("file-over-symlink destination mode = %#o, want regular file", replacedFile.Attr.Mode)
+	}
+	if _, errno := root.Lookup(ctx, "file-source", &fuse.EntryOut{}); errno != syscall.ENOENT {
+		t.Errorf("file source after Rename errno = %v, want ENOENT", errno)
+	}
+	if errno := fileInode.Operations().(*node).Release(ctx, fileHandle); errno != 0 {
+		t.Errorf("Release file source: %v", errno)
+	}
+
+	if _, _, _, errno := root.Create(ctx, "file-destination", uint32(syscall.O_RDWR), 0600, &fuse.EntryOut{}); errno != 0 {
+		t.Fatalf("Create file destination: %v", errno)
+	}
+	if _, errno := root.Symlink(ctx, "new-target", "symlink-source", &fuse.EntryOut{}); errno != 0 {
+		t.Fatalf("Symlink source: %v", errno)
+	}
+	if errno := root.Rename(ctx, "symlink-source", root, "file-destination", 0); errno != 0 {
+		t.Fatalf("Rename symlink over file: %v", errno)
+	}
+	var replacedLink fuse.EntryOut
+	linkInode, errno := root.Lookup(ctx, "file-destination", &replacedLink)
+	if errno != 0 {
+		t.Fatalf("Lookup symlink-over-file destination: %v", errno)
+	}
+	if replacedLink.Attr.Mode&syscall.S_IFMT != syscall.S_IFLNK {
+		t.Errorf("symlink-over-file destination mode = %#o, want symlink", replacedLink.Attr.Mode)
+	}
+	if target, errno := linkInode.Operations().(*node).Readlink(ctx); errno != 0 || string(target) != "new-target" {
+		t.Errorf("Readlink replaced destination = %q, %v; want new-target", target, errno)
+	}
+	if _, errno := root.Lookup(ctx, "symlink-source", &fuse.EntryOut{}); errno != syscall.ENOENT {
+		t.Errorf("symlink source after Rename errno = %v, want ENOENT", errno)
+	}
+}
