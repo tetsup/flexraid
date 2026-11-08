@@ -181,13 +181,8 @@ func TestScanCallbackError(t *testing.T) {
 
 
 func TestSyncExistingPhysicalFile(t *testing.T) {
-	layer := New(NewRequest{Root: t.TempDir()}).Layer
-	key := storage.FileKey{
-		ObjectID: testObjectID("12345678-9abc-4def-8abc-1234567890ab"),
-		StripeVersion: 1,
-		LayoutID: storage.LayoutIDMirror2,
-		StripeID: 0,
-	}
+	layer := newTestLayer(t, t.TempDir())
+	key := testFileKey(0)
 	if _, err := layer.Write(WriteRequest{Context: context.Background(), Key: key, Data: []byte("durable")}); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
