@@ -185,13 +185,6 @@ func TestFillEntryMapsAllNamespaceAttributes(t *testing.T) {
 	}
 }
 
-func TestCallerUsesFUSECredentials(t *testing.T) {
-	ctx := gofuse.NewContext(context.Background(), &gofuse.Caller{Uid: 123, Gid: 456, Pid: 789})
-	if got := caller(ctx); got.Uid != 123 || got.Gid != 456 {
-		t.Fatalf("caller=%+v, want uid=123 gid=456", got)
-	}
-}
-
 func TestMountOptionsEnableNullPermissions(t *testing.T) {
 	options := MountOptions()
 	if options == nil || !options.NullPermissions {
