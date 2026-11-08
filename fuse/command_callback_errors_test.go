@@ -53,10 +53,14 @@ func TestNamespaceCallbacksReturnExpectedErrors(t *testing.T) {
 	adapter, ctx := newCallbackTestFilesystem(t)
 	root := adapter.root
 
-	for _, name := range []string{"", ".", "..", "a/b"} {
+	// Dot components are resolved by the VFS; they are not ordinary
+	// directory entry names for a direct Lookup callback.
+	for _, name := range []string{"", "a/b"} {
 		if _, errno := root.Lookup(ctx, name, &gofuse.EntryOut{}); errno != syscall.EINVAL {
 			t.Errorf("Lookup(%q) errno = %v, want EINVAL", name, errno)
 		}
+	}
+	for _, name := range []string{"", ".", "..", "a/b"} {
 		if _, _, _, errno := root.Create(ctx, name, uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{}); errno != syscall.EINVAL {
 			t.Errorf("Create(%q) errno = %v, want EINVAL", name, errno)
 		}
