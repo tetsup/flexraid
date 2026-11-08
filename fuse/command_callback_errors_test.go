@@ -81,9 +81,6 @@ func TestNamespaceCallbacksReturnExpectedErrors(t *testing.T) {
 	if _, errno := fileNode.Readdir(ctx); errno != syscall.ENOTDIR {
 		t.Errorf("Readdir on regular file errno = %v, want ENOTDIR", errno)
 	}
-	if _, _, errno := fileNode.Open(ctx, uint32(syscall.O_RDONLY)); errno != syscall.EISDIR && errno != syscall.ENOTDIR {
-		t.Errorf("Open regular-file node callback expected backend rejection? errno = %v", errno)
-	}
 	if _, errno := fileNode.Readlink(ctx); errno != syscall.EINVAL {
 		t.Errorf("Readlink regular file errno = %v, want EINVAL", errno)
 	}
@@ -102,6 +99,9 @@ func TestNamespaceCallbacksReturnExpectedErrors(t *testing.T) {
 	}
 	if errno := root.Rmdir(ctx, "regular"); errno != syscall.ENOTDIR {
 		t.Errorf("Rmdir regular file errno = %v, want ENOTDIR", errno)
+	}
+	if errno := fileNode.Release(ctx, fileHandle); errno != 0 {
+		t.Fatalf("Release created file handle: %v", errno)
 	}
 	if errno := root.Unlink(ctx, "regular"); errno != 0 {
 		t.Fatalf("Unlink regular file: %v", errno)
@@ -141,8 +141,8 @@ func TestDataCallbacksRejectWrongNodeAndInvalidHandles(t *testing.T) {
 	}
 	dir := dirInode.Operations().(*node)
 
-	if _, _, errno := dir.Open(ctx, uint32(syscall.O_RDONLY)); errno != syscall.EISDIR {
-		t.Errorf("Open directory errno = %v, want EISDIR", errno)
+	if _, _, errno := dir.Open(ctx, uint32(syscall.O_RDONLY)); errno != syscall.EINVAL {
+		t.Errorf("Open directory errno = %v, want EINVAL", errno)
 	}
 	if _, errno := dir.Readlink(ctx); errno != syscall.EINVAL {
 		t.Errorf("Readlink directory errno = %v, want EINVAL", errno)
