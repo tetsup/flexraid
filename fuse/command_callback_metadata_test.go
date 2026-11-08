@@ -1,12 +1,10 @@
 package fuse
 
 import (
-	"context"
 	"os"
 	"syscall"
 	"testing"
 
-	"github.com/hanwen/go-fuse/v2/fs"
 	gofuse "github.com/hanwen/go-fuse/v2/fuse"
 )
 
@@ -98,5 +96,3 @@ func TestNamespaceCallbacksReturnConsistentEntryMetadata(t *testing.T) {
 	}
 }
 
-var _ fs.DirStream
-var _ context.Context
