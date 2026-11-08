@@ -131,6 +131,9 @@ func TestMountedDirectoryNLinkTracksSubdirectories(t *testing.T) {
 		t.Fatal(err)
 	}
 	parentIno, parentLinks := statInode(t, parent)
+	if parentIno == 0 {
+		t.Error("new directory inode is zero")
+	}
 	if parentLinks != 2 {
 		t.Errorf("new directory NLink = %d, want 2", parentLinks)
 	}
