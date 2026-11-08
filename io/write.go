@@ -2,6 +2,7 @@ package io
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -51,7 +52,7 @@ func (layer *IO) Write(request WriteRequest) (response WriteResponse, err error)
 	written, writeErr := file.Write(request.Data)
 	response.BytesWritten = written
 	if writeErr == nil && written != len(request.Data) {
-		writeErr = os.ErrInvalid
+		writeErr = io.ErrShortWrite
 	}
 	if writeErr == nil && request.Sync {
 		writeErr = file.Sync()
