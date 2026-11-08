@@ -248,3 +248,71 @@ func TestReadWriteRejectHandleFromDifferentInode(t *testing.T) {
 		t.Errorf("Release second verification handle: %v", errno)
 	}
 }
+
+func TestCreateMkdirSymlinkNameCollisionsPreserveExistingEntries(t *testing.T) {
+	adapter, ctx := newCallbackTestFilesystem(t)
+	root := adapter.root
+
+	fileInode, fileHandle, _, errno := root.Create(ctx, "same-file", uint32(syscall.O_RDWR), 0640, &gofuse.EntryOut{})
+	if errno != 0 {
+		t.Fatalf("Create file: %v", errno)
+	}
+	file := fileInode.Operations().(*node)
+	var beforeFile gofuse.AttrOut
+	if errno := file.Getattr(ctx, nil, &beforeFile); errno != 0 {
+		t.Fatalf("Getattr original file: %v", errno)
+	}
+	if _, _, _, errno := root.Create(ctx, "same-file", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{}); errno != syscall.EEXIST {
+		t.Errorf("Create duplicate file errno = %v, want EEXIST", errno)
+	}
+	var afterFile gofuse.AttrOut
+	if errno := file.Getattr(ctx, nil, &afterFile); errno != 0 {
+		t.Fatalf("Getattr file after duplicate Create: %v", errno)
+	}
+	if beforeFile.Attr.Ino != afterFile.Attr.Ino || beforeFile.Attr.Mode != afterFile.Attr.Mode ||
+		beforeFile.Attr.Uid != afterFile.Attr.Uid || beforeFile.Attr.Gid != afterFile.Attr.Gid {
+		t.Errorf("duplicate Create changed original file attributes: before=%+v after=%+v", beforeFile.Attr, afterFile.Attr)
+	}
+	if errno := file.Release(ctx, fileHandle); errno != 0 {
+		t.Errorf("Release file: %v", errno)
+	}
+
+	dirInode, errno := root.Mkdir(ctx, "same-directory", 0710, &gofuse.EntryOut{})
+	if errno != 0 {
+		t.Fatalf("Mkdir: %v", errno)
+	}
+	dir := dirInode.Operations().(*node)
+	var beforeDir gofuse.AttrOut
+	if errno := dir.Getattr(ctx, nil, &beforeDir); errno != 0 {
+		t.Fatalf("Getattr original directory: %v", errno)
+	}
+	if _, errno := root.Mkdir(ctx, "same-directory", 0700, &gofuse.EntryOut{}); errno != syscall.EEXIST {
+		t.Errorf("Mkdir duplicate directory errno = %v, want EEXIST", errno)
+	}
+	var afterDir gofuse.AttrOut
+	if errno := dir.Getattr(ctx, nil, &afterDir); errno != 0 {
+		t.Fatalf("Getattr directory after duplicate Mkdir: %v", errno)
+	}
+	if beforeDir.Attr.Ino != afterDir.Attr.Ino || beforeDir.Attr.Mode != afterDir.Attr.Mode {
+		t.Errorf("duplicate Mkdir changed original directory: before=%+v after=%+v", beforeDir.Attr, afterDir.Attr)
+	}
+
+	linkInode, errno := root.Symlink(ctx, "original-target", "same-symlink", &gofuse.EntryOut{})
+	if errno != 0 {
+		t.Fatalf("Symlink: %v", errno)
+	}
+	link := linkInode.Operations().(*node)
+	if _, errno := root.Symlink(ctx, "replacement-target", "same-symlink", &gofuse.EntryOut{}); errno != syscall.EEXIST {
+		t.Errorf("Symlink duplicate name errno = %v, want EEXIST", errno)
+	}
+	if target, errno := link.Readlink(ctx); errno != 0 || string(target) != "original-target" {
+		t.Errorf("existing symlink after duplicate create = %q, %v; want original-target", target, errno)
+	}
+
+	if _, errno := root.Link(ctx, linkInode, "hardlink-to-symlink", &gofuse.EntryOut{}); errno == 0 {
+		t.Error("Link accepted a symlink source; only regular files may be hard-linked")
+	}
+	if _, errno := root.Lookup(ctx, "hardlink-to-symlink", &gofuse.EntryOut{}); errno != syscall.ENOENT {
+		t.Errorf("Lookup rejected symlink hard-link name errno = %v, want ENOENT", errno)
+	}
+}
