@@ -82,7 +82,7 @@ func TestSetattrCallbackMapsAllSupportedFields(t *testing.T) {
 	}
 
 	nowIn := &gofuse.SetAttrIn{}
-	nowIn.Valid = gofuse.FATTR_ATIME_NOW | gofuse.FATTR_MTIME_NOW
+	nowIn.Valid = gofuse.FATTR_ATIME | gofuse.FATTR_ATIME_NOW | gofuse.FATTR_MTIME | gofuse.FATTR_MTIME_NOW
 	before := time.Now()
 	if errno := n.Setattr(ctx, nil, nowIn, &out); errno != 0 {
 		t.Fatalf("Setattr ATIME_NOW/MTIME_NOW: %v", errno)
