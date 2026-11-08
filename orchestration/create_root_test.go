@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"syscall"
 	"testing"
 
 	"github.com/tetsup/flexraid/distribution"
@@ -41,7 +40,7 @@ func TestCreateRootCreatesAndRestoresEmptyFilesystem(t *testing.T) {
 		t.Fatal(err)
 	}
 	attributes := root.Attributes
-	if attributes.Kind != objectKindDirectory || attributes.Mode != syscall.S_IFDIR|0750 ||
+	if attributes.Kind != objectKindDirectory || attributes.Mode != 0750 ||
 		attributes.UID != 123 || attributes.GID != 456 || attributes.Nlink != 2 || attributes.Size != 0 {
 		t.Fatalf("root attributes = %+v", attributes)
 	}
@@ -75,7 +74,7 @@ func TestCreateRootCreatesAndRestoresEmptyFilesystem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if restored.Attributes.Kind != objectKindDirectory || restored.Attributes.Mode != syscall.S_IFDIR|0750 ||
+	if restored.Attributes.Kind != objectKindDirectory || restored.Attributes.Mode != 0750 ||
 		restored.Attributes.UID != 123 || restored.Attributes.GID != 456 || restored.Attributes.Nlink != 2 {
 		t.Fatalf("restored root attributes = %+v", restored.Attributes)
 	}
@@ -154,7 +153,7 @@ func TestCreateRootPersistenceFailureDoesNotPublishFilesystem(t *testing.T) {
 
 func TestCreateRootMasksFileTypeBitsFromMode(t *testing.T) {
 	_, distributed := newEmptyDistribution(t)
-	created, err := CreateRoot(CreateRootRequest{Distribution: distributed, Mode: syscall.S_IFREG | 0755})
+	created, err := CreateRoot(CreateRootRequest{Distribution: distributed, Mode: 0100000 | 0755})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +161,7 @@ func TestCreateRootMasksFileTypeBitsFromMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if attributes.Attributes.Mode != syscall.S_IFDIR|0755 {
-		t.Fatalf("root Mode = %#o, want %#o", attributes.Attributes.Mode, uint32(syscall.S_IFDIR|0755))
+	if attributes.Attributes.Mode != 0755 {
+		t.Fatalf("root Mode = %#o, want %#o", attributes.Attributes.Mode, uint32(0755))
 	}
 }
