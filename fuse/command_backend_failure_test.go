@@ -3,8 +3,8 @@ package fuse
 import (
 	"bytes"
 	"os"
-	"testing"
 	"syscall"
+	"testing"
 
 	gofuse "github.com/hanwen/go-fuse/v2/fuse"
 )
