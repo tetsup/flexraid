@@ -34,6 +34,7 @@ type FileHandle struct {
 
 	runtimeFile *runtimeFile
 	closed      bool
+	directory   bool
 	accessMode  AccessMode
 	append      bool
 	syncMode    SyncMode
@@ -80,7 +81,7 @@ func (layer *Orchestration) Open(request OpenRequest) (response OpenResponse, er
 		if request.Flags&uint32(syscall.O_ACCMODE) != uint32(syscall.O_RDONLY) {
 			return response, syscall.EISDIR
 		}
-		return OpenResponse{Handle: &FileHandle{}}, nil
+		return OpenResponse{Handle: &FileHandle{directory: true}}, nil
 	}
 	if object.header.Kind != objectKindFile && object.header.Kind != objectKindHardLink {
 		return response, syscall.EINVAL
@@ -136,6 +137,11 @@ func (layer *Orchestration) Release(request ReleaseRequest) (response ReleaseRes
 	handle := request.Handle
 	handle.mu.Lock()
 	if handle.closed {
+		handle.mu.Unlock()
+		return response, nil
+	}
+	if handle.directory {
+		handle.closed = true
 		handle.mu.Unlock()
 		return response, nil
 	}
