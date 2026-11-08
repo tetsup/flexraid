@@ -109,7 +109,7 @@ func (layer *Orchestration) Rename(request RenameRequest) (response RenameRespon
 	delete(sourceParent.children, request.SourceName)
 	source.header = next
 	layer.headers[next.ObjectID] = next
-	if source.file != nil {
+	if source.file != nil && (next.Kind == objectKindFile || next.Kind == objectKindHardLinkedFile) {
 		source.file.mu.Lock()
 		source.file.header = next
 		source.file.mu.Unlock()
