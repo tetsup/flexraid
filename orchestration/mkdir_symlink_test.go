@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/tetsup/flexraid/distribution"
