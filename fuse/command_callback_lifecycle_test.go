@@ -213,3 +213,41 @@ func TestNamespaceCallbacksHonorCanceledContext(t *testing.T) {
 		t.Error("Rmdir with canceled context succeeded")
 	}
 }
+
+func TestSetattrRejectsReadonlyAndMismatchedHandles(t *testing.T) {
+	adapter, ctx := newCallbackTestFilesystem(t)
+	root := adapter.root
+	readonlyInode, readonlyHandle, _, errno := root.Create(ctx, "readonly", uint32(syscall.O_RDONLY), 0600, &gofuse.EntryOut{})
+	if errno != 0 {
+		t.Fatalf("Create readonly: %v", errno)
+	}
+	otherInode, otherHandle, _, errno := root.Create(ctx, "other", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{})
+	if errno != 0 {
+		t.Fatalf("Create other: %v", errno)
+	}
+	readonly := readonlyInode.Operations().(*node)
+	other := otherInode.Operations().(*node)
+	sizeIn := &gofuse.SetAttrIn{}
+	sizeIn.Valid, sizeIn.Size = gofuse.FATTR_SIZE, 4
+	if errno := readonly.Setattr(ctx, readonlyHandle, sizeIn, &gofuse.AttrOut{}); errno != syscall.EPERM {
+		t.Errorf("Setattr size through read-only handle errno = %v, want EPERM", errno)
+	}
+	if errno := readonly.Setattr(ctx, otherHandle, sizeIn, &gofuse.AttrOut{}); errno != syscall.EINVAL {
+		t.Errorf("Setattr with another file's handle errno = %v, want EINVAL", errno)
+	}
+	if errno := readonly.Release(ctx, readonlyHandle); errno != 0 {
+		t.Errorf("Release readonly: %v", errno)
+	}
+	if errno := other.Release(ctx, otherHandle); errno != 0 {
+		t.Errorf("Release other: %v", errno)
+	}
+	if errno := readonly.Setattr(ctx, readonlyHandle, sizeIn, &gofuse.AttrOut{}); errno != syscall.EINVAL {
+		t.Errorf("Setattr with released handle errno = %v, want EINVAL", errno)
+	}
+	if errno := root.Unlink(ctx, "readonly"); errno != 0 {
+		t.Errorf("Unlink readonly: %v", errno)
+	}
+	if errno := root.Unlink(ctx, "other"); errno != 0 {
+		t.Errorf("Unlink other: %v", errno)
+	}
+}
