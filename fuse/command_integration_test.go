@@ -136,7 +136,7 @@ func TestMountedMkdirUnlinkAndRmdirErrors(t *testing.T) {
 		t.Fatalf("create child: %v", err)
 	}
 	if err := os.Remove(dir); !errors.Is(err, syscall.ENOTEMPTY) {
-		t.Errorf("Rmdir non-empty directory error = %v, want EPERM or ENOTEMPTY", err)
+		t.Errorf("Rmdir non-empty directory error = %v, want ENOTEMPTY", err)
 	}
 	if err := syscall.Unlink(dir); !errors.Is(err, syscall.EISDIR) {
 		t.Errorf("Unlink directory error = %v, want EISDIR", err)
@@ -195,7 +195,7 @@ func TestMountedHardLinkSharesInodeAndUnlinksOneName(t *testing.T) {
 		t.Errorf("Link missing source error = %v, want ENOENT", err)
 	}
 	if err := os.Link(mountpoint, filepath.Join(mountpoint, "directory-alias")); !errors.Is(err, syscall.EPERM) {
-		t.Errorf("Link directory error = %v, want EPERM or EISDIR", err)
+		t.Errorf("Link directory error = %v, want EPERM", err)
 	}
 	if err := os.Remove(source); err != nil {
 		t.Fatalf("Unlink original name: %v", err)
