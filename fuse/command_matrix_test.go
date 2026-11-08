@@ -215,7 +215,8 @@ func TestMountedRenameTypeMismatchPreservesBothEntries(t *testing.T) {
 	if entries, err := os.ReadDir(dir); err != nil || len(entries) != 0 {
 		t.Fatalf("destination before type-mismatch Rename entries = %v, %v; want empty", entries, err)
 	}
-	if err := os.Rename(file, dir); !errors.Is(err, syscall.EISDIR) {
+	// Use the syscall directly: os.Rename short-circuits with EEXIST when the destination is a directory.
+	if err := syscall.Rename(file, dir); !errors.Is(err, syscall.EISDIR) {
 		t.Errorf("Rename file over directory = %v, want EISDIR", err)
 	}
 	if got, err := os.ReadFile(file); err != nil || string(got) != "file-data" {
@@ -233,7 +234,7 @@ func TestMountedRenameTypeMismatchPreservesBothEntries(t *testing.T) {
 	if err := os.Mkdir(dir2, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Rename(dir2, file2); !errors.Is(err, syscall.ENOTDIR) {
+	if err := syscall.Rename(dir2, file2); !errors.Is(err, syscall.ENOTDIR) {
 		t.Errorf("Rename directory over file = %v, want ENOTDIR", err)
 	}
 	if info, err := os.Stat(dir2); err != nil || !info.IsDir() {
@@ -345,7 +346,8 @@ func TestMountedRenameDirectoryCycleAndEmptyDirectoryReplacement(t *testing.T) {
 	parentIno, parentLinks := statInode(t, parent)
 	rootIno, rootLinks := statInode(t, mountpoint)
 
-	if err := os.Rename(parent, child); !errors.Is(err, syscall.EINVAL) {
+	// Avoid os.Rename's directory-destination precheck; test the Linux rename syscall contract.
+	if err := syscall.Rename(parent, child); !errors.Is(err, syscall.EINVAL) {
 		t.Errorf("Rename directory into its descendant = %v, want EINVAL", err)
 	}
 	if got, err := os.Stat(parent); err != nil || !got.IsDir() {
@@ -370,7 +372,7 @@ func TestMountedRenameDirectoryCycleAndEmptyDirectoryReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	sourceIno, _ := statInode(t, source)
-	if err := os.Rename(source, destination); err != nil {
+	if err := syscall.Rename(source, destination); err != nil {
 		t.Fatalf("Rename directory over empty directory: %v", err)
 	}
 	if _, err := os.Lstat(source); !errors.Is(err, syscall.ENOENT) {
