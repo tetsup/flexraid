@@ -27,6 +27,20 @@ func TestInodeNumberIsStableAndNonzero(t *testing.T) {
 	}
 }
 
+
+func TestInodeNumberUsesBigEndianPrefixAndAvoidsZero(t *testing.T) {
+	var id shared.ObjectID
+	copy(id[:8], []byte{1, 2, 3, 4, 5, 6, 7, 8})
+	if got, want := inodeNumber(id), uint64(0x0102030405060708); got != want {
+		t.Fatalf("inodeNumber=%#x, want %#x", got, want)
+	}
+
+	var zeroPrefix shared.ObjectID
+	if got := inodeNumber(zeroPrefix); got != 1 {
+		t.Fatalf("zero prefix inodeNumber=%d, want fallback 1", got)
+	}
+}
+
 func TestStableAttrUsesTypeAndObjectID(t *testing.T) {
 	id := testObjectID(t)
 	got := stableAttr(orchestration.ObjectAttributes{ObjectID: id, Mode: syscall.S_IFDIR | 0750})
