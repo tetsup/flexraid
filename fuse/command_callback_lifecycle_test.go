@@ -213,6 +213,41 @@ func TestNamespaceCallbacksHonorCanceledContext(t *testing.T) {
 	if errno := root.Rmdir(cancelled, "missing"); errno == 0 {
 		t.Error("Rmdir with canceled context succeeded")
 	}
+
+	var rootAttr gofuse.AttrOut
+	if errno := root.Getattr(cancelled, nil, &rootAttr); errno == 0 {
+		t.Error("Getattr with canceled context succeeded")
+	}
+	if _, errno := root.Readdir(cancelled); errno == 0 {
+		t.Error("Readdir with canceled context succeeded")
+	}
+	if errno := root.Statfs(cancelled, &gofuse.StatfsOut{}); errno == 0 {
+		t.Error("Statfs with canceled context succeeded")
+	}
+	fileInode, fileHandle, _, createErrno := root.Create(ctx, "link-source", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{})
+	if createErrno != 0 {
+		t.Fatalf("Create link source: %v", createErrno)
+	}
+	if _, errno := root.Link(cancelled, fileInode, "cancelled-hardlink", &gofuse.EntryOut{}); errno == 0 {
+		t.Error("Link with canceled context succeeded")
+	}
+	fileNode := fileInode.Operations().(*node)
+	if errno := fileNode.Release(ctx, fileHandle); errno != 0 {
+		t.Errorf("Release link source: %v", errno)
+	}
+	if errno := root.Unlink(ctx, "link-source"); errno != 0 {
+		t.Errorf("Unlink link source: %v", errno)
+	}
+	linkInode, linkErrno := root.Symlink(ctx, "target", "cancelled-readlink", &gofuse.EntryOut{})
+	if linkErrno != 0 {
+		t.Fatalf("create Readlink target: %v", linkErrno)
+	}
+	if _, errno := linkInode.Operations().(*node).Readlink(cancelled); errno == 0 {
+		t.Error("Readlink with canceled context succeeded")
+	}
+	if errno := root.Unlink(ctx, "cancelled-readlink"); errno != 0 {
+		t.Errorf("Unlink symlink: %v", errno)
+	}
 }
 
 func TestSetattrRejectsReadonlyAndMismatchedHandles(t *testing.T) {
