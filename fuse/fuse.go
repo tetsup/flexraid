@@ -30,7 +30,7 @@ func New(layer *orchestration.Orchestration, rootID shared.ObjectID) (*FileSyste
 	if err != nil {
 		return nil, fmt.Errorf("get root attributes: %w", err)
 	}
-	if attributes.Attributes.Mode&syscall.S_IFMT != syscall.S_IFDIR {
+	if attributes.Attributes.Kind != orchestration.ObjectKindDirectory {
 		return nil, fmt.Errorf("root object is not a directory")
 	}
 	filesystem := &FileSystem{layer: layer, rootID: rootID}
@@ -106,7 +106,7 @@ func (n *node) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 		}
 		entries = append(entries, gofuse.DirEntry{
 			Name: entry.Name, Ino: inodeNumber(entry.ObjectID),
-			Mode: attributes.Attributes.Mode & syscall.S_IFMT,
+			Mode: objectMode(attributes.Attributes) & syscall.S_IFMT,
 		})
 	}
 	return fs.NewListDirStream(entries), 0
@@ -344,8 +344,21 @@ type fileHandle struct {
 	handle   *orchestration.FileHandle
 }
 
+func objectMode(attributes orchestration.ObjectAttributes) uint32 {
+	var fileType uint32
+	switch attributes.Kind {
+	case orchestration.ObjectKindDirectory:
+		fileType = syscall.S_IFDIR
+	case orchestration.ObjectKindSymlink:
+		fileType = syscall.S_IFLNK
+	case orchestration.ObjectKindFile, orchestration.ObjectKindHardLinkedFile, orchestration.ObjectKindHardLink:
+		fileType = syscall.S_IFREG
+	}
+	return fileType | (attributes.Mode & 07777)
+}
+
 func stableAttr(attributes orchestration.ObjectAttributes) fs.StableAttr {
-	return fs.StableAttr{Mode: attributes.Mode & syscall.S_IFMT, Ino: inodeNumber(attributes.ObjectID)}
+	return fs.StableAttr{Mode: objectMode(attributes) & syscall.S_IFMT, Ino: inodeNumber(attributes.ObjectID)}
 }
 
 func inodeNumber(id shared.ObjectID) uint64 {
@@ -363,7 +376,7 @@ func fillEntry(out *gofuse.EntryOut, attributes orchestration.ObjectAttributes) 
 
 func fillAttr(out *gofuse.Attr, attributes orchestration.ObjectAttributes) {
 	out.Ino = inodeNumber(attributes.ObjectID)
-	out.Mode = attributes.Mode
+	out.Mode = objectMode(attributes)
 	out.Nlink = attributes.Nlink
 	out.Size = attributes.Size
 	out.Owner = gofuse.Owner{Uid: attributes.UID, Gid: attributes.GID}
