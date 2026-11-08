@@ -120,3 +120,38 @@ func TestDeleteObjectRemovesHeaderLastAndAllVersions(t *testing.T) {
 		t.Fatalf("objects remain: %v", objects.ObjectIDs)
 	}
 }
+
+
+func TestSyncObjectSynchronizesLatestChunksAcrossStripes(t *testing.T) {
+	ctx := context.Background()
+	ios := makeIOs(t, 2)
+	created, err := New(NewRequest{IOs: ios})
+	if err != nil {
+		t.Fatal(err)
+	}
+	objectID := testObjectID()
+	for stripeID, data := range [][]byte{[]byte("stripe zero"), []byte("stripe one")} {
+		if _, err := created.Layer.WriteStripe(WriteStripeRequest{
+			Context: ctx, ObjectID: objectID, StripeID: storage.StripeID(stripeID),
+			ChunkSize: 32, Layout: Layout{Type: LayoutMirror, NumChunks: 2},
+			IOIndexes: []int{0, 1}, Data: data,
+		}); err != nil {
+			t.Fatalf("WriteStripe %d: %v", stripeID, err)
+		}
+	}
+	if result, err := created.Layer.SyncObject(SyncObjectRequest{Context: ctx, ObjectID: objectID}); err != nil || result.SyncedChunks != 4 {
+		t.Fatalf("SyncObject = %+v, %v; want four chunks", result, err)
+	}
+	restarted, err := New(NewRequest{IOs: ios})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for stripeID, want := range [][]byte{[]byte("stripe zero"), []byte("stripe one")} {
+		read, err := restarted.Layer.ReadStripe(ReadStripeRequest{
+			Context: ctx, ObjectID: objectID, StripeID: storage.StripeID(stripeID), ChunkSize: 32,
+		})
+		if err != nil || !bytes.Equal(read.Data, want) {
+			t.Errorf("ReadStripe %d after SyncObject = %q, %v; want %q", stripeID, read.Data, err, want)
+		}
+	}
+}
