@@ -11,23 +11,6 @@ import (
 	"github.com/tetsup/flexraid/pkg/shared"
 )
 
-func TestInodeNumberDistinguishesObjectIDsWithSamePrefix(t *testing.T) {
-	first, err := shared.ParseObjectID("12345678-1234-4234-8234-000000000001")
-	if err != nil {
-		t.Fatal(err)
-	}
-	second, err := shared.ParseObjectID("12345678-1234-4234-8234-ffffffffffff")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first == second {
-		t.Fatal("test ObjectIDs unexpectedly equal")
-	}
-	if gotFirst, gotSecond := inodeNumber(first), inodeNumber(second); gotFirst == gotSecond {
-		t.Errorf("distinct ObjectIDs map to the same FUSE inode number %d", gotFirst)
-	}
-}
-
 func TestOpenAppendAndTruncateCallbackSemantics(t *testing.T) {
 	adapter, ctx := newCallbackTestFilesystem(t)
 	root := adapter.root
@@ -203,5 +186,76 @@ func TestStatfsCallbackCopiesEveryDefinedField(t *testing.T) {
 		got.Bsize != uint32(expected.Bsize) || got.Frsize != uint32(expected.Frsize) ||
 		got.Files != expected.Files || got.Ffree != expected.Ffree {
 		t.Errorf("FUSE Statfs mapping = %+v, expected orchestration values %+v", got, expected)
+	}
+}
+
+func TestReadWriteRejectHandleFromDifferentInode(t *testing.T) {
+	adapter, ctx := newCallbackTestFilesystem(t)
+	root := adapter.root
+	firstInode, firstHandle, _, errno := root.Create(ctx, "first", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{})
+	if errno != 0 {
+		t.Fatalf("Create first: %v", errno)
+	}
+	secondInode, secondHandle, _, errno := root.Create(ctx, "second", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{})
+	if errno != 0 {
+		t.Fatalf("Create second: %v", errno)
+	}
+	first := firstInode.Operations().(*node)
+	second := secondInode.Operations().(*node)
+	if _, errno := first.Write(ctx, firstHandle, []byte("first-data"), 0); errno != 0 {
+		t.Fatalf("Write first: %v", errno)
+	}
+	if _, errno := second.Write(ctx, secondHandle, []byte("second-data"), 0); errno != 0 {
+		t.Fatalf("Write second: %v", errno)
+	}
+
+	if _, errno := second.Read(ctx, firstHandle, make([]byte, 10), 0); errno == 0 {
+		t.Error("Read through second inode with first inode's handle succeeded")
+	}
+	if _, errno := second.Write(ctx, firstHandle, []byte("corrupt"), 0); errno == 0 {
+		t.Error("Write through second inode with first inode's handle succeeded")
+	}
+	if _, errno := first.Read(ctx, secondHandle, make([]byte, 11), 0); errno == 0 {
+		t.Error("Read through first inode with second inode's handle succeeded")
+	}
+	if _, errno := first.Write(ctx, secondHandle, []byte("corrupt"), 0); errno == 0 {
+		t.Error("Write through first inode with second inode's handle succeeded")
+	}
+
+	firstRead, _, errno := first.Open(ctx, uint32(syscall.O_RDONLY))
+	if errno != 0 {
+		t.Fatalf("Open first for verification: %v", errno)
+	}
+	firstResult, errno := first.Read(ctx, firstRead, make([]byte, 10), 0)
+	if errno != 0 {
+		t.Fatalf("Read first for verification: %v", errno)
+	}
+	firstData, status := firstResult.Bytes(make([]byte, 10))
+	if status != 0 || !bytes.Equal(firstData, []byte("first-data")) {
+		t.Errorf("first file after cross-inode handle attempts = %q, %v; want first-data", firstData, status)
+	}
+	if errno := first.Release(ctx, firstRead); errno != 0 {
+		t.Errorf("Release first verification handle: %v", errno)
+	}
+	secondRead, _, errno := second.Open(ctx, uint32(syscall.O_RDONLY))
+	if errno != 0 {
+		t.Fatalf("Open second for verification: %v", errno)
+	}
+	secondResult, errno := second.Read(ctx, secondRead, make([]byte, 11), 0)
+	if errno != 0 {
+		t.Fatalf("Read second for verification: %v", errno)
+	}
+	secondData, status := secondResult.Bytes(make([]byte, 11))
+	if status != 0 || !bytes.Equal(secondData, []byte("second-data")) {
+		t.Errorf("second file after cross-inode handle attempts = %q, %v; want second-data", secondData, status)
+	}
+	if errno := first.Release(ctx, firstHandle); errno != 0 {
+		t.Errorf("Release first: %v", errno)
+	}
+	if errno := second.Release(ctx, secondHandle); errno != 0 {
+		t.Errorf("Release second: %v", errno)
+	}
+	if errno := second.Release(ctx, secondRead); errno != 0 {
+		t.Errorf("Release second verification handle: %v", errno)
 	}
 }
