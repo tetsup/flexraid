@@ -353,7 +353,7 @@ func TestDataCallbacksHonorCancellationAndStillRelease(t *testing.T) {
 }
 
 func TestOpenSyncModesPersistWrites(t *testing.T) {
-	adapter, ctx := newCallbackTestFilesystem(t)
+	adapter, ctx, roots := newCallbackTestFilesystemWithIORoots(t)
 	root := adapter.root
 	inode, createdHandle, _, errno := root.Create(ctx, "sync-modes", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{})
 	if errno != 0 {
@@ -371,30 +371,43 @@ func TestOpenSyncModesPersistWrites(t *testing.T) {
 		if writeErrno != 0 || written != 1 {
 			t.Errorf("Write with synchronous mode %#x = %d, %v; want 1 byte, success", flags, written, writeErrno)
 		}
+		// Do not Flush here: O_SYNC/O_DSYNC require persistence before
+		// Write returns, not only when the handle is later closed.
 		if releaseErrno := n.Release(ctx, handle); releaseErrno != 0 {
 			t.Errorf("Release synchronous mode %#x: %v", flags, releaseErrno)
 		}
 	}
-	readHandle, _, errno := n.Open(ctx, uint32(syscall.O_RDONLY))
-	if errno != 0 {
-		t.Fatalf("Open for verifying synchronous writes: %v", errno)
-	}
-	result, errno := n.Read(ctx, readHandle, make([]byte, 2), 0)
-	if errno != 0 {
-		t.Fatalf("Read after synchronous writes: %v", errno)
-	}
-	got, status := result.Bytes(make([]byte, 2))
-	if status != 0 || !bytes.Equal(got, []byte("AB")) {
-		t.Errorf("content after O_SYNC/O_DSYNC writes = %q, %v; want AB", got, status)
-	}
-	if errno := n.Release(ctx, readHandle); errno != 0 {
-		t.Errorf("Release verification handle: %v", errno)
-	}
 	if errno := n.Release(ctx, createdHandle); errno != 0 {
 		t.Errorf("Release Create handle: %v", errno)
 	}
-	if errno := root.Unlink(ctx, "sync-modes"); errno != 0 {
-		t.Errorf("Unlink sync-modes: %v", errno)
+
+	// Reinitialize from physical storage so the check cannot pass merely
+	// because the original Orchestration instance still has dirty cache.
+	ioLayers := make([]*physicalio.IO, len(roots))
+	for index, path := range roots {
+		ioLayers[index] = physicalio.New(physicalio.NewRequest{Root: path}).Layer
+	}
+	distributed, err := distribution.New(distribution.NewRequest{IOs: ioLayers})
+	if err != nil {
+		t.Fatalf("reinitialize Distribution: %v", err)
+	}
+	reopened, err := orchestration.New(orchestration.NewRequest{Context: ctx, Distribution: distributed.Layer})
+	if err != nil {
+		t.Fatalf("reinitialize Orchestration: %v", err)
+	}
+	opened, err := reopened.Layer.Open(orchestration.OpenRequest{Context: ctx, ObjectID: n.objectID, Flags: uint32(syscall.O_RDONLY)})
+	if err != nil {
+		t.Fatalf("Open persisted synchronous writes: %v", err)
+	}
+	result, err := reopened.Layer.Read(orchestration.ReadRequest{Context: ctx, Handle: opened.Handle, ObjectID: n.objectID, Offset: 0, Size: 2})
+	if err != nil {
+		t.Fatalf("Read persisted synchronous writes: %v", err)
+	}
+	if !bytes.Equal(result.Data, []byte("AB")) {
+		t.Errorf("persisted content after O_SYNC/O_DSYNC writes = %q; want AB", result.Data)
+	}
+	if _, err := reopened.Layer.Release(orchestration.ReleaseRequest{Context: ctx, Handle: opened.Handle}); err != nil {
+		t.Errorf("Release reinitialized handle: %v", err)
 	}
 }
 
