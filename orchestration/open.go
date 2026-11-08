@@ -77,8 +77,13 @@ func (layer *Orchestration) Open(request OpenRequest) (response OpenResponse, er
 	if !exists || object.header.Deleted {
 		return response, os.ErrNotExist
 	}
+	accessBits := request.Flags & uint32(syscall.O_ACCMODE)
+	if accessBits == uint32(syscall.O_ACCMODE) {
+		return response, syscall.EINVAL
+	}
 	if object.header.Kind == objectKindDirectory {
-		if request.Flags&uint32(syscall.O_ACCMODE) != uint32(syscall.O_RDONLY) {
+		if accessBits != uint32(syscall.O_RDONLY) ||
+			request.Flags&uint32(syscall.O_TRUNC|syscall.O_APPEND) != 0 {
 			return response, syscall.EISDIR
 		}
 		return OpenResponse{Handle: &FileHandle{directory: true}}, nil
