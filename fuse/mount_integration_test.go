@@ -233,6 +233,46 @@ func TestMountedFilesystemReturnsExpectedErrors(t *testing.T) {
 	}
 }
 
+// TestMountedRmdirReturnsPOSIXErrnos verifies the errno values observable by
+// applications through the mounted FUSE filesystem, rather than only checking
+// that the Orchestration operation returned some error.
+func TestMountedRmdirReturnsPOSIXErrnos(t *testing.T) {
+	mountpoint := mountTestFilesystem(t)
+
+	missing := filepath.Join(mountpoint, "missing-directory")
+	if err := syscall.Rmdir(missing); !errors.Is(err, syscall.ENOENT) {
+		t.Errorf("rmdir missing path error = %v, want ENOENT", err)
+	}
+
+	filePath := filepath.Join(mountpoint, "regular-file")
+	if err := os.WriteFile(filePath, []byte("x"), 0600); err != nil {
+		t.Fatalf("create regular file: %v", err)
+	}
+	if err := syscall.Rmdir(filePath); !errors.Is(err, syscall.ENOTDIR) {
+		t.Errorf("rmdir regular file error = %v, want ENOTDIR", err)
+	}
+
+	nonEmpty := filepath.Join(mountpoint, "non-empty-directory")
+	if err := os.Mkdir(nonEmpty, 0755); err != nil {
+		t.Fatalf("create non-empty directory: %v", err)
+	}
+	child := filepath.Join(nonEmpty, "child")
+	if err := os.WriteFile(child, []byte("x"), 0600); err != nil {
+		t.Fatalf("create child file: %v", err)
+	}
+	if err := syscall.Rmdir(nonEmpty); !errors.Is(err, syscall.ENOTEMPTY) {
+		t.Errorf("rmdir non-empty directory error = %v, want ENOTEMPTY", err)
+	}
+
+	empty := filepath.Join(mountpoint, "empty-directory")
+	if err := os.Mkdir(empty, 0755); err != nil {
+		t.Fatalf("create empty directory: %v", err)
+	}
+	if err := syscall.Rmdir(empty); err != nil {
+		t.Errorf("rmdir empty directory error = %v, want success", err)
+	}
+}
+
 // mountTestFilesystem creates and mounts a fresh empty filesystem for OS-level
 // integration tests. The mounted server is unmounted automatically at cleanup.
 func mountTestFilesystem(t *testing.T) string {
