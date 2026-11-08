@@ -122,7 +122,7 @@ func (n *node) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, s
 
 func (n *node) Read(ctx context.Context, fh fs.FileHandle, dest []byte, offset int64) (gofuse.ReadResult, syscall.Errno) {
 	handle, ok := fh.(*fileHandle)
-	if !ok || handle == nil || handle.layer != n.layer || handle.objectID != n.objectID || offset < 0 {
+	if !ok || handle == nil || handle.layer != n.layer || offset < 0 {
 		return nil, syscall.EBADF
 	}
 	result, err := n.layer.Read(orchestration.ReadRequest{
