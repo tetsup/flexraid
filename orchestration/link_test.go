@@ -145,8 +145,8 @@ func TestLinkRejectsInvalidRequestsWithoutAddingName(t *testing.T) {
 	if _, err := fixture.layer.Link(LinkRequest{SourceID: file.ObjectID, ParentID: fixture.rootID, Name: "alias"}); !errors.Is(err, os.ErrExist) {
 		t.Fatalf("duplicate Link = %v, want os.ErrExist", err)
 	}
-	if _, err := fixture.layer.Link(LinkRequest{SourceID: fixture.rootID, ParentID: fixture.rootID, Name: "directory"}); !errors.Is(err, os.ErrInvalid) {
-		t.Fatalf("Link directory = %v, want os.ErrInvalid", err)
+	if _, err := fixture.layer.Link(LinkRequest{SourceID: fixture.rootID, ParentID: fixture.rootID, Name: "directory"}); !errors.Is(err, syscall.EPERM) {
+		t.Fatalf("Link directory = %v, want EPERM", err)
 	}
 	missing := testID("22345678-9abc-4def-8abc-1234567890ab")
 	if _, err := fixture.layer.Link(LinkRequest{SourceID: file.ObjectID, ParentID: missing, Name: "missing-parent"}); !errors.Is(err, os.ErrNotExist) {
