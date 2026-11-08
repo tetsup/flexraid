@@ -65,6 +65,13 @@ func (layer *Orchestration) unlinkFile(ctx context.Context, parent, object *runt
 		return layer.unlinkNamedObject(ctx, parent, object)
 	}
 	next := object.header
+	// Mutable file attributes are authoritative in runtimeFile.header. A prior
+	// Write/SetAttr may have updated them without replacing the namespace copy.
+	if object.file != nil {
+		object.file.mu.RLock()
+		next = object.file.header
+		object.file.mu.RUnlock()
+	}
 	next.ParentID = nil
 	next.Ctime = time.Now()
 	if err := layer.persistObjectHeader(ctx, next); err != nil {

@@ -87,9 +87,33 @@ func (layer *Orchestration) Rename(request RenameRequest) (response RenameRespon
 		return response, err
 	}
 
-	// Remove an existing destination first. This intentionally follows the
-	// existing serialized Header persistence model; a failure later in the
-	// operation can leave a partially completed rename.
+	// Regular-file renames use the namespace-link lifecycle: publish a
+	// HardLink at the destination first, then unlink the source name. This
+	// ensures both names refer to the same data object before the source is
+	// detached. The sequence is deliberately not crash-atomic; if source
+	// unlink fails, both names remain available.
+	if source.header.Kind == objectKindFile || source.header.Kind == objectKindHardLink {
+		if destinationExists {
+			if err = layer.removeRenameDestination(ctx, destinationParent, destination); err != nil {
+				return response, fmt.Errorf("remove rename destination: %w", err)
+			}
+		}
+		if _, err = layer.Link(LinkRequest{
+			Context: ctx, SourceID: source.header.ObjectID,
+			ParentID: request.DestinationParentID, Name: request.DestinationName,
+		}); err != nil {
+			return response, fmt.Errorf("create destination HardLink: %w", err)
+		}
+		if _, err = layer.Unlink(UnlinkRequest{
+			Context: ctx, ParentID: request.SourceParentID, Name: request.SourceName,
+		}); err != nil {
+			return response, fmt.Errorf("unlink rename source after destination link: %w", err)
+		}
+		return response, nil
+	}
+
+	// Directly move namespace-only objects (directories and symlinks).
+	// Their metadata does not have a shareable file data object.
 	if destinationExists {
 		if err = layer.removeRenameDestination(ctx, destinationParent, destination); err != nil {
 			return response, fmt.Errorf("remove rename destination: %w", err)

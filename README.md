@@ -245,7 +245,7 @@ Object の Kind は次の種類を持つ。
 
 HardLink の TargetID は File の ObjectID を直接指す。HardLink 同士の連鎖や Directory / Symlink への参照は認めない。HardLink は Directory ではないため、children を持つ親にはなれない。Directory 自体のハードリンクも認めない。
 
-ハードリンク作成時も File の Kind は変更しない。元の File は ParentID / Name を維持し、新しい名前を HardLink Object として追加する。各 HardLink の TargetID は同じ File ObjectID を直接指す。元の名前が削除された場合は File の ParentID を nil にし、残る HardLink から実体を参照する。永続化上は実体と各名前が別々の Object だが、メモリ展開時には各 HardLink Node から同じ Runtime のファイル実体を参照させる。ファイルデータの冗長化・配置は File 単位で行い、Namespace の children と Runtime の参照関係は Orchestration 層が管理する。
+ハードリンク作成時も File の Kind は変更しない。元の File は ParentID / Name を維持し、新しい名前を HardLink Object として追加する。各 HardLink の TargetID は同じ File ObjectID を直接指す。元の名前が削除された場合は File の ParentID を nil にし、残る HardLink から実体を参照する。File の Rename は移動先 HardLink を先に作成し、同じ File 実体が移動元・移動先の両方から参照できる状態にしてから移動元を Unlink する。これは複数 Header をまたぐトランザクションではなく、途中失敗時に両方の名前が残り得る。Directory と Symlink は HardLink 対象にできないため、ParentID / Name を直接更新して移動する。永続化上は実体と各名前が別々の Object だが、メモリ展開時には各 HardLink Node から同じ Runtime のファイル実体を参照させる。ファイルデータの冗長化・配置は File 単位で行い、Namespace の children と Runtime の参照関係は Orchestration 層が管理する。
 
 Header では Kind によって役割を区別し、追加する参照情報は nullable な TargetID のみとする。TargetID は HardLink の場合だけ設定し、HardLink 以外では nil とする。File のリンク状態を識別する追加フラグは設けない。ParentID と TargetID の nullable 表現は、ゼロ UUID ではなく明示的な存在情報で符号化する。Header は論理削除状態を示す `Deleted bool` も持ち、バイナリでは 0 / 1 の 1 byte として保存する。起動時に Orchestration は Header の Deleted が true の ObjectID をメモリ上の削除キューへ登録し、Cleanup で Distribution.DeleteObject を呼び出す。Distribution は Header を解釈せず、物理削除時には Header 以外の全データを削除した後、最後に Header を削除する。リリースまでは、Header のバイナリ構造を変更しても FormatVersion は 0 のままとし、後方互換性の維持や旧形式の読み込み対応は行わない。HeaderSize は現在の構造に合わせて更新する。
 

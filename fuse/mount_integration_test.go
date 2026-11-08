@@ -170,6 +170,15 @@ func TestMountedFilesystemFileOperations(t *testing.T) {
 		t.Errorf("truncated content = %q, want %q", got, payload[:7])
 	}
 
+	beforeRenameInfo, err := os.Stat(oldPath)
+	if err != nil {
+		t.Fatalf("stat file before rename: %v", err)
+	}
+	beforeRenameStat, ok := beforeRenameInfo.Sys().(*syscall.Stat_t)
+	if !ok {
+		t.Fatalf("pre-rename stat has unexpected type %T", beforeRenameInfo.Sys())
+	}
+
 	newPath := filepath.Join(directory, "renamed.txt")
 	if err := os.Rename(oldPath, newPath); err != nil {
 		t.Fatalf("rename file: %v", err)
@@ -188,6 +197,13 @@ func TestMountedFilesystemFileOperations(t *testing.T) {
 	}
 	if renamedInfo.Size() != 7 {
 		t.Errorf("renamed file size = %d, want 7", renamedInfo.Size())
+	}
+	renamedStat, ok := renamedInfo.Sys().(*syscall.Stat_t)
+	if !ok {
+		t.Fatalf("post-rename stat has unexpected type %T", renamedInfo.Sys())
+	}
+	if renamedStat.Ino != beforeRenameStat.Ino {
+		t.Errorf("inode changed across rename: before=%d after=%d", beforeRenameStat.Ino, renamedStat.Ino)
 	}
 
 	if err := os.Remove(newPath); err != nil {
@@ -230,6 +246,46 @@ func TestMountedFilesystemReturnsExpectedErrors(t *testing.T) {
 	}
 	if err := os.Remove(filePath); err != nil {
 		t.Fatalf("remove regular file: %v", err)
+	}
+}
+
+// TestMountedRmdirReturnsPOSIXErrnos verifies the errno values observable by
+// applications through the mounted FUSE filesystem, rather than only checking
+// that the Orchestration operation returned some error.
+func TestMountedRmdirReturnsPOSIXErrnos(t *testing.T) {
+	mountpoint := mountTestFilesystem(t)
+
+	missing := filepath.Join(mountpoint, "missing-directory")
+	if err := syscall.Rmdir(missing); !errors.Is(err, syscall.ENOENT) {
+		t.Errorf("rmdir missing path error = %v, want ENOENT", err)
+	}
+
+	filePath := filepath.Join(mountpoint, "regular-file")
+	if err := os.WriteFile(filePath, []byte("x"), 0600); err != nil {
+		t.Fatalf("create regular file: %v", err)
+	}
+	if err := syscall.Rmdir(filePath); !errors.Is(err, syscall.ENOTDIR) {
+		t.Errorf("rmdir regular file error = %v, want ENOTDIR", err)
+	}
+
+	nonEmpty := filepath.Join(mountpoint, "non-empty-directory")
+	if err := os.Mkdir(nonEmpty, 0755); err != nil {
+		t.Fatalf("create non-empty directory: %v", err)
+	}
+	child := filepath.Join(nonEmpty, "child")
+	if err := os.WriteFile(child, []byte("x"), 0600); err != nil {
+		t.Fatalf("create child file: %v", err)
+	}
+	if err := syscall.Rmdir(nonEmpty); !errors.Is(err, syscall.ENOTEMPTY) {
+		t.Errorf("rmdir non-empty directory error = %v, want ENOTEMPTY", err)
+	}
+
+	empty := filepath.Join(mountpoint, "empty-directory")
+	if err := os.Mkdir(empty, 0755); err != nil {
+		t.Fatalf("create empty directory: %v", err)
+	}
+	if err := syscall.Rmdir(empty); err != nil {
+		t.Errorf("rmdir empty directory error = %v, want success", err)
 	}
 }
 

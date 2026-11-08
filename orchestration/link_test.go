@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/tetsup/flexraid/distribution"
+	"github.com/tetsup/flexraid/pkg/shared"
 )
 
 func TestLinkKeepsFileKindAndSharesData(t *testing.T) {
@@ -165,5 +166,29 @@ func TestLinkRejectsInvalidRequestsWithoutAddingName(t *testing.T) {
 	cancel()
 	if _, err := fixture.layer.Link(LinkRequest{Context: ctx, SourceID: file.ObjectID, ParentID: fixture.rootID, Name: "cancelled"}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled Link = %v, want context.Canceled", err)
+	}
+}
+
+func TestGetAttrHidesHardLinkAndReturnsBackingIdentity(t *testing.T) {
+	fixture := newNamespaceFixture(t)
+	file, err := fixture.layer.Create(CreateRequest{ParentID: fixture.rootID, Name: "original", Mode: 0640})
+	if err != nil {
+		t.Fatal(err)
+	}
+	link, err := fixture.layer.Link(LinkRequest{SourceID: file.ObjectID, ParentID: fixture.rootID, Name: "alias"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []shared.ObjectID{file.ObjectID, link.ObjectID} {
+		got, err := fixture.layer.GetAttr(GetAttrRequest{ObjectID: id})
+		if err != nil {
+			t.Fatalf("GetAttr(%s): %v", id, err)
+		}
+		if got.Attributes.ObjectID != file.ObjectID || got.Attributes.Kind != objectKindFile {
+			t.Fatalf("GetAttr(%s) identity/kind = %s/%v, want backing %s/File", id, got.Attributes.ObjectID, got.Attributes.Kind, file.ObjectID)
+		}
+		if got.Attributes.Nlink != 2 || got.Attributes.Mode != 0640 {
+			t.Fatalf("GetAttr(%s) attrs = %+v, want nlink 2 and mode 0640", id, got.Attributes)
+		}
 	}
 }

@@ -15,6 +15,8 @@ type GetAttrRequest struct {
 	ObjectID shared.ObjectID
 }
 
+// ObjectAttributes is the POSIX-facing view of a namespace object. For a HardLink,
+// ObjectID and Kind describe its backing File rather than the internal link entry.
 type ObjectAttributes struct {
 	ObjectID shared.ObjectID
 	Kind     shared.ObjectKind
@@ -47,20 +49,27 @@ func (layer *Orchestration) GetAttr(request GetAttrRequest) (GetAttrResponse, er
 	if _, protected := layer.protectedObjects[request.ObjectID]; protected {
 		return GetAttrResponse{}, os.ErrNotExist
 	}
-	if object.header.Kind == objectKindFile && object.header.ParentID == nil {
+	h := object.header
+	if object.header.Kind == objectKindHardLink && (object.header.TargetID == nil || object.file == nil) {
+		return GetAttrResponse{}, fmt.Errorf("HardLink %s has no resolvable File target: %w", request.ObjectID, errInvalidHeader)
+	}
+	if object.header.Kind == objectKindFile && object.header.ParentID == nil && layer.deriveHardLinkCount(object.header.ObjectID) == 0 {
 		return GetAttrResponse{}, os.ErrNotExist
 	}
-	h := object.header
 	if object.file != nil {
 		object.file.mu.RLock()
 		backing := object.file.header
 		h.Mode, h.UID, h.GID = backing.Mode, backing.UID, backing.GID
 		h.Size = backing.Size
 		h.Atime, h.Mtime, h.Ctime = backing.Atime, backing.Mtime, backing.Ctime
+		if object.header.Kind == objectKindHardLink {
+			h.ObjectID = backing.ObjectID
+			h.Kind = objectKindFile
+		}
 		object.file.mu.RUnlock()
 	}
 	attributes := ObjectAttributes{
-		ObjectID: h.ObjectID, Kind: h.Kind, Name: h.Name, Mode: h.Mode,
+		ObjectID: h.ObjectID, Kind: h.Kind, Name: object.header.Name, Mode: h.Mode,
 		UID: h.UID, GID: h.GID, Nlink: layer.deriveNlink(object), Size: h.Size,
 		Atime: h.Atime, Mtime: h.Mtime, Ctime: h.Ctime,
 	}

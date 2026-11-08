@@ -54,7 +54,11 @@ func TestRenamePreservesUpdatedFileHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	attributes, err := root.Layer.GetAttr(GetAttrRequest{ObjectID: created.ObjectID})
+	destination, err := root.Layer.Lookup(LookupRequest{ParentID: root.RootID, Name: "after"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	attributes, err := root.Layer.GetAttr(GetAttrRequest{ObjectID: destination.ObjectID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,10 +80,10 @@ func TestRenamePreservesUpdatedFileHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 	lookup, err := restarted.Layer.Lookup(LookupRequest{ParentID: root.RootID, Name: "after"})
-	if err != nil || lookup.ObjectID != created.ObjectID {
-		t.Fatalf("Lookup after restart = %+v, %v", lookup, err)
+	if err != nil || lookup.Kind != objectKindHardLink {
+		t.Fatalf("Lookup after restart = %+v, %v; want destination HardLink", lookup, err)
 	}
-	restoredAttributes, err := restarted.Layer.GetAttr(GetAttrRequest{ObjectID: created.ObjectID})
+	restoredAttributes, err := restarted.Layer.GetAttr(GetAttrRequest{ObjectID: lookup.ObjectID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +93,7 @@ func TestRenamePreservesUpdatedFileHeader(t *testing.T) {
 	}
 
 	reader, err := restarted.Layer.Open(OpenRequest{
-		ObjectID: created.ObjectID, Flags: uint32(syscall.O_RDONLY),
+		ObjectID: lookup.ObjectID, Flags: uint32(syscall.O_RDONLY),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -98,7 +102,7 @@ func TestRenamePreservesUpdatedFileHeader(t *testing.T) {
 		_, _ = restarted.Layer.Release(ReleaseRequest{Handle: reader.Handle})
 	}()
 	read, err := restarted.Layer.Read(ReadRequest{
-		Handle: reader.Handle, ObjectID: created.ObjectID,
+		Handle: reader.Handle, ObjectID: lookup.ObjectID,
 		Offset: 0, Size: uint32(len(payload)),
 	})
 	if err != nil {
@@ -135,12 +139,19 @@ func TestRenameMovesEntryBetweenDirectories(t *testing.T) {
 		t.Fatalf("old name lookup = %v, want not-exist", err)
 	}
 	got, err := fixture.layer.Lookup(LookupRequest{ParentID: destinationDir.ObjectID, Name: "new"})
-	if err != nil || got.ObjectID != file.ObjectID {
-		t.Fatalf("destination lookup = %+v, %v", got, err)
+	if err != nil || got.Kind != objectKindHardLink {
+		t.Fatalf("destination lookup = %+v, %v; want HardLink", got, err)
 	}
 	object := fixture.layer.objects[file.ObjectID]
-	if object.header.ParentID == nil || *object.header.ParentID != destinationDir.ObjectID || object.header.Name != "new" {
-		t.Fatalf("renamed header = %+v", object.header)
+	if object.header.ParentID != nil || object.header.Deleted {
+		t.Fatalf("source backing after rename = %+v; want detached, live File", object.header)
+	}
+	destinationObject := fixture.layer.objects[got.ObjectID]
+	if destinationObject == nil || destinationObject.header.TargetID == nil {
+		t.Fatalf("destination HardLink object = %+v, want a TargetID", destinationObject)
+	}
+	if target := object.header.ObjectID; *destinationObject.header.TargetID != target {
+		t.Fatalf("destination HardLink target = %s, want backing %s", *destinationObject.header.TargetID, target)
 	}
 }
 
@@ -166,8 +177,12 @@ func TestRenameReplacesRegularFile(t *testing.T) {
 		t.Fatalf("source lookup = %v, want not-exist", err)
 	}
 	got, err := fixture.layer.Lookup(LookupRequest{ParentID: fixture.rootID, Name: "destination"})
-	if err != nil || got.ObjectID != source.ObjectID {
-		t.Fatalf("destination lookup = %+v, %v", got, err)
+	if err != nil || got.Kind != objectKindHardLink {
+		t.Fatalf("destination lookup = %+v, %v; want HardLink", got, err)
+	}
+	linkObject := fixture.layer.objects[got.ObjectID]
+	if linkObject == nil || linkObject.header.TargetID == nil || *linkObject.header.TargetID != source.ObjectID {
+		t.Fatalf("destination HardLink = %+v; want target %s", linkObject, source.ObjectID)
 	}
 	if !fixture.layer.objects[destination.ObjectID].header.Deleted {
 		t.Fatal("replaced destination was not logically deleted")
