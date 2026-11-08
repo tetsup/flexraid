@@ -189,6 +189,27 @@ func TestOpenReadWriteCallbackRejectInvalidModesAndForeignHandles(t *testing.T) 
 	}
 	second := secondInode.Operations().(*node)
 
+	writeOnlyHandle, _, errno := first.Open(ctx, uint32(syscall.O_WRONLY))
+	if errno != 0 {
+		t.Fatalf("Open O_WRONLY: %v", errno)
+	}
+	if _, errno := first.Read(ctx, writeOnlyHandle, make([]byte, 1), 0); errno != syscall.EBADF {
+		t.Errorf("Read through O_WRONLY handle errno = %v, want EBADF", errno)
+	}
+	readOnlyHandle, _, errno := first.Open(ctx, uint32(syscall.O_RDONLY))
+	if errno != 0 {
+		t.Fatalf("Open O_RDONLY: %v", errno)
+	}
+	if _, errno := first.Write(ctx, readOnlyHandle, []byte("x"), 0); errno != syscall.EBADF {
+		t.Errorf("Write through O_RDONLY handle errno = %v, want EBADF", errno)
+	}
+	if errno := first.Release(ctx, writeOnlyHandle); errno != 0 {
+		t.Errorf("Release O_WRONLY handle: %v", errno)
+	}
+	if errno := first.Release(ctx, readOnlyHandle); errno != 0 {
+		t.Errorf("Release O_RDONLY handle: %v", errno)
+	}
+
 	if _, _, errno := first.Open(ctx, uint32(syscall.O_ACCMODE)); errno != syscall.EINVAL {
 		t.Errorf("Open invalid access mode errno = %v, want EINVAL", errno)
 	}
