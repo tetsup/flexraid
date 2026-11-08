@@ -80,7 +80,7 @@ func (n *node) Lookup(ctx context.Context, name string, out *gofuse.EntryOut) (*
 		return nil, fs.ToErrno(err)
 	}
 	fillEntry(out, attributes.Attributes)
-	child := &node{layer: n.layer, objectID: result.ObjectID}
+	child := &node{layer: n.layer, objectID: attributes.Attributes.ObjectID}
 	return n.NewInode(ctx, child, stableAttr(attributes.Attributes)), 0
 }
 
@@ -105,7 +105,7 @@ func (n *node) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 			return nil, fs.ToErrno(attrErr)
 		}
 		entries = append(entries, gofuse.DirEntry{
-			Name: entry.Name, Ino: inodeNumber(entry.ObjectID),
+			Name: entry.Name, Ino: inodeNumber(attributes.Attributes.ObjectID),
 			Mode: objectMode(attributes.Attributes) & syscall.S_IFMT,
 		})
 	}
@@ -351,7 +351,7 @@ func objectMode(attributes orchestration.ObjectAttributes) uint32 {
 		fileType = syscall.S_IFDIR
 	case orchestration.ObjectKindSymlink:
 		fileType = syscall.S_IFLNK
-	case orchestration.ObjectKindFile, orchestration.ObjectKindHardLink:
+	case orchestration.ObjectKindFile:
 		fileType = syscall.S_IFREG
 	}
 	return fileType | (attributes.Mode & 07777)
