@@ -135,8 +135,8 @@ func TestNamespaceAndPersistenceFailuresDoNotPublishPartialChanges(t *testing.T)
 	if errno := source.Getattr(ctx, nil, after); errno != 0 {
 		t.Fatalf("Getattr after failed Setattr: %v", errno)
 	}
-	if after.Attr.Mode != before.Attr.Mode {
-		t.Errorf("mode changed after failed Setattr: before=%#o after=%#o", before.Attr.Mode, after.Attr.Mode)
+	if after.Attr != before.Attr {
+		t.Errorf("attributes changed after failed Setattr: before=%+v after=%+v", before.Attr, after.Attr)
 	}
 
 	if errno := source.Flush(ctx, sourceHandle); errno == 0 {
