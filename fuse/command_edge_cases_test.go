@@ -122,8 +122,7 @@ func TestMountedRenameAcrossDirectoriesAndReplacementTypes(t *testing.T) {
 	if err := os.Mkdir(dirDestination, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Rename(dirSource, dirDestination); !errors.Is(err, syscall.EEXIST) &&
-		!errors.Is(err, syscall.ENOTEMPTY) && !errors.Is(err, syscall.EPERM) {
+	if err := os.Rename(dirSource, dirDestination); !errors.Is(err, syscall.ENOTEMPTY) {
 		t.Errorf("Rename directory onto existing directory = %v, want non-replacement error", err)
 	}
 	if info, err := os.Stat(dirSource); err != nil || !info.IsDir() {
