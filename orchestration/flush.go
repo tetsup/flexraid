@@ -92,6 +92,11 @@ func (o *Orchestration) Flush(r FlushRequest) (FlushResponse, error) {
 		entry.state = stripeCacheClean
 		out.PersistedStripes++
 	}
+	if r.Sync {
+		if _, err := o.distribution.SyncObject(distribution.SyncObjectRequest{Context: ctx, ObjectID: f.objectID}); err != nil {
+			return out, fmt.Errorf("sync object %s: %w", f.objectID.String(), err)
+		}
+	}
 	return out, nil
 }
 
