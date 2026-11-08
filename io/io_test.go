@@ -179,7 +179,6 @@ func TestScanCallbackError(t *testing.T) {
 	}
 }
 
-
 func TestSyncExistingPhysicalFile(t *testing.T) {
 	layer := newTestLayer(t, t.TempDir())
 	key := testFileKey(0)
