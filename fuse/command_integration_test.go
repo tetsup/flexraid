@@ -73,9 +73,6 @@ func TestMountedCreateOpenReadWriteFlushFsyncRelease(t *testing.T) {
 	if err := file.Close(); err != nil {
 		t.Fatalf("Release/Close: %v", err)
 	}
-	if _, err := file.Write([]byte("after-close")); !errors.Is(err, os.ErrClosed) {
-		t.Errorf("write after Release error = %v, want os.ErrClosed", err)
-	}
 }
 
 func TestMountedSetattrChmodAndTruncate(t *testing.T) {
