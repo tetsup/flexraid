@@ -1,8 +1,8 @@
 package fuse
 
 import (
-	"testing"
 	"syscall"
+	"testing"
 	"time"
 
 	gofuse "github.com/hanwen/go-fuse/v2/fuse"

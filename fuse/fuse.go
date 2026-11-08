@@ -404,4 +404,3 @@ func (filesystem *FileSystem) Mount(mountpoint string, options *fs.Options) (*fs
 
 // ParseObjectID is a small convenience for command-line mount setup.
 func ParseObjectID(value string) (shared.ObjectID, error) { return shared.ParseObjectID(value) }
-
