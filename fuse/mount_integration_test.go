@@ -170,6 +170,15 @@ func TestMountedFilesystemFileOperations(t *testing.T) {
 		t.Errorf("truncated content = %q, want %q", got, payload[:7])
 	}
 
+	beforeRenameInfo, err := os.Stat(oldPath)
+	if err != nil {
+		t.Fatalf("stat file before rename: %v", err)
+	}
+	beforeRenameStat, ok := beforeRenameInfo.Sys().(*syscall.Stat_t)
+	if !ok {
+		t.Fatalf("pre-rename stat has unexpected type %T", beforeRenameInfo.Sys())
+	}
+
 	newPath := filepath.Join(directory, "renamed.txt")
 	if err := os.Rename(oldPath, newPath); err != nil {
 		t.Fatalf("rename file: %v", err)
@@ -188,6 +197,13 @@ func TestMountedFilesystemFileOperations(t *testing.T) {
 	}
 	if renamedInfo.Size() != 7 {
 		t.Errorf("renamed file size = %d, want 7", renamedInfo.Size())
+	}
+	renamedStat, ok := renamedInfo.Sys().(*syscall.Stat_t)
+	if !ok {
+		t.Fatalf("post-rename stat has unexpected type %T", renamedInfo.Sys())
+	}
+	if renamedStat.Ino != beforeRenameStat.Ino {
+		t.Errorf("inode changed across rename: before=%d after=%d", beforeRenameStat.Ino, renamedStat.Ino)
 	}
 
 	if err := os.Remove(newPath); err != nil {
