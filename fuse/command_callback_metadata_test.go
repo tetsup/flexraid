@@ -2,7 +2,6 @@ package fuse
 
 import (
 	"os"
-	"syscall"
 	"strings"
 	"syscall"
 	"testing"
