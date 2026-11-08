@@ -391,8 +391,8 @@ func TestConcurrentHandlesShareObjectStripeState(t *testing.T) {
 		t.Fatalf("Open second handle: %v", errno)
 	}
 
-	firstData := bytes.Repeat([]byte("A"), 4096)
-	secondData := bytes.Repeat([]byte("B"), 4096)
+	firstData := bytes.Repeat([]byte("A"), 16384)
+	secondData := bytes.Repeat([]byte("B"), 16384)
 	type writeResult struct {
 		name string
 		n    uint32
@@ -408,14 +408,14 @@ func TestConcurrentHandlesShareObjectStripeState(t *testing.T) {
 	}()
 	go func() {
 		defer wg.Done()
-		written, writeErrno := n.Write(ctx, secondHandle, secondData, 4096)
+		written, writeErrno := n.Write(ctx, secondHandle, secondData, 16384)
 		results <- writeResult{name: "second", n: written, err: writeErrno}
 	}()
 	wg.Wait()
 	close(results)
 	for result := range results {
-		if result.err != 0 || result.n != 4096 {
-			t.Errorf("%s concurrent Write = %d, %v; want 4096, success", result.name, result.n, result.err)
+		if result.err != 0 || result.n != 16384 {
+			t.Errorf("%s concurrent Write = %d, %v; want 16384, success", result.name, result.n, result.err)
 		}
 	}
 
@@ -425,7 +425,7 @@ func TestConcurrentHandlesShareObjectStripeState(t *testing.T) {
 	if errno := n.Fsync(ctx, secondHandle, 0); errno != 0 {
 		t.Fatalf("Fsync second handle: %v", errno)
 	}
-	readResult, errno := n.Read(ctx, secondHandle, make([]byte, 8192), 0)
+	readResult, errno := n.Read(ctx, secondHandle, make([]byte, 32768), 0)
 	if errno != 0 {
 		t.Fatalf("Read through second handle: %v", errno)
 	}
@@ -433,7 +433,7 @@ func TestConcurrentHandlesShareObjectStripeState(t *testing.T) {
 	if status != 0 {
 		t.Fatalf("ReadResult.Bytes: %v", status)
 	}
-	if !bytes.Equal(got[:4096], firstData) || !bytes.Equal(got[4096:], secondData) {
+	if !bytes.Equal(got[:16384], firstData) || !bytes.Equal(got[16384:], secondData) {
 		t.Error("concurrent writes lost or mixed data across shared handles")
 	}
 
