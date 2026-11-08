@@ -53,7 +53,7 @@ func TestNamespaceCallbacksReturnExpectedErrors(t *testing.T) {
 	adapter, ctx := newCallbackTestFilesystem(t)
 	root := adapter.root
 
-	for _, name := range []string{"", ".", "..", "a/b"} {
+	for _, name := range []string{"", ".", "..", "a/b", "bad\\x00name"} {
 		if _, errno := root.Lookup(ctx, name, &gofuse.EntryOut{}); errno != syscall.EINVAL {
 			t.Errorf("Lookup(%q) errno = %v, want EINVAL", name, errno)
 		}
