@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/tetsup/flexraid/distribution"
@@ -18,6 +19,7 @@ type CreateRootRequest struct {
 	Mode         uint32
 	UID          uint32
 	GID          uint32
+	LogLevel     slog.Level
 	Logger       *slog.Logger
 }
 
@@ -30,11 +32,28 @@ type CreateRootResponse struct {
 // CreateRoot initializes an empty storage set by persisting its root Directory.
 // It refuses to initialize storage that already contains any logical objects.
 func CreateRoot(request CreateRootRequest) (response CreateRootResponse, err error) {
+	started := time.Now()
+	logger := request.Logger
+	if logger == nil {
+		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: request.LogLevel}))
+	}
+	defer func() {
+		if err != nil {
+			logger.Debug("orchestration CreateRoot completed",
+				"mode", request.Mode&07777, "uid", request.UID, "gid", request.GID,
+				"duration", time.Since(started), "error", err)
+			return
+		}
+		logger.Debug("orchestration CreateRoot completed",
+			"root_id", response.RootID.String(), "mode", request.Mode&07777,
+			"uid", request.UID, "gid", request.GID, "duration", time.Since(started))
+	}()
+
 	ctx := request.Context
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if err := ctx.Err(); err != nil {
+	if err = ctx.Err(); err != nil {
 		return response, err
 	}
 	if request.Distribution == nil {
@@ -65,10 +84,7 @@ func CreateRoot(request CreateRootRequest) (response CreateRootResponse, err err
 	}
 	layer := &Orchestration{
 		distribution: request.Distribution,
-		logger:       request.Logger,
-	}
-	if layer.logger == nil {
-		layer.logger = slog.Default()
+		logger:       logger,
 	}
 	rootHeader, err = layer.persistNewObject(ctx, rootHeader, nil)
 	if err != nil {
