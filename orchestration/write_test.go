@@ -290,18 +290,17 @@ func TestFsyncSynchronizesAlreadyCleanStripes(t *testing.T) {
 	ioLayer := fixture.ios[placement.IOIndexes[0]]
 	var chunkKey storage.FileKey
 	found := false
-	stop := errors.New("stop after first matching chunk")
 	_, err = ioLayer.ListChunks(physicalio.ListChunksRequest{
 		Context: context.Background(),
 		Callback: func(entry physicalio.ScanEntry) error {
-			if entry.Error == nil && entry.Key.ObjectID == fixture.fileID && entry.Key.StripeID == 0 {
+			if entry.Error == nil && entry.Key.ObjectID == fixture.fileID && entry.Key.StripeID == 0 &&
+				(!found || entry.Key.StripeVersion > chunkKey.StripeVersion) {
 				chunkKey, found = entry.Key, true
-				return stop
 			}
 			return nil
 		},
 	})
-	if err != nil && !errors.Is(err, stop) {
+	if err != nil {
 		t.Fatalf("ListChunks: %v", err)
 	}
 	if !found {
