@@ -38,6 +38,9 @@ func (layer *Orchestration) Cleanup(request CleanupRequest) (response CleanupRes
 		if err = ctx.Err(); err != nil {
 			return response, err
 		}
+		if object := layer.objects[objectID]; object != nil && object.file != nil && openHandleCount(object.file) > 0 {
+			continue
+		}
 		result, deleteErr := layer.distribution.DeleteObject(distribution.DeleteObjectRequest{Context: ctx, ObjectID: objectID})
 		response.DeletedFiles += result.DeletedFiles
 		if deleteErr != nil {
