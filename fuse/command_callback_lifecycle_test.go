@@ -340,7 +340,7 @@ func TestDataCallbacksHonorCancellationAndStillRelease(t *testing.T) {
 	}
 }
 
-func TestOpenCallbackRecordsSyncModes(t *testing.T) {
+func TestOpenSyncModesRejectUnsupportedSynchronousWrites(t *testing.T) {
 	adapter, ctx := newCallbackTestFilesystem(t)
 	root := adapter.root
 	inode, createdHandle, _, errno := root.Create(ctx, "sync-modes", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{})
@@ -348,25 +348,25 @@ func TestOpenCallbackRecordsSyncModes(t *testing.T) {
 		t.Fatalf("Create: %v", errno)
 	}
 	n := inode.Operations().(*node)
-	full, _, errno := n.Open(ctx, uint32(syscall.O_WRONLY|syscall.O_SYNC))
-	if errno != 0 {
-		t.Fatalf("Open O_SYNC: %v", errno)
+
+	for _, flags := range []uint32{uint32(syscall.O_WRONLY | syscall.O_SYNC), uint32(syscall.O_WRONLY | syscall.O_DSYNC)} {
+		handle, _, openErrno := n.Open(ctx, flags)
+		if openErrno != 0 {
+			t.Fatalf("Open synchronous mode %#x: %v", flags, openErrno)
+		}
+		if _, writeErrno := n.Write(ctx, handle, []byte("x"), 0); writeErrno != syscall.ENOTSUP {
+			t.Errorf("Write with synchronous mode %#x errno = %v, want ENOTSUP", flags, writeErrno)
+		}
+		if releaseErrno := n.Release(ctx, handle); releaseErrno != 0 {
+			t.Errorf("Release synchronous mode %#x: %v", flags, releaseErrno)
+		}
 	}
-	if got := full.(*fileHandle).handle.syncMode; got != orchestration.SyncModeFull {
-		t.Errorf("O_SYNC mode = %v, want SyncModeFull", got)
+	var attr gofuse.AttrOut
+	if errno := n.Getattr(ctx, nil, &attr); errno != 0 {
+		t.Fatalf("Getattr after rejected synchronous writes: %v", errno)
 	}
-	if errno := n.Release(ctx, full); errno != 0 {
-		t.Errorf("Release O_SYNC: %v", errno)
-	}
-	data, _, errno := n.Open(ctx, uint32(syscall.O_WRONLY|syscall.O_DSYNC))
-	if errno != 0 {
-		t.Fatalf("Open O_DSYNC: %v", errno)
-	}
-	if got := data.(*fileHandle).handle.syncMode; got != orchestration.SyncModeData {
-		t.Errorf("O_DSYNC mode = %v, want SyncModeData", got)
-	}
-	if errno := n.Release(ctx, data); errno != 0 {
-		t.Errorf("Release O_DSYNC: %v", errno)
+	if attr.Attr.Size != 0 {
+		t.Errorf("file size after rejected synchronous writes = %d, want 0", attr.Attr.Size)
 	}
 	if errno := n.Release(ctx, createdHandle); errno != 0 {
 		t.Errorf("Release Create handle: %v", errno)
