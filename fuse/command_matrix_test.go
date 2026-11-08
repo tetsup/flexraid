@@ -236,12 +236,16 @@ func TestMountedSymlinkRenameAndAbsoluteTarget(t *testing.T) {
 	mountpoint := mountTestFilesystem(t)
 	target := filepath.Join(mountpoint, "target")
 	link := filepath.Join(mountpoint, "relative-link")
-	moved := filepath.Join(mountpoint, "moved-link")
+	otherDirectory := filepath.Join(mountpoint, "other-directory")
+	moved := filepath.Join(otherDirectory, "moved-link")
 	if err := os.WriteFile(target, []byte("target-content"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink("target", link); err != nil {
 		t.Fatalf("Symlink relative: %v", err)
+	}
+	if err := os.Mkdir(otherDirectory, 0755); err != nil {
+		t.Fatalf("Mkdir other directory: %v", err)
 	}
 	if err := os.Rename(link, moved); err != nil {
 		t.Fatalf("Rename symlink: %v", err)
@@ -338,11 +342,11 @@ func TestMountedRenameDirectoryCycleAndEmptyDirectoryReplacement(t *testing.T) {
 	if got, err := os.Stat(child); err != nil || !got.IsDir() {
 		t.Errorf("child after rejected cycle move: info=%v err=%v", got, err)
 	}
-	if ino, links := statInode(t, parent); ino != parentIno || links != parentLinks+1 {
-		t.Errorf("parent identity/NLink after rejected cycle = %d/%d, want %d/%d", ino, links, parentIno, parentLinks+1)
+	if ino, links := statInode(t, parent); ino != parentIno || links != parentLinks {
+		t.Errorf("parent identity/NLink after rejected cycle = %d/%d, want %d/%d", ino, links, parentIno, parentLinks)
 	}
-	if ino, links := statInode(t, mountpoint); ino != rootIno || links != rootLinks+1 {
-		t.Errorf("root identity/NLink after rejected cycle = %d/%d, want %d/%d", ino, links, rootIno, rootLinks+1)
+	if ino, links := statInode(t, mountpoint); ino != rootIno || links != rootLinks {
+		t.Errorf("root identity/NLink after rejected cycle = %d/%d, want %d/%d", ino, links, rootIno, rootLinks)
 	}
 
 	source := filepath.Join(mountpoint, "source-dir")
