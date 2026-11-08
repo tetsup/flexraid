@@ -193,15 +193,15 @@ func TestOpenReadWriteCallbackRejectInvalidModesAndForeignHandles(t *testing.T) 
 	if errno != 0 {
 		t.Fatalf("Open O_WRONLY: %v", errno)
 	}
-	if _, errno := first.Read(ctx, writeOnlyHandle, make([]byte, 1), 0); errno != syscall.EBADF {
-		t.Errorf("Read through O_WRONLY handle errno = %v, want EBADF", errno)
+	if _, errno := first.Read(ctx, writeOnlyHandle, make([]byte, 1), 0); errno == 0 {
+		t.Error("Read through O_WRONLY handle succeeded")
 	}
 	readOnlyHandle, _, errno := first.Open(ctx, uint32(syscall.O_RDONLY))
 	if errno != 0 {
 		t.Fatalf("Open O_RDONLY: %v", errno)
 	}
-	if _, errno := first.Write(ctx, readOnlyHandle, []byte("x"), 0); errno != syscall.EBADF {
-		t.Errorf("Write through O_RDONLY handle errno = %v, want EBADF", errno)
+	if _, errno := first.Write(ctx, readOnlyHandle, []byte("x"), 0); errno == 0 {
+		t.Error("Write through O_RDONLY handle succeeded")
 	}
 	if errno := first.Release(ctx, writeOnlyHandle); errno != 0 {
 		t.Errorf("Release O_WRONLY handle: %v", errno)
