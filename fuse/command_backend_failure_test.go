@@ -103,8 +103,10 @@ func TestNamespaceAndPersistenceFailuresDoNotPublishPartialChanges(t *testing.T)
 	if errno := root.Rename(ctx, "source", root, "failed-rename", 0); errno == 0 {
 		t.Error("Rename with unavailable physical storage succeeded")
 	}
-	if _, errno := root.Lookup(ctx, "source", &gofuse.EntryOut{}); errno != 0 {
+	if sourceAfter, errno := root.Lookup(ctx, "source", &gofuse.EntryOut{}); errno != 0 {
 		t.Errorf("source disappeared after failed Rename: %v", errno)
+	} else if gotID := sourceAfter.Operations().(*node).objectID; gotID != source.objectID {
+		t.Errorf("source ObjectID after failed Rename = %s, want %s", gotID, source.objectID)
 	}
 	if _, errno := root.Lookup(ctx, "failed-rename", &gofuse.EntryOut{}); errno != syscall.ENOENT {
 		t.Errorf("failed Rename destination lookup errno = %v, want ENOENT", errno)
