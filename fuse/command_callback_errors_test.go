@@ -13,7 +13,11 @@ import (
 	"github.com/tetsup/flexraid/orchestration"
 )
 
-type foreignOperationsNode struct {\n\tfs.Inode\n}\n\nfunc newCallbackTestFilesystem(t *testing.T) (*FileSystem, context.Context) {
+type foreignOperationsNode struct {
+	fs.Inode
+}
+
+func newCallbackTestFilesystem(t *testing.T) (*FileSystem, context.Context) {
 	adapter, ctx, _ := newCallbackTestFilesystemWithIORoots(t)
 	return adapter, ctx
 }
