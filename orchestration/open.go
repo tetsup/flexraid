@@ -76,8 +76,14 @@ func (layer *Orchestration) Open(request OpenRequest) (response OpenResponse, er
 	if !exists || object.header.Deleted {
 		return response, os.ErrNotExist
 	}
+	if object.header.Kind == objectKindDirectory {
+		if request.Flags&uint32(syscall.O_ACCMODE) != uint32(syscall.O_RDONLY) {
+			return response, syscall.EISDIR
+		}
+		return response, syscall.EISDIR
+	}
 	if object.header.Kind != objectKindFile && object.header.Kind != objectKindHardLink {
-		return response, fmt.Errorf("object %s is not a regular file: %w", request.ObjectID.String(), os.ErrInvalid)
+		return response, syscall.EINVAL
 	}
 	if object.file == nil {
 		return response, fmt.Errorf("file backing is unavailable: %w", os.ErrNotExist)
