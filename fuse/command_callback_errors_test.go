@@ -138,7 +138,7 @@ func TestNamespaceCallbacksReturnExpectedErrors(t *testing.T) {
 		t.Fatalf("Mkdir directory: %v", errno)
 	}
 	if _, errno := root.Link(ctx, dirInode, "directory-link", &gofuse.EntryOut{}); errno != syscall.EPERM {
-		t.Errorf("Link directory errno = %v, want EINVAL", errno)
+		t.Errorf("Link directory errno = %v, want EPERM", errno)
 	}
 	if errno := root.Unlink(ctx, "directory"); errno != syscall.EISDIR {
 		t.Errorf("Unlink directory errno = %v, want EISDIR", errno)
