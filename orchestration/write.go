@@ -179,7 +179,7 @@ func (layer *Orchestration) Write(request WriteRequest) (response WriteResponse,
 	}
 
 	if handle.syncMode != SyncModeNone {
-		if err = layer.persistDirtyStripesLocked(ctx, staged); err != nil {
+		if err = layer.persistDirtyStripesLocked(ctx, staged, true); err != nil {
 			return response, err
 		}
 	}
