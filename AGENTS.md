@@ -331,7 +331,7 @@ Distribution の公開 API は論理ストライプ単位の読み書き操作�
 
 \`Unlink\` は通常 File / Symlink / HardLink の Namespace name removal を扱い、Directory は対象外とする。\`Rmdir\` は独立公開操作として空 Directory の条件、親 Directory NLink の派生、Directory 固有のエラーを扱う。内部 helper の共有は可能だが、公開 API / POSIX semantics を Unlink に吸収しない。
 
-\`Rename\` は POSIX rename / \`mv\` 相当であり、同じ親内の改名に限らない。source の Name を destination name に更新し、親が変わる場合は ParentID も destination parent に付け替える。HardLink entry 自身の移動・改名ではその Namespace entry の ParentID / Name を変更し、Target の HardLinkedFile の親子関係や実体データは変更しない。File / Symlink / HardLinkedFile direct entry / HardLink / Directory では永続化・参照関係が異なるため種別別に処理する。Directory 移動では自身または子孫の下への移動を拒否し、親 Directory NLink は children から導出する。destination が既存の場合の置換条件、source / destination Kind の組み合わせ、POSIX errno 詳細は Rename 実装前に契約を確定する。
+\\`Rename\\` は POSIX rename / \\`mv\\` 相当であり、同じ親内の改名に限らない。source の Name を destination name に更新し、親が変わる場合は ParentID も destination parent に付け替える。HardLink entry 自身の移動・改名ではその Namespace entry の ParentID / Name を変更し、Target の HardLinkedFile の親子関係や実体データは変更しない。File / Symlink / HardLinkedFile direct entry / HardLink / Directory では永続化・参照関係が異なるため種別別に処理する。Directory 移動では自身または子孫の下への移動を拒否し、親 Directory NLink は children から導出する。destination が既存の場合は source / destination が Directory か非Directoryかの区分を一致させ、Directory destination は空であること。同じ論理ファイル実体への rename は no-op とする。Directory/non-Directory の不一致は ENOTDIR / EISDIR、非空 Directory destination は ENOTEMPTY。複数 Header の更新は逐次永続化し、現時点ではクラッシュ時の完全な原子性を保証しない。
 
 #### 内部処理候補
 
