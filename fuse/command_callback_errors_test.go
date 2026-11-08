@@ -150,3 +150,46 @@ func TestDataCallbacksRejectWrongNodeAndInvalidHandles(t *testing.T) {
 		t.Errorf("Lookup missing parent errno = %v, want ENOENT", errno)
 	}
 }
+
+func TestAdapterAndParentTypeErrors(t *testing.T) {
+	adapter, ctx := newCallbackTestFilesystem(t)
+	root := adapter.root
+	if _, err := New(adapter.layer, testObjectID(t)); err == nil {
+		t.Error("New with missing root ObjectID succeeded")
+	}
+	file, _, _, errno := root.Create(ctx, "file", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{})
+	if errno != 0 {
+		t.Fatalf("Create file: %v", errno)
+	}
+	fileNode := file.Operations().(*node)
+	if _, err := New(adapter.layer, fileNode.objectID); err == nil {
+		t.Error("New with regular-file root succeeded")
+	}
+	if _, errno := fileNode.Create(ctx, "child", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{}); errno != syscall.ENOTDIR {
+		t.Errorf("Create with non-directory parent errno = %v, want ENOTDIR", errno)
+	}
+	if _, errno := fileNode.Mkdir(ctx, "child-dir", 0755, &gofuse.EntryOut{}); errno != syscall.ENOTDIR {
+		t.Errorf("Mkdir with non-directory parent errno = %v, want ENOTDIR", errno)
+	}
+	if _, errno := fileNode.Symlink(ctx, "target", "child-link", &gofuse.EntryOut{}); errno != syscall.ENOTDIR {
+		t.Errorf("Symlink with non-directory parent errno = %v, want ENOTDIR", errno)
+	}
+	if errno := fileNode.Unlink(ctx, "anything"); errno != syscall.ENOTDIR {
+		t.Errorf("Unlink with non-directory parent errno = %v, want ENOTDIR", errno)
+	}
+	if errno := fileNode.Rmdir(ctx, "anything"); errno != syscall.ENOTDIR {
+		t.Errorf("Rmdir with non-directory parent errno = %v, want ENOTDIR", errno)
+	}
+	if errno := root.Rename(ctx, "file", file, "child", 0); errno != syscall.ENOTDIR {
+		t.Errorf("Rename to non-directory parent errno = %v, want ENOTDIR", errno)
+	}
+
+	foreign, foreignCtx := newCallbackTestFilesystem(t)
+	if _, errno := root.Link(ctx, foreign.root, "foreign-link", &gofuse.EntryOut{}); errno != syscall.EXDEV {
+		t.Errorf("Link from another filesystem errno = %v, want EXDEV", errno)
+	}
+	if errno := root.Rename(ctx, "file", foreign.root, "foreign-move", 0); errno != syscall.EXDEV {
+		t.Errorf("Rename to another filesystem errno = %v, want EXDEV", errno)
+	}
+	_ = foreignCtx
+}
