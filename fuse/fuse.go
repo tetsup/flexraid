@@ -178,6 +178,9 @@ func (n *node) Release(ctx context.Context, fh fs.FileHandle) syscall.Errno {
 }
 
 func (n *node) Create(ctx context.Context, name string, flags, mode uint32, out *gofuse.EntryOut) (*fs.Inode, fs.FileHandle, uint32, syscall.Errno) {
+	if flags&uint32(syscall.O_ACCMODE) == uint32(syscall.O_ACCMODE) {
+		return nil, nil, 0, syscall.EINVAL
+	}
 	credentials := caller(ctx)
 	result, err := n.layer.Create(orchestration.CreateRequest{
 		Context: ctx, ParentID: n.objectID, Name: name,
@@ -188,14 +191,16 @@ func (n *node) Create(ctx context.Context, name string, flags, mode uint32, out 
 	}
 	attributes, err := n.layer.GetAttr(orchestration.GetAttrRequest{Context: ctx, ObjectID: result.ObjectID})
 	if err != nil {
+		_, _ = n.layer.Unlink(orchestration.UnlinkRequest{Context: ctx, ParentID: n.objectID, Name: name})
 		return nil, nil, 0, fs.ToErrno(err)
 	}
-	node := &node{layer: n.layer, objectID: result.ObjectID}
-	inode := n.NewInode(ctx, node, stableAttr(attributes.Attributes))
+	child := &node{layer: n.layer, objectID: result.ObjectID}
+	inode := n.NewInode(ctx, child, stableAttr(attributes.Attributes))
 	fillEntry(out, attributes.Attributes)
 	opened, err := n.layer.Open(orchestration.OpenRequest{Context: ctx, ObjectID: result.ObjectID, Flags: flags})
 	if err != nil {
-		return inode, nil, 0, fs.ToErrno(err)
+		_, _ = n.layer.Unlink(orchestration.UnlinkRequest{Context: ctx, ParentID: n.objectID, Name: name})
+		return nil, nil, 0, fs.ToErrno(err)
 	}
 	return inode, &fileHandle{layer: n.layer, objectID: result.ObjectID, handle: opened.Handle}, 0, 0
 }
@@ -234,7 +239,7 @@ func (n *node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 		return syscall.EINVAL
 	}
 	destination, ok := newParent.EmbeddedInode().Operations().(*node)
-	if !ok {
+	if !ok || destination.layer != n.layer {
 		return syscall.EXDEV
 	}
 	_, err := n.layer.Rename(orchestration.RenameRequest{
@@ -246,7 +251,7 @@ func (n *node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 
 func (n *node) Link(ctx context.Context, existing fs.InodeEmbedder, name string, out *gofuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	source, ok := existing.EmbeddedInode().Operations().(*node)
-	if !ok {
+	if !ok || source.layer != n.layer {
 		return nil, syscall.EXDEV
 	}
 	result, err := n.layer.Link(orchestration.LinkRequest{Context: ctx, SourceID: source.objectID, ParentID: n.objectID, Name: name})
@@ -257,7 +262,7 @@ func (n *node) Link(ctx context.Context, existing fs.InodeEmbedder, name string,
 	if err != nil {
 		return nil, fs.ToErrno(err)
 	}
-	child := &node{layer: n.layer, objectID: result.ObjectID}
+	child := &node{layer: n.layer, objectID: attributes.Attributes.ObjectID}
 	inode := n.NewInode(ctx, child, stableAttr(attributes.Attributes))
 	fillEntry(out, attributes.Attributes)
 	return inode, 0
