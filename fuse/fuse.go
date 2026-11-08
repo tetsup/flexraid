@@ -297,7 +297,11 @@ func (n *node) Readlink(ctx context.Context) ([]byte, syscall.Errno) {
 
 func (n *node) Setattr(ctx context.Context, fh fs.FileHandle, in *gofuse.SetAttrIn, out *gofuse.AttrOut) syscall.Errno {
 	request := orchestration.SetAttrRequest{Context: ctx, ObjectID: n.objectID}
-	if handle, ok := fh.(*fileHandle); ok && handle != nil {
+	if fh != nil {
+		handle, ok := fh.(*fileHandle)
+		if !ok || handle == nil || handle.layer != n.layer {
+			return syscall.EBADF
+		}
 		request.Handle = handle.handle
 	}
 	if mode, ok := in.GetMode(); ok {
