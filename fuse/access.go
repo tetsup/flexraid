@@ -43,9 +43,17 @@ func checkAccess(attributes orchestration.ObjectAttributes, uid, gid, mask uint3
 		bits = attributes.Mode & 7
 	}
 	required := uint32(0)
-	if mask&gofuse.R_OK != 0 { required |= 4 }
-	if mask&gofuse.W_OK != 0 { required |= 2 }
-	if mask&gofuse.X_OK != 0 { required |= 1 }
-	if bits&required != required { return syscall.EACCES }
+	if mask&gofuse.R_OK != 0 {
+		required |= 4
+	}
+	if mask&gofuse.W_OK != 0 {
+		required |= 2
+	}
+	if mask&gofuse.X_OK != 0 {
+		required |= 1
+	}
+	if bits&required != required {
+		return syscall.EACCES
+	}
 	return 0
 }
