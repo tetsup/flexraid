@@ -335,7 +335,7 @@ func TestAccessCallbackUsesCallerCredentialsAndRejectsMissingCaller(t *testing.T
 		}
 	}()
 
-	ownerContext := gofuse.NewContext(ctx, gofuse.Caller{Owner: gofuse.Owner{Uid: uint32(os.Getuid()), Gid: uint32(os.Getgid())}})
+	ownerContext := gofuse.NewContext(ctx, &gofuse.Caller{Owner: gofuse.Owner{Uid: uint32(os.Getuid()), Gid: uint32(os.Getgid())}})
 	if errno := n.Access(ownerContext, gofuse.R_OK|gofuse.W_OK); errno != 0 {
 		t.Errorf("owner read/write Access = %v, want success", errno)
 	}
