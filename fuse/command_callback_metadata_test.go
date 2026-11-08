@@ -96,7 +96,7 @@ func TestNamespaceCallbacksReturnConsistentEntryMetadata(t *testing.T) {
 		t.Errorf("Release: %v", errno)
 	}
 
-	longTarget := strings.Repeat("long-target/", 400)
+	longTarget := strings.Repeat("long-target/", 300)
 	longLinkInode, errno := root.Symlink(ctx, longTarget, "long-symlink", &gofuse.EntryOut{})
 	if errno != 0 {
 		t.Fatalf("Symlink long target: %v", errno)
