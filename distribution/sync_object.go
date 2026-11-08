@@ -8,6 +8,7 @@ import (
 
 	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/pkg/shared"
+	"github.com/tetsup/flexraid/storage"
 )
 
 // SyncObjectRequest identifies an object whose latest physical stripes must be
