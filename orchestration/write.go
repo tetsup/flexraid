@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"syscall"
 	"time"
 
 	"github.com/tetsup/flexraid/distribution"
@@ -48,9 +47,6 @@ func (layer *Orchestration) Write(request WriteRequest) (response WriteResponse,
 	}
 	if handle.accessMode == AccessModeReadOnly {
 		return response, os.ErrPermission
-	}
-	if handle.syncMode != SyncModeNone {
-		return response, fmt.Errorf("synchronous writes require persistence support: %w", syscall.ENOTSUP)
 	}
 	object, exists := layer.objects[request.ObjectID]
 	if !exists || object.header.Deleted {
