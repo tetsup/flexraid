@@ -47,7 +47,7 @@ func (layer *Orchestration) GetAttr(request GetAttrRequest) (GetAttrResponse, er
 	if _, protected := layer.protectedObjects[request.ObjectID]; protected {
 		return GetAttrResponse{}, os.ErrNotExist
 	}
-	if object.header.Kind == objectKindHardLinkedFile && object.header.ParentID == nil {
+	if object.header.Kind == objectKindFile && object.header.ParentID == nil {
 		return GetAttrResponse{}, os.ErrNotExist
 	}
 	h := object.header
@@ -81,13 +81,10 @@ func (layer *Orchestration) deriveNlink(object *runtimeObject) uint32 {
 			}
 		}
 		return nlink
-	case objectKindFile, objectKindSymlink:
-		return 1
-	case objectKindHardLinkedFile:
-		if object.header.ParentID == nil {
-			return 0
-		}
+	case objectKindFile:
 		return layer.deriveHardLinkCount(object.header.ObjectID)
+	case objectKindSymlink:
+		return 1
 	case objectKindHardLink:
 		if object.header.TargetID == nil {
 			return 0
@@ -98,9 +95,7 @@ func (layer *Orchestration) deriveNlink(object *runtimeObject) uint32 {
 	}
 }
 
-// deriveHardLinkCount counts reachable HardLink names and does not count a
-// HardLinkedFile's own ParentID entry. That direct entry is added by GetAttr
-// for a parented HardLinkedFile.
+// deriveHardLinkCount counts the direct File name, when present, and all reachable HardLink names.
 func (layer *Orchestration) deriveHardLinkCount(targetID shared.ObjectID) uint32 {
 	if layer.root == nil {
 		return 0
@@ -115,7 +110,7 @@ func (layer *Orchestration) deriveHardLinkCount(targetID shared.ObjectID) uint32
 			continue
 		}
 		visited[current] = struct{}{}
-		if current.header.Kind == objectKindHardLinkedFile && current.header.ObjectID == targetID && current.header.ParentID != nil {
+		if current.header.Kind == objectKindFile && current.header.ObjectID == targetID && current.header.ParentID != nil {
 			nlink++
 		}
 		if current.header.Kind == objectKindHardLink &&

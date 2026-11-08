@@ -97,6 +97,15 @@ func (layer *Orchestration) Rename(request RenameRequest) (response RenameRespon
 	}
 
 	next := source.header
+	// File data and mutable attributes are authoritative in runtimeFile.header.
+	// Write and SetAttr update that Header without changing the namespace node's
+	// copy, so start a rename from the backing Header to avoid restoring stale
+	// size, timestamps, or permissions while changing the namespace fields.
+	if source.file != nil && source.header.Kind == objectKindFile {
+		source.file.mu.RLock()
+		next = source.file.header
+		source.file.mu.RUnlock()
+	}
 	parentID := request.DestinationParentID
 	next.ParentID = &parentID
 	next.Name = request.DestinationName
@@ -108,7 +117,7 @@ func (layer *Orchestration) Rename(request RenameRequest) (response RenameRespon
 	delete(sourceParent.children, request.SourceName)
 	source.header = next
 	layer.headers[next.ObjectID] = next
-	if source.file != nil && (next.Kind == objectKindFile || next.Kind == objectKindHardLinkedFile) {
+	if source.file != nil && next.Kind == objectKindFile {
 		source.file.mu.Lock()
 		source.file.header = next
 		source.file.mu.Unlock()
@@ -166,10 +175,10 @@ func (layer *Orchestration) validateRenameReplacement(source, destination *runti
 // entry using the same kind-specific lifecycle rules as Unlink.
 func (layer *Orchestration) removeRenameDestination(ctx context.Context, parent, object *runtimeObject) error {
 	switch object.header.Kind {
-	case objectKindFile, objectKindSymlink:
-		return layer.unlinkNamedObject(ctx, parent, object)
-	case objectKindHardLinkedFile:
-		return layer.unlinkHardLinkedFile(ctx, parent, object)
+	case objectKindFile:
+		return layer.unlinkFile(ctx, parent, object)
+	case objectKindSymlink:
+		return layer.unlinkSymlink(ctx, parent, object)
 	case objectKindHardLink:
 		return layer.unlinkHardLink(ctx, parent, object)
 	case objectKindDirectory:

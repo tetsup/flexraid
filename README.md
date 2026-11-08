@@ -234,24 +234,23 @@ Object ツリー、Namespace、リンク
 
 Orchestration の起動時初期化では、公開 `New` が Distribution の `ListObjects` で ObjectID を列挙し、共通の `ReadStripe` API を通じて各 Object の Header を含む先頭データを取得する。`New` は取得した初期データを非公開の `initialize` に渡す。`initialize` は渡されたデータの Header を解析・検証し、Header map と論理削除キューなどのメモリ状態を構築する。`initialize` 自身は Distribution を呼び出さず、I/O を伴うデータ取得とメモリ状態の構築を分離する。
 
-`initialize` は初期データ全体から Runtime Object を生成し、ParentID / Name に基づいて Directory children を構築する。その過程で HardLink の TargetID を解決し、同じ HardLinkedFile を参照する HardLink が同一の Runtime ファイル実体を共有するようにする。Namespace 展開後は非公開 `inspect` を一度呼び出して構築結果全体を検査する。root Directory が一意に定まらないなど Namespace 全体を復元できない不整合は初期化エラーとする。一方、壊れた HardLink やツリー外 Object など、一部の機能に限定された不整合は該当要素を Namespace 上に存在しないものとして扱い、warning を出して初期化を続行する。ただし、該当する HardLink / Object と関連する実体は Cleanup の削除対象から保護し、誤って消去しない。保護対象 ObjectID は Orchestration が保持し、Cleanup 時に Distribution の Cleanup へ除外対象として渡す。Distribution は除外対象に属する orphan / version / chunk を削除しない。部分的不整合を理由に永続データを自動削除したり、論理削除状態へ変更したりしてはならない。読み込み・展開・検査はいずれも `initialize` の一連の初期化プロセスに含め、検査だけを別の起動処理として呼び出す構成にはしない。
+`initialize` は初期データ全体から Runtime Object を生成し、ParentID / Name に基づいて Directory children を構築する。その過程で HardLink の TargetID を解決し、同じ File を参照する HardLink が同一の Runtime ファイル実体を共有するようにする。Namespace 展開後は非公開 `inspect` を一度呼び出して構築結果全体を検査する。root Directory が一意に定まらないなど Namespace 全体を復元できない不整合は初期化エラーとする。一方、壊れた HardLink やツリー外 Object など、一部の機能に限定された不整合は該当要素を Namespace 上に存在しないものとして扱い、warning を出して初期化を続行する。ただし、該当する HardLink / Object と関連する実体は Cleanup の削除対象から保護し、誤って消去しない。保護対象 ObjectID は Orchestration が保持し、Cleanup 時に Distribution の Cleanup へ除外対象として渡す。Distribution は除外対象に属する orphan / version / chunk を削除しない。部分的不整合を理由に永続データを自動削除したり、論理削除状態へ変更したりしてはならない。読み込み・展開・検査はいずれも `initialize` の一連の初期化プロセスに含め、検査だけを別の起動処理として呼び出す構成にはしない。
 
 Object の Kind は次の種類を持つ。
 
-- File: 通常ファイル。ParentID を持ち、実データを保持する。
+- File: 実データを保持する。ParentID は nullable で、直接の名前がある場合は親 Directory を持ち、nil の場合は HardLink 経由でのみ参照される。
 - Directory: ディレクトリ。root 以外は ParentID を持つ。children はメモリ上だけに保持する。
 - Symlink: シンボリックリンク。ParentID を持ち、リンク先パス文字列を通常の論理データとして保持する。リンク先パスは Header に格納しない。
-- HardLinkedFile: ハードリンクの実体。Namespace ツリーには所属せず、ParentID と TargetID は持たない。実データを保持する。
 - HardLink: Namespace 上のハードリンク名。ParentID と実体を指す TargetID を持ち、実データは保持しない。
 
-HardLink の TargetID は HardLinkedFile の ObjectID を直接指す。HardLink 同士の連鎖や Directory / Symlink への参照は認めない。HardLink は Directory ではないため、children を持つ親にはなれない。Directory 自体のハードリンクも認めない。
+HardLink の TargetID は File の ObjectID を直接指す。HardLink 同士の連鎖や Directory / Symlink への参照は認めない。HardLink は Directory ではないため、children を持つ親にはなれない。Directory 自体のハードリンクも認めない。
 
-ハードリンク作成前の通常 File は、最初のハードリンク作成時に実体を HardLinkedFile として Namespace から切り離し、元の名前と追加する名前をそれぞれ HardLink Object として表現する。以後、複数の HardLink が同じ HardLinkedFile を参照する。永続化上は実体と各名前が別々の Object だが、メモリ展開時には各 HardLink Node から同じ Runtime のファイル実体を参照させる。ファイルデータの冗長化・配置は HardLinkedFile 単位で行い、Namespace の children と Runtime の参照関係は Orchestration 層が管理する。
+ハードリンク作成時も File の Kind は変更しない。元の File は ParentID / Name を維持し、新しい名前を HardLink Object として追加する。各 HardLink の TargetID は同じ File ObjectID を直接指す。元の名前が削除された場合は File の ParentID を nil にし、残る HardLink から実体を参照する。永続化上は実体と各名前が別々の Object だが、メモリ展開時には各 HardLink Node から同じ Runtime のファイル実体を参照させる。ファイルデータの冗長化・配置は File 単位で行い、Namespace の children と Runtime の参照関係は Orchestration 層が管理する。
 
-Header では Kind によって役割を区別し、追加する参照情報は nullable な TargetID のみとする。TargetID は HardLink の場合だけ設定し、HardLink 以外では nil とする。HardLinkedFile を識別するための追加フラグは設けない。ParentID と TargetID の nullable 表現は、ゼロ UUID ではなく明示的な存在情報で符号化する。Header は論理削除状態を示す `Deleted bool` も持ち、バイナリでは 0 / 1 の 1 byte として保存する。起動時に Orchestration は Header の Deleted が true の ObjectID をメモリ上の削除キューへ登録し、Cleanup で Distribution.DeleteObject を呼び出す。Distribution は Header を解釈せず、物理削除時には Header 以外の全データを削除した後、最後に Header を削除する。リリースまでは、Header のバイナリ構造を変更しても FormatVersion は 0 のままとし、後方互換性の維持や旧形式の読み込み対応は行わない。HeaderSize は現在の構造に合わせて更新する。
+Header では Kind によって役割を区別し、追加する参照情報は nullable な TargetID のみとする。TargetID は HardLink の場合だけ設定し、HardLink 以外では nil とする。File のリンク状態を識別する追加フラグは設けない。ParentID と TargetID の nullable 表現は、ゼロ UUID ではなく明示的な存在情報で符号化する。Header は論理削除状態を示す `Deleted bool` も持ち、バイナリでは 0 / 1 の 1 byte として保存する。起動時に Orchestration は Header の Deleted が true の ObjectID をメモリ上の削除キューへ登録し、Cleanup で Distribution.DeleteObject を呼び出す。Distribution は Header を解釈せず、物理削除時には Header 以外の全データを削除した後、最後に Header を削除する。リリースまでは、Header のバイナリ構造を変更しても FormatVersion は 0 のままとし、後方互換性の維持や旧形式の読み込み対応は行わない。HeaderSize は現在の構造に合わせて更新する。
 
 
-ParentID が nil になる Object は root Directory と HardLinkedFile の2種類であり、Kind によって区別する。したがって「ParentID が nil なのは root だけ」という前提は置かない。HardLinkedFile は Namespace の children に登録せず、root の候補にも含めない。
+ParentID が nil になる Object は root Directory と File の2種類であり、Kind によって区別する。したがって「ParentID が nil なのは root だけ」という前提は置かない。ParentID が nil の File は Namespace の children に登録せず、root の候補にも含めない。
 
 リンクの参照整合性、最後の HardLink 削除時の実体解放、オープン中ファイルの寿命、属性情報と FUSE inode / link count の対応、複数 Object を更新する操作のクラッシュ整合性などの詳細は、別途定義する。
 

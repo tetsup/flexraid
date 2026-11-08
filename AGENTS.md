@@ -79,28 +79,28 @@ fuse/
 - `ObjectID` は常に有効な UUIDv4 とする。無効値や未設定値を表す ObjectID は設けない。
 - ObjectID の生成・文字列解析・バイナリ解析など、外部入力を受け取る境界で UUIDv4 を検証する。検証ロジックは共通の単一の検証経路に集約する。
 - ObjectID のゼロ値を特別な識別子、root、未設定値、無効値などとして扱わない。ゼロ値判定やゼロ値を利用した分岐を設けない。
-- `ParentID` は nullable とする。通常の Namespace Object は有効な UUIDv4 の親 ID を持つが、root Directory と Namespace に直接所属しない HardLinkedFile は `nil` を持つ。HardLinkedFile は Namespace に直接所属する場合も、HardLink 経由でのみ参照される場合もある。
+- `ParentID` は nullable とする。root Directory と、Namespace に直接所属しない File は `nil` を持つ。File は直接の名前を持つ場合も、HardLink 経由でのみ参照される場合もある。
 - root 自身も通常の Object として有効な ObjectID を持つ。root は ParentID が nil の唯一の Directory Object として識別し、root の子の ParentID には root 自身の ObjectID を設定する。
-- HardLinkedFile は ParentID が nil になる場合があるため、ParentID の nil だけで root と判定してはならない。必ず Kind と組み合わせて判定する。
+- File は ParentID が nil になる場合があるため、ParentID の nil だけで root と判定してはならない。必ず Kind と組み合わせて判定する。
 - nullable な識別子を永続化するときは、ゼロ UUID を null の代用にせず、存在フラグなどで有無を明示する。存在する場合の ID は必ず UUIDv4 として検証する。
 
 ### ObjectKind、Namespace、HardLink
 
-- 論理 Object の Kind は Orchestration が所有する。Kind は File、Directory、Symlink、HardLinkedFile、HardLink を区別する。
-- File は ParentID を持ち、実データを保持する。
+- 論理 Object の Kind は Orchestration が所有する。Kind は File、Directory、Symlink、HardLink を区別する。
+- File は常に実データを保持する。ParentID は nullable とし、直接の名前がある場合は親 Directory を、HardLink 経由だけで参照される場合は nil を持つ。
 - Directory は root 以外 ParentID を持つ。Directory の children は永続化せず、起動時に各 Object の ParentID と Name から Orchestration のメモリ上に構築する。
 - Symlink は ParentID を持つ。リンク先パス文字列は Header ではなく通常の論理データとして保持する。
-- HardLinkedFile は実データを保持する実体であり、ParentID は nullable、TargetID は持たない。ParentID がある場合は通常の名前付き Namespace Object として Directory の children に登録し、nil の場合は Namespace に直接所属せず HardLink 経由でのみ参照される。
-- HardLink は Namespace 上の名前を表す Object であり、ParentID と TargetID を持つ。TargetID は必ず HardLinkedFile の ObjectID を直接指し、HardLink は実データを保持しない。
-- Header は論理削除状態を示す `Deleted bool` を持ち、バイナリでは 0 / 1 の 1 byte として保存する。1 以外は不正 Header とする。起動時に Orchestration は `Deleted == true` の ObjectID をメモリ上の削除キューへ登録する。Header で追加する参照情報は nullable な TargetID のみとし、TargetID は HardLink の場合だけ設定する。HardLinkedFile を識別する追加フラグは設けない。TargetID が存在する場合は UUIDv4 として検証し、nil はゼロ UUID ではなく明示的な存在情報で表す。
+
+- HardLink は Namespace 上の名前を表す Object であり、ParentID と TargetID を持つ。TargetID は必ず File の ObjectID を直接指し、HardLink は実データを保持しない。
+- Header は論理削除状態を示す `Deleted bool` を持ち、バイナリでは 0 / 1 の 1 byte として保存する。1 以外は不正 Header とする。起動時に Orchestration は `Deleted == true` の ObjectID をメモリ上の削除キューへ登録する。Header で追加する参照情報は nullable な TargetID のみとし、TargetID は HardLink の場合だけ設定する。File のリンク状態を識別する追加フラグは設けない。TargetID が存在する場合は UUIDv4 として検証し、nil はゼロ UUID ではなく明示的な存在情報で表す。
 - リリースまでは、Header のバイナリ構造を変更しても `FormatVersion` は `0` のままとし、後方互換性の維持や旧形式の読み込み対応は行わない。`HeaderSize` は現在の構造に合わせて更新する。
 - HardLink の連鎖、Directory / Symlink を参照先とする HardLink、Directory 自体のハードリンクは認めない。HardLink は Directory ではなく、children を持つ親にはなれない。
-- ハードリンク作成時は、元の File Object を同じ ObjectID の HardLinkedFile に変換し、元の ParentID / Name を維持する。新しい名前は HardLink Object として追加し、その TargetID は HardLinkedFile を直接指す。これにより元の名前と追加された名前は対等に同じ実体を参照する。既に HardLinkedFile である元ファイルへの追加 Link は、同じ実体を指す HardLink を追加する。HardLinkedFile の ParentID は、元の名前が削除された後に nil となり得る。
-- 永続化時は実体と各 Namespace Object を個別の Object として保存する。メモリ展開時は Directory の children を構築し、各 HardLink Node が同じ Runtime ファイル実体を共有するように解決する。
-- データ実体の Distribution 上の冗長化・配置は HardLinkedFile 単位とし、Namespace と Runtime の参照関係は Orchestration が管理する。
-- HardLinkedFile は、ParentID による Namespace への直接所属、または到達可能な HardLink からの参照の少なくとも一方を持つことを基本不変条件とする。ParentID が nil であることだけを理由に孤立・削除可能と判定してはならない。
-- `UnlinkHardLinkedFile` は ParentID が nil の場合エラーを返す。ParentID がある場合は Header の ParentID を nil にするだけで、Deleted や削除キューを操作せず、実体を保持する。
-- `UnlinkHardLink` は対象 HardLink の名前を外した後、参照先 HardLinkedFile の残りの Namespace 参照を確認して更新する。HardLink が残る場合は実体を維持し、HardLink がなく ParentID がある場合は実体を通常の File に戻す。ParentID も HardLink 参照もない場合は Deleted=true として Cleanup 対象にする。
+- ハードリンク作成時も File の Kind は変更しない。元の File Object は ParentID / Name を維持し、新しい名前は HardLink Object として追加する。その TargetID は同じ File ObjectID を直接指す。元の名前が削除された場合は File の ParentID を nil にし、残る HardLink から実体を参照する。
+- 永続化時は実体と各 Namespace Object を個別の Object として保存する。メモリ展開時は Directory の children を構築し、各 HardLink Node が TargetID の File と同じ Runtime ファイル実体を共有するように解決する。
+- データ実体の Distribution 上の冗長化・配置は File 単位とし、Namespace と Runtime の参照関係は Orchestration が管理する。
+- File は、ParentID による Namespace への直接所属、または到達可能な HardLink からの参照の少なくとも一方を持つことを基本不変条件とする。ParentID が nil であることだけを理由に孤立・削除可能と判定してはならない。
+- `Unlink(File)` は HardLink 参照が残る場合、Header の ParentID を nil にするだけで、Deleted や削除キューを操作せず、実体を保持する。最後の名前を削除する場合は Deleted=true として Cleanup 対象にする。
+- `Unlink(HardLink)` は対象 HardLink の名前を外した後、参照先 File の残りの Namespace 参照を確認する。HardLink が残る場合は実体を維持し、直接の ParentID がある場合も Kind は File のままとする。ParentID も HardLink 参照もない場合は Deleted=true として Cleanup 対象にする。
 - HardLink と参照先 Header の更新はシリアルに永続化し、複数 Header 更新をまたぐ Atomic 性は要求しない。中断時に一時的な不整合が残り得ることを前提とする。
 
 ## 6. 関数と共通処理
@@ -189,11 +189,11 @@ fuse/
 ### 9.1 確定している設計
 
 - Namespace は各 Object の Header にある ParentID と Name から復元する。Directory の children は永続化せず、起動時に Orchestration のメモリ上で構築する。
-- root は ParentID が nil の唯一の Directory Object として識別する。HardLinkedFile も ParentID が nil だが、Kind によって root と区別する。
-- Object Kind は File / Directory / Symlink / HardLinkedFile / HardLink を区別する。HardLinkedFile は ParentID があれば Namespace に直接所属し、nil なら HardLink 経由で参照される実データ実体とする。HardLink は ParentID と TargetID を持つ Namespace Object で実データを保持しない。
-- HardLink の TargetID は HardLinkedFile を直接指す。HardLink の連鎖、Directory / Symlink への参照、Directory のハードリンクは認めない。
+- root は ParentID が nil の唯一の Directory Object として識別する。File も ParentID が nil になる場合があるが、Kind によって root と区別する。
+- Object Kind は File / Directory / Symlink / HardLink を区別する。File は常に実データ実体であり、ParentID があれば直接の名前を持ち、nil なら HardLink 経由で参照される。HardLink は ParentID と TargetID を持つ Namespace Object で実データを保持しない。
+- HardLink の TargetID は File を直接指す。HardLink の連鎖、Directory / Symlink への参照、Directory のハードリンクは認めない。
 - Symlink のリンク先パスは Header ではなく通常の論理データとして保持する。
-- 永続化時は HardLinkedFile と各 HardLink を個別 Object として保存し、メモリ展開時は複数の HardLink Node が同一の Runtime ファイル実体を共有する。Distribution 上のデータ冗長化・配置単位は HardLinkedFile とする。
+- 永続化時は File と各 HardLink を個別 Object として保存し、メモリ展開時は複数の HardLink Node が同一の Runtime ファイル実体を共有する。Distribution 上のデータ冗長化・配置単位は File とする。
 
 - チャンク、ストライプ、StripeVersion、物理チャンク配置の情報は Distribution 層の内部に閉じ込める。Orchestration 層にチャンク単位の内部情報を公開しない。
 - `ChunkNo`、チャンク番号のビットフラグ、`DistributionMethod`、`StripeKeyInfo` などのチャンク表現・復元処理用型は Distribution パッケージ内だけで使用し、公開しない。チャンク番号の生成・判定関数や復元処理だけで使うエラー識別子も同様に非公開とする。
@@ -331,7 +331,7 @@ Distribution の公開 API は論理ストライプ単位の読み書き操作�
 
 \`Unlink\` は通常 File / Symlink / HardLink の Namespace name removal を扱い、Directory は対象外とする。\`Rmdir\` は独立公開操作として空 Directory の条件、親 Directory NLink の派生、Directory 固有のエラーを扱う。内部 helper の共有は可能だが、公開 API / POSIX semantics を Unlink に吸収しない。
 
-\`Rename\` は POSIX rename / \`mv\` 相当であり、同じ親内の改名に限らない。source の Name を destination name に更新し、親が変わる場合は ParentID も destination parent に付け替える。HardLink entry 自身の移動・改名ではその Namespace entry の ParentID / Name を変更し、Target の HardLinkedFile の親子関係や実体データは変更しない。File / Symlink / HardLinkedFile direct entry / HardLink / Directory では永続化・参照関係が異なるため種別別に処理する。Directory 移動では自身または子孫の下への移動を拒否し、親 Directory NLink は children から導出する。destination が既存の場合は source / destination が Directory か非Directoryかの区分を一致させ、Directory destination は空であること。同じ論理ファイル実体への rename は no-op とする。Directory/non-Directory の不一致は ENOTDIR / EISDIR、非空 Directory destination は ENOTEMPTY。複数 Header の更新は逐次永続化し、現時点ではクラッシュ時の完全な原子性を保証しない。
+\`Rename\` は POSIX rename / \`mv\` 相当であり、同じ親内の改名に限らない。source の Name を destination name に更新し、親が変わる場合は ParentID も destination parent に付け替える。HardLink entry 自身の移動・改名ではその Namespace entry の ParentID / Name を変更し、Target File の ParentID や実体データは変更しない。File / Symlink / HardLink / Directory では永続化・参照関係が異なるため種別別に処理する。Directory 移動では自身または子孫の下への移動を拒否し、親 Directory NLink は children から導出する。destination が既存の場合は source / destination が Directory か非Directoryかの区分を一致させ、Directory destination は空であること。同じ論理ファイル実体への rename は no-op とする。Directory/non-Directory の不一致は ENOTDIR / EISDIR、非空 Directory destination は ENOTEMPTY。複数 Header の更新は逐次永続化し、現時点ではクラッシュ時の完全な原子性を保証しない。
 
 #### 内部処理候補
 
@@ -380,7 +380,7 @@ FUSE callback は OS ABI / go-fuse の契約に従う。FUSE 層に Namespace / 
 
 - Storage 情報の下位 API の具体的な名前・データ型、容量スナップショットの更新・失効タイミング。
 - Orchestration が作成する配置計画の具体的な形式、および Distribution のストライプ構成・チャンク枠との対応付け。
-- 最後の HardLink 削除時の HardLinkedFile の解放条件、オープン中ファイルの寿命、および参照数の再構築方法。
+- 最後の HardLink 削除時の File の解放条件、オープン中ファイルの寿命、および参照数の再構築方法。
 - ハードリンク作成・削除など複数 Object の永続化を伴う Namespace 操作の原子性とクラッシュ復旧手順。
 - Namespace の部分的不整合は \`protectedObjects\` に ObjectID を保持し、Orchestration Cleanup から Distribution Cleanup へ除外対象として渡す。Distribution Cleanup は除外対象 Object の orphan / version / chunk を削除しない。Warning は ObjectID と理由を持つ初期化時の揮発状態として記録する。
 - ストレージ障害・容量変化を踏まえた配置計画の再評価と、既存チャンクの再配置方針。
@@ -398,7 +398,7 @@ FUSE callback は OS ABI / go-fuse の契約に従う。FUSE 層に Namespace / 
 - Symlink を介したパス参照、およびリンク先の絶対パス・相対パスの解決は POSIX/FUSE のパス解決に委ねる。Orchestration の Namespace root を POSIX の `/` と同一視してはならない。
 - Orchestration の Namespace 参照 API は ObjectID / 親子関係を参照するものであり、symlink の追跡や循環検出を独自に実装しない。FUSE 層は通常のパス参照とリンク自身の属性取得を区別する。
 - Initialize は symlink のリンク先データだけを `ReadStripe` で先読みし、Runtime Object にキャッシュする。`ReadLink` はキャッシュを返して追加 I/O を行わない。リンク先データが欠落・破損している symlink は Namespace から除外して保護し、他の Object の初期化は継続する。
-- HardLink は Symlink と異なり、リンク先文字列を持たない。HardLink の属性およびデータ参照は共有する HardLinkedFile 実体に基づく。
+- HardLink は Symlink と異なり、リンク先文字列を持たない。HardLink の属性およびデータ参照は共有する File 実体に基づく。
 
 ## 9. テスト
 
@@ -477,7 +477,7 @@ The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing 
 ### 10.6 Orchestration handle and stripe-cache ownership
 
 - `FileHandle` is created for each independent `Open` and stores only open-specific state: the shared runtime-file pointer, closed state, access mode, append/sync flags, and a per-handle active write-stripe hint.
-- The runtime file backing is created once per data-bearing ObjectID (`File` or `HardLinkedFile`). Every `HardLink` targeting the same `HardLinkedFile` must reference that same runtime-file instance.
+- The runtime file backing is created once per data-bearing ObjectID (`File`). Every `HardLink` targeting the same `File` must reference that same runtime-file instance.
 - Stripe data cache belongs to the runtime-file backing, never to an individual `FileHandle`. The cache is keyed by StripeID and is shared by all handles referring to the same backing ObjectID.
 - Use one per-stripe cache entry type for both read-loaded / read-ahead data and modified data. Its state distinguishes clean data (matching persisted data) from dirty data (modified and not yet persisted). Read-loaded and read-ahead entries are clean; Write transitions the corresponding entry to dirty.
 - Clean cache entries may be evicted and reloaded. Dirty entries must not be discarded until persistence succeeds.
@@ -576,14 +576,14 @@ The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing 
 | Namespace 上の Kind | NLink | 導出方法・条件 |
 |---|---:|---|
 | Directory | `2 + 直下の Directory 数` | `.` と `..` の 2 に、直下の子 Directory ごとに親 Directory へのリンク 1 を加える。root も同じ式を使う |
-| File | 1 | HardLink 化されていない通常ファイルは Namespace 上の名前を 1 つ持つ |
+| File | 1 | HardLink 参照がない File は Namespace 上の名前を 1 つ持つ |
 | Symlink | 1 | Symlink 自体の Namespace エントリ数。リンク先の状態には依存しない |
-| HardLink / HardLinkedFile | 同一実体を指す Namespace 名の総数 | HardLinkedFile 自身に ParentID がある場合はその直接所属名を 1 と数え、root から到達可能で同じ HardLinkedFile を TargetID で直接参照する HardLink を加算する。HardLinkedFile 自身の GetAttr は Namespace Object として公開される場合にこの値を返す |
-| HardLinkedFile | ParentID がある場合は通常の Namespace Object として返す。nil の場合は直接の属性取得対象ではない | ParentID がある場合は直接所属名 1 と到達可能な HardLink 数を合算する。ParentID が nil の場合は HardLink 経由でのみ参照される実体として扱う |
+| File / HardLink | 同一 File を指す Namespace 名の総数 | File の ParentID がある場合は直接所属名を 1 と数え、root から到達可能で同じ File を TargetID で直接参照する HardLink を加算する。ParentID が nil の File は HardLink 経由でのみ参照される |
+
 
 - Directory の子として数えるのは Kind が Directory の直接の子だけとする。File、Symlink、HardLink は親 Directory の NLink を増やさない。
-- HardLink の NLink は、同じ HardLinkedFile を参照する Namespace 上の HardLink エントリすべてに同じ値を返す。別の HardLinkedFile を参照する HardLink は数えない。
-- HardLink の連鎖は認めないため、TargetID の直接参照先である HardLinkedFile を単位として数える。Directory / Symlink は HardLink の対象外とする。
+- HardLink の NLink は、同じ File を参照する Namespace 上の HardLink エントリすべてに同じ値を返す。別の File を参照する HardLink は数えない。
+- HardLink の連鎖は認めないため、TargetID の直接参照先である File を単位として数える。Directory / Symlink は HardLink の対象外とする。
 - Namespace から到達できない Object、初期化時に不整合として除外・保護された Object は NLink の計算対象に含めない。
 - NLink は 0 を通常の Namespace エントリに返す用途ではない。最後の HardLink が削除された実体は Namespace から参照されなくなり、open handle の寿命・Cleanup の規則に従って解放する。
 
@@ -597,12 +597,12 @@ The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing 
 | `initialize` | 導出の初期化フロー | Header 読み込み後に Namespace を構築し、構築された Namespace から NLink を導出可能にする |
 | `buildNamespace` | 導出元を構築する | Directory children と HardLink の実体参照を解決する。NLink の計算は、この構築結果だけを根拠に行う |
 | `inspect` | 計算対象の妥当性を確定する | root の一意性、到達可能性、HardLink の参照先などを検査する。不整合で Namespace から除外した要素を NLink に含めない |
-| `GetAttr` | NLink を返す | Kind に応じた上記の式で、現在の Namespace から導出した NLink を返す。Header や HardLinkedFile の保存値をコピーしてはならない |
+| `GetAttr` | NLink を返す | Kind に応じた上記の式で、現在の Namespace から導出した NLink を返す。Header や File の保存値をコピーしてはならない |
 | `Lookup` / `ReadDir` | NLink を直接計算しない | Namespace の名前・親子関係を読み取る。返すエントリは NLink 導出の対象となる現在の Namespace と一致させる |
 | `Mkdir` | Directory NLink に影響する | 新しい Directory を親の children に追加する。新 Directory は NLink 2、親 Directory は直下の Directory が 1 つ増えた結果として NLink が 1 増える。NLink の Header 更新・永続化は行わない |
 | `Create` | File NLink に影響する | 新しい File を親の children に追加する。File の NLink は 1。親 Directory の NLink は変わらない |
 | `Symlink` | Symlink NLink に影響する | Symlink を親の children に追加する。Symlink の NLink は 1。親 Directory の NLink は変わらない |
-| `Link` | HardLink NLink に影響する | 元の File Object を同じ ObjectID の HardLinkedFile に変換し、ParentID / Name は維持したまま新しい HardLink を追加する。元の名前と新しい名前の NLink は 2 となる。追加の HardLink ごとに同じ実体を参照する全 Namespace 名の導出値が 1 増える。親 Directory の NLink は変わらない |
+| `Link` | HardLink NLink に影響する | 元の File Object の Kind は変更せず、ParentID / Name を維持したまま新しい HardLink を追加する。元の名前と新しい名前の NLink は 2 となる。追加の HardLink ごとに同じ実体を参照する全 Namespace 名の導出値が 1 増える。親 Directory の NLink は変わらない |
 | `Unlink` | File / Symlink / HardLink NLink に影響する | 対象の Namespace エントリを親の children から取り除く。HardLink の場合、同じ実体を参照する残りの HardLink の NLink は 1 減る。最後の HardLink がなくなった実体の削除は open handle の寿命・Cleanup の規則に従う。File / Symlink の削除で親 Directory の NLink は変わらない |
 | `Rmdir` | 親 Directory NLink に影響する | 空 Directory の Namespace エントリを取り除く。親 Directory の NLink は直下の Directory が 1 つ減った結果として 1 減る。File / Symlink / HardLink が残る Directory は削除できない |
 | `Rename` | Directory の移動・置換時に影響する | 同じ親の中での名前変更では Directory NLink は変わらない。Directory を別の親へ移動すると、移動元の親は 1 減り、移動先の親は 1 増える。File / Symlink / HardLink の移動では親 Directory NLink は変わらない。移動先 Directory の置換を許す場合は、置換される空 Directory の削除分も移動先親の導出値へ反映する |
@@ -615,7 +615,7 @@ The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing 
 
 - Namespace 操作の成功条件は、対象の親子関係・HardLink 参照関係が一貫した状態で更新されることとする。NLink の数値を個別にインクリメント／デクリメントして帳尻を合わせてはならない。
 - Directory の NLink は children の Kind を数えて導出する。Directory を追加・削除・移動した場合も、children の更新だけで導出結果が変わるようにする。
-- HardLink / HardLinkedFile の NLink は、HardLinkedFile の ParentID による直接所属名（存在する場合）と、同じ実体を参照する到達可能な HardLink の数を合算して導出する。HardLink の追加・削除時に参照数カウンターを永続化してはならない。
+- File / HardLink の NLink は、File の ParentID による直接所属名（存在する場合）と、同じ実体を参照する到達可能な HardLink の数を合算して導出する。HardLink の追加・削除時に参照数カウンターを永続化してはならない。
 - Namespace の更新に失敗した場合は、部分的な親子関係・参照関係を公開しない。複数 Object の永続化を伴う操作の原子性・クラッシュ復旧は別途定義するが、その都合で NLink を永続化属性にしてはならない。
 - NLink の計算は Orchestration の責務とする。FUSE 層は Orchestration が返す NLink を `st_nlink` に設定し、独自に再計算しない。
 
@@ -666,12 +666,12 @@ The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing 
 ### Object 数と Namespace の整合性
 
 - f_files は Orchestration が管理する、現在のインメモリ Namespace から参照可能な論理 Object の数とする。永続化済み Object の総数や物理チャンク数ではない。
-- Directory、通常 File、Symlink、および HardLinkedFile の実体を数える。HardLink の名前は独立した inode / 実体ではないため、参照先 HardLinkedFile を一度だけ数え、HardLink エントリごとには加算しない。
+- Directory、File、Symlink を数える。HardLink の名前は独立した inode / 実体ではないため、参照先 File を一度だけ数え、HardLink エントリごとには加算しない。
 - Namespace から参照されない Object、初期化時の不整合により Namespace から除外された Object は f_files に含めない。
 - 初期化時に、構築・検査が完了したインメモリ Namespace を基準に f_files を一度カウントする。
 - 以後はインメモリ Namespace の変更に合わせて f_files を更新する。Object が Namespace に追加された時点で加算し、Namespace から参照されなくなった時点で減算する。
 - f_files の更新は永続化の成否とは独立させる。StatFs が表すのは永続データのスナップショットではなく、その時点で Orchestration が公開しているインメモリ Namespace の状態である。Namespace の変更が失敗してメモリ状態を公開しない場合はカウンターも変更しない。
-- HardLink の追加・削除だけでは、参照先実体が Namespace から消えない限り f_files を増減させない。HardLinkedFile の直接の Namespace 所属が外れても HardLink 参照が残る場合はカウントを維持し、最後の参照が外れて Namespace から消えた時点で減算する。
+- HardLink の追加・削除だけでは、参照先実体が Namespace から消えない限り f_files を増減させない。File の直接の Namespace 所属が外れても HardLink 参照が残る場合はカウントを維持し、最後の参照が外れて Namespace から消えた時点で減算する。
 - f_ffree は Object 数の上限を設けないため、意味のある空き数を算出しない。FUSE の statfs 構造体で該当フィールドが符号なし整数であることを踏まえ、負数を設定せず 0 を返す。これは「空き Object が 0」という容量制限を意味せず、未定義値として扱う。
 - f_files のカウンターは Orchestration の Namespace 更新と同じ同期単位で更新し、Namespace とカウンターが外部から不整合な状態で観測されないようにする。永続化完了を更新条件にしない。
 

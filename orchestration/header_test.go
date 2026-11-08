@@ -78,7 +78,6 @@ func TestHeaderMarshalValidation(t *testing.T) {
 		{"long name", func(h *header) { h.Name = string(bytes.Repeat([]byte("x"), maxNameSize+1)) }, errNameTooLong},
 		{"invalid utf8", func(h *header) { h.Name = string([]byte{0xff}) }, errInvalidName},
 		{"unknown kind", func(h *header) { h.Kind = shared.ObjectKind(99) }, errInvalidHeader},
-		{"file without parent", func(h *header) { h.ParentID = nil }, errInvalidHeader},
 		{"file with target", func(h *header) {
 			h.TargetID = ptrObjectID(shared.ObjectID{0x21, 0x43, 0x65, 0x87, 0x9a, 0xbc, 0x4d, 0xef, 0x8a, 0xbc, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab})
 		}, errInvalidHeader},
@@ -129,8 +128,8 @@ func TestHeaderUnmarshalRejectsInvalidUUIDv4(t *testing.T) {
 	}
 }
 
-func TestHeaderAllowsNullParentIDForRootAndHardLinkedFile(t *testing.T) {
-	for _, kind := range []shared.ObjectKind{objectKindDirectory, objectKindHardLinkedFile} {
+func TestHeaderAllowsNullParentIDForRootAndDetachedFile(t *testing.T) {
+	for _, kind := range []shared.ObjectKind{objectKindDirectory, objectKindFile} {
 		t.Run(string(rune('0'+kind)), func(t *testing.T) {
 			h := sampleHeader()
 			h.Kind = kind
@@ -255,9 +254,9 @@ func TestHeaderUnmarshalRejectsInvalidDeletedFlag(t *testing.T) {
 	}
 }
 
-func TestHeaderAllowsParentedHardLinkedFile(t *testing.T) {
+func TestHeaderAllowsParentedFile(t *testing.T) {
 	h := sampleHeader()
-	h.Kind = objectKindHardLinkedFile
+	h.Kind = objectKindFile
 	data, err := h.MarshalBinary()
 	if err != nil {
 		t.Fatal(err)
@@ -266,7 +265,7 @@ func TestHeaderAllowsParentedHardLinkedFile(t *testing.T) {
 	if err := got.UnmarshalBinary(data); err != nil {
 		t.Fatal(err)
 	}
-	if got.Kind != objectKindHardLinkedFile || !equalOptionalObjectID(got.ParentID, h.ParentID) || got.Name != h.Name {
-		t.Fatalf("round trip = %+v, want parented HardLinkedFile %+v", got, h)
+	if got.Kind != objectKindFile || !equalOptionalObjectID(got.ParentID, h.ParentID) || got.Name != h.Name {
+		t.Fatalf("round trip = %+v, want parented File %+v", got, h)
 	}
 }

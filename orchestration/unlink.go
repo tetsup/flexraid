@@ -50,8 +50,6 @@ func (layer *Orchestration) Unlink(request UnlinkRequest) (response UnlinkRespon
 		err = layer.unlinkFile(ctx, parent, object)
 	case objectKindSymlink:
 		err = layer.unlinkSymlink(ctx, parent, object)
-	case objectKindHardLinkedFile:
-		err = layer.unlinkHardLinkedFile(ctx, parent, object)
 	case objectKindHardLink:
 		err = layer.unlinkHardLink(ctx, parent, object)
 	case objectKindDirectory:
@@ -63,7 +61,24 @@ func (layer *Orchestration) Unlink(request UnlinkRequest) (response UnlinkRespon
 }
 
 func (layer *Orchestration) unlinkFile(ctx context.Context, parent, object *runtimeObject) error {
-	return layer.unlinkNamedObject(ctx, parent, object)
+	if layer.deriveHardLinkCount(object.header.ObjectID) <= 1 {
+		return layer.unlinkNamedObject(ctx, parent, object)
+	}
+	next := object.header
+	next.ParentID = nil
+	next.Ctime = time.Now()
+	if err := layer.persistObjectHeader(ctx, next); err != nil {
+		return err
+	}
+	object.header = next
+	layer.headers[next.ObjectID] = next
+	if object.file != nil {
+		object.file.mu.Lock()
+		object.file.header = next
+		object.file.mu.Unlock()
+	}
+	delete(parent.children, next.Name)
+	return nil
 }
 
 func (layer *Orchestration) unlinkSymlink(ctx context.Context, parent, object *runtimeObject) error {
@@ -86,29 +101,6 @@ func (layer *Orchestration) unlinkNamedObject(ctx context.Context, parent, objec
 	return nil
 }
 
-// unlinkHardLinkedFile removes only its direct namespace entry. A detached
-// HardLinkedFile remains the backing object for any HardLink names.
-func (layer *Orchestration) unlinkHardLinkedFile(ctx context.Context, parent, object *runtimeObject) error {
-	if object.header.ParentID == nil {
-		return fmt.Errorf("HardLinkedFile %s has no parent entry: %w", object.header.ObjectID.String(), os.ErrInvalid)
-	}
-	next := object.header
-	next.ParentID = nil
-	next.Ctime = time.Now()
-	if err := layer.persistObjectHeader(ctx, next); err != nil {
-		return err
-	}
-	object.header = next
-	layer.headers[next.ObjectID] = next
-	if object.file != nil {
-		object.file.mu.Lock()
-		object.file.header = next
-		object.file.mu.Unlock()
-	}
-	delete(parent.children, next.Name)
-	return nil
-}
-
 // unlinkHardLink removes the named alias, then serially updates its backing
 // object. The two Header writes are intentionally not crash-atomic.
 func (layer *Orchestration) unlinkHardLink(ctx context.Context, parent, object *runtimeObject) error {
@@ -116,7 +108,7 @@ func (layer *Orchestration) unlinkHardLink(ctx context.Context, parent, object *
 		return fmt.Errorf("HardLink %s has no target: %w", object.header.ObjectID.String(), errInvalidHeader)
 	}
 	target, exists := layer.objects[*object.header.TargetID]
-	if !exists || target.header.Deleted || target.header.Kind != objectKindHardLinkedFile || target.file == nil {
+	if !exists || target.header.Deleted || target.header.Kind != objectKindFile || target.file == nil {
 		return fmt.Errorf("HardLink target is unavailable: %w", os.ErrNotExist)
 	}
 
@@ -140,20 +132,21 @@ func (layer *Orchestration) unlinkHardLink(ctx context.Context, parent, object *
 		return nil
 	}
 
-	// If the original direct name still exists, the backing is an ordinary File
-	// again. Otherwise no namespace name remains and the backing is logically
-	// deleted; this is the fallback for an otherwise unreachable final alias.
+	// If no direct name or HardLink name remains, the File is logically deleted.
 	nextTarget := target.header
 	nextTarget.Ctime = time.Now()
-	if nextTarget.ParentID != nil {
-		nextTarget.Kind = objectKindFile
-	} else {
+	if nextTarget.ParentID == nil {
 		nextTarget.Deleted = true
 	}
 	if err := layer.persistObjectHeader(ctx, nextTarget); err != nil {
 		return err
 	}
 	target.header = nextTarget
+	if target.file != nil {
+		target.file.mu.Lock()
+		target.file.header = nextTarget
+		target.file.mu.Unlock()
+	}
 	layer.headers[nextTarget.ObjectID] = nextTarget
 	if nextTarget.Deleted {
 		layer.enqueueDeletion(nextTarget.ObjectID)
@@ -174,7 +167,7 @@ func (layer *Orchestration) persistObjectHeader(ctx context.Context, next header
 	// Data-bearing objects have a shared runtimeFile. Persist their Header
 	// through that cache so pending stripe writes are not overwritten by a
 	// stale read from Distribution.
-	if next.Kind == objectKindFile || next.Kind == objectKindHardLinkedFile {
+	if next.Kind == objectKindFile {
 		if object := layer.objects[next.ObjectID]; object != nil && object.file != nil {
 			file := object.file
 			file.mu.Lock()

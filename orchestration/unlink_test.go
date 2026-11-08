@@ -4,9 +4,11 @@ import (
 	"errors"
 	"os"
 	"testing"
+
+	"github.com/tetsup/flexraid/distribution"
 )
 
-func TestUnlinkHardLinkedFileClearsParentOnly(t *testing.T) {
+func TestUnlinkFileWithHardLinkDetachesParentOnly(t *testing.T) {
 	fixture := newNamespaceFixture(t)
 	file, err := fixture.layer.Create(CreateRequest{ParentID: fixture.rootID, Name: "a"})
 	if err != nil {
@@ -27,15 +29,39 @@ func TestUnlinkHardLinkedFileClearsParentOnly(t *testing.T) {
 	if _, err := fixture.layer.Lookup(LookupRequest{ParentID: fixture.rootID, Name: "a"}); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("lookup removed direct name = %v", err)
 	}
-	if _, err := fixture.layer.GetAttr(GetAttrRequest{ObjectID: alias.ObjectID}); err != nil {
+	attr, err := fixture.layer.GetAttr(GetAttrRequest{ObjectID: alias.ObjectID})
+	if err != nil {
 		t.Fatalf("alias should still resolve to backing: %v", err)
+	}
+	if attr.Attributes.Nlink != 1 {
+		t.Fatalf("remaining alias NLink = %d, want 1", attr.Attributes.Nlink)
+	}
+	if fixture.layer.objects[file.ObjectID].header.Kind != objectKindFile {
+		t.Fatal("unlink changed the data object's Kind")
 	}
 	if _, err := fixture.layer.Unlink(UnlinkRequest{ParentID: fixture.rootID, Name: "a"}); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("repeat unlink = %v, want os.ErrNotExist", err)
 	}
+
+	restartedDistribution, err := distribution.New(distribution.NewRequest{IOs: fixture.ios})
+	if err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := New(NewRequest{Distribution: restartedDistribution.Layer})
+	if err != nil {
+		t.Fatal(err)
+	}
+	restoredAlias, err := restarted.Layer.Lookup(LookupRequest{ParentID: fixture.rootID, Name: "b"})
+	if err != nil || restoredAlias.Kind != objectKindHardLink {
+		t.Fatalf("restored alias = %+v, %v", restoredAlias, err)
+	}
+	restoredAttr, err := restarted.Layer.GetAttr(GetAttrRequest{ObjectID: restoredAlias.ObjectID})
+	if err != nil || restoredAttr.Attributes.Nlink != 1 {
+		t.Fatalf("restored alias attributes = %+v, %v; want NLink 1", restoredAttr, err)
+	}
 }
 
-func TestUnlinkDetachedHardLinkedFileReturnsError(t *testing.T) {
+func TestUnlinkDetachedFileThroughHardLinkLifecycle(t *testing.T) {
 	fixture := newNamespaceFixture(t)
 	file, err := fixture.layer.Create(CreateRequest{ParentID: fixture.rootID, Name: "a"})
 	if err != nil {
@@ -60,7 +86,7 @@ func TestUnlinkDetachedHardLinkedFileReturnsError(t *testing.T) {
 	_ = alias
 }
 
-func TestUnlinkLastHardLinkPromotesDirectFile(t *testing.T) {
+func TestUnlinkLastHardLinkKeepsDirectFileKind(t *testing.T) {
 	fixture := newNamespaceFixture(t)
 	file, err := fixture.layer.Create(CreateRequest{ParentID: fixture.rootID, Name: "a"})
 	if err != nil {

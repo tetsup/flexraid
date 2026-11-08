@@ -351,7 +351,7 @@ func objectMode(attributes orchestration.ObjectAttributes) uint32 {
 		fileType = syscall.S_IFDIR
 	case orchestration.ObjectKindSymlink:
 		fileType = syscall.S_IFLNK
-	case orchestration.ObjectKindFile, orchestration.ObjectKindHardLinkedFile, orchestration.ObjectKindHardLink:
+	case orchestration.ObjectKindFile, orchestration.ObjectKindHardLink:
 		fileType = syscall.S_IFREG
 	}
 	return fileType | (attributes.Mode & 07777)

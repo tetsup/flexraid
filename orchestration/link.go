@@ -23,10 +23,7 @@ type LinkResponse struct {
 	ObjectID shared.ObjectID
 }
 
-// Link adds a new namespace name for a regular file's data object.
-// The first Link changes the existing File object into a HardLinkedFile while
-// preserving its ObjectID, ParentID, and Name. Subsequent Links target that
-// same data object directly.
+// Link creates a namespace entry that directly references the source File data object.
 func (layer *Orchestration) Link(request LinkRequest) (response LinkResponse, err error) {
 	started := time.Now()
 	ctx := request.Context
@@ -72,7 +69,7 @@ func (layer *Orchestration) Link(request LinkRequest) (response LinkResponse, er
 	if _, protected := layer.protectedObjects[request.SourceID]; protected {
 		return response, os.ErrNotExist
 	}
-	if source.header.Kind != objectKindFile && source.header.Kind != objectKindHardLinkedFile && source.header.Kind != objectKindHardLink {
+	if source.header.Kind != objectKindFile && source.header.Kind != objectKindHardLink {
 		return response, fmt.Errorf("source %s is not a regular file: %w", request.SourceID.String(), os.ErrInvalid)
 	}
 	if source.file == nil {
@@ -88,18 +85,6 @@ func (layer *Orchestration) Link(request LinkRequest) (response LinkResponse, er
 
 	backingID := file.objectID
 	backingHeader := file.header
-	if source.header.Kind == objectKindFile {
-		// Preserve the original namespace entry. A crash after this write still
-		// leaves a valid name directly attached to the HardLinkedFile.
-		backingHeader.Kind = objectKindHardLinkedFile
-		backingHeader.Ctime = time.Now()
-		if err = layer.persistHeaderUpdateLocked(ctx, file, backingHeader); err != nil {
-			return response, fmt.Errorf("persist HardLinkedFile header: %w", err)
-		}
-		source.header = backingHeader
-		layer.headers[backingID] = backingHeader
-	}
-
 	linkID, err := shared.NewObjectID()
 	if err != nil {
 		return response, fmt.Errorf("generate HardLink ObjectID: %w", err)

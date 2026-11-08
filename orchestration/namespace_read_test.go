@@ -204,7 +204,7 @@ func TestGetAttrDerivesDirectoryAndHardLinkCounts(t *testing.T) {
 	root := testHeader(objectKindDirectory, rootID, nil, nil, "")
 	childDir := testHeader(objectKindDirectory, childDirID, &rootID, nil, "docs")
 	nestedDir := testHeader(objectKindDirectory, nestedDirID, &childDirID, nil, "nested")
-	backing := testHeader(objectKindHardLinkedFile, backingID, nil, nil, "")
+	backing := testHeader(objectKindFile, backingID, nil, nil, "")
 	linkA := testHeader(objectKindHardLink, linkAID, &rootID, &backingID, "a")
 	linkB := testHeader(objectKindHardLink, linkBID, &childDirID, &backingID, "b")
 

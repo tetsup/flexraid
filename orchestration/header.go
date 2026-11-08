@@ -29,17 +29,15 @@ const (
 	objectKindFile shared.ObjectKind = iota + 1
 	objectKindDirectory
 	objectKindSymlink
-	objectKindHardLinkedFile
 	objectKindHardLink
 )
 
 // Exported object kinds let adapters map logical objects to OS file types.
 const (
-	ObjectKindFile           = objectKindFile
-	ObjectKindDirectory      = objectKindDirectory
-	ObjectKindSymlink        = objectKindSymlink
-	ObjectKindHardLinkedFile = objectKindHardLinkedFile
-	ObjectKindHardLink       = objectKindHardLink
+	ObjectKindFile      = objectKindFile
+	ObjectKindDirectory = objectKindDirectory
+	ObjectKindSymlink   = objectKindSymlink
+	ObjectKindHardLink  = objectKindHardLink
 )
 
 type layoutMode uint8
@@ -248,14 +246,10 @@ func decodeOptionalObjectID(present uint8, encoded [16]byte) (*shared.ObjectID, 
 func validateHeaderReferences(kind shared.ObjectKind, parentID, targetID *shared.ObjectID) error {
 	switch kind {
 	case objectKindFile, objectKindSymlink:
-		if parentID == nil || targetID != nil {
-			return errInvalidHeader
-		}
-	case objectKindDirectory:
 		if targetID != nil {
 			return errInvalidHeader
 		}
-	case objectKindHardLinkedFile:
+	case objectKindDirectory:
 		if targetID != nil {
 			return errInvalidHeader
 		}

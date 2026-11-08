@@ -1,11 +1,113 @@
 package orchestration
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"syscall"
 	"testing"
+
+	"github.com/tetsup/flexraid/distribution"
 )
+
+func TestRenamePreservesUpdatedFileHeader(t *testing.T) {
+	ios, distributed := newEmptyDistribution(t)
+	root, err := CreateRoot(CreateRootRequest{Distribution: distributed, Mode: 0755})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := root.Layer.Create(CreateRequest{
+		ParentID: root.RootID, Name: "before", Mode: 0644,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	opened, err := root.Layer.Open(OpenRequest{
+		ObjectID: created.ObjectID, Flags: uint32(syscall.O_RDWR),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_, _ = root.Layer.Release(ReleaseRequest{Handle: opened.Handle})
+	}()
+
+	payload := []byte("updated file data")
+	if written, err := root.Layer.Write(WriteRequest{
+		Handle: opened.Handle, ObjectID: created.ObjectID, Data: payload,
+	}); err != nil || written.Written != uint32(len(payload)) {
+		t.Fatalf("Write = %+v, %v", written, err)
+	}
+	mode, uid := uint32(0600), uint32(1234)
+	if _, err := root.Layer.SetAttr(SetAttrRequest{
+		ObjectID: created.ObjectID, Handle: opened.Handle, Mode: &mode, UID: &uid,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = root.Layer.Rename(RenameRequest{
+		SourceParentID: root.RootID, SourceName: "before",
+		DestinationParentID: root.RootID, DestinationName: "after",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	attributes, err := root.Layer.GetAttr(GetAttrRequest{ObjectID: created.ObjectID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := attributes.Attributes; got.Size != uint64(len(payload)) || got.Mode != mode || got.UID != uid {
+		t.Fatalf("attributes after Rename = %+v, want size=%d mode=%#o uid=%d",
+			got, len(payload), mode, uid)
+	}
+
+	if _, err := root.Layer.Flush(FlushRequest{Handle: opened.Handle}); err != nil {
+		t.Fatal(err)
+	}
+
+	restartedDistribution, err := distribution.New(distribution.NewRequest{IOs: ios})
+	if err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := New(NewRequest{Distribution: restartedDistribution.Layer})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lookup, err := restarted.Layer.Lookup(LookupRequest{ParentID: root.RootID, Name: "after"})
+	if err != nil || lookup.ObjectID != created.ObjectID {
+		t.Fatalf("Lookup after restart = %+v, %v", lookup, err)
+	}
+	restoredAttributes, err := restarted.Layer.GetAttr(GetAttrRequest{ObjectID: created.ObjectID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := restoredAttributes.Attributes; got.Size != uint64(len(payload)) || got.Mode != mode || got.UID != uid {
+		t.Fatalf("restored attributes = %+v, want size=%d mode=%#o uid=%d",
+			got, len(payload), mode, uid)
+	}
+
+	reader, err := restarted.Layer.Open(OpenRequest{
+		ObjectID: created.ObjectID, Flags: uint32(syscall.O_RDONLY),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_, _ = restarted.Layer.Release(ReleaseRequest{Handle: reader.Handle})
+	}()
+	read, err := restarted.Layer.Read(ReadRequest{
+		Handle: reader.Handle, ObjectID: created.ObjectID,
+		Offset: 0, Size: uint32(len(payload)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(read.Data, payload) {
+		t.Fatalf("data after Rename and restart = %q, want %q", read.Data, payload)
+	}
+}
 
 func TestRenameMovesEntryBetweenDirectories(t *testing.T) {
 	fixture := newNamespaceFixture(t)

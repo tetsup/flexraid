@@ -20,7 +20,7 @@ func TestCountReachableObjectsCountsHardLinkTargetOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := &runtimeObject{header: header{ObjectID: rootID, Kind: objectKindDirectory}, children: make(map[string]*runtimeObject)}
-	file := &runtimeObject{header: header{ObjectID: fileID, Kind: objectKindHardLinkedFile, ParentID: &rootID}}
+	file := &runtimeObject{header: header{ObjectID: fileID, Kind: objectKindFile, ParentID: &rootID}}
 	link := &runtimeObject{header: header{ObjectID: linkID, Kind: objectKindHardLink, ParentID: &rootID, TargetID: &fileID}}
 	root.children["file"] = file
 	root.children["link"] = link
