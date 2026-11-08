@@ -165,7 +165,7 @@ func TestAdapterAndParentTypeErrors(t *testing.T) {
 	if _, err := New(adapter.layer, fileNode.objectID); err == nil {
 		t.Error("New with regular-file root succeeded")
 	}
-	if _, errno := fileNode.Create(ctx, "child", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{}); errno != syscall.ENOTDIR {
+	if _, _, _, errno := fileNode.Create(ctx, "child", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{}); errno != syscall.ENOTDIR {
 		t.Errorf("Create with non-directory parent errno = %v, want ENOTDIR", errno)
 	}
 	if _, errno := fileNode.Mkdir(ctx, "child-dir", 0755, &gofuse.EntryOut{}); errno != syscall.ENOTDIR {
