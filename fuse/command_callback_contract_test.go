@@ -3,6 +3,7 @@ package fuse
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"syscall"
 	"testing"
 	"time"
@@ -361,5 +362,19 @@ func TestAccessCallbackUsesCallerCredentialsAndRejectsMissingCaller(t *testing.T
 	missing := &node{layer: adapter.layer, objectID: testObjectID(t)}
 	if errno := missing.Access(ownerContext, gofuse.R_OK); errno == 0 {
 		t.Error("Access on missing ObjectID succeeded")
+	}
+}
+
+func TestRootAccessorAndMountRejectMissingMountpoint(t *testing.T) {
+	adapter, _ := newCallbackTestFilesystem(t)
+	if got := adapter.Root(); got != adapter.root {
+		t.Errorf("Root() = %T %p, want adapter root %p", got, got, adapter.root)
+	}
+	missingMountpoint := filepath.Join(t.TempDir(), "does-not-exist")
+	if server, err := adapter.Mount(missingMountpoint, nil); err == nil {
+		if server != nil {
+			_ = server.Unmount()
+		}
+		t.Fatal("Mount on a nonexistent mountpoint succeeded")
 	}
 }
