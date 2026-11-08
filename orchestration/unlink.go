@@ -132,9 +132,7 @@ func (layer *Orchestration) unlinkHardLink(ctx context.Context, parent, object *
 		return nil
 	}
 
-	// If the original direct name still exists, the backing is an ordinary File
-	// again. Otherwise no namespace name remains and the backing is logically
-	// deleted; this is the fallback for an otherwise unreachable final alias.
+	// If no direct name or HardLink name remains, the File is logically deleted.
 	nextTarget := target.header
 	nextTarget.Ctime = time.Now()
 	if nextTarget.ParentID == nil {

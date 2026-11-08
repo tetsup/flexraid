@@ -23,7 +23,6 @@ type LinkResponse struct {
 	ObjectID shared.ObjectID
 }
 
-// Link adds a new namespace name for a regular file's data object.
 // Link creates a namespace entry that directly references the source File data object.
 func (layer *Orchestration) Link(request LinkRequest) (response LinkResponse, err error) {
 	started := time.Now()

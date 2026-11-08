@@ -95,7 +95,6 @@ func (layer *Orchestration) deriveNlink(object *runtimeObject) uint32 {
 	}
 }
 
-// deriveHardLinkCount counts reachable HardLink names and does not count a
 // deriveHardLinkCount counts the direct File name, when present, and all reachable HardLink names.
 func (layer *Orchestration) deriveHardLinkCount(targetID shared.ObjectID) uint32 {
 	if layer.root == nil {
