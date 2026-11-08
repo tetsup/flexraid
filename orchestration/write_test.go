@@ -181,8 +181,8 @@ func TestWriteRejectsInvalidHandleAndAccessMode(t *testing.T) {
 
 func TestWriteSyncModesPersistBeforeReturning(t *testing.T) {
 	for _, mode := range []struct {
-		name  string
-		flag  uint32
+		name string
+		flag uint32
 	}{
 		{name: "O_SYNC", flag: uint32(syscall.O_SYNC)},
 		{name: "O_DSYNC", flag: uint32(syscall.O_DSYNC)},
