@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strconv"
 	"syscall"
-	"time"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	gofuse "github.com/hanwen/go-fuse/v2/fuse"
@@ -41,7 +39,7 @@ func New(layer *orchestration.Orchestration, rootID shared.ObjectID) (*FileSyste
 }
 
 // Root returns the root node for fs.NewNodeFS.
-func (filesystem *FileSystem) Root() *fs.Inode { return &filesystem.root.Inode }
+func (filesystem *FileSystem) Root() fs.InodeEmbedder { return filesystem.root }
 
 // Node is a namespace inode whose logical state is owned by Orchestration.
 type node struct {
@@ -81,7 +79,6 @@ func (n *node) Lookup(ctx context.Context, name string, out *gofuse.EntryOut) (*
 	if err != nil {
 		return nil, gofuse.ToErrno(err)
 	}
-	out.SetEntryTimeout(time.Second)
 	fillEntry(out, attributes.Attributes)
 	child := &node{layer: n.layer, objectID: result.ObjectID}
 	return n.NewInode(ctx, child, stableAttr(attributes.Attributes)), 0
@@ -232,11 +229,11 @@ func (n *node) Rmdir(ctx context.Context, name string) syscall.Errno {
 	return gofuse.ToErrno(err)
 }
 
-func (n *node) Rename(ctx context.Context, name string, newParent *fs.Inode, newName string, flags uint32) syscall.Errno {
+func (n *node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedder, newName string, flags uint32) syscall.Errno {
 	if flags != 0 {
 		return syscall.EINVAL
 	}
-	destination, ok := newParent.Operations().(*node)
+	destination, ok := newParent.EmbeddedInode().Operations().(*node)
 	if !ok {
 		return syscall.EXDEV
 	}
@@ -247,8 +244,8 @@ func (n *node) Rename(ctx context.Context, name string, newParent *fs.Inode, new
 	return gofuse.ToErrno(err)
 }
 
-func (n *node) Link(ctx context.Context, name string, existing *fs.Inode, out *gofuse.EntryOut) (*fs.Inode, syscall.Errno) {
-	source, ok := existing.Operations().(*node)
+func (n *node) Link(ctx context.Context, existing fs.InodeEmbedder, name string, out *gofuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	source, ok := existing.EmbeddedInode().Operations().(*node)
 	if !ok {
 		return nil, syscall.EXDEV
 	}
@@ -266,7 +263,7 @@ func (n *node) Link(ctx context.Context, name string, existing *fs.Inode, out *g
 	return inode, 0
 }
 
-func (n *node) Symlink(ctx context.Context, name, target string, out *gofuse.EntryOut) (*fs.Inode, syscall.Errno) {
+func (n *node) Symlink(ctx context.Context, target, name string, out *gofuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	credentials := caller(ctx)
 	result, err := n.layer.Symlink(orchestration.SymlinkRequest{
 		Context: ctx, ParentID: n.objectID, Name: name, Target: target,
@@ -381,8 +378,8 @@ func fillAttr(out *gofuse.Attr, attributes orchestration.ObjectAttributes) {
 }
 
 func caller(ctx context.Context) gofuse.Owner {
-	if c := gofuse.FromContext(ctx); c != nil {
-		return c.Caller
+	if c, ok := gofuse.FromContext(ctx); ok && c != nil {
+		return *c
 	}
 	return gofuse.Owner{Uid: uint32(os.Getuid()), Gid: uint32(os.Getgid())}
 }
@@ -398,7 +395,7 @@ func (filesystem *FileSystem) Mount(mountpoint string, options *fs.Options) (*fs
 	if options == nil {
 		options = MountOptions()
 	}
-	server, err := fs.Mount(mountpoint, filesystem.Root(), options)
+	server, err := fs.Mount(mountpoint, filesystem.root, options)
 	if err != nil {
 		return nil, err
 	}
@@ -408,5 +405,3 @@ func (filesystem *FileSystem) Mount(mountpoint string, options *fs.Options) (*fs
 // ParseObjectID is a small convenience for command-line mount setup.
 func ParseObjectID(value string) (shared.ObjectID, error) { return shared.ParseObjectID(value) }
 
-var _ = strconv.IntSize
-var _ = time.Time{}
