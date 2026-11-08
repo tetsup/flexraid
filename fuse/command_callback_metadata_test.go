@@ -2,6 +2,7 @@ package fuse
 
 import (
 	"os"
+	"strings"
 	"syscall"
 	"testing"
 
@@ -93,5 +94,22 @@ func TestNamespaceCallbacksReturnConsistentEntryMetadata(t *testing.T) {
 
 	if errno := fileNode.Release(ctx, fileHandle); errno != 0 {
 		t.Errorf("Release: %v", errno)
+	}
+
+	longTarget := strings.Repeat("long-target/", 400)
+	longLinkInode, errno := root.Symlink(ctx, longTarget, "long-symlink", &gofuse.EntryOut{})
+	if errno != 0 {
+		t.Fatalf("Symlink long target: %v", errno)
+	}
+	longLink := longLinkInode.Operations().(*node)
+	longReadlink, errno := longLink.Readlink(ctx)
+	if errno != 0 || string(longReadlink) != longTarget {
+		t.Errorf("Readlink long target length=%d errno=%v, want exact %d-byte target", len(longReadlink), errno, len(longTarget))
+	}
+	var longAttr gofuse.AttrOut
+	if errno := longLink.Getattr(ctx, nil, &longAttr); errno != 0 {
+		t.Errorf("Getattr long symlink: %v", errno)
+	} else if longAttr.Attr.Size != uint64(len(longTarget)) {
+		t.Errorf("long symlink size = %d, want %d", longAttr.Attr.Size, len(longTarget))
 	}
 }
