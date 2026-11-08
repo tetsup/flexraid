@@ -87,8 +87,18 @@ func TestNamespaceCallbacksReturnExpectedErrors(t *testing.T) {
 	if _, errno := fileNode.Readlink(ctx); errno != syscall.EINVAL {
 		t.Errorf("Readlink regular file errno = %v, want EINVAL", errno)
 	}
+	if _, errno := root.Link(ctx, fileInode, "bad/name", &gofuse.EntryOut{}); errno != syscall.EINVAL {
+		t.Errorf("Link invalid name errno = %v, want EINVAL", errno)
+	}
+	missingSource := &node{layer: root.layer, objectID: testObjectID(t)}
+	if _, errno := root.Link(ctx, missingSource, "missing-source", &gofuse.EntryOut{}); errno != syscall.ENOENT {
+		t.Errorf("Link missing source errno = %v, want ENOENT", errno)
+	}
 	if _, errno := root.Link(ctx, fileInode, "regular", &gofuse.EntryOut{}); errno != syscall.EEXIST {
 		t.Errorf("Link duplicate name errno = %v, want EEXIST", errno)
+	}
+	if errno := root.Rename(ctx, "regular", root, "bad/name", 0); errno != syscall.EINVAL {
+		t.Errorf("Rename invalid destination name errno = %v, want EINVAL", errno)
 	}
 	if errno := root.Rmdir(ctx, "regular"); errno != syscall.ENOTDIR {
 		t.Errorf("Rmdir regular file errno = %v, want ENOTDIR", errno)
