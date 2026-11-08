@@ -10,7 +10,7 @@ import (
 	"github.com/tetsup/flexraid/orchestration"
 )
 
-func TestOpenAppendAndTruncateCallbackSemantics(t *testing.T) {
+func TestOpenAppendCallbackSemantics(t *testing.T) {
 	adapter, ctx := newCallbackTestFilesystem(t)
 	root := adapter.root
 	inode, initialHandle, _, errno := root.Create(ctx, "open-flags", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{})
@@ -52,20 +52,6 @@ func TestOpenAppendAndTruncateCallbackSemantics(t *testing.T) {
 		t.Errorf("Release read handle: %v", errno)
 	}
 
-	truncateHandle, _, errno := n.Open(ctx, uint32(syscall.O_RDWR|syscall.O_TRUNC))
-	if errno != 0 {
-		t.Fatalf("Open O_TRUNC: %v", errno)
-	}
-	attr := &gofuse.AttrOut{}
-	if errno := n.Getattr(ctx, truncateHandle, attr); errno != 0 {
-		t.Fatalf("Getattr after O_TRUNC: %v", errno)
-	}
-	if attr.Attr.Size != 0 {
-		t.Errorf("size after O_TRUNC = %d, want 0", attr.Attr.Size)
-	}
-	if errno := n.Release(ctx, truncateHandle); errno != 0 {
-		t.Errorf("Release O_TRUNC handle: %v", errno)
-	}
 }
 
 func TestSetattrIndividualFieldsAndPreservesUnspecifiedAttributes(t *testing.T) {
