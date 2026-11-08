@@ -1,7 +1,6 @@
 package fuse
 
 import (
-	"context"
 	"syscall"
 	"testing"
 
@@ -32,7 +31,7 @@ func TestRenameCallbackDirectorySemantics(t *testing.T) {
 	if errno != 0 {
 		t.Fatalf("Mkdir source-empty: %v", errno)
 	}
-	destinationInode, errno := root.Mkdir(ctx, "destination-empty", 0700, &fuse.EntryOut{})
+	_, errno = root.Mkdir(ctx, "destination-empty", 0700, &fuse.EntryOut{})
 	if errno != 0 {
 		t.Fatalf("Mkdir destination-empty: %v", errno)
 	}
@@ -50,9 +49,7 @@ func TestRenameCallbackDirectorySemantics(t *testing.T) {
 	if replaced.Attr.Ino != inodeNumber(sourceID) || replaced.Attr.Mode&syscall.S_IFMT != syscall.S_IFDIR {
 		t.Errorf("replacement directory attributes = ino %d mode %#o, want ino %d directory", replaced.Attr.Ino, replaced.Attr.Mode, inodeNumber(sourceID))
 	}
-	_ = destinationInode
-
-	fileInode, _, _, errno := root.Create(ctx, "regular", uint32(syscall.O_RDWR), 0600, &fuse.EntryOut{})
+	fileInode, fileHandle, _, errno := root.Create(ctx, "regular", uint32(syscall.O_RDWR), 0600, &fuse.EntryOut{})
 	if errno != 0 {
 		t.Fatalf("Create regular: %v", errno)
 	}
@@ -68,7 +65,8 @@ func TestRenameCallbackDirectorySemantics(t *testing.T) {
 	if _, errno := root.Lookup(ctx, "destination-empty", &fuse.EntryOut{}); errno != 0 {
 		t.Errorf("directory disappeared after failed type-mismatch Rename: %v", errno)
 	}
-	_ = fileInode
+	if errno := fileInode.Operations().(*node).Release(ctx, fileHandle); errno != 0 {
+		t.Errorf("Release regular: %v", errno)
+	}
 }
 
-var _ context.Context
