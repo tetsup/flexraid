@@ -148,7 +148,6 @@ func TestStatfsCallbackMatchesOrchestrationResponse(t *testing.T) {
 	}
 }
 
-
 func TestOpenReadWriteCallbackRejectInvalidModesAndForeignHandles(t *testing.T) {
 	adapter, ctx := newCallbackTestFilesystem(t)
 	root := adapter.root
