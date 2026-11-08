@@ -54,7 +54,7 @@ func TestFillAttrMapsOrchestrationAttributes(t *testing.T) {
 	attributes := orchestration.ObjectAttributes{ObjectID: id, Kind: orchestration.ObjectKindFile, Mode: 0640, UID: 17, GID: 23, Nlink: 2, Size: 1537, Atime: atime, Mtime: mtime, Ctime: ctime}
 	var out gofuse.Attr
 	fillAttr(&out, attributes)
-	if out.Ino != inodeNumber(id) || out.Mode != attributes.Mode || out.Nlink != 2 || out.Size != 1537 {
+	if out.Ino != inodeNumber(id) || out.Mode != (syscall.S_IFREG|attributes.Mode) || out.Nlink != 2 || out.Size != 1537 {
 		t.Fatalf("attribute identity/size mapping incorrect: %+v", out)
 	}
 	if out.Uid != 17 || out.Gid != 23 {
@@ -200,7 +200,7 @@ func TestFillEntryMapsAllNamespaceAttributes(t *testing.T) {
 	}
 	var out gofuse.EntryOut
 	fillEntry(&out, attributes)
-	if out.Ino != inodeNumber(id) || out.Mode != attributes.Mode || out.Nlink != 3 || out.Size != 1025 {
+	if out.Ino != inodeNumber(id) || out.Mode != (syscall.S_IFDIR|attributes.Mode) || out.Nlink != 3 || out.Size != 1025 {
 		t.Fatalf("entry identity/metadata mismatch: %+v", out.Attr)
 	}
 	if out.Uid != 41 || out.Gid != 42 || out.Atime != 10 || out.Atimensec != 11 ||
