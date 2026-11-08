@@ -90,7 +90,7 @@ func TestRenameRejectsDirectoryCycleAndIncompatibleReplacement(t *testing.T) {
 		t.Fatalf("directory cycle rename = %v, want invalid", err)
 	}
 
-	file, err := fixture.layer.Create(CreateRequest{ParentID: fixture.rootID, Name: "file"})
+	_, err = fixture.layer.Create(CreateRequest{ParentID: fixture.rootID, Name: "file"})
 	if err != nil {
 		t.Fatal(err)
 	}
