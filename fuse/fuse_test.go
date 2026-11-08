@@ -102,11 +102,21 @@ func TestReadWriteRejectInvalidHandleAndOffset(t *testing.T) {
 			t.Errorf("Write invalid handle errno=%v, want EBADF", errno)
 		}
 	}
-	if _, errno := n.Read(nil, nil, make([]byte, 1), -1); errno != syscall.EBADF {
-		t.Errorf("Read negative offset errno=%v, want EBADF", errno)
+
+	adapter, ctx := newCallbackTestFilesystem(t)
+	inode, handle, _, errno := adapter.root.Create(ctx, "negative-offset", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{})
+	if errno != 0 {
+		t.Fatalf("Create for negative-offset checks: %v", errno)
 	}
-	if _, errno := n.Write(nil, nil, []byte("x"), -1); errno != syscall.EBADF {
-		t.Errorf("Write negative offset errno=%v, want EBADF", errno)
+	file := inode.Operations().(*node)
+	if _, errno := file.Read(ctx, handle, make([]byte, 1), -1); errno != syscall.EINVAL {
+		t.Errorf("Read negative offset errno=%v, want EINVAL", errno)
+	}
+	if _, errno := file.Write(ctx, handle, []byte("x"), -1); errno != syscall.EINVAL {
+		t.Errorf("Write negative offset errno=%v, want EINVAL", errno)
+	}
+	if errno := file.Release(ctx, handle); errno != 0 {
+		t.Errorf("Release negative-offset test handle: %v", errno)
 	}
 }
 
