@@ -2,6 +2,7 @@ package fuse
 
 import (
 	"bytes"
+	"os"
 	"syscall"
 	"testing"
 	"time"
@@ -314,5 +315,51 @@ func TestCreateMkdirSymlinkNameCollisionsPreserveExistingEntries(t *testing.T) {
 	}
 	if _, errno := root.Lookup(ctx, "hardlink-to-symlink", &gofuse.EntryOut{}); errno != syscall.ENOENT {
 		t.Errorf("Lookup rejected symlink hard-link name errno = %v, want ENOENT", errno)
+	}
+}
+
+func TestAccessCallbackUsesCallerCredentialsAndRejectsMissingCaller(t *testing.T) {
+	adapter, ctx := newCallbackTestFilesystem(t)
+	inode, handle, _, errno := adapter.root.Create(ctx, "access", uint32(syscall.O_RDWR), 0640, &gofuse.EntryOut{})
+	if errno != 0 {
+		t.Fatalf("Create: %v", errno)
+	}
+	n := inode.Operations().(*node)
+	defer func() {
+		if errno := n.Release(ctx, handle); errno != 0 {
+			t.Errorf("Release: %v", errno)
+		}
+		if errno := adapter.root.Unlink(ctx, "access"); errno != 0 {
+			t.Errorf("Unlink: %v", errno)
+		}
+	}()
+
+	ownerContext := gofuse.NewContext(ctx, gofuse.Caller{Owner: gofuse.Owner{Uid: uint32(os.Getuid()), Gid: uint32(os.Getgid())}})
+	if errno := n.Access(ownerContext, gofuse.R_OK|gofuse.W_OK); errno != 0 {
+		t.Errorf("owner read/write Access = %v, want success", errno)
+	}
+
+	groupContext := gofuse.NewContext(ctx, gofuse.Caller{Owner: gofuse.Owner{Uid: uint32(os.Getuid() + 1000), Gid: uint32(os.Getgid())}})
+	if errno := n.Access(groupContext, gofuse.R_OK); errno != 0 {
+		t.Errorf("group read Access = %v, want success", errno)
+	}
+	if errno := n.Access(groupContext, gofuse.W_OK); errno != syscall.EACCES {
+		t.Errorf("group write Access = %v, want EACCES", errno)
+	}
+
+	otherContext := gofuse.NewContext(ctx, gofuse.Caller{Owner: gofuse.Owner{Uid: uint32(os.Getuid() + 1000), Gid: uint32(os.Getgid() + 1000)}})
+	if errno := n.Access(otherContext, gofuse.R_OK); errno != syscall.EACCES {
+		t.Errorf("other read Access = %v, want EACCES", errno)
+	}
+	if errno := n.Access(ctx, gofuse.R_OK); errno != syscall.EACCES {
+		t.Errorf("Access without caller credentials = %v, want EACCES", errno)
+	}
+	if errno := n.Access(ownerContext, 0); errno != 0 {
+		t.Errorf("Access with empty mask = %v, want success", errno)
+	}
+
+	missing := &node{layer: adapter.layer, objectID: testObjectID(t)}
+	if errno := missing.Access(ownerContext, gofuse.R_OK); errno == 0 {
+		t.Error("Access on missing ObjectID succeeded")
 	}
 }
