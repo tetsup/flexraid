@@ -3,6 +3,7 @@ package io
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/tetsup/flexraid/storage"
@@ -53,6 +54,24 @@ func (layer *IO) Sync(request SyncRequest) (response SyncResponse, err error) {
 		err = closeErr
 		return response, err
 	}
+	if err = syncDirectory(filepath.Dir(path)); err != nil {
+		return response, err
+	}
 	response.Synced = true
 	return response, nil
+}
+
+
+// syncDirectory persists the directory entry for a physical chunk file.
+func syncDirectory(path string) error {
+	directory, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	syncErr := directory.Sync()
+	closeErr := directory.Close()
+	if syncErr != nil {
+		return syncErr
+	}
+	return closeErr
 }
