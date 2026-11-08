@@ -352,7 +352,7 @@ func TestDataCallbacksHonorCancellationAndStillRelease(t *testing.T) {
 	}
 }
 
-func TestOpenSyncModesRejectUnsupportedSynchronousWrites(t *testing.T) {
+func TestOpenSyncModesPersistWrites(t *testing.T) {
 	adapter, ctx := newCallbackTestFilesystem(t)
 	root := adapter.root
 	inode, createdHandle, _, errno := root.Create(ctx, "sync-modes", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{})
@@ -361,24 +361,34 @@ func TestOpenSyncModesRejectUnsupportedSynchronousWrites(t *testing.T) {
 	}
 	n := inode.Operations().(*node)
 
-	for _, flags := range []uint32{uint32(syscall.O_WRONLY | syscall.O_SYNC), uint32(syscall.O_WRONLY | syscall.O_DSYNC)} {
+	for index, flags := range []uint32{uint32(syscall.O_WRONLY | syscall.O_SYNC), uint32(syscall.O_WRONLY | syscall.O_DSYNC)} {
 		handle, _, openErrno := n.Open(ctx, flags)
 		if openErrno != 0 {
 			t.Fatalf("Open synchronous mode %#x: %v", flags, openErrno)
 		}
-		if _, writeErrno := n.Write(ctx, handle, []byte("x"), 0); writeErrno != syscall.ENOTSUP {
-			t.Errorf("Write with synchronous mode %#x errno = %v, want ENOTSUP", flags, writeErrno)
+		payload := []byte{byte('A' + index)}
+		written, writeErrno := n.Write(ctx, handle, payload, int64(index))
+		if writeErrno != 0 || written != 1 {
+			t.Errorf("Write with synchronous mode %#x = %d, %v; want 1 byte, success", flags, written, writeErrno)
 		}
 		if releaseErrno := n.Release(ctx, handle); releaseErrno != 0 {
 			t.Errorf("Release synchronous mode %#x: %v", flags, releaseErrno)
 		}
 	}
-	var attr gofuse.AttrOut
-	if errno := n.Getattr(ctx, nil, &attr); errno != 0 {
-		t.Fatalf("Getattr after rejected synchronous writes: %v", errno)
+	readHandle, _, errno := n.Open(ctx, uint32(syscall.O_RDONLY))
+	if errno != 0 {
+		t.Fatalf("Open for verifying synchronous writes: %v", errno)
 	}
-	if attr.Attr.Size != 0 {
-		t.Errorf("file size after rejected synchronous writes = %d, want 0", attr.Attr.Size)
+	result, errno := n.Read(ctx, readHandle, make([]byte, 2), 0)
+	if errno != 0 {
+		t.Fatalf("Read after synchronous writes: %v", errno)
+	}
+	got, status := result.Bytes(make([]byte, 2))
+	if status != 0 || !bytes.Equal(got, []byte("AB")) {
+		t.Errorf("content after O_SYNC/O_DSYNC writes = %q, %v; want AB", got, status)
+	}
+	if errno := n.Release(ctx, readHandle); errno != 0 {
+		t.Errorf("Release verification handle: %v", errno)
 	}
 	if errno := n.Release(ctx, createdHandle); errno != 0 {
 		t.Errorf("Release Create handle: %v", errno)
