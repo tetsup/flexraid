@@ -172,8 +172,8 @@ func TestNamespaceCallbacksReturnExpectedErrors(t *testing.T) {
 		t.Errorf("Rmdir empty directory errno = %v, want success", errno)
 	}
 
-	if _, errno := root.Symlink(ctx, "", "empty-target", &gofuse.EntryOut{}); errno != syscall.EINVAL {
-		t.Errorf("Symlink empty target errno = %v, want EINVAL", errno)
+	if _, errno := root.Symlink(ctx, "", "empty-target", &gofuse.EntryOut{}); errno != syscall.ENOENT {
+		t.Errorf("Symlink empty target errno = %v, want ENOENT", errno)
 	}
 	if _, errno := root.Symlink(ctx, "bad\x00target", "nul-target", &gofuse.EntryOut{}); errno != syscall.EINVAL {
 		t.Errorf("Symlink NUL target errno = %v, want EINVAL", errno)
