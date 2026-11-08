@@ -68,8 +68,7 @@ func (layer *Orchestration) StatFs(request StatFsRequest) (StatFsResponse, error
 }
 
 // countReachableObjects counts distinct logical objects reachable from root.
-// HardLink namespace entries resolve to their backing HardLinkedFile and do not
-// increase the inode count independently.
+// HardLink names are aliases and do not increase the inode count.
 func (layer *Orchestration) countReachableObjects() uint64 {
 	if layer.root == nil {
 		return 0
@@ -82,10 +81,13 @@ func (layer *Orchestration) countReachableObjects() uint64 {
 		if current == nil || current.header.Deleted {
 			continue
 		}
-		if _, exists := visited[current.header.ObjectID]; exists {
-			continue
+
+		if current.header.Kind != objectKindHardLink {
+			if _, exists := visited[current.header.ObjectID]; exists {
+				continue
+			}
+			visited[current.header.ObjectID] = struct{}{}
 		}
-		visited[current.header.ObjectID] = struct{}{}
 
 		switch current.header.Kind {
 		case objectKindDirectory:
