@@ -252,3 +252,43 @@ func TestSetattrRejectsReadonlyAndMismatchedHandles(t *testing.T) {
 		t.Errorf("Unlink other: %v", errno)
 	}
 }
+
+func TestDataCallbacksHonorCancellationAndStillRelease(t *testing.T) {
+	adapter, ctx := newCallbackTestFilesystem(t)
+	root := adapter.root
+	inode, handle, _, errno := root.Create(ctx, "cancel-data", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{})
+	if errno != 0 {
+		t.Fatalf("Create: %v", errno)
+	}
+	n := inode.Operations().(*node)
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+
+	if _, _, errno := n.Open(cancelled, uint32(syscall.O_RDONLY)); errno == 0 {
+		t.Error("Open with canceled context succeeded")
+	}
+	if _, errno := n.Read(cancelled, handle, make([]byte, 1), 0); errno == 0 {
+		t.Error("Read with canceled context succeeded")
+	}
+	if _, errno := n.Write(cancelled, handle, []byte("x"), 0); errno == 0 {
+		t.Error("Write with canceled context succeeded")
+	}
+	if errno := n.Flush(cancelled, handle); errno == 0 {
+		t.Error("Flush with canceled context succeeded")
+	}
+	if errno := n.Fsync(cancelled, handle, 0); errno == 0 {
+		t.Error("Fsync with canceled context succeeded")
+	}
+	setattr := &gofuse.SetAttrIn{}
+	setattr.Valid, setattr.Mode = gofuse.FATTR_MODE, 0640
+	if errno := n.Setattr(cancelled, nil, setattr, &gofuse.AttrOut{}); errno == 0 {
+		t.Error("Setattr with canceled context succeeded")
+	}
+	// Release must clean up an open handle even after request cancellation.
+	if errno := n.Release(cancelled, handle); errno != 0 {
+		t.Errorf("Release with canceled context = %v, want success", errno)
+	}
+	if errno := root.Unlink(ctx, "cancel-data"); errno != 0 {
+		t.Errorf("Unlink after canceled operations: %v", errno)
+	}
+}
