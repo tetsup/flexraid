@@ -343,7 +343,7 @@ func TestDataCallbacksHonorCancellationAndStillRelease(t *testing.T) {
 func TestOpenCallbackRecordsSyncModes(t *testing.T) {
 	adapter, ctx := newCallbackTestFilesystem(t)
 	root := adapter.root
-	inode, _, _, errno := root.Create(ctx, "sync-modes", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{})
+	inode, createdHandle, _, errno := root.Create(ctx, "sync-modes", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{})
 	if errno != 0 {
 		t.Fatalf("Create: %v", errno)
 	}
@@ -367,5 +367,11 @@ func TestOpenCallbackRecordsSyncModes(t *testing.T) {
 	}
 	if errno := n.Release(ctx, data); errno != 0 {
 		t.Errorf("Release O_DSYNC: %v", errno)
+	}
+	if errno := n.Release(ctx, createdHandle); errno != 0 {
+		t.Errorf("Release Create handle: %v", errno)
+	}
+	if errno := root.Unlink(ctx, "sync-modes"); errno != 0 {
+		t.Errorf("Unlink sync-modes: %v", errno)
 	}
 }
