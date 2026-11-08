@@ -15,6 +15,7 @@ import (
 )
 
 type writeFixture struct {
+	ios        []*physicalio.IO
 	layer      *Orchestration
 	fileID     shared.ObjectID
 	linkID     shared.ObjectID
@@ -65,7 +66,7 @@ func newWriteFixture(t *testing.T) writeFixture {
 			linkID: {header: testHeader(objectKindHardLink, linkID, &parentID, &fileID, "alias"), file: file},
 		},
 	}
-	return writeFixture{layer: layer, fileID: fileID, linkID: linkID, payload: payload, headerData: append([]byte(nil), headerData...)}
+	return writeFixture{ios: ios, layer: layer, fileID: fileID, linkID: linkID, payload: payload, headerData: append([]byte(nil), headerData...)}
 }
 
 func openWriteHandle(t *testing.T, layer *Orchestration, id shared.ObjectID, flags uint32) *FileHandle {
@@ -265,5 +266,50 @@ func TestTruncateReplansAndZeroFillsGrowth(t *testing.T) {
 	}
 	if !bytes.Equal(got.Data, make([]byte, 20)) {
 		t.Fatalf("truncate growth = %v, want zero-filled bytes", got.Data)
+	}
+}
+
+
+func TestFsyncSynchronizesAlreadyCleanStripes(t *testing.T) {
+	fixture := newWriteFixture(t)
+	writer := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDWR))
+	if _, err := fixture.layer.Write(WriteRequest{Handle: writer, ObjectID: fixture.fileID, Data: []byte("sync")}); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if result, err := fixture.layer.Flush(FlushRequest{Handle: writer}); err != nil || result.PersistedStripes == 0 {
+		t.Fatalf("Flush before Fsync = %+v, %v; want persisted stripe", result, err)
+	}
+	if result, err := fixture.layer.Fsync(FsyncRequest{Handle: writer}); err != nil || result.PersistedStripes != 0 {
+		t.Fatalf("Fsync clean cache = %+v, %v; want no pending stripe writes", result, err)
+	}
+
+	placement, err := fixture.layer.distribution.StripeIOIndexes(distribution.StripeIOIndexesRequest{ObjectID: fixture.fileID, StripeID: 0})
+	if err != nil || len(placement.IOIndexes) == 0 {
+		t.Fatalf("StripeIOIndexes = %+v, %v", placement, err)
+	}
+	ioLayer := fixture.ios[placement.IOIndexes[0]]
+	var chunkKey storage.FileKey
+	found := false
+	_, err = ioLayer.ListChunks(physicalio.ListChunksRequest{
+		Context: context.Background(),
+		Callback: func(entry physicalio.ScanEntry) error {
+			if entry.Error == nil && entry.Key.ObjectID == fixture.fileID && entry.Key.StripeID == 0 {
+				chunkKey, found = entry.Key, true
+				return errors.New("stop after first matching chunk")
+			}
+			return nil
+		},
+	})
+	if err != nil && !strings.Contains(err.Error(), "stop after first matching chunk") {
+		t.Fatalf("ListChunks: %v", err)
+	}
+	if !found {
+		t.Fatal("did not find a physical chunk for the flushed stripe")
+	}
+	if _, err := ioLayer.Delete(physicalio.DeleteRequest{Context: context.Background(), Key: chunkKey}); err != nil {
+		t.Fatalf("delete chunk to make Fsync fail: %v", err)
+	}
+	if _, err := fixture.layer.Fsync(FsyncRequest{Handle: writer}); err == nil {
+		t.Error("Fsync succeeded after a latest physical chunk was removed; want synchronization error")
 	}
 }
