@@ -367,3 +367,43 @@ func TestMountedRenameDirectoryCycleAndEmptyDirectoryReplacement(t *testing.T) {
 		t.Errorf("destination mode after replacement = %v, %v; want source mode 0710", mode, err)
 	}
 }
+
+func TestMountedRenameReplacesOneHardLinkWithoutLosingOtherAlias(t *testing.T) {
+	mountpoint := mountTestFilesystem(t)
+	source := filepath.Join(mountpoint, "source")
+	destination := filepath.Join(mountpoint, "destination")
+	remainingAlias := filepath.Join(mountpoint, "remaining-alias")
+	if err := os.WriteFile(source, []byte("source-data"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(destination, []byte("destination-data"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(destination, remainingAlias); err != nil {
+		t.Fatalf("Link destination alias: %v", err)
+	}
+	sourceIno, sourceLinks := statInode(t, source)
+	destinationIno, destinationLinks := statInode(t, destination)
+	if sourceLinks != 1 || destinationLinks != 2 {
+		t.Fatalf("initial NLinks = source %d, destination %d; want 1/2", sourceLinks, destinationLinks)
+	}
+
+	if err := os.Rename(source, destination); err != nil {
+		t.Fatalf("Rename over one name of another hard-linked file: %v", err)
+	}
+	if _, err := os.Lstat(source); !errors.Is(err, syscall.ENOENT) {
+		t.Errorf("source after Rename = %v, want ENOENT", err)
+	}
+	if ino, links := statInode(t, destination); ino != sourceIno || links != 1 {
+		t.Errorf("replacement destination inode/NLink = %d/%d, want %d/1", ino, links, sourceIno)
+	}
+	if ino, links := statInode(t, remainingAlias); ino != destinationIno || links != 1 {
+		t.Errorf("remaining old alias inode/NLink = %d/%d, want %d/1", ino, links, destinationIno)
+	}
+	if got, err := os.ReadFile(destination); err != nil || string(got) != "source-data" {
+		t.Errorf("replacement destination data = %q, %v", got, err)
+	}
+	if got, err := os.ReadFile(remainingAlias); err != nil || string(got) != "destination-data" {
+		t.Errorf("remaining alias data = %q, %v", got, err)
+	}
+}
