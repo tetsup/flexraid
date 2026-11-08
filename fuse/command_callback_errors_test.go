@@ -46,7 +46,7 @@ func TestNamespaceCallbacksReturnExpectedErrors(t *testing.T) {
 		if _, errno := root.Lookup(ctx, name, &gofuse.EntryOut{}); errno != syscall.EINVAL {
 			t.Errorf("Lookup(%q) errno = %v, want EINVAL", name, errno)
 		}
-		if _, errno := root.Create(ctx, name, uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{}); errno != syscall.EINVAL {
+		if _, _, _, errno := root.Create(ctx, name, uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{}); errno != syscall.EINVAL {
 			t.Errorf("Create(%q) errno = %v, want EINVAL", name, errno)
 		}
 		if _, errno := root.Mkdir(ctx, name, 0755, &gofuse.EntryOut{}); errno != syscall.EINVAL {
