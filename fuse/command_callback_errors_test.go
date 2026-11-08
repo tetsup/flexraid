@@ -13,7 +13,7 @@ import (
 	"github.com/tetsup/flexraid/orchestration"
 )
 
-func newCallbackTestFilesystem(t *testing.T) (*FileSystem, context.Context) {
+type foreignOperationsNode struct {\n\tfs.Inode\n}\n\nfunc newCallbackTestFilesystem(t *testing.T) (*FileSystem, context.Context) {
 	adapter, ctx, _ := newCallbackTestFilesystemWithIORoots(t)
 	return adapter, ctx
 }
@@ -200,6 +200,27 @@ func TestAdapterAndParentTypeErrors(t *testing.T) {
 	}
 	if errno := root.Rename(ctx, "file", file, "child", 0); errno != syscall.ENOTDIR {
 		t.Errorf("Rename to non-directory parent errno = %v, want ENOTDIR", errno)
+	}
+
+	missingParent := &node{layer: adapter.layer, objectID: testObjectID(t)}
+	missingParentInode := root.NewInode(ctx, missingParent, fs.StableAttr{Mode: syscall.S_IFDIR, Ino: inodeNumber(missingParent.objectID)})
+	if _, errno := missingParent.Link(ctx, file, "missing-parent-link", &gofuse.EntryOut{}); errno != syscall.ENOENT {
+		t.Errorf("Link with missing parent errno = %v, want ENOENT", errno)
+	}
+	if errno := missingParent.Rename(ctx, "missing", root, "new", 0); errno != syscall.ENOENT {
+		t.Errorf("Rename with missing source parent errno = %v, want ENOENT", errno)
+	}
+	if errno := root.Rename(ctx, "file", missingParentInode, "new", 0); errno != syscall.ENOENT {
+		t.Errorf("Rename with missing destination parent errno = %v, want ENOENT", errno)
+	}
+
+	foreignOperations := &foreignOperationsNode{}
+	_ = fs.NewNodeFS(foreignOperations, nil)
+	if _, errno := root.Link(ctx, foreignOperations, "foreign-operations-link", &gofuse.EntryOut{}); errno != syscall.EXDEV {
+		t.Errorf("Link from incompatible operations type errno = %v, want EXDEV", errno)
+	}
+	if errno := root.Rename(ctx, "file", foreignOperations, "foreign-operations-move", 0); errno != syscall.EXDEV {
+		t.Errorf("Rename to incompatible operations type errno = %v, want EXDEV", errno)
 	}
 
 	foreign, foreignCtx := newCallbackTestFilesystem(t)
