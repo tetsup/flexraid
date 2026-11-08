@@ -156,8 +156,8 @@ func TestLinkRejectsInvalidRequestsWithoutAddingName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fixture.layer.Link(LinkRequest{SourceID: symlink.ObjectID, ParentID: fixture.rootID, Name: "sym-link"}); !errors.Is(err, os.ErrInvalid) {
-		t.Fatalf("Link symlink = %v, want os.ErrInvalid", err)
+	if _, err := fixture.layer.Link(LinkRequest{SourceID: symlink.ObjectID, ParentID: fixture.rootID, Name: "sym-link"}); !errors.Is(err, syscall.EPERM) {
+		t.Fatalf("Link symlink = %v, want EPERM", err)
 	}
 	if _, err := fixture.layer.Lookup(LookupRequest{ParentID: fixture.rootID, Name: "missing-parent"}); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("failed Link published a name: %v", err)
