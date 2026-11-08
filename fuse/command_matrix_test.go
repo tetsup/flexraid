@@ -1,6 +1,7 @@
 package fuse_test
 
 import (
+	"fmt"
 	"errors"
 	"os"
 	"path/filepath"
@@ -409,5 +410,33 @@ func TestMountedRenameReplacesOneHardLinkWithoutLosingOtherAlias(t *testing.T) {
 	}
 	if got, err := os.ReadFile(remainingAlias); err != nil || string(got) != "destination-data" {
 		t.Errorf("remaining alias data = %q, %v", got, err)
+	}
+}
+
+func TestMountedReaddirPaginatesWithoutLosingOrDuplicatingEntries(t *testing.T) {
+	mountpoint := mountTestFilesystem(t)
+	const count = 128
+	for i := 0; i < count; i++ {
+		name := fmt.Sprintf("entry-%03d-%032x", i, i)
+		if err := os.WriteFile(filepath.Join(mountpoint, name), []byte{byte(i)}, 0600); err != nil {
+			t.Fatalf("Create %s: %v", name, err)
+		}
+	}
+	entries, err := os.ReadDir(mountpoint)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	if len(entries) != count {
+		t.Fatalf("ReadDir returned %d entries, want %d", len(entries), count)
+	}
+	seen := make(map[string]bool, count)
+	for _, entry := range entries {
+		if seen[entry.Name()] {
+			t.Errorf("Readdir returned duplicate entry %q", entry.Name())
+		}
+		seen[entry.Name()] = true
+		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+			t.Errorf("Readdir entry %q has unexpected type %v", entry.Name(), entry.Type())
+		}
 	}
 }
