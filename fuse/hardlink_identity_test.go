@@ -225,6 +225,15 @@ func TestHardLinkCallbacksKeepBackingFileIdentity(t *testing.T) {
 	if _, errno := root.Link(ctx, originalInode, "alias", &gofuse.EntryOut{}); errno != syscall.EEXIST {
 		t.Errorf("Link existing alias name errno = %v, want EEXIST", errno)
 	}
+	if errno := root.Unlink(ctx, "second-alias"); errno != 0 {
+		t.Errorf("Unlink second alias: %v", errno)
+	}
+	var afterSecondUnlink gofuse.AttrOut
+	if errno := aliasNode.Getattr(ctx, nil, &afterSecondUnlink); errno != 0 {
+		t.Errorf("Getattr after second alias unlink: %v", errno)
+	} else if afterSecondUnlink.Attr.Nlink != 2 {
+		t.Errorf("NLink after second alias unlink = %d, want 2", afterSecondUnlink.Attr.Nlink)
+	}
 
 	// Namespace mutations must continue to address a name, not the backing
 	// ObjectID: removing the original name must leave the alias usable.
