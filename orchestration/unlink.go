@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"syscall"
 	"time"
 
 	"github.com/tetsup/flexraid/pkg/shared"
@@ -53,7 +54,7 @@ func (layer *Orchestration) Unlink(request UnlinkRequest) (response UnlinkRespon
 	case objectKindHardLink:
 		err = layer.unlinkHardLink(ctx, parent, object)
 	case objectKindDirectory:
-		err = fmt.Errorf("cannot unlink a directory: %w", os.ErrInvalid)
+		err = syscall.EISDIR
 	default:
 		err = fmt.Errorf("unsupported object kind: %w", os.ErrInvalid)
 	}
