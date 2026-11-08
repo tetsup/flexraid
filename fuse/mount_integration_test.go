@@ -268,6 +268,20 @@ func TestMountedRmdirReturnsPOSIXErrnos(t *testing.T) {
 		t.Errorf("rmdir regular file error = %v, want ENOTDIR", err)
 	}
 
+	symlinkPath := filepath.Join(mountpoint, "symlink")
+	if err := os.Symlink("missing-target", symlinkPath); err != nil {
+		t.Fatalf("create symlink for rmdir check: %v", err)
+	}
+	if err := syscall.Rmdir(symlinkPath); !errors.Is(err, syscall.ENOTDIR) {
+		t.Errorf("rmdir symlink error = %v, want ENOTDIR", err)
+	}
+	if info, err := os.Lstat(symlinkPath); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("symlink after rejected rmdir = %v, %v; want existing symlink", info, err)
+	}
+	if err := os.Remove(symlinkPath); err != nil {
+		t.Errorf("unlink symlink after rejected rmdir: %v", err)
+	}
+
 	nonEmpty := filepath.Join(mountpoint, "non-empty-directory")
 	if err := os.Mkdir(nonEmpty, 0755); err != nil {
 		t.Fatalf("create non-empty directory: %v", err)
