@@ -1,0 +1,152 @@
+package fuse
+
+import (
+	"context"
+	"os"
+	"syscall"
+	"testing"
+
+	"github.com/hanwen/go-fuse/v2/fs"
+	gofuse "github.com/hanwen/go-fuse/v2/fuse"
+	"github.com/tetsup/flexraid/distribution"
+	physicalio "github.com/tetsup/flexraid/io"
+	"github.com/tetsup/flexraid/orchestration"
+)
+
+func newCallbackTestFilesystem(t *testing.T) (*FileSystem, context.Context) {
+	t.Helper()
+	ios := make([]*physicalio.IO, 4)
+	for i := range ios {
+		ios[i] = physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer
+	}
+	distributed, err := distribution.New(distribution.NewRequest{IOs: ios})
+	if err != nil {
+		t.Fatalf("initialize Distribution: %v", err)
+	}
+	root, err := orchestration.CreateRoot(orchestration.CreateRootRequest{
+		Distribution: distributed.Layer, Mode: 0755,
+		UID: uint32(os.Getuid()), GID: uint32(os.Getgid()),
+	})
+	if err != nil {
+		t.Fatalf("create root: %v", err)
+	}
+	adapter, err := New(root.Layer, root.RootID)
+	if err != nil {
+		t.Fatalf("create adapter: %v", err)
+	}
+	_ = fs.NewNodeFS(adapter.root, nil)
+	return adapter, context.Background()
+}
+
+func TestNamespaceCallbacksReturnExpectedErrors(t *testing.T) {
+	adapter, ctx := newCallbackTestFilesystem(t)
+	root := adapter.root
+
+	for _, name := range []string{"", ".", "..", "a/b"} {
+		if _, errno := root.Lookup(ctx, name, &gofuse.EntryOut{}); errno != syscall.EINVAL {
+			t.Errorf("Lookup(%q) errno = %v, want EINVAL", name, errno)
+		}
+		if _, errno := root.Create(ctx, name, uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{}); errno != syscall.EINVAL {
+			t.Errorf("Create(%q) errno = %v, want EINVAL", name, errno)
+		}
+		if _, errno := root.Mkdir(ctx, name, 0755, &gofuse.EntryOut{}); errno != syscall.EINVAL {
+			t.Errorf("Mkdir(%q) errno = %v, want EINVAL", name, errno)
+		}
+		if _, errno := root.Symlink(ctx, "target", name, &gofuse.EntryOut{}); errno != syscall.EINVAL {
+			t.Errorf("Symlink(%q) errno = %v, want EINVAL", name, errno)
+		}
+	}
+
+	if _, errno := root.Lookup(ctx, "missing", &gofuse.EntryOut{}); errno != syscall.ENOENT {
+		t.Errorf("Lookup missing errno = %v, want ENOENT", errno)
+	}
+	if errno := root.Unlink(ctx, "missing"); errno != syscall.ENOENT {
+		t.Errorf("Unlink missing errno = %v, want ENOENT", errno)
+	}
+	if errno := root.Rmdir(ctx, "missing"); errno != syscall.ENOENT {
+		t.Errorf("Rmdir missing errno = %v, want ENOENT", errno)
+	}
+	if errno := root.Rename(ctx, "missing", root, "renamed", 0); errno != syscall.ENOENT {
+		t.Errorf("Rename missing source errno = %v, want ENOENT", errno)
+	}
+
+	fileInode, _, _, errno := root.Create(ctx, "regular", uint32(syscall.O_RDWR), 0640, &gofuse.EntryOut{})
+	if errno != 0 {
+		t.Fatalf("Create regular file: %v", errno)
+	}
+	fileNode := fileInode.Operations().(*node)
+	if _, errno := fileNode.Lookup(ctx, "child", &gofuse.EntryOut{}); errno != syscall.ENOTDIR {
+		t.Errorf("Lookup on regular file errno = %v, want ENOTDIR", errno)
+	}
+	if _, errno := fileNode.Readdir(ctx); errno != syscall.ENOTDIR {
+		t.Errorf("Readdir on regular file errno = %v, want ENOTDIR", errno)
+	}
+	if _, _, errno := fileNode.Open(ctx, uint32(syscall.O_RDONLY)); errno != syscall.EISDIR && errno != syscall.ENOTDIR {
+		t.Errorf("Open regular-file node callback expected backend rejection? errno = %v", errno)
+	}
+	if _, errno := fileNode.Readlink(ctx); errno != syscall.EINVAL {
+		t.Errorf("Readlink regular file errno = %v, want EINVAL", errno)
+	}
+	if _, errno := root.Link(ctx, fileInode, "regular", &gofuse.EntryOut{}); errno != syscall.EEXIST {
+		t.Errorf("Link duplicate name errno = %v, want EEXIST", errno)
+	}
+	if errno := root.Rmdir(ctx, "regular"); errno != syscall.ENOTDIR {
+		t.Errorf("Rmdir regular file errno = %v, want ENOTDIR", errno)
+	}
+	if errno := root.Unlink(ctx, "regular"); errno != 0 {
+		t.Fatalf("Unlink regular file: %v", errno)
+	}
+	if errno := root.Unlink(ctx, "regular"); errno != syscall.ENOENT {
+		t.Errorf("second Unlink errno = %v, want ENOENT", errno)
+	}
+
+	dirInode, errno := root.Mkdir(ctx, "directory", 0755, &gofuse.EntryOut{})
+	if errno != 0 {
+		t.Fatalf("Mkdir directory: %v", errno)
+	}
+	if _, errno := root.Link(ctx, dirInode, "directory-link", &gofuse.EntryOut{}); errno != syscall.EINVAL {
+		t.Errorf("Link directory errno = %v, want EINVAL", errno)
+	}
+	if errno := root.Unlink(ctx, "directory"); errno != syscall.EISDIR {
+		t.Errorf("Unlink directory errno = %v, want EISDIR", errno)
+	}
+	if errno := root.Rmdir(ctx, "directory"); errno != 0 {
+		t.Errorf("Rmdir empty directory errno = %v, want success", errno)
+	}
+
+	if _, errno := root.Symlink(ctx, "", "empty-target", &gofuse.EntryOut{}); errno != syscall.EINVAL {
+		t.Errorf("Symlink empty target errno = %v, want EINVAL", errno)
+	}
+	if _, errno := root.Symlink(ctx, "bad\x00target", "nul-target", &gofuse.EntryOut{}); errno != syscall.EINVAL {
+		t.Errorf("Symlink NUL target errno = %v, want EINVAL", errno)
+	}
+}
+
+func TestDataCallbacksRejectWrongNodeAndInvalidHandles(t *testing.T) {
+	adapter, ctx := newCallbackTestFilesystem(t)
+	root := adapter.root
+	dirInode, errno := root.Mkdir(ctx, "directory", 0755, &gofuse.EntryOut{})
+	if errno != 0 {
+		t.Fatalf("Mkdir: %v", errno)
+	}
+	dir := dirInode.Operations().(*node)
+
+	if _, _, errno := dir.Open(ctx, uint32(syscall.O_RDONLY)); errno != syscall.EISDIR {
+		t.Errorf("Open directory errno = %v, want EISDIR", errno)
+	}
+	if _, errno := dir.Readlink(ctx); errno != syscall.EINVAL {
+		t.Errorf("Readlink directory errno = %v, want EINVAL", errno)
+	}
+
+	missing := &node{layer: adapter.layer, objectID: testObjectID(t)}
+	var attr gofuse.AttrOut
+	if errno := missing.Getattr(ctx, nil, &attr); errno != syscall.ENOENT {
+		t.Errorf("Getattr missing ObjectID errno = %v, want ENOENT", errno)
+	}
+	if _, errno := missing.Readdir(ctx); errno != syscall.ENOENT {
+		t.Errorf("Readdir missing ObjectID errno = %v, want ENOENT", errno)
+	}
+	if _, errno := missing.Lookup(ctx, "anything", &gofuse.EntryOut{}); errno != syscall.ENOENT {
+		t.Errorf("Lookup missing parent errno = %v, want ENOENT", errno)
+	}
+}
