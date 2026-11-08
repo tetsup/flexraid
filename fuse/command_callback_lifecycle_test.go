@@ -347,6 +347,13 @@ func TestSetattrRejectsReadonlyAndMismatchedHandles(t *testing.T) {
 	if errno := readonly.Setattr(ctx, readonlyHandle, sizeIn, &gofuse.AttrOut{}); errno == 0 {
 		t.Error("Setattr with released handle succeeded")
 	}
+	var afterReleasedHandle gofuse.AttrOut
+	if errno := readonly.Getattr(ctx, nil, &afterReleasedHandle); errno != 0 {
+		t.Fatalf("Getattr after rejected released-handle Setattr: %v", errno)
+	}
+	if afterReleasedHandle.Attr != readonlyAfter.Attr {
+		t.Errorf("attributes changed after rejected released-handle Setattr: before=%+v after=%+v", readonlyAfter.Attr, afterReleasedHandle.Attr)
+	}
 	if errno := root.Unlink(ctx, "readonly"); errno != 0 {
 		t.Errorf("Unlink readonly: %v", errno)
 	}
