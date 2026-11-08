@@ -7,12 +7,10 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/hanwen/go-fuse/v2/fs"
 	gofuse "github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/tetsup/flexraid/distribution"
 	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/orchestration"
-	"github.com/tetsup/flexraid/pkg/shared"
 )
 
 // This exercises the adapter callbacks directly, without requiring /dev/fuse.
@@ -108,7 +106,7 @@ func TestHardLinkCallbacksKeepBackingFileIdentity(t *testing.T) {
 	defer stream.Close()
 	foundAlias := false
 	for stream.HasNext() {
-		entry, readErrno := stream.Next(ctx)
+		entry, readErrno := stream.Next()
 		if readErrno != 0 {
 			t.Fatalf("read Readdir entry: %v", readErrno)
 		}
@@ -203,7 +201,4 @@ func TestHardLinkCallbacksKeepBackingFileIdentity(t *testing.T) {
 		t.Errorf("Lookup after final Unlink errno = %v, want ENOENT", errno)
 	}
 
-	_ = fs.StableAttr{} // keep the adapter's inode contract explicit in this test package
-	var _ fs.InodeEmbedder = root
-	_ = shared.ObjectID{}
 }
