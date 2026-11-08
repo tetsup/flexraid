@@ -141,12 +141,17 @@ func (layer *Orchestration) Release(request ReleaseRequest) (response ReleaseRes
 	}
 	handle.closed = true
 	handle.hasActiveStripeID = false
-	handle.runtimeFile.mu.Lock()
-	if handle.runtimeFile.openCount > 0 {
-		handle.runtimeFile.openCount--
+	file := handle.runtimeFile
+	file.mu.Lock()
+	if file.openCount > 0 {
+		file.openCount--
 	}
-	handle.runtimeFile.mu.Unlock()
+	shouldEnqueue := file.openCount == 0 && file.header.Deleted
+	file.mu.Unlock()
 	handle.mu.Unlock()
+	if shouldEnqueue {
+		layer.enqueueDeletion(file.objectID)
+	}
 
 	if layer.logger != nil {
 		layer.logger.Debug("Orchestration Release completed", "duration", time.Since(started))
