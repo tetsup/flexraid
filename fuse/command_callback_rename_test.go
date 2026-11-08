@@ -99,7 +99,8 @@ func TestRenameCallbackReplacesNonDirectoryKinds(t *testing.T) {
 		t.Errorf("Release file source: %v", errno)
 	}
 
-	if _, _, _, errno := root.Create(ctx, "file-destination", uint32(syscall.O_RDWR), 0600, &fuse.EntryOut{}); errno != 0 {
+	fileDestinationInode, fileDestinationHandle, _, errno := root.Create(ctx, "file-destination", uint32(syscall.O_RDWR), 0600, &fuse.EntryOut{})
+	if errno != 0 {
 		t.Fatalf("Create file destination: %v", errno)
 	}
 	if _, errno := root.Symlink(ctx, "new-target", "symlink-source", &fuse.EntryOut{}); errno != 0 {
@@ -121,5 +122,8 @@ func TestRenameCallbackReplacesNonDirectoryKinds(t *testing.T) {
 	}
 	if _, errno := root.Lookup(ctx, "symlink-source", &fuse.EntryOut{}); errno != syscall.ENOENT {
 		t.Errorf("symlink source after Rename errno = %v, want ENOENT", errno)
+	}
+	if errno := fileDestinationInode.Operations().(*node).Release(ctx, fileDestinationHandle); errno != 0 {
+		t.Errorf("Release replaced file destination: %v", errno)
 	}
 }
