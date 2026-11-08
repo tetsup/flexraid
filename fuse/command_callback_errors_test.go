@@ -148,6 +148,15 @@ func TestNamespaceCallbacksReturnExpectedErrors(t *testing.T) {
 	if errno := root.Rmdir(ctx, "regular"); errno != syscall.ENOTDIR {
 		t.Errorf("Rmdir regular file errno = %v, want ENOTDIR", errno)
 	}
+	if _, errno := root.Symlink(ctx, "target", "rmdir-link", &gofuse.EntryOut{}); errno != 0 {
+		t.Fatalf("Symlink for Rmdir type check: %v", errno)
+	}
+	if errno := root.Rmdir(ctx, "rmdir-link"); errno != syscall.ENOTDIR {
+		t.Errorf("Rmdir symlink errno = %v, want ENOTDIR", errno)
+	}
+	if errno := root.Unlink(ctx, "rmdir-link"); errno != 0 {
+		t.Errorf("Unlink symlink after rejected Rmdir: %v", errno)
+	}
 	if errno := fileNode.Release(ctx, fileHandle); errno != 0 {
 		t.Fatalf("Release created file handle: %v", errno)
 	}
