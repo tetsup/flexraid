@@ -42,7 +42,7 @@ func TestInodeNumberUsesBigEndianPrefixAndAvoidsZero(t *testing.T) {
 
 func TestStableAttrUsesTypeAndObjectID(t *testing.T) {
 	id := testObjectID(t)
-	got := stableAttr(orchestration.ObjectAttributes{ObjectID: id, Mode: syscall.S_IFDIR | 0750})
+	got := stableAttr(orchestration.ObjectAttributes{ObjectID: id, Kind: orchestration.ObjectKindDirectory, Mode: 0750})
 	if got.Mode != syscall.S_IFDIR || got.Ino != inodeNumber(id) {
 		t.Fatalf("stableAttr = %+v, want type=%#o ino=%d", got, syscall.S_IFDIR, inodeNumber(id))
 	}
@@ -51,7 +51,7 @@ func TestStableAttrUsesTypeAndObjectID(t *testing.T) {
 func TestFillAttrMapsOrchestrationAttributes(t *testing.T) {
 	id := testObjectID(t)
 	atime, mtime, ctime := time.Unix(123, 456), time.Unix(234, 567), time.Unix(345, 678)
-	attributes := orchestration.ObjectAttributes{ObjectID: id, Mode: syscall.S_IFREG | 0640, UID: 17, GID: 23, Nlink: 2, Size: 1537, Atime: atime, Mtime: mtime, Ctime: ctime}
+	attributes := orchestration.ObjectAttributes{ObjectID: id, Kind: orchestration.ObjectKindFile, Mode: 0640, UID: 17, GID: 23, Nlink: 2, Size: 1537, Atime: atime, Mtime: mtime, Ctime: ctime}
 	var out gofuse.Attr
 	fillAttr(&out, attributes)
 	if out.Ino != inodeNumber(id) || out.Mode != attributes.Mode || out.Nlink != 2 || out.Size != 1537 {
@@ -65,6 +65,24 @@ func TestFillAttrMapsOrchestrationAttributes(t *testing.T) {
 	}
 	if out.Blksize != 4096 || out.Blocks != 4 {
 		t.Fatalf("block mapping incorrect: blksize=%d blocks=%d", out.Blksize, out.Blocks)
+	}
+}
+
+func TestObjectModeMapsKindAndPermissions(t *testing.T) {
+	tests := []struct {
+		kind orchestration.ObjectAttributes
+		want uint32
+	}{
+		{orchestration.ObjectAttributes{Kind: orchestration.ObjectKindDirectory, Mode: 0751}, syscall.S_IFDIR | 0751},
+		{orchestration.ObjectAttributes{Kind: orchestration.ObjectKindFile, Mode: 0640}, syscall.S_IFREG | 0640},
+		{orchestration.ObjectAttributes{Kind: orchestration.ObjectKindSymlink, Mode: 0777}, syscall.S_IFLNK | 0777},
+		{orchestration.ObjectAttributes{Kind: orchestration.ObjectKindHardLinkedFile, Mode: 0600}, syscall.S_IFREG | 0600},
+		{orchestration.ObjectAttributes{Kind: orchestration.ObjectKindHardLink, Mode: 0600}, syscall.S_IFREG | 0600},
+	}
+	for _, tc := range tests {
+		if got := objectMode(tc.kind); got != tc.want {
+			t.Errorf("objectMode(%+v) = %#o, want %#o", tc.kind, got, tc.want)
+		}
 	}
 }
 
@@ -176,7 +194,7 @@ func TestCheckAccessOwnerGroupOtherAndRoot(t *testing.T) {
 func TestFillEntryMapsAllNamespaceAttributes(t *testing.T) {
 	id := testObjectID(t)
 	attributes := orchestration.ObjectAttributes{
-		ObjectID: id, Mode: syscall.S_IFDIR | 0751, UID: 41, GID: 42,
+		ObjectID: id, Kind: orchestration.ObjectKindDirectory, Mode: 0751, UID: 41, GID: 42,
 		Nlink: 3, Size: 1025,
 		Atime: time.Unix(10, 11), Mtime: time.Unix(20, 22), Ctime: time.Unix(30, 33),
 	}
