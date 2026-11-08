@@ -162,7 +162,7 @@ func TestSetattrNoopDoesNotChangeAttributes(t *testing.T) {
 	}
 }
 
-func TestStatfsCallbackCopiesEveryDefinedField(t *testing.T) {
+func TestStatfsCallbackCopiesStableFields(t *testing.T) {
 	adapter, ctx := newCallbackTestFilesystem(t)
 	expected, err := adapter.layer.StatFs(orchestration.StatFsRequest{Context: ctx})
 	if err != nil {
