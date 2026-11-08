@@ -47,7 +47,7 @@ func TestCreateRootCreatesAndRestoresEmptyFilesystem(t *testing.T) {
 		t.Fatal(err)
 	}
 	attributes := root.Attributes
-	if attributes.Kind != objectKindDirectory || attributes.Mode !=  syscallModeDirectory|0750 ||
+	if attributes.Kind != objectKindDirectory || attributes.Mode != syscallModeDirectory|0750 ||
 		attributes.UID != 123 || attributes.GID != 456 || attributes.Nlink != 2 || attributes.Size != 0 {
 		t.Fatalf("root attributes = %+v", attributes)
 	}
