@@ -105,7 +105,9 @@ func (layer *Orchestration) unlinkNamedObject(ctx context.Context, parent, objec
 	object.header = next
 	layer.headers[next.ObjectID] = next
 	delete(parent.children, next.Name)
-	layer.enqueueDeletion(next.ObjectID)
+	if object.file == nil || openHandleCount(object.file) == 0 {
+		layer.enqueueDeletion(next.ObjectID)
+	}
 	return nil
 }
 
@@ -156,7 +158,7 @@ func (layer *Orchestration) unlinkHardLink(ctx context.Context, parent, object *
 		target.file.mu.Unlock()
 	}
 	layer.headers[nextTarget.ObjectID] = nextTarget
-	if nextTarget.Deleted {
+	if nextTarget.Deleted && (target.file == nil || openHandleCount(target.file) == 0) {
 		layer.enqueueDeletion(nextTarget.ObjectID)
 	}
 	return nil
@@ -194,4 +196,11 @@ func (layer *Orchestration) persistObjectHeader(ctx context.Context, next header
 	file.mu.Lock()
 	defer file.mu.Unlock()
 	return layer.persistHeaderUpdateLocked(ctx, file, next)
+}
+
+
+func openHandleCount(file *runtimeFile) uint64 {
+	file.mu.RLock()
+	defer file.mu.RUnlock()
+	return file.openCount
 }
