@@ -33,6 +33,15 @@ const (
 	objectKindHardLink
 )
 
+// Exported object kinds let adapters map logical objects to OS file types.
+const (
+	ObjectKindFile           = objectKindFile
+	ObjectKindDirectory      = objectKindDirectory
+	ObjectKindSymlink        = objectKindSymlink
+	ObjectKindHardLinkedFile = objectKindHardLinkedFile
+	ObjectKindHardLink       = objectKindHardLink
+)
+
 type layoutMode uint8
 
 const (
