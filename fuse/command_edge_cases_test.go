@@ -125,7 +125,8 @@ func TestMountedRenameAcrossDirectoriesAndReplacementTypes(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dirDestination, "keep"), []byte("keep"), 0600); err != nil {
 		t.Fatalf("Create destination child: %v", err)
 	}
-	if err := os.Rename(dirSource, dirDestination); !errors.Is(err, syscall.ENOTEMPTY) && !errors.Is(err, syscall.EEXIST) {
+	// Exercise rename(2) itself; os.Rename returns EEXIST early for directory destinations.
+	if err := syscall.Rename(dirSource, dirDestination); !errors.Is(err, syscall.ENOTEMPTY) && !errors.Is(err, syscall.EEXIST) {
 		t.Errorf("Rename directory onto non-empty directory = %v, want ENOTEMPTY or EEXIST", err)
 	}
 	if info, err := os.Stat(dirSource); err != nil || !info.IsDir() {
