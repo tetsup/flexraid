@@ -27,8 +27,9 @@ func (n *node) Access(ctx context.Context, mask uint32) syscall.Errno {
 // checkAccess applies owner/group/other mode bits. Supplementary groups are not
 // available through go-fuse's Caller and are therefore not considered.
 func checkAccess(attributes orchestration.ObjectAttributes, uid, gid, mask uint32) syscall.Errno {
+	mode := attributes.Mode & 0777
 	if uid == 0 {
-		if mask&gofuse.X_OK != 0 && attributes.Mode&0111 == 0 {
+		if mask&gofuse.X_OK != 0 && mode&0111 == 0 {
 			return syscall.EACCES
 		}
 		return 0
@@ -36,11 +37,11 @@ func checkAccess(attributes orchestration.ObjectAttributes, uid, gid, mask uint3
 	var bits uint32
 	switch {
 	case uid == attributes.UID:
-		bits = (attributes.Mode >> 6) & 7
+		bits = (mode >> 6) & 7
 	case gid == attributes.GID:
-		bits = (attributes.Mode >> 3) & 7
+		bits = (mode >> 3) & 7
 	default:
-		bits = attributes.Mode & 7
+		bits = mode & 7
 	}
 	required := uint32(0)
 	if mask&gofuse.R_OK != 0 {
