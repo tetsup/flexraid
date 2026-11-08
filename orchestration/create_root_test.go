@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"os"
+	"syscall"
 	"testing"
 
 	"github.com/tetsup/flexraid/distribution"
 	physicalio "github.com/tetsup/flexraid/io"
-	"github.com/tetsup/flexraid/pkg/shared"
 )
 
 func newEmptyDistribution(t *testing.T) ([]*physicalio.IO, *distribution.Distribution) {
@@ -26,12 +26,7 @@ func newEmptyDistribution(t *testing.T) ([]*physicalio.IO, *distribution.Distrib
 
 func TestCreateRootCreatesAndRestoresEmptyFilesystem(t *testing.T) {
 	ios, distributed := newEmptyDistribution(t)
-	created, err := CreateRoot(CreateRootRequest{
-		Distribution: distributed,
-		Mode:         0750,
-		UID:          123,
-		GID:          456,
-	})
+	created, err := CreateRoot(CreateRootRequest{Distribution: distributed, Mode: 0750, UID: 123, GID: 456})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,13 +36,12 @@ func TestCreateRootCreatesAndRestoresEmptyFilesystem(t *testing.T) {
 	if _, err := created.RootID.MarshalBinary(); err != nil {
 		t.Fatalf("root ObjectID is invalid: %v", err)
 	}
-
 	root, err := created.Layer.GetAttr(GetAttrRequest{ObjectID: created.RootID})
 	if err != nil {
 		t.Fatal(err)
 	}
 	attributes := root.Attributes
-	if attributes.Kind != objectKindDirectory || attributes.Mode != syscallModeDirectory|0750 ||
+	if attributes.Kind != objectKindDirectory || attributes.Mode != syscall.S_IFDIR|0750 ||
 		attributes.UID != 123 || attributes.GID != 456 || attributes.Nlink != 2 || attributes.Size != 0 {
 		t.Fatalf("root attributes = %+v", attributes)
 	}
@@ -61,7 +55,6 @@ func TestCreateRootCreatesAndRestoresEmptyFilesystem(t *testing.T) {
 	if got := created.Layer.countReachableObjects(); got != 1 {
 		t.Fatalf("reachable object count = %d, want root only", got)
 	}
-
 	listed, err := distributed.ListObjects(distribution.ListObjectsRequest{Context: context.Background()})
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +75,7 @@ func TestCreateRootCreatesAndRestoresEmptyFilesystem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if restored.Attributes.Kind != objectKindDirectory || restored.Attributes.Mode != syscallModeDirectory|0750 ||
+	if restored.Attributes.Kind != objectKindDirectory || restored.Attributes.Mode != syscall.S_IFDIR|0750 ||
 		restored.Attributes.UID != 123 || restored.Attributes.GID != 456 || restored.Attributes.Nlink != 2 {
 		t.Fatalf("restored root attributes = %+v", restored.Attributes)
 	}
@@ -159,12 +152,9 @@ func TestCreateRootPersistenceFailureDoesNotPublishFilesystem(t *testing.T) {
 	}
 }
 
-// Keep the test independent of Linux-only syscall constants.
-const syscallModeDirectory uint32 = 0040000
-
-func TestCreateRootRejectsInvalidModeBits(t *testing.T) {
+func TestCreateRootMasksFileTypeBitsFromMode(t *testing.T) {
 	_, distributed := newEmptyDistribution(t)
-	created, err := CreateRoot(CreateRootRequest{Distribution: distributed, Mode: 017777})
+	created, err := CreateRoot(CreateRootRequest{Distribution: distributed, Mode: syscall.S_IFREG | 0755})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,10 +162,7 @@ func TestCreateRootRejectsInvalidModeBits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if attributes.Attributes.Mode&07777 != 07777 {
-		t.Fatalf("root permission/special bits = %#o, want %#o", attributes.Attributes.Mode&07777, uint32(07777))
-	}
-	if attributes.Attributes.Kind != shared.ObjectKind(2) {
-		t.Fatalf("root Kind = %d, want Directory", attributes.Attributes.Kind)
+	if attributes.Attributes.Mode != syscall.S_IFDIR|0755 {
+		t.Fatalf("root Mode = %#o, want %#o", attributes.Attributes.Mode, uint32(syscall.S_IFDIR|0755))
 	}
 }
