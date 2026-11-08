@@ -166,3 +166,35 @@ func TestCheckAccessOwnerGroupOtherAndRoot(t *testing.T) {
 		})
 	}
 }
+
+func TestFillEntryMapsAllNamespaceAttributes(t *testing.T) {
+	id := testObjectID(t)
+	attributes := orchestration.ObjectAttributes{
+		ObjectID: id, Mode: syscall.S_IFDIR | 0751, UID: 41, GID: 42,
+		Nlink: 3, Size: 1025,
+		Atime: time.Unix(10, 11), Mtime: time.Unix(20, 22), Ctime: time.Unix(30, 33),
+	}
+	var out gofuse.EntryOut
+	fillEntry(&out, attributes)
+	if out.Ino != inodeNumber(id) || out.Mode != attributes.Mode || out.Nlink != 3 || out.Size != 1025 {
+		t.Fatalf("entry identity/metadata mismatch: %+v", out.Attr)
+	}
+	if out.Uid != 41 || out.Gid != 42 || out.Atime != 10 || out.Atimensec != 11 ||
+		out.Mtime != 20 || out.Mtimensec != 22 || out.Ctime != 30 || out.Ctimensec != 33 {
+		t.Fatalf("entry ownership/timestamps mismatch: %+v", out.Attr)
+	}
+}
+
+func TestCallerUsesFUSECredentials(t *testing.T) {
+	ctx := gofuse.NewContext(context.Background(), &gofuse.Caller{Uid: 123, Gid: 456, Pid: 789})
+	if got := caller(ctx); got.Uid != 123 || got.Gid != 456 {
+		t.Fatalf("caller=%+v, want uid=123 gid=456", got)
+	}
+}
+
+func TestMountOptionsEnableNullPermissions(t *testing.T) {
+	options := MountOptions()
+	if options == nil || !options.NullPermissions {
+		t.Fatalf("MountOptions()=%+v, want NullPermissions enabled", options)
+	}
+}
