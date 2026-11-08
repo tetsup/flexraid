@@ -2,6 +2,7 @@ package fuse_test
 
 import (
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -32,7 +33,7 @@ func TestMountedReadWriteOffsetsAndZeroLength(t *testing.T) {
 	if string(content) != string(want) {
 		t.Errorf("sparse file content = %v, want %v", content, want)
 	}
-	if n, err := file.ReadAt(make([]byte, 4), 12); n != 0 || !errors.Is(err, syscall.EOF) {
+	if n, err := file.ReadAt(make([]byte, 4), 12); n != 0 || !errors.Is(err, io.EOF) {
 		t.Errorf("ReadAt beyond EOF = %d, %v; want 0, EOF", n, err)
 	}
 	if err := file.Close(); err != nil {
