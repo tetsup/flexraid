@@ -2,6 +2,7 @@ package fuse
 
 import (
 	"os"
+	"syscall"
 	"strings"
 	"syscall"
 	"testing"
@@ -111,5 +112,73 @@ func TestNamespaceCallbacksReturnConsistentEntryMetadata(t *testing.T) {
 		t.Errorf("Getattr long symlink: %v", errno)
 	} else if longAttr.Attr.Size != uint64(len(longTarget)) {
 		t.Errorf("long symlink size = %d, want %d", longAttr.Attr.Size, len(longTarget))
+	}
+}
+
+func TestStatfsCountsDirectoriesSymlinksAndDistinctHardLinkedFiles(t *testing.T) {
+	adapter, ctx := newCallbackTestFilesystem(t)
+	root := adapter.root
+	files := func() uint64 {
+		t.Helper()
+		var out gofuse.StatfsOut
+		if errno := root.Statfs(ctx, &out); errno != 0 {
+			t.Fatalf("Statfs: %v", errno)
+		}
+		return out.Files
+	}
+	if got := files(); got != 1 {
+		t.Fatalf("initial Files = %d, want root only (1)", got)
+	}
+	if _, errno := root.Mkdir(ctx, "directory", 0755, &gofuse.EntryOut{}); errno != 0 {
+		t.Fatalf("Mkdir: %v", errno)
+	}
+	if got := files(); got != 2 {
+		t.Errorf("Files after Mkdir = %d, want 2", got)
+	}
+	if _, errno := root.Symlink(ctx, "target", "symlink", &gofuse.EntryOut{}); errno != 0 {
+		t.Fatalf("Symlink: %v", errno)
+	}
+	if got := files(); got != 3 {
+		t.Errorf("Files after Symlink = %d, want 3", got)
+	}
+	fileInode, fileHandle, _, errno := root.Create(ctx, "file", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{})
+	if errno != 0 {
+		t.Fatalf("Create: %v", errno)
+	}
+	if errno := fileInode.Operations().(*node).Release(ctx, fileHandle); errno != 0 {
+		t.Errorf("Release: %v", errno)
+	}
+	if got := files(); got != 4 {
+		t.Errorf("Files after Create = %d, want 4", got)
+	}
+	if _, errno := root.Link(ctx, fileInode, "alias", &gofuse.EntryOut{}); errno != 0 {
+		t.Fatalf("Link: %v", errno)
+	}
+	if got := files(); got != 4 {
+		t.Errorf("Files after hard link = %d, want 4 distinct objects", got)
+	}
+	if errno := root.Unlink(ctx, "file"); errno != 0 {
+		t.Fatalf("Unlink original name: %v", errno)
+	}
+	if got := files(); got != 4 {
+		t.Errorf("Files after unlinking one hard link = %d, want 4", got)
+	}
+	if errno := root.Unlink(ctx, "alias"); errno != 0 {
+		t.Fatalf("Unlink final hard link: %v", errno)
+	}
+	if got := files(); got != 3 {
+		t.Errorf("Files after final hard-link removal = %d, want 3", got)
+	}
+	if errno := root.Unlink(ctx, "symlink"); errno != 0 {
+		t.Fatalf("Unlink symlink: %v", errno)
+	}
+	if got := files(); got != 2 {
+		t.Errorf("Files after symlink removal = %d, want 2", got)
+	}
+	if errno := root.Rmdir(ctx, "directory"); errno != 0 {
+		t.Fatalf("Rmdir: %v", errno)
+	}
+	if got := files(); got != 1 {
+		t.Errorf("Files after directory removal = %d, want root only (1)", got)
 	}
 }
