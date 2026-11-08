@@ -8,7 +8,6 @@ import (
 
 	gofuse "github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/tetsup/flexraid/orchestration"
-	"github.com/tetsup/flexraid/pkg/shared"
 )
 
 func TestOpenAppendAndTruncateCallbackSemantics(t *testing.T) {
