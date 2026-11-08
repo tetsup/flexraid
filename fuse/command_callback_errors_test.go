@@ -182,6 +182,28 @@ func TestDataCallbacksRejectWrongNodeAndInvalidHandles(t *testing.T) {
 	if _, errno := missing.Lookup(ctx, "anything", &gofuse.EntryOut{}); errno != syscall.ENOENT {
 		t.Errorf("Lookup missing parent errno = %v, want ENOENT", errno)
 	}
+	if _, errno := missing.Readlink(ctx); errno != syscall.ENOENT {
+		t.Errorf("Readlink missing ObjectID errno = %v, want ENOENT", errno)
+	}
+	if _, _, errno := missing.Open(ctx, uint32(syscall.O_RDONLY)); errno != syscall.ENOENT {
+		t.Errorf("Open missing ObjectID errno = %v, want ENOENT", errno)
+	}
+	fileInode, fileHandle, _, createErrno := root.Create(ctx, "handle-source", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{})
+	if createErrno != 0 {
+		t.Fatalf("Create handle source: %v", createErrno)
+	}
+	if _, errno := missing.Read(ctx, fileHandle, make([]byte, 1), 0); errno != syscall.ENOENT {
+		t.Errorf("Read missing ObjectID errno = %v, want ENOENT", errno)
+	}
+	if _, errno := missing.Write(ctx, fileHandle, []byte("x"), 0); errno != syscall.ENOENT {
+		t.Errorf("Write missing ObjectID errno = %v, want ENOENT", errno)
+	}
+	if errno := fileInode.Operations().(*node).Release(ctx, fileHandle); errno != 0 {
+		t.Errorf("Release handle source: %v", errno)
+	}
+	if errno := root.Unlink(ctx, "handle-source"); errno != 0 {
+		t.Errorf("Unlink handle source: %v", errno)
+	}
 }
 
 func TestAdapterAndParentTypeErrors(t *testing.T) {
