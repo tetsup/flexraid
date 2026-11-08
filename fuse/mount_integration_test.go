@@ -6,9 +6,9 @@ import (
 	"syscall"
 	"testing"
 
-	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/distribution"
 	"github.com/tetsup/flexraid/fuse"
+	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/orchestration"
 )
 
