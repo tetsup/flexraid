@@ -74,6 +74,12 @@ func TestMountedOpenUnlinkRetainsOpenFileUntilRelease(t *testing.T) {
 	if _, err := os.Stat(path); !errors.Is(err, syscall.ENOENT) {
 		t.Errorf("stat unlinked path = %v, want ENOENT", err)
 	}
+	if err := file.Truncate(3); err != nil {
+		t.Errorf("Truncate through open unlinked handle: %v", err)
+	}
+	if info, err := file.Stat(); err != nil || info.Size() != 3 {
+		t.Errorf("Stat open unlinked handle after Truncate = %v, %v; want size 3", info, err)
+	}
 	if _, err := file.WriteAt([]byte("after!"), 0); err != nil {
 		t.Errorf("Write through open unlinked handle: %v", err)
 	}
