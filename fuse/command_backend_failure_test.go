@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	gofuse "github.com/hanwen/go-fuse/v2/fuse"
+	"github.com/tetsup/flexraid/pkg/shared"
 )
 
 func TestNamespaceAndPersistenceFailuresDoNotPublishPartialChanges(t *testing.T) {
