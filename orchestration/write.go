@@ -56,7 +56,7 @@ func (layer *Orchestration) Write(request WriteRequest) (response WriteResponse,
 	if !exists || object.header.Deleted {
 		return response, os.ErrNotExist
 	}
-	if (object.header.Kind != objectKindFile && object.header.Kind != objectKindHardLinkedFile && object.header.Kind != objectKindHardLink) || object.file == nil || object.file != handle.runtimeFile {
+	if (object.header.Kind != objectKindFile && object.header.Kind != objectKindHardLink) || object.file == nil || object.file != handle.runtimeFile {
 		return response, fmt.Errorf("handle does not refer to writable file %s: %w", request.ObjectID.String(), os.ErrInvalid)
 	}
 	if len(request.Data) == 0 {
