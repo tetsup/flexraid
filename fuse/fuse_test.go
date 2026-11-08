@@ -5,7 +5,8 @@ import (
 	"testing"
 	"time"
 
-	gofuse "github.com/hanwen/go-fuse/v2/fs"\n\tgofuse "github.com/hanwen/go-fuse/v2/fuse"
+	gofuse "github.com/hanwen/go-fuse/v2/fs"
+	gofuse "github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/tetsup/flexraid/orchestration"
 	"github.com/tetsup/flexraid/pkg/shared"
 )
