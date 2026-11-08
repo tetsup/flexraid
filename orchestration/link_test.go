@@ -172,12 +172,18 @@ func TestLinkRejectsInvalidRequestsWithoutAddingName(t *testing.T) {
 func TestGetAttrHidesHardLinkAndReturnsBackingIdentity(t *testing.T) {
 	fixture := newNamespaceFixture(t)
 	file, err := fixture.layer.Create(CreateRequest{ParentID: fixture.rootID, Name: "original", Mode: 0640})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	link, err := fixture.layer.Link(LinkRequest{SourceID: file.ObjectID, ParentID: fixture.rootID, Name: "alias"})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, id := range []shared.ObjectID{file.ObjectID, link.ObjectID} {
 		got, err := fixture.layer.GetAttr(GetAttrRequest{ObjectID: id})
-		if err != nil { t.Fatalf("GetAttr(%s): %v", id, err) }
+		if err != nil {
+			t.Fatalf("GetAttr(%s): %v", id, err)
+		}
 		if got.Attributes.ObjectID != file.ObjectID || got.Attributes.Kind != objectKindFile {
 			t.Fatalf("GetAttr(%s) identity/kind = %s/%v, want backing %s/File", id, got.Attributes.ObjectID, got.Attributes.Kind, file.ObjectID)
 		}
