@@ -26,8 +26,16 @@ func TestFileHandleCallbackLifecycleAndReleasedHandle(t *testing.T) {
 	if errno := n.Fsync(ctx, handle, 0); errno != 0 {
 		t.Errorf("Fsync open handle: %v", errno)
 	}
+	if errno := n.Fsync(ctx, handle, 1); errno != 0 {
+		t.Errorf("Fsync datasync open handle: %v", errno)
+	}
 	if written, errno := n.Write(ctx, handle, []byte("data"), 0); errno != 0 || written != 4 {
 		t.Errorf("Write open handle = %d, %v; want 4, success", written, errno)
+	}
+	if result, errno := n.Read(ctx, handle, make([]byte, 4), 100); errno != 0 {
+		t.Errorf("Read beyond EOF errno = %v, want success with empty data", errno)
+	} else if data, status := result.Bytes(make([]byte, 4)); status != 0 || len(data) != 0 {
+		t.Errorf("Read beyond EOF data/status = %q/%v, want empty/success", data, status)
 	}
 	if errno := n.Release(ctx, handle); errno != 0 {
 		t.Fatalf("Release: %v", errno)
@@ -329,5 +337,35 @@ func TestDataCallbacksHonorCancellationAndStillRelease(t *testing.T) {
 	}
 	if errno := root.Unlink(ctx, "cancel-data"); errno != 0 {
 		t.Errorf("Unlink after canceled operations: %v", errno)
+	}
+}
+
+func TestOpenCallbackRecordsSyncModes(t *testing.T) {
+	adapter, ctx := newCallbackTestFilesystem(t)
+	root := adapter.root
+	inode, _, _, errno := root.Create(ctx, "sync-modes", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{})
+	if errno != 0 {
+		t.Fatalf("Create: %v", errno)
+	}
+	n := inode.Operations().(*node)
+	full, _, errno := n.Open(ctx, uint32(syscall.O_WRONLY|syscall.O_SYNC))
+	if errno != 0 {
+		t.Fatalf("Open O_SYNC: %v", errno)
+	}
+	if got := full.(*fileHandle).handle.syncMode; got != orchestration.SyncModeFull {
+		t.Errorf("O_SYNC mode = %v, want SyncModeFull", got)
+	}
+	if errno := n.Release(ctx, full); errno != 0 {
+		t.Errorf("Release O_SYNC: %v", errno)
+	}
+	data, _, errno := n.Open(ctx, uint32(syscall.O_WRONLY|syscall.O_DSYNC))
+	if errno != 0 {
+		t.Fatalf("Open O_DSYNC: %v", errno)
+	}
+	if got := data.(*fileHandle).handle.syncMode; got != orchestration.SyncModeData {
+		t.Errorf("O_DSYNC mode = %v, want SyncModeData", got)
+	}
+	if errno := n.Release(ctx, data); errno != 0 {
+		t.Errorf("Release O_DSYNC: %v", errno)
 	}
 }
