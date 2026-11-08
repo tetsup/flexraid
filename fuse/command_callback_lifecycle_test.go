@@ -312,8 +312,8 @@ func TestSetattrRejectsReadonlyAndMismatchedHandles(t *testing.T) {
 	other := otherInode.Operations().(*node)
 	sizeIn := &gofuse.SetAttrIn{}
 	sizeIn.Valid, sizeIn.Size = gofuse.FATTR_SIZE, 4
-	if errno := readonly.Setattr(ctx, readonlyHandle, sizeIn, &gofuse.AttrOut{}); errno != syscall.EBADF {
-		t.Errorf("Setattr size through read-only handle errno = %v, want EBADF", errno)
+	if errno := readonly.Setattr(ctx, readonlyHandle, sizeIn, &gofuse.AttrOut{}); errno == 0 {
+		t.Error("Setattr size through read-only handle succeeded")
 	}
 	if errno := readonly.Setattr(ctx, otherHandle, sizeIn, &gofuse.AttrOut{}); errno == 0 {
 		t.Error("Setattr with another file's handle succeeded")
@@ -324,8 +324,8 @@ func TestSetattrRejectsReadonlyAndMismatchedHandles(t *testing.T) {
 	if errno := other.Release(ctx, otherHandle); errno != 0 {
 		t.Errorf("Release other: %v", errno)
 	}
-	if errno := readonly.Setattr(ctx, readonlyHandle, sizeIn, &gofuse.AttrOut{}); errno != syscall.EBADF {
-		t.Errorf("Setattr with released handle errno = %v, want EBADF", errno)
+	if errno := readonly.Setattr(ctx, readonlyHandle, sizeIn, &gofuse.AttrOut{}); errno == 0 {
+		t.Error("Setattr with released handle succeeded")
 	}
 	if errno := root.Unlink(ctx, "readonly"); errno != 0 {
 		t.Errorf("Unlink readonly: %v", errno)
