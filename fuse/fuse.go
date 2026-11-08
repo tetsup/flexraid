@@ -379,7 +379,7 @@ func fillAttr(out *gofuse.Attr, attributes orchestration.ObjectAttributes) {
 
 func caller(ctx context.Context) gofuse.Owner {
 	if c, ok := gofuse.FromContext(ctx); ok && c != nil {
-		return *c
+		return c.Owner
 	}
 	return gofuse.Owner{Uid: uint32(os.Getuid()), Gid: uint32(os.Getgid())}
 }
