@@ -12,6 +12,7 @@ import (
 	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/pkg/shared"
 	cfg "github.com/tetsup/flexraid/pkg/shared/config"
+	"github.com/tetsup/flexraid/storage"
 )
 
 type writeFixture struct {
@@ -290,17 +291,18 @@ func TestFsyncSynchronizesAlreadyCleanStripes(t *testing.T) {
 	ioLayer := fixture.ios[placement.IOIndexes[0]]
 	var chunkKey storage.FileKey
 	found := false
+	stop := errors.New("stop after first matching chunk")
 	_, err = ioLayer.ListChunks(physicalio.ListChunksRequest{
 		Context: context.Background(),
 		Callback: func(entry physicalio.ScanEntry) error {
 			if entry.Error == nil && entry.Key.ObjectID == fixture.fileID && entry.Key.StripeID == 0 {
 				chunkKey, found = entry.Key, true
-				return errors.New("stop after first matching chunk")
+				return stop
 			}
 			return nil
 		},
 	})
-	if err != nil && !strings.Contains(err.Error(), "stop after first matching chunk") {
+	if err != nil && !errors.Is(err, stop) {
 		t.Fatalf("ListChunks: %v", err)
 	}
 	if !found {
