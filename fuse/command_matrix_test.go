@@ -439,4 +439,10 @@ func TestMountedReaddirPaginatesWithoutLosingOrDuplicatingEntries(t *testing.T) 
 			t.Errorf("Readdir entry %q has unexpected type %v", entry.Name(), entry.Type())
 		}
 	}
+	for i := 0; i < count; i++ {
+		name := fmt.Sprintf("entry-%03d-%032x", i, i)
+		if !seen[name] {
+			t.Errorf("Readdir omitted expected entry %q", name)
+		}
+	}
 }
