@@ -87,14 +87,18 @@ func TestNamespaceAndPersistenceFailuresDoNotPublishPartialChanges(t *testing.T)
 	if errno := root.Unlink(ctx, "source"); errno == 0 {
 		t.Error("Unlink with unavailable physical storage succeeded")
 	}
-	if _, errno := root.Lookup(ctx, "source", &gofuse.EntryOut{}); errno != 0 {
+	if sourceAfter, errno := root.Lookup(ctx, "source", &gofuse.EntryOut{}); errno != 0 {
 		t.Errorf("source disappeared after failed Unlink: %v", errno)
+	} else if gotID := sourceAfter.Operations().(*node).objectID; gotID != source.objectID {
+		t.Errorf("source ObjectID after failed Unlink = %s, want %s", gotID, source.objectID)
 	}
 	if errno := root.Rmdir(ctx, "empty-dir"); errno == 0 {
 		t.Error("Rmdir with unavailable physical storage succeeded")
 	}
-	if _, errno := root.Lookup(ctx, "empty-dir", &gofuse.EntryOut{}); errno != 0 {
+	if directoryAfter, errno := root.Lookup(ctx, "empty-dir", &gofuse.EntryOut{}); errno != 0 {
 		t.Errorf("directory disappeared after failed Rmdir: %v", errno)
+	} else if gotID := directoryAfter.Operations().(*node).objectID; gotID != dirInode.Operations().(*node).objectID {
+		t.Errorf("directory ObjectID after failed Rmdir = %s, want %s", gotID, dirInode.Operations().(*node).objectID)
 	}
 	if errno := root.Rename(ctx, "source", root, "failed-rename", 0); errno == 0 {
 		t.Error("Rename with unavailable physical storage succeeded")
