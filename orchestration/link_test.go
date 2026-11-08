@@ -11,7 +11,7 @@ import (
 	"github.com/tetsup/flexraid/distribution"
 )
 
-func TestLinkConvertsFileInPlaceAndSharesData(t *testing.T) {
+func TestLinkKeepsFileKindAndSharesData(t *testing.T) {
 	fixture := newNamespaceFixture(t)
 	created, err := fixture.layer.Create(CreateRequest{ParentID: fixture.rootID, Name: "original", Mode: 0640})
 	if err != nil {
@@ -37,7 +37,7 @@ func TestLinkConvertsFileInPlaceAndSharesData(t *testing.T) {
 		t.Fatal("new HardLink reused the backing ObjectID")
 	}
 	original, err := fixture.layer.Lookup(LookupRequest{ParentID: fixture.rootID, Name: "original"})
-	if err != nil || original.ObjectID != created.ObjectID || original.Kind != objectKindHardLinkedFile {
+	if err != nil || original.ObjectID != created.ObjectID || original.Kind != objectKindFile {
 		t.Fatalf("original lookup = %+v, %v", original, err)
 	}
 	alias, err := fixture.layer.Lookup(LookupRequest{ParentID: fixture.rootID, Name: "alias"})
@@ -45,7 +45,7 @@ func TestLinkConvertsFileInPlaceAndSharesData(t *testing.T) {
 		t.Fatalf("alias lookup = %+v, %v", alias, err)
 	}
 	if got := fixture.layer.objects[created.ObjectID].header.ParentID; got == nil || *got != fixture.rootID {
-		t.Fatalf("HardLinkedFile ParentID = %v, want root %s", got, fixture.rootID)
+		t.Fatalf("File ParentID = %v, want root %s", got, fixture.rootID)
 	}
 	for _, id := range []string{created.ObjectID.String(), linked.ObjectID.String()} {
 		parsed := testID(id)
@@ -79,7 +79,7 @@ func TestLinkConvertsFileInPlaceAndSharesData(t *testing.T) {
 		t.Fatal(err)
 	}
 	restoredOriginal, err := restarted.Layer.Lookup(LookupRequest{ParentID: fixture.rootID, Name: "original"})
-	if err != nil || restoredOriginal.Kind != objectKindHardLinkedFile {
+	if err != nil || restoredOriginal.Kind != objectKindFile {
 		t.Fatalf("restored original = %+v, %v", restoredOriginal, err)
 	}
 	restoredAlias, err := restarted.Layer.Lookup(LookupRequest{ParentID: fixture.rootID, Name: "alias"})

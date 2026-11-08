@@ -35,9 +35,9 @@ AGENTS.md の規約どおり、公開操作を commands.go 等へ集約せず、
 | Create | create.go | 新規 Header / 全 Stripe 保存後、parent.children / objects / headers に公開 | 正常・不正入力・キャンセル・保存失敗あり | [ ] 部分書き込み後の残存状態 |
 | Mkdir | mkdir.go | 新規 Directory Header 保存後、親 children と maps に公開 | 正常・不正入力・キャンセル・保存失敗あり | [ ] 部分書き込み後の残存状態 |
 | Symlink | symlink.go | リンク先文字列と Header / 全 Stripe 保存後、Namespace に公開 | 複数 Stripe・再起動・不正入力・キャンセルあり | [ ] 部分書き込み失敗 |
-| Link | link.go | File を HardLinkedFile として保存し、その後 HardLink Header 保存、最後に alias を公開 | File 変換・複数 Link・不正入力あり | [ ] 1段目／2段目の永続化失敗 |
+| Link | link.go | File Header は変更せず、HardLink Header 保存後に alias を公開 | File の Kind 維持・複数 Link・不正入力あり | [ ] 1段目／2段目の永続化失敗 |
 | Unlink(File/Symlink) | unlink.go | Deleted Header 保存後、親 children から除去し Cleanup キューへ | 現状、HardLink 系中心。通常 File / Symlink の失敗系が不足 | [ ] 正常・失敗・再起動 |
-| Unlink(HardLinkedFile) | unlink.go | ParentID=nil を保存後、直接 Namespace 名を除去。実体は保持 | ParentID nil 拒否あり | [ ] 保存失敗時の不変性・再起動 |
+| Unlink(File with HardLink references) | unlink.go | HardLink 参照が残る場合は ParentID=nil を保存後、直接 Namespace 名を除去。実体は保持 | 参照が残る File の detachment を確認 | [ ] 保存失敗時の不変性・再起動 |
 | Unlink(HardLink) | unlink.go | HardLink Deleted 保存・除去後、残存参照に応じ backing Header を別途更新 | 最終 Link の昇格など一部あり | [ ] 2段目失敗・中断・再起動 |
 | Rmdir | rmdir.go | Deleted Header 保存後、親 children から除去・Cleanup 登録 | 空/非空/不正/キャンセルあり | [ ] 永続化失敗・再起動 |
 | Rename | rename.go | 置換先を先に削除し、その後 source Header 保存、最後に children を移動 | 移動・置換・cycle・kind mismatch。PR #35 で更新後 Header 保持も追加 | [ ] 置換先削除後の source 保存失敗。複数段階の再起動 |
@@ -62,14 +62,14 @@ AGENTS.md の規約どおり、公開操作を commands.go 等へ集約せず、
 - [ ] 配置再計画を伴う拡張・縮小の途中失敗で、旧 cache / Header を部分的に置き換えない。
 
 ### Namespace の複数 Object 更新系
-- [ ] Link: File→HardLinkedFile の Header 保存成功後、HardLink 保存失敗時の Namespace / 再起動結果。
+- [ ] Link: File Header を変更せず、HardLink 保存失敗時の Namespace / 再起動結果。
 - [ ] UnlinkHardLink: HardLink の Deleted 保存成功後、backing Header 更新失敗時の Namespace / 再起動結果。
 - [ ] Rename: 置換先の削除成功後、source Header 保存失敗時に、通常エラーとしてどの状態を返すか。
 - [ ] Rename: Directory の別親移動・空 Directory 置換で、両親の children と ParentID が再起動後も一致する。
 - [ ] Cleanup: DeleteObject 失敗・キャンセル時にキューと maps が保持され、次回 Cleanup で再試行できる。
 
 ## 4. 現時点で明文化されている非原子性・設計上の注意
-- HardLink / HardLinkedFile の複数 Header 更新はシリアルであり、複数 Header をまたぐ Atomic 性は要求しない（AGENTS.md）。
+- File / HardLink の複数 Header 更新はシリアルであり、複数 Header をまたぐ Atomic 性は要求しない（AGENTS.md）。
 - Rename も Header 更新を順番に行い、複数 Object をまたぐクラッシュ原子性はない。現実装は置換先を先に削除するため、その後 source 保存に失敗すると通常エラーでも部分適用になり得る。これは単なるクラッシュ時の制約ではなく、POSIX rename の期待との整合を別途判断する必要がある。
 - Write は通常 dirty cache を更新する操作で、Flush / Fsync まで永続化されない。メモリ上で見えることと永続化済みであることを区別する。
 - Flush は複数 Stripe を順次保存し、途中失敗時に先行 Stripe の書き込みを取り消さない。現在の契約ではファイル全体の配置移行のクラッシュ原子性は保証されない。

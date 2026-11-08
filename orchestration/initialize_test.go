@@ -20,9 +20,6 @@ func testHeader(kind shared.ObjectKind, id shared.ObjectID, parent, target *shar
 	h := sampleHeader()
 	h.Kind, h.ObjectID, h.ParentID, h.TargetID, h.Name = kind, id, parent, target, name
 	h.Deleted = false
-	if kind == objectKindHardLinkedFile {
-		h.ParentID = nil
-	}
 	if kind != objectKindHardLink {
 		h.TargetID = nil
 	}
@@ -86,7 +83,7 @@ func TestInitializeBuildsNamespaceAndResolvesHardLinks(t *testing.T) {
 	linkID := testID("42345678-9abc-4def-8abc-1234567890ab")
 	root := testHeader(objectKindDirectory, rootID, nil, nil, "")
 	file := testHeader(objectKindFile, fileID, &rootID, nil, "ordinary")
-	backing := testHeader(objectKindHardLinkedFile, backingID, nil, nil, "")
+	backing := testHeader(objectKindFile, backingID, nil, nil, "")
 	link := testHeader(objectKindHardLink, linkID, &rootID, &backingID, "linked")
 
 	layer := &Orchestration{}
@@ -105,7 +102,7 @@ func TestInitializeBuildsNamespaceAndResolvesHardLinks(t *testing.T) {
 		t.Fatal("runtime file backing is missing")
 	}
 	if layer.objects[linkID].file != layer.objects[backingID].file {
-		t.Fatal("HardLink does not share its HardLinkedFile runtime backing")
+		t.Fatal("HardLink does not share its File runtime backing")
 	}
 	if len(layer.protectedObjects) != 0 || len(layer.warnings) != 0 {
 		t.Fatalf("valid namespace unexpectedly protected objects or warned: %v %v", layer.protectedObjects, layer.warnings)

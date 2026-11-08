@@ -23,7 +23,7 @@ func (layer *Orchestration) inspect() error {
 	root := roots[0]
 
 	reachable := make(map[shared.ObjectID]struct{}, len(layer.objects))
-	reachableHardLinkedFiles := make(map[shared.ObjectID]struct{})
+	reachableFiles := make(map[shared.ObjectID]struct{})
 	queue := []*runtimeObject{root}
 	for len(queue) > 0 {
 		object := queue[0]
@@ -34,7 +34,7 @@ func (layer *Orchestration) inspect() error {
 		}
 		reachable[id] = struct{}{}
 		if object.header.Kind == objectKindHardLink && object.file != nil {
-			reachableHardLinkedFiles[object.file.objectID] = struct{}{}
+			reachableFiles[object.file.objectID] = struct{}{}
 		}
 		for _, child := range object.children {
 			queue = append(queue, child)
@@ -46,12 +46,12 @@ func (layer *Orchestration) inspect() error {
 			continue
 		}
 		switch object.header.Kind {
-		case objectKindHardLinkedFile:
+		case objectKindFile:
 			_, directlyReachable := reachable[id]
-			_, referenced := reachableHardLinkedFiles[id]
+			_, referenced := reachableFiles[id]
 			if !directlyReachable && !referenced {
 				layer.protectedObjects[id] = struct{}{}
-				layer.addInitializationWarning(id, "HardLinkedFile has neither a reachable parent entry nor a reachable HardLink")
+				layer.addInitializationWarning(id, "File has neither a reachable parent entry nor a reachable HardLink")
 			}
 		default:
 			if _, exists := reachable[id]; !exists {

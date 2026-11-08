@@ -12,8 +12,6 @@ func buildNamespace(objects map[shared.ObjectID]*runtimeObject, protected map[sh
 		switch object.header.Kind {
 		case objectKindFile:
 			object.file = &runtimeFile{objectID: id, header: object.header, stripeCache: make(map[uint64]*stripeCacheEntry)}
-		case objectKindHardLinkedFile:
-			object.file = &runtimeFile{objectID: id, header: object.header, stripeCache: make(map[uint64]*stripeCacheEntry)}
 		case objectKindDirectory:
 			object.children = make(map[string]*runtimeObject)
 		}
@@ -26,7 +24,7 @@ func buildNamespace(objects map[shared.ObjectID]*runtimeObject, protected map[sh
 		}
 		targetID := *h.TargetID
 		target, exists := objects[targetID]
-		if !exists || target.header.Deleted || target.header.Kind != objectKindHardLinkedFile || target.file == nil {
+		if !exists || target.header.Deleted || target.header.Kind != objectKindFile || target.file == nil {
 			protected[id] = struct{}{}
 			if exists && !target.header.Deleted {
 				protected[targetID] = struct{}{}
@@ -38,7 +36,7 @@ func buildNamespace(objects map[shared.ObjectID]*runtimeObject, protected map[sh
 
 	for id, object := range objects {
 		h := object.header
-		if h.Deleted || (h.Kind == objectKindHardLinkedFile && h.ParentID == nil) || (h.Kind == objectKindDirectory && h.ParentID == nil) {
+		if h.Deleted || (h.Kind == objectKindFile && h.ParentID == nil) || (h.Kind == objectKindDirectory && h.ParentID == nil) {
 			continue
 		}
 		if h.Kind == objectKindSymlink && !object.linkTargetLoaded {
