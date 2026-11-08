@@ -144,22 +144,28 @@ func TestParseObjectID(t *testing.T) {
 }
 
 func TestCheckAccessOwnerGroupOtherAndRoot(t *testing.T) {
-	attributes := orchestration.ObjectAttributes{Mode: syscall.S_IFREG | 0750, UID: 1001, GID: 2001}
 	tests := []struct {
 		name           string
+		mode           uint32
 		uid, gid, mask uint32
 		want           syscall.Errno
 	}{
-		{"owner read/write", 1001, 9999, gofuse.R_OK | gofuse.W_OK, 0},
-		{"owner denied execute", 1001, 9999, gofuse.X_OK, syscall.EACCES},
-		{"group execute", 1002, 2001, gofuse.X_OK, 0},
-		{"group denied write", 1002, 2001, gofuse.W_OK, syscall.EACCES},
-		{"other denied read", 1002, 9999, gofuse.R_OK, syscall.EACCES},
-		{"root read/write", 0, 0, gofuse.R_OK | gofuse.W_OK, 0},
-		{"root execute without execute bit", 0, 0, gofuse.X_OK, syscall.EACCES},
+		{"owner read/write", 0700, 1001, 9999, gofuse.R_OK | gofuse.W_OK, 0},
+		{"owner denied execute", 0640, 1001, 9999, gofuse.X_OK, syscall.EACCES},
+		{"group execute", 0750, 1002, 2001, gofuse.X_OK, 0},
+		{"group denied write", 0750, 1002, 2001, gofuse.W_OK, syscall.EACCES},
+		{"other denied read", 0750, 1002, 9999, gofuse.R_OK, syscall.EACCES},
+		{"root read/write", 0640, 0, 0, gofuse.R_OK | gofuse.W_OK, 0},
+		{"root execute without execute bit", 0640, 0, 0, gofuse.X_OK, syscall.EACCES},
+		{"root execute when any execute bit exists", 0010, 0, 0, gofuse.X_OK, 0},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			attributes := orchestration.ObjectAttributes{
+				Mode: syscall.S_IFREG | tc.mode,
+				UID:  1001,
+				GID:  2001,
+			}
 			if got := checkAccess(attributes, tc.uid, tc.gid, tc.mask); got != tc.want {
 				t.Fatalf("checkAccess=%v, want %v", got, tc.want)
 			}
