@@ -5,7 +5,6 @@ import (
 	"path"
 	"strings"
 	"syscall"
-	"syscall"
 
 	"github.com/tetsup/flexraid/pkg/shared"
 )
