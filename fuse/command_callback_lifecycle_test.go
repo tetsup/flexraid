@@ -1,8 +1,10 @@
 package fuse
 
 import (
+	"bytes"
 	"context"
 	"os"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -373,5 +375,75 @@ func TestOpenSyncModesRejectUnsupportedSynchronousWrites(t *testing.T) {
 	}
 	if errno := root.Unlink(ctx, "sync-modes"); errno != 0 {
 		t.Errorf("Unlink sync-modes: %v", errno)
+	}
+}
+
+func TestConcurrentHandlesShareObjectStripeState(t *testing.T) {
+	adapter, ctx := newCallbackTestFilesystem(t)
+	root := adapter.root
+	inode, firstHandle, _, errno := root.Create(ctx, "concurrent", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{})
+	if errno != 0 {
+		t.Fatalf("Create: %v", errno)
+	}
+	n := inode.Operations().(*node)
+	secondHandle, _, errno := n.Open(ctx, uint32(syscall.O_RDWR))
+	if errno != 0 {
+		t.Fatalf("Open second handle: %v", errno)
+	}
+
+	firstData := bytes.Repeat([]byte("A"), 4096)
+	secondData := bytes.Repeat([]byte("B"), 4096)
+	type writeResult struct {
+		name string
+		n    uint32
+		err  syscall.Errno
+	}
+	results := make(chan writeResult, 2)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		written, writeErrno := n.Write(ctx, firstHandle, firstData, 0)
+		results <- writeResult{name: "first", n: written, err: writeErrno}
+	}()
+	go func() {
+		defer wg.Done()
+		written, writeErrno := n.Write(ctx, secondHandle, secondData, 4096)
+		results <- writeResult{name: "second", n: written, err: writeErrno}
+	}()
+	wg.Wait()
+	close(results)
+	for result := range results {
+		if result.err != 0 || result.n != 4096 {
+			t.Errorf("%s concurrent Write = %d, %v; want 4096, success", result.name, result.n, result.err)
+		}
+	}
+
+	if errno := n.Flush(ctx, firstHandle); errno != 0 {
+		t.Fatalf("Flush first handle: %v", errno)
+	}
+	if errno := n.Fsync(ctx, secondHandle, 0); errno != 0 {
+		t.Fatalf("Fsync second handle: %v", errno)
+	}
+	readResult, errno := n.Read(ctx, secondHandle, make([]byte, 8192), 0)
+	if errno != 0 {
+		t.Fatalf("Read through second handle: %v", errno)
+	}
+	got, status := readResult.Bytes(make([]byte, 8192))
+	if status != 0 {
+		t.Fatalf("ReadResult.Bytes: %v", status)
+	}
+	if !bytes.Equal(got[:4096], firstData) || !bytes.Equal(got[4096:], secondData) {
+		t.Error("concurrent writes lost or mixed data across shared handles")
+	}
+
+	if errno := n.Release(ctx, firstHandle); errno != 0 {
+		t.Errorf("Release first handle: %v", errno)
+	}
+	if errno := n.Release(ctx, secondHandle); errno != 0 {
+		t.Errorf("Release second handle: %v", errno)
+	}
+	if errno := root.Unlink(ctx, "concurrent"); errno != 0 {
+		t.Errorf("Unlink concurrent file: %v", errno)
 	}
 }
