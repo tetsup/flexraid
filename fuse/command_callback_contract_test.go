@@ -179,8 +179,7 @@ func TestStatfsCallbackCopiesStableFields(t *testing.T) {
 	}
 	// f_bfree is physical free capacity while f_bavail is logical capacity
 	// available for FlexRAID placement. Their relationship is intentionally
-	// unconstrained by the filesystem contract, so validate each mapping
-	// against its own source rather than comparing the two values.
+	// unconstrained; a separate test checks the live counters' valid ranges.
 }
 
 func TestReadWriteRejectHandleFromDifferentInode(t *testing.T) {
