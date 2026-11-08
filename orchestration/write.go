@@ -66,6 +66,12 @@ func (layer *Orchestration) Write(request WriteRequest) (response WriteResponse,
 	file := handle.runtimeFile
 	file.mu.Lock()
 	defer file.mu.Unlock()
+	originalHeader := file.header
+	originalCache := cloneStripeCache(file.stripeCache)
+	rollback := func() {
+		file.header = originalHeader
+		file.stripeCache = originalCache
+	}
 	if err = ctx.Err(); err != nil {
 		return response, err
 	}
@@ -104,6 +110,12 @@ func (layer *Orchestration) Write(request WriteRequest) (response WriteResponse,
 			return response, err
 		}
 		file.header = nextHeader
+		if handle.syncMode != SyncModeNone {
+			if err = layer.persistDirtyStripesLocked(ctx, file); err != nil {
+				rollback()
+				return WriteResponse{}, err
+			}
+		}
 		response.Written = uint32(len(request.Data))
 		return response, nil
 	}
@@ -169,6 +181,12 @@ func (layer *Orchestration) Write(request WriteRequest) (response WriteResponse,
 		file.stripeCache[id] = entry
 	}
 	file.header = nextHeader
+	if handle.syncMode != SyncModeNone {
+		if err = layer.persistDirtyStripesLocked(ctx, file); err != nil {
+			rollback()
+			return WriteResponse{}, err
+		}
+	}
 	response.Written = uint32(len(request.Data))
 	return response, nil
 }
@@ -314,4 +332,20 @@ func (layer *Orchestration) readLogicalRangeLocked(
 		offset += count
 	}
 	return result, nil
+}
+
+
+func cloneStripeCache(source map[uint64]*stripeCacheEntry) map[uint64]*stripeCacheEntry {
+	clone := make(map[uint64]*stripeCacheEntry, len(source))
+	for id, entry := range source {
+		if entry == nil {
+			clone[id] = nil
+			continue
+		}
+		clone[id] = &stripeCacheEntry{
+			data:  append([]byte(nil), entry.data...),
+			state: entry.state,
+		}
+	}
+	return clone
 }
