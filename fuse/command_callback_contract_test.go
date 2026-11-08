@@ -340,7 +340,7 @@ func TestAccessCallbackUsesCallerCredentialsAndRejectsMissingCaller(t *testing.T
 		t.Errorf("owner read/write Access = %v, want success", errno)
 	}
 
-	groupContext := gofuse.NewContext(ctx, gofuse.Caller{Owner: gofuse.Owner{Uid: uint32(os.Getuid() + 1000), Gid: uint32(os.Getgid())}})
+	groupContext := gofuse.NewContext(ctx, &gofuse.Caller{Owner: gofuse.Owner{Uid: uint32(os.Getuid() + 1000), Gid: uint32(os.Getgid())}})
 	if errno := n.Access(groupContext, gofuse.R_OK); errno != 0 {
 		t.Errorf("group read Access = %v, want success", errno)
 	}
@@ -348,7 +348,7 @@ func TestAccessCallbackUsesCallerCredentialsAndRejectsMissingCaller(t *testing.T
 		t.Errorf("group write Access = %v, want EACCES", errno)
 	}
 
-	otherContext := gofuse.NewContext(ctx, gofuse.Caller{Owner: gofuse.Owner{Uid: uint32(os.Getuid() + 1000), Gid: uint32(os.Getgid() + 1000)}})
+	otherContext := gofuse.NewContext(ctx, &gofuse.Caller{Owner: gofuse.Owner{Uid: uint32(os.Getuid() + 1000), Gid: uint32(os.Getgid() + 1000)}})
 	if errno := n.Access(otherContext, gofuse.R_OK); errno != syscall.EACCES {
 		t.Errorf("other read Access = %v, want EACCES", errno)
 	}
