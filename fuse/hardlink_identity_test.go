@@ -7,6 +7,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/hanwen/go-fuse/v2/fs"
 	gofuse "github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/tetsup/flexraid/distribution"
 	physicalio "github.com/tetsup/flexraid/io"
@@ -40,6 +41,7 @@ func TestHardLinkCallbacksKeepBackingFileIdentity(t *testing.T) {
 		t.Fatalf("create FUSE adapter: %v", err)
 	}
 	root := adapter.root
+	_ = fs.NewNodeFS(root, nil) // initialize go-fuse inode bridge for direct callback tests
 
 	created, err := root.layer.Create(orchestration.CreateRequest{
 		Context: ctx, ParentID: createdRoot.RootID, Name: "original", Mode: 0640,
