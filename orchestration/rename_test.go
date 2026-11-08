@@ -99,7 +99,7 @@ func TestRenamePreservesUpdatedFileHeader(t *testing.T) {
 	}()
 	read, err := restarted.Layer.Read(ReadRequest{
 		Handle: reader.Handle, ObjectID: created.ObjectID,
-		Offset: 0, Size: uint64(len(payload)),
+		Offset: 0, Size: uint32(len(payload)),
 	})
 	if err != nil {
 		t.Fatal(err)
