@@ -18,8 +18,8 @@ type CapacityRequest struct {
 
 type CapacityResponse struct {
 	Capacities            []shared.Capacity
-	MirrorAvailableBlocks  uint64
-	ParityAvailableBlocks  uint64
+	MirrorAvailableBlocks uint64
+	ParityAvailableBlocks uint64
 }
 
 // GetCapacity returns physical capacities for all I/O layers in index order,

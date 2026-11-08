@@ -4,10 +4,10 @@ import "testing"
 
 func TestMaxStripeCount(t *testing.T) {
 	tests := []struct {
-		name string
+		name      string
 		available []uint64
-		devices int
-		want uint64
+		devices   int
+		want      uint64
 	}{
 		{name: "mirror across uneven drives", available: []uint64{1, 100, 100}, devices: 2, want: 100},
 		{name: "parity with spare drive", available: []uint64{10, 10, 10, 10, 10}, devices: 4, want: 12},
