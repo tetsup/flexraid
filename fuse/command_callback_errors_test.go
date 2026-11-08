@@ -70,7 +70,7 @@ func TestNamespaceCallbacksReturnExpectedErrors(t *testing.T) {
 		t.Errorf("Rename missing source errno = %v, want ENOENT", errno)
 	}
 
-	fileInode, _, _, errno := root.Create(ctx, "regular", uint32(syscall.O_RDWR), 0640, &gofuse.EntryOut{})
+	fileInode, fileHandle, _, errno := root.Create(ctx, "regular", uint32(syscall.O_RDWR), 0640, &gofuse.EntryOut{})
 	if errno != 0 {
 		t.Fatalf("Create regular file: %v", errno)
 	}
