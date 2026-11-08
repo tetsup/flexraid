@@ -34,10 +34,10 @@ const (
 
 // Exported object kinds let adapters map logical objects to OS file types.
 const (
-	ObjectKindFile           = objectKindFile
-	ObjectKindDirectory      = objectKindDirectory
-	ObjectKindSymlink        = objectKindSymlink
-	ObjectKindHardLink       = objectKindHardLink
+	ObjectKindFile      = objectKindFile
+	ObjectKindDirectory = objectKindDirectory
+	ObjectKindSymlink   = objectKindSymlink
+	ObjectKindHardLink  = objectKindHardLink
 )
 
 type layoutMode uint8

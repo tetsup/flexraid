@@ -86,7 +86,7 @@ func (layer *Orchestration) Link(request LinkRequest) (response LinkResponse, er
 
 	backingID := file.objectID
 	backingHeader := file.header
-		linkID, err := shared.NewObjectID()
+	linkID, err := shared.NewObjectID()
 	if err != nil {
 		return response, fmt.Errorf("generate HardLink ObjectID: %w", err)
 	}
