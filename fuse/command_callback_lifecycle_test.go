@@ -429,7 +429,7 @@ func TestConcurrentHandlesShareObjectStripeState(t *testing.T) {
 	if errno != 0 {
 		t.Fatalf("Read through second handle: %v", errno)
 	}
-	got, status := readResult.Bytes(make([]byte, 8192))
+	got, status := readResult.Bytes(make([]byte, 32768))
 	if status != 0 {
 		t.Fatalf("ReadResult.Bytes: %v", status)
 	}
