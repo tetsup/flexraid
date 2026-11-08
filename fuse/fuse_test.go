@@ -27,13 +27,13 @@ func TestInodeNumberIsStableAndNonzero(t *testing.T) {
 	}
 }
 
-func TestInodeNumberUsesBigEndianPrefixAndAvoidsZero(t *testing.T) {
-	var id shared.ObjectID
-	copy(id[:8], []byte{1, 2, 3, 4, 5, 6, 7, 8})
-	if got, want := inodeNumber(id), uint64(0x0102030405060708); got != want {
+func TestInodeNumberUsesBigEndianPrefix(t *testing.T) {
+	id := testObjectID(t)
+	want := uint64(id[0])<<56 | uint64(id[1])<<48 | uint64(id[2])<<40 | uint64(id[3])<<32 |
+		uint64(id[4])<<24 | uint64(id[5])<<16 | uint64(id[6])<<8 | uint64(id[7])
+	if got := inodeNumber(id); got != want {
 		t.Fatalf("inodeNumber=%#x, want %#x", got, want)
 	}
-
 }
 
 func TestStableAttrUsesTypeAndObjectID(t *testing.T) {
