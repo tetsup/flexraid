@@ -158,9 +158,11 @@ func TestStatfsCallbackMatchesOrchestrationResponse(t *testing.T) {
 	}
 	// Free-space counters are sampled from the live backing filesystems on
 	// each call and may change between these two independent observations.
-	if out.Bfree == 0 || out.Bavail == 0 || out.Bfree > out.Blocks || out.Bavail > out.Blocks {
-		t.Errorf("FUSE Statfs capacity fields are out of range: %+v", out)
+	if out.Bfree == 0 || out.Bavail == 0 || out.Bfree > out.Blocks {
+		t.Errorf("FUSE Statfs physical free/logical available capacity is out of range: %+v", out)
 	}
+	// Bavail represents logical placement capacity and is not bounded by
+	// Blocks, which reports the sum of physical capacity across all I/O roots.
 }
 
 func TestOpenReadWriteCallbackRejectInvalidModesAndForeignHandles(t *testing.T) {
