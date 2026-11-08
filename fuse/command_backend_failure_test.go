@@ -29,6 +29,22 @@ func TestNamespaceAndPersistenceFailuresDoNotPublishPartialChanges(t *testing.T)
 	if errno != 0 {
 		t.Fatalf("Symlink existing-link: %v", errno)
 	}
+	replaceSourceInode, replaceSourceHandle, _, errno := root.Create(ctx, "replace-source", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{})
+	if errno != 0 {
+		t.Fatalf("Create replace-source: %v", errno)
+	}
+	replaceDestinationInode, replaceDestinationHandle, _, errno := root.Create(ctx, "replace-destination", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{})
+	if errno != 0 {
+		t.Fatalf("Create replace-destination: %v", errno)
+	}
+	replaceSourceID := replaceSourceInode.Operations().(*node).objectID
+	replaceDestinationID := replaceDestinationInode.Operations().(*node).objectID
+	if errno := replaceSourceInode.Operations().(*node).Release(ctx, replaceSourceHandle); errno != 0 {
+		t.Fatalf("Release replace-source: %v", errno)
+	}
+	if errno := replaceDestinationInode.Operations().(*node).Release(ctx, replaceDestinationHandle); errno != 0 {
+		t.Fatalf("Release replace-destination: %v", errno)
+	}
 
 	// Replace each I/O root directory with a regular file. Every physical
 	// chunk/header write now fails with ENOTDIR, while the in-memory Namespace
@@ -87,6 +103,22 @@ func TestNamespaceAndPersistenceFailuresDoNotPublishPartialChanges(t *testing.T)
 	}
 	if _, errno := root.Lookup(ctx, "failed-rename", &gofuse.EntryOut{}); errno != syscall.ENOENT {
 		t.Errorf("failed Rename destination lookup errno = %v, want ENOENT", errno)
+	}
+	if errno := root.Rename(ctx, "replace-source", root, "replace-destination", 0); errno == 0 {
+		t.Error("Rename replacing an existing file with unavailable storage succeeded")
+	}
+	for name, wantID := range map[string]shared.ObjectID{
+		"replace-source":      replaceSourceID,
+		"replace-destination": replaceDestinationID,
+	} {
+		entry, lookupErrno := root.Lookup(ctx, name, &gofuse.EntryOut{})
+		if lookupErrno != 0 {
+			t.Errorf("%s disappeared after failed replacement Rename: %v", name, lookupErrno)
+			continue
+		}
+		if gotID := entry.Operations().(*node).objectID; gotID != wantID {
+			t.Errorf("%s ObjectID after failed replacement Rename = %s, want %s", name, gotID, wantID)
+		}
 	}
 
 	before := &gofuse.AttrOut{}
