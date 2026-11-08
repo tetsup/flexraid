@@ -73,9 +73,9 @@ func TestNamespaceCallbacksReturnConsistentEntryMetadata(t *testing.T) {
 		got[entry.Name] = entry
 	}
 	wantModes := map[string]uint32{
-		"file": syscall.S_IFREG,
+		"file":      syscall.S_IFREG,
 		"directory": syscall.S_IFDIR,
-		"symlink": syscall.S_IFLNK,
+		"symlink":   syscall.S_IFLNK,
 	}
 	for name, wantMode := range wantModes {
 		entry, exists := got[name]
@@ -95,4 +95,3 @@ func TestNamespaceCallbacksReturnConsistentEntryMetadata(t *testing.T) {
 		t.Errorf("Release: %v", errno)
 	}
 }
-
