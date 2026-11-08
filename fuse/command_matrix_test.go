@@ -1,8 +1,8 @@
 package fuse_test
 
 import (
-	"fmt"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"syscall"

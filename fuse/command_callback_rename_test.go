@@ -70,7 +70,6 @@ func TestRenameCallbackDirectorySemantics(t *testing.T) {
 	}
 }
 
-
 func TestRenameCallbackReplacesNonDirectoryKinds(t *testing.T) {
 	adapter, ctx := newCallbackTestFilesystem(t)
 	root := adapter.root
