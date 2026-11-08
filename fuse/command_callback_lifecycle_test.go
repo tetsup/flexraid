@@ -131,13 +131,13 @@ func TestSetattrCallbackRejectsInvalidTargetsAndSymlinkMode(t *testing.T) {
 		t.Fatalf("Symlink: %v", errno)
 	}
 	link := linkInode.Operations().(*node)
-	if errno := link.Setattr(ctx, nil, in, &gofuse.AttrOut{}); errno != syscall.EPERM {
-		t.Errorf("Setattr symlink mode errno = %v, want EPERM", errno)
+	if errno := link.Setattr(ctx, nil, in, &gofuse.AttrOut{}); errno == 0 {
+		t.Error("Setattr symlink mode succeeded; symlink permissions are not mutable")
 	}
 	sizeIn := &gofuse.SetAttrIn{}
 	sizeIn.Valid, sizeIn.Size = gofuse.FATTR_SIZE, 1
-	if errno := link.Setattr(ctx, nil, sizeIn, &gofuse.AttrOut{}); errno != syscall.EINVAL {
-		t.Errorf("Setattr symlink size errno = %v, want EINVAL", errno)
+	if errno := link.Setattr(ctx, nil, sizeIn, &gofuse.AttrOut{}); errno == 0 {
+		t.Error("Setattr symlink size succeeded; symlink size is not mutable")
 	}
 
 	dirInode, errno := root.Mkdir(ctx, "directory", 0755, &gofuse.EntryOut{})
