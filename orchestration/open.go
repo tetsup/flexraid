@@ -80,7 +80,7 @@ func (layer *Orchestration) Open(request OpenRequest) (response OpenResponse, er
 		if request.Flags&uint32(syscall.O_ACCMODE) != uint32(syscall.O_RDONLY) {
 			return response, syscall.EISDIR
 		}
-		return response, syscall.EISDIR
+		return OpenResponse{Handle: &FileHandle{}}, nil
 	}
 	if object.header.Kind != objectKindFile && object.header.Kind != objectKindHardLink {
 		return response, syscall.EINVAL
