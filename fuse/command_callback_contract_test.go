@@ -167,10 +167,14 @@ func TestStatfsCallbackCopiesEveryDefinedField(t *testing.T) {
 	if errno := adapter.root.Statfs(ctx, &got); errno != 0 {
 		t.Fatalf("FUSE Statfs: %v", errno)
 	}
-	if got.Blocks != expected.Blocks || got.Bfree != expected.Bfree || got.Bavail != expected.Bavail ||
-		got.Bsize != uint32(expected.Bsize) || got.Frsize != uint32(expected.Frsize) ||
-		got.Files != expected.Files || got.Ffree != expected.Ffree {
-		t.Errorf("FUSE Statfs mapping = %+v, expected orchestration values %+v", got, expected)
+	if got.Blocks != expected.Blocks || got.Bsize != uint32(expected.Bsize) ||
+		got.Frsize != uint32(expected.Frsize) || got.Files != expected.Files || got.Ffree != expected.Ffree {
+		t.Errorf("stable FUSE Statfs mapping = %+v, expected orchestration values %+v", got, expected)
+	}
+	// Physical free-space values are sampled live on each call and can change
+	// between the Orchestration query above and the FUSE callback.
+	if got.Bfree > got.Blocks || got.Bavail > got.Blocks {
+		t.Errorf("FUSE Statfs free-space values exceed total blocks: %+v", got)
 	}
 }
 
