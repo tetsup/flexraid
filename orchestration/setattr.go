@@ -75,6 +75,17 @@ func (layer *Orchestration) SetAttr(request SetAttrRequest) (response SetAttrRes
 		file := object.file
 		file.mu.Lock()
 		defer file.mu.Unlock()
+		originalHeader := file.header
+		originalCache := cloneStripeCache(file.stripeCache)
+		defer func() {
+			if err != nil {
+				file.header = originalHeader
+				file.stripeCache = originalCache
+				if layer.headers != nil {
+					layer.headers[file.objectID] = originalHeader
+				}
+			}
+		}()
 		if err = ctx.Err(); err != nil {
 			return response, err
 		}
