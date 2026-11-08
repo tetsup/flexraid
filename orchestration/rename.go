@@ -49,14 +49,13 @@ func (layer *Orchestration) Rename(request RenameRequest) (response RenameRespon
 	if err != nil {
 		return response, err
 	}
-	if request.SourceParentID == request.DestinationParentID &&
-		request.SourceName == request.DestinationName {
-		return response, nil
-	}
-
 	source, exists := sourceParent.children[request.SourceName]
 	if !exists || source.header.Deleted {
 		return response, os.ErrNotExist
+	}
+	if request.SourceParentID == request.DestinationParentID &&
+		request.SourceName == request.DestinationName {
+		return response, nil
 	}
 	if _, protected := layer.protectedObjects[source.header.ObjectID]; protected {
 		return response, os.ErrNotExist
