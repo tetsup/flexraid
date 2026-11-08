@@ -284,7 +284,7 @@ func TestMountedRenameReplacementAndFailureCases(t *testing.T) {
 		t.Fatalf("create directory child: %v", err)
 	}
 	if err := os.Rename(dir, child); !errors.Is(err, syscall.EINVAL) {
-		t.Errorf("Rename directory onto descendant error = %v, want ENOTDIR or EINVAL", err)
+		t.Errorf("Rename directory onto descendant error = %v, want EINVAL", err)
 	}
 	if err := os.Rename(dir, filepath.Join(mountpoint, "moved-dir")); err != nil {
 		t.Errorf("Rename directory to new name: %v", err)
