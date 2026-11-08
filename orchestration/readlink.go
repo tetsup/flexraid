@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"syscall"
 
 	"github.com/tetsup/flexraid/pkg/shared"
 	cfg "github.com/tetsup/flexraid/pkg/shared/config"
@@ -34,7 +35,7 @@ func (layer *Orchestration) ReadLink(request ReadLinkRequest) (ReadLinkResponse,
 		return ReadLinkResponse{}, os.ErrNotExist
 	}
 	if object.header.Kind != objectKindSymlink {
-		return ReadLinkResponse{}, fmt.Errorf("object %s is not a symlink", request.ObjectID.String())
+		return ReadLinkResponse{}, syscall.EINVAL
 	}
 	if !object.linkTargetLoaded {
 		return ReadLinkResponse{}, fmt.Errorf("symlink target is unavailable: %w", os.ErrNotExist)
