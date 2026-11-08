@@ -182,11 +182,20 @@ func TestOpenCreatesIndependentHandlesForSharedRuntimeFile(t *testing.T) {
 	}
 }
 
-func TestOpenRejectsDirectory(t *testing.T) {
+func TestOpenDirectoryReadOnlyAndRejectsWrites(t *testing.T) {
 	id := testID("32345678-9abc-4def-8abc-1234567890ab")
 	h := testHeader(objectKindDirectory, id, nil, nil, "")
 	layer := &Orchestration{objects: map[shared.ObjectID]*runtimeObject{id: {header: h}}}
-	if _, err := layer.Open(OpenRequest{ObjectID: id}); !errors.Is(err, os.ErrInvalid) {
-		t.Fatalf("Open directory = %v, want os.ErrInvalid", err)
+	opened, err := layer.Open(OpenRequest{ObjectID: id, Flags: uint32(syscall.O_RDONLY)})
+	if err != nil {
+		t.Fatalf("Open directory O_RDONLY = %v, want success", err)
+	}
+	if _, err := layer.Release(ReleaseRequest{Handle: opened.Handle}); err != nil {
+		t.Fatalf("Release directory handle: %v", err)
+	}
+	for _, flags := range []uint32{uint32(syscall.O_WRONLY), uint32(syscall.O_RDWR)} {
+		if _, err := layer.Open(OpenRequest{ObjectID: id, Flags: flags}); !errors.Is(err, syscall.EISDIR) {
+			t.Errorf("Open directory flags %#x = %v, want EISDIR", flags, err)
+		}
 	}
 }
