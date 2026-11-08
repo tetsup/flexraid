@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	gofuse gofs "github.com/hanwen/go-fuse/v2/fs"
+	gofs "github.com/hanwen/go-fuse/v2/fs"
 	gofuse "github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/tetsup/flexraid/orchestration"
 	"github.com/tetsup/flexraid/pkg/shared"
@@ -26,7 +26,6 @@ func TestInodeNumberIsStableAndNonzero(t *testing.T) {
 		t.Fatalf("inodeNumber is not stable and nonzero: first=%d second=%d", first, second)
 	}
 }
-
 
 func TestInodeNumberUsesBigEndianPrefixAndAvoidsZero(t *testing.T) {
 	var id shared.ObjectID
