@@ -142,8 +142,12 @@ func TestRenameMovesEntryBetweenDirectories(t *testing.T) {
 	if object.header.ParentID != nil || object.header.Deleted {
 		t.Fatalf("source backing after rename = %+v; want detached, live File", object.header)
 	}
-	if target := object.header.ObjectID; got.TargetID == nil || *got.TargetID != target {
-		t.Fatalf("destination HardLink target = %v, want backing %s", got.TargetID, target)
+	destinationObject := fixture.layer.objects[got.ObjectID]
+	if destinationObject == nil || destinationObject.header.TargetID == nil {
+		t.Fatalf("destination HardLink object = %+v, want a TargetID", destinationObject)
+	}
+	if target := object.header.ObjectID; *destinationObject.header.TargetID != target {
+		t.Fatalf("destination HardLink target = %s, want backing %s", *destinationObject.header.TargetID, target)
 	}
 }
 
