@@ -45,7 +45,11 @@ func (layer *Orchestration) SetAttr(request SetAttrRequest) (response SetAttrRes
 	}
 
 	object, exists := layer.objects[request.ObjectID]
-	if !exists || object.header.Deleted {
+	if !exists {
+		return response, os.ErrNotExist
+	}
+	if object.header.Deleted &&
+		(request.Handle == nil || object.file == nil || openHandleCount(object.file) == 0) {
 		return response, os.ErrNotExist
 	}
 	if request.Size != nil && object.header.Kind != objectKindFile && object.header.Kind != objectKindHardLink {
