@@ -93,7 +93,7 @@ func TestCreateRootRejectsNonEmptyStorage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CreateRoot(CreateRootRequest{Distribution: distributed.Layer, Mode: 0755}); err == nil {
+	if _, err := CreateRoot(CreateRootRequest{Distribution: distributed, Mode: 0755}); err == nil {
 		t.Fatal("CreateRoot succeeded on storage that already contains a root")
 	}
 	if created.Layer.root == nil || created.Layer.root.header.ObjectID != created.RootID {
@@ -111,7 +111,7 @@ func TestCreateRootRejectsInvalidAndCancelledRequests(t *testing.T) {
 	if _, err := CreateRoot(CreateRootRequest{Context: ctx, Distribution: distributed}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled CreateRoot = %v, want context.Canceled", err)
 	}
-	objects, err := distributed.Layer.ListObjects(distribution.ListObjectsRequest{Context: context.Background()})
+	objects, err := distributed.ListObjects(distribution.ListObjectsRequest{Context: context.Background()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,10 +139,10 @@ func TestCreateRootPersistenceFailureDoesNotPublishFilesystem(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := CreateRoot(CreateRootRequest{Distribution: distributed, Mode: 0755}); err == nil {
+	if _, err := CreateRoot(CreateRootRequest{Distribution: distributed.Layer, Mode: 0755}); err == nil {
 		t.Fatal("CreateRoot succeeded despite unavailable storage")
 	}
-	objects, err := distributed.ListObjects(distribution.ListObjectsRequest{Context: context.Background()})
+	objects, err := distributed.Layer.ListObjects(distribution.ListObjectsRequest{Context: context.Background()})
 	if err != nil {
 		t.Fatal(err)
 	}
