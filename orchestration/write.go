@@ -49,7 +49,7 @@ func (layer *Orchestration) Write(request WriteRequest) (response WriteResponse,
 		return response, os.ErrPermission
 	}
 	object, exists := layer.objects[request.ObjectID]
-	if !exists || object.header.Deleted {
+	if !exists {
 		return response, os.ErrNotExist
 	}
 	if (object.header.Kind != objectKindFile && object.header.Kind != objectKindHardLink) || object.file == nil || object.file != handle.runtimeFile {
