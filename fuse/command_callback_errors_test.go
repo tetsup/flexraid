@@ -95,7 +95,8 @@ func TestNamespaceCallbacksReturnExpectedErrors(t *testing.T) {
 		t.Errorf("Link invalid name errno = %v, want EINVAL", errno)
 	}
 	missingSource := &node{layer: root.layer, objectID: testObjectID(t)}
-	if _, errno := root.Link(ctx, missingSource, "missing-source", &gofuse.EntryOut{}); errno != syscall.ENOENT {
+	missingSourceInode := root.NewInode(ctx, missingSource, fs.StableAttr{Mode: syscall.S_IFREG, Ino: inodeNumber(missingSource.objectID)})
+	if _, errno := root.Link(ctx, missingSourceInode, "missing-source", &gofuse.EntryOut{}); errno != syscall.ENOENT {
 		t.Errorf("Link missing source errno = %v, want ENOENT", errno)
 	}
 	if _, errno := root.Link(ctx, fileInode, "regular", &gofuse.EntryOut{}); errno != syscall.EEXIST {
