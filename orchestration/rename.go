@@ -97,6 +97,15 @@ func (layer *Orchestration) Rename(request RenameRequest) (response RenameRespon
 	}
 
 	next := source.header
+	// File data and mutable attributes are authoritative in runtimeFile.header.
+	// Write and SetAttr update that Header without changing the namespace node's
+	// copy, so start a rename from the backing Header to avoid restoring stale
+	// size, timestamps, or permissions while changing the namespace fields.
+	if source.file != nil && (source.header.Kind == objectKindFile || source.header.Kind == objectKindHardLinkedFile) {
+		source.file.mu.RLock()
+		next = source.file.header
+		source.file.mu.RUnlock()
+	}
 	parentID := request.DestinationParentID
 	next.ParentID = &parentID
 	next.Name = request.DestinationName
