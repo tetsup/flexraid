@@ -14,10 +14,17 @@ import (
 )
 
 func newCallbackTestFilesystem(t *testing.T) (*FileSystem, context.Context) {
+	adapter, ctx, _ := newCallbackTestFilesystemWithIORoots(t)
+	return adapter, ctx
+}
+
+func newCallbackTestFilesystemWithIORoots(t *testing.T) (*FileSystem, context.Context, []string) {
 	t.Helper()
 	ios := make([]*physicalio.IO, 4)
+	roots := make([]string, len(ios))
 	for i := range ios {
-		ios[i] = physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer
+		roots[i] = t.TempDir()
+		ios[i] = physicalio.New(physicalio.NewRequest{Root: roots[i]}).Layer
 	}
 	distributed, err := distribution.New(distribution.NewRequest{IOs: ios})
 	if err != nil {
@@ -35,7 +42,7 @@ func newCallbackTestFilesystem(t *testing.T) (*FileSystem, context.Context) {
 		t.Fatalf("create adapter: %v", err)
 	}
 	_ = fs.NewNodeFS(adapter.root, nil)
-	return adapter, context.Background()
+	return adapter, context.Background(), roots
 }
 
 func TestNamespaceCallbacksReturnExpectedErrors(t *testing.T) {
