@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	gofuse "github.com/hanwen/go-fuse/v2/fuse"
+	gofuse "github.com/hanwen/go-fuse/v2/fs"\n\tgofuse "github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/tetsup/flexraid/orchestration"
 	"github.com/tetsup/flexraid/pkg/shared"
 )
@@ -60,7 +60,7 @@ type foreignHandle struct{}
 
 func TestReadWriteRejectInvalidHandleAndOffset(t *testing.T) {
 	n := &node{}
-	for _, fh := range []interface{}{nil, &foreignHandle{}} {
+	for _, fh := range []fs.FileHandle{nil, &foreignHandle{}} {
 		if _, errno := n.Read(nil, fh, make([]byte,1),0); errno != syscall.EBADF { t.Errorf("Read invalid handle errno=%v, want EBADF",errno) }
 		if _, errno := n.Write(nil, fh, []byte("x"),0); errno != syscall.EBADF { t.Errorf("Write invalid handle errno=%v, want EBADF",errno) }
 	}
