@@ -1,7 +1,6 @@
 package fuse
 
 import (
-	"context"
 	"os"
 	"syscall"
 	"testing"
@@ -68,8 +67,8 @@ func TestSetattrCallbackMapsAllSupportedFields(t *testing.T) {
 	in := &gofuse.SetAttrIn{}
 	in.Valid = gofuse.FATTR_MODE | gofuse.FATTR_UID | gofuse.FATTR_GID | gofuse.FATTR_ATIME | gofuse.FATTR_MTIME
 	in.Mode, in.Uid, in.Gid = mode, uid, gid
-	in.SetATime(atime)
-	in.SetMTime(mtime)
+	in.Atime, in.Atimensec = uint64(atime.Unix()), uint32(atime.Nanosecond())
+	in.Mtime, in.Mtimensec = uint64(mtime.Unix()), uint32(mtime.Nanosecond())
 	var out gofuse.AttrOut
 	if errno := n.Setattr(ctx, handle, in, &out); errno != 0 {
 		t.Fatalf("Setattr multiple fields: %v", errno)
