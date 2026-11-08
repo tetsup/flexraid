@@ -40,7 +40,7 @@ AGENTS.md の規約どおり、公開操作を commands.go 等へ集約せず、
 | Unlink(File with HardLink references) | unlink.go | HardLink 参照が残る場合は ParentID=nil を保存後、直接 Namespace 名を除去。実体は保持 | 参照が残る File の detachment を確認 | [ ] 保存失敗時の不変性・再起動 |
 | Unlink(HardLink) | unlink.go | HardLink Deleted 保存・除去後、残存参照に応じ backing Header を別途更新 | 最終 Link の昇格など一部あり | [ ] 2段目失敗・中断・再起動 |
 | Rmdir | rmdir.go | Deleted Header 保存後、親 children から除去・Cleanup 登録 | 空/非空/不正/キャンセルあり | [ ] 永続化失敗・再起動 |
-| Rename | rename.go | 置換先を先に削除し、その後 source Header 保存、最後に children を移動 | 移動・置換・cycle・kind mismatch。PR #35 で更新後 Header 保持も追加 | [ ] 置換先削除後の source 保存失敗。複数段階の再起動 |
+| Rename | rename.go | File は destination HardLink を作成後、source を Unlink。Directory / Symlink は直接移動。置換先があれば先に unlink | HardLink 経由で同じ実体を参照し、元名を unlink する手順を検証 | [ ] Link 成功後の source Unlink 失敗、置換後の再起動 |
 | SetAttr | setattr.go | File は runtimeFile Header / dirty cache 更新。handle なしは同期 Flush。Directory/Symlink は Header Stripe 保存 | 属性変更・Size 再構築・キャンセルあり | [ ] Header/Stripe 部分失敗時の状態 |
 | Write | write.go | runtimeFile Header と Stripe cache を更新。通常は Flush/Fsync まで永続化しない | 複数 Handle・gap zero-fill・append・再計画などあり | [ ] dirty 状態の明示、Flush 失敗後の再試行 |
 | Truncate | truncate.go | サイズ・Layout 再計画と Stripe cache 再構築。永続化は Flush 経由 | サイズ拡張・縮小の一部は SetAttr 経由で検証 | [ ] 公開 Truncate API の直接テスト・失敗系 |
@@ -70,7 +70,7 @@ AGENTS.md の規約どおり、公開操作を commands.go 等へ集約せず、
 
 ## 4. 現時点で明文化されている非原子性・設計上の注意
 - File / HardLink の複数 Header 更新はシリアルであり、複数 Header をまたぐ Atomic 性は要求しない（AGENTS.md）。
-- Rename も Header 更新を順番に行い、複数 Object をまたぐクラッシュ原子性はない。現実装は置換先を先に削除するため、その後 source 保存に失敗すると通常エラーでも部分適用になり得る。これは単なるクラッシュ時の制約ではなく、POSIX rename の期待との整合を別途判断する必要がある。
+- Rename の File は destination HardLink を先に作成し、両方の名前が同じ File 実体を参照した後に source を Unlink する。複数 Header をまたぐクラッシュ原子性はない。Link 後の Unlink が失敗した場合、通常エラーでも両方の名前が残る。置換先がある場合は destination を先に unlink するため、その後の Link 失敗では destination が消えた状態になり得る。
 - Write は通常 dirty cache を更新する操作で、Flush / Fsync まで永続化されない。メモリ上で見えることと永続化済みであることを区別する。
 - Flush は複数 Stripe を順次保存し、途中失敗時に先行 Stripe の書き込みを取り消さない。現在の契約ではファイル全体の配置移行のクラッシュ原子性は保証されない。
 - SetAttr の handle なし経路は同期永続化を試みるが、失敗時に更新済み Header / dirty cache がメモリに残る経路がある。成功時だけ公開する設計にするのか、dirty な新状態を保持して再試行可能にするのかを明確化する。
