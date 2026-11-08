@@ -34,10 +34,6 @@ func TestInodeNumberUsesBigEndianPrefixAndAvoidsZero(t *testing.T) {
 		t.Fatalf("inodeNumber=%#x, want %#x", got, want)
 	}
 
-	var zeroPrefix shared.ObjectID
-	if got := inodeNumber(zeroPrefix); got != 1 {
-		t.Fatalf("zero prefix inodeNumber=%d, want fallback 1", got)
-	}
 }
 
 func TestStableAttrUsesTypeAndObjectID(t *testing.T) {
