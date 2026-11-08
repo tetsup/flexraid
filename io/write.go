@@ -68,5 +68,10 @@ func (layer *IO) Write(request WriteRequest) (response WriteResponse, err error)
 		err = closeErr
 		return response, err
 	}
+	if request.Sync {
+		if err = syncDirectory(filepath.Dir(path)); err != nil {
+			return response, err
+		}
+	}
 	return response, nil
 }
