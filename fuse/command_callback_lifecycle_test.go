@@ -206,44 +206,44 @@ func TestNamespaceCallbacksHonorCanceledContext(t *testing.T) {
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel()
 
-	if _, errno := root.Lookup(cancelled, "missing", &gofuse.EntryOut{}); errno == 0 {
-		t.Error("Lookup with canceled context succeeded")
+	if _, errno := root.Lookup(cancelled, "missing", &gofuse.EntryOut{}); errno != syscall.EINTR {
+		t.Errorf("Lookup with canceled context errno = %v, want EINTR", errno)
 	}
 	if _, _, _, errno := root.Create(cancelled, "cancelled-create", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{}); errno == 0 {
-		t.Error("Create with canceled context succeeded")
+		t.Errorf("Create with canceled context errno = %v, want EINTR", errno)
 	}
 	if _, errno := root.Mkdir(cancelled, "cancelled-mkdir", 0755, &gofuse.EntryOut{}); errno == 0 {
-		t.Error("Mkdir with canceled context succeeded")
+		t.Errorf("Mkdir with canceled context errno = %v, want EINTR", errno)
 	}
 	if _, errno := root.Symlink(cancelled, "target", "cancelled-link", &gofuse.EntryOut{}); errno == 0 {
-		t.Error("Symlink with canceled context succeeded")
+		t.Errorf("Symlink with canceled context errno = %v, want EINTR", errno)
 	}
 	if errno := root.Rename(cancelled, "missing", root, "new", 0); errno == 0 {
-		t.Error("Rename with canceled context succeeded")
+		t.Errorf("Rename with canceled context errno = %v, want EINTR", errno)
 	}
 	if errno := root.Unlink(cancelled, "missing"); errno == 0 {
-		t.Error("Unlink with canceled context succeeded")
+		t.Errorf("Unlink with canceled context errno = %v, want EINTR", errno)
 	}
 	if errno := root.Rmdir(cancelled, "missing"); errno == 0 {
-		t.Error("Rmdir with canceled context succeeded")
+		t.Errorf("Rmdir with canceled context errno = %v, want EINTR", errno)
 	}
 
 	var rootAttr gofuse.AttrOut
 	if errno := root.Getattr(cancelled, nil, &rootAttr); errno == 0 {
-		t.Error("Getattr with canceled context succeeded")
+		t.Errorf("Getattr with canceled context errno = %v, want EINTR", errno)
 	}
 	if _, errno := root.Readdir(cancelled); errno == 0 {
-		t.Error("Readdir with canceled context succeeded")
+		t.Errorf("Readdir with canceled context errno = %v, want EINTR", errno)
 	}
 	if errno := root.Statfs(cancelled, &gofuse.StatfsOut{}); errno == 0 {
-		t.Error("Statfs with canceled context succeeded")
+		t.Errorf("Statfs with canceled context errno = %v, want EINTR", errno)
 	}
 	fileInode, fileHandle, _, createErrno := root.Create(ctx, "link-source", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{})
 	if createErrno != 0 {
 		t.Fatalf("Create link source: %v", createErrno)
 	}
 	if _, errno := root.Link(cancelled, fileInode, "cancelled-hardlink", &gofuse.EntryOut{}); errno == 0 {
-		t.Error("Link with canceled context succeeded")
+		t.Errorf("Link with canceled context errno = %v, want EINTR", errno)
 	}
 	fileNode := fileInode.Operations().(*node)
 	if errno := fileNode.Release(ctx, fileHandle); errno != 0 {
@@ -257,7 +257,7 @@ func TestNamespaceCallbacksHonorCanceledContext(t *testing.T) {
 		t.Fatalf("create Readlink target: %v", linkErrno)
 	}
 	if _, errno := linkInode.Operations().(*node).Readlink(cancelled); errno == 0 {
-		t.Error("Readlink with canceled context succeeded")
+		t.Errorf("Readlink with canceled context errno = %v, want EINTR", errno)
 	}
 	if errno := root.Unlink(ctx, "cancelled-readlink"); errno != 0 {
 		t.Errorf("Unlink symlink: %v", errno)
@@ -313,25 +313,25 @@ func TestDataCallbacksHonorCancellationAndStillRelease(t *testing.T) {
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel()
 
-	if _, _, errno := n.Open(cancelled, uint32(syscall.O_RDONLY)); errno == 0 {
-		t.Error("Open with canceled context succeeded")
+	if _, _, errno := n.Open(cancelled, uint32(syscall.O_RDONLY)); errno != syscall.EINTR {
+		t.Errorf("Open with canceled context errno = %v, want EINTR", errno)
 	}
 	if _, errno := n.Read(cancelled, handle, make([]byte, 1), 0); errno == 0 {
-		t.Error("Read with canceled context succeeded")
+		t.Errorf("Read with canceled context errno = %v, want EINTR", errno)
 	}
 	if _, errno := n.Write(cancelled, handle, []byte("x"), 0); errno == 0 {
-		t.Error("Write with canceled context succeeded")
+		t.Errorf("Write with canceled context errno = %v, want EINTR", errno)
 	}
 	if errno := n.Flush(cancelled, handle); errno == 0 {
-		t.Error("Flush with canceled context succeeded")
+		t.Errorf("Flush with canceled context errno = %v, want EINTR", errno)
 	}
 	if errno := n.Fsync(cancelled, handle, 0); errno == 0 {
-		t.Error("Fsync with canceled context succeeded")
+		t.Errorf("Fsync with canceled context errno = %v, want EINTR", errno)
 	}
 	setattr := &gofuse.SetAttrIn{}
 	setattr.Valid, setattr.Mode = gofuse.FATTR_MODE, 0640
 	if errno := n.Setattr(cancelled, nil, setattr, &gofuse.AttrOut{}); errno == 0 {
-		t.Error("Setattr with canceled context succeeded")
+		t.Errorf("Setattr with canceled context errno = %v, want EINTR", errno)
 	}
 	// Release must clean up an open handle even after request cancellation.
 	if errno := n.Release(cancelled, handle); errno != 0 {
