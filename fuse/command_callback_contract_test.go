@@ -266,7 +266,7 @@ func TestCreateMkdirSymlinkNameCollisionsPreserveExistingEntries(t *testing.T) {
 	if errno := file.Getattr(ctx, nil, &beforeFile); errno != 0 {
 		t.Fatalf("Getattr original file: %v", errno)
 	}
-	if _, _, _, errno := root.Create(ctx, "same-file", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{}); errno != syscall.EEXIST {
+	if _, _, _, errno := root.Create(ctx, "same-file", uint32(syscall.O_RDWR|syscall.O_EXCL), 0600, &gofuse.EntryOut{}); errno != syscall.EEXIST {
 		t.Errorf("Create duplicate file errno = %v, want EEXIST", errno)
 	}
 	var afterFile gofuse.AttrOut
