@@ -204,6 +204,17 @@ func TestMountedRenameTypeMismatchPreservesBothEntries(t *testing.T) {
 	if err := os.Mkdir(dir, 0755); err != nil {
 		t.Fatal(err)
 	}
+	fileInfo, err := os.Stat(file)
+	if err != nil || !fileInfo.Mode().IsRegular() {
+		t.Fatalf("source before type-mismatch Rename = %v, %v; want regular file", fileInfo, err)
+	}
+	dirInfo, err := os.Stat(dir)
+	if err != nil || !dirInfo.IsDir() {
+		t.Fatalf("destination before type-mismatch Rename = %v, %v; want directory", dirInfo, err)
+	}
+	if entries, err := os.ReadDir(dir); err != nil || len(entries) != 0 {
+		t.Fatalf("destination before type-mismatch Rename entries = %v, %v; want empty", entries, err)
+	}
 	if err := os.Rename(file, dir); !errors.Is(err, syscall.EISDIR) {
 		t.Errorf("Rename file over directory = %v, want EISDIR", err)
 	}
