@@ -30,7 +30,7 @@ func New(layer *orchestration.Orchestration, rootID shared.ObjectID) (*FileSyste
 	if err != nil {
 		return nil, fmt.Errorf("get root attributes: %w", err)
 	}
-	if attributes.Attributes.Kind != shared.ObjectKindDirectory {
+	if attributes.Attributes.Mode&syscall.S_IFMT != syscall.S_IFDIR {
 		return nil, fmt.Errorf("root object is not a directory")
 	}
 	filesystem := &FileSystem{layer: layer, rootID: rootID}
