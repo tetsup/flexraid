@@ -182,6 +182,13 @@ func TestMountedFilesystemFileOperations(t *testing.T) {
 	} else if string(got) != string(payload[:7]) {
 		t.Errorf("renamed file content = %q, want %q", got, payload[:7])
 	}
+	renamedInfo, err := os.Stat(newPath)
+	if err != nil {
+		t.Fatalf("stat renamed file: %v", err)
+	}
+	if renamedInfo.Size() != 7 {
+		t.Errorf("renamed file size = %d, want 7", renamedInfo.Size())
+	}
 
 	if err := os.Remove(newPath); err != nil {
 		t.Fatalf("unlink file: %v", err)
