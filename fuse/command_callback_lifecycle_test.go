@@ -148,3 +148,69 @@ func TestStatfsCallbackMatchesOrchestrationResponse(t *testing.T) {
 	}
 }
 
+
+func TestOpenReadWriteCallbackRejectInvalidModesAndForeignHandles(t *testing.T) {
+	adapter, ctx := newCallbackTestFilesystem(t)
+	root := adapter.root
+	firstInode, firstHandle, _, errno := root.Create(ctx, "first", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{})
+	if errno != 0 {
+		t.Fatalf("Create first: %v", errno)
+	}
+	first := firstInode.Operations().(*node)
+	secondInode, secondHandle, _, errno := root.Create(ctx, "second", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{})
+	if errno != 0 {
+		t.Fatalf("Create second: %v", errno)
+	}
+	second := secondInode.Operations().(*node)
+
+	if _, _, errno := first.Open(ctx, uint32(syscall.O_ACCMODE)); errno != syscall.EINVAL {
+		t.Errorf("Open invalid access mode errno = %v, want EINVAL", errno)
+	}
+	if _, errno := second.Read(ctx, firstHandle, make([]byte, 1), 0); errno == 0 {
+		t.Error("Read with another inode's handle succeeded")
+	}
+	if _, errno := second.Write(ctx, firstHandle, []byte("x"), 0); errno == 0 {
+		t.Error("Write with another inode's handle succeeded")
+	}
+	if errno := first.Release(ctx, firstHandle); errno != 0 {
+		t.Errorf("Release first: %v", errno)
+	}
+	if errno := second.Release(ctx, secondHandle); errno != 0 {
+		t.Errorf("Release second: %v", errno)
+	}
+	if errno := root.Unlink(ctx, "first"); errno != 0 {
+		t.Errorf("Unlink first: %v", errno)
+	}
+	if errno := root.Unlink(ctx, "second"); errno != 0 {
+		t.Errorf("Unlink second: %v", errno)
+	}
+}
+
+func TestNamespaceCallbacksHonorCanceledContext(t *testing.T) {
+	adapter, ctx := newCallbackTestFilesystem(t)
+	root := adapter.root
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+
+	if _, errno := root.Lookup(cancelled, "missing", &gofuse.EntryOut{}); errno == 0 {
+		t.Error("Lookup with canceled context succeeded")
+	}
+	if _, _, _, errno := root.Create(cancelled, "cancelled-create", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{}); errno == 0 {
+		t.Error("Create with canceled context succeeded")
+	}
+	if _, errno := root.Mkdir(cancelled, "cancelled-mkdir", 0755, &gofuse.EntryOut{}); errno == 0 {
+		t.Error("Mkdir with canceled context succeeded")
+	}
+	if _, errno := root.Symlink(cancelled, "target", "cancelled-link", &gofuse.EntryOut{}); errno == 0 {
+		t.Error("Symlink with canceled context succeeded")
+	}
+	if errno := root.Rename(cancelled, "missing", root, "new", 0); errno == 0 {
+		t.Error("Rename with canceled context succeeded")
+	}
+	if errno := root.Unlink(cancelled, "missing"); errno == 0 {
+		t.Error("Unlink with canceled context succeeded")
+	}
+	if errno := root.Rmdir(cancelled, "missing"); errno == 0 {
+		t.Error("Rmdir with canceled context succeeded")
+	}
+}
