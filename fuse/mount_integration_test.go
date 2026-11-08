@@ -101,7 +101,6 @@ func TestMountedEmptyFilesystem(t *testing.T) {
 	}
 }
 
-
 func TestMountedFilesystemFileOperations(t *testing.T) {
 	mountpoint := mountTestFilesystem(t)
 
