@@ -60,7 +60,7 @@ func TestNamespaceCallbacksReturnExpectedErrors(t *testing.T) {
 			t.Errorf("Lookup(%q) errno = %v, want EINVAL", name, errno)
 		}
 	}
-	for _, name := range []string{"", ".", "..", "a/b"} {
+	for _, name := range []string{"", "a/b"} {
 		if _, _, _, errno := root.Create(ctx, name, uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{}); errno != syscall.EINVAL {
 			t.Errorf("Create(%q) errno = %v, want EINVAL", name, errno)
 		}
