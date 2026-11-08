@@ -74,7 +74,7 @@ func (layer *Orchestration) unlinkFile(ctx context.Context, parent, object *runt
 	}
 	next.ParentID = nil
 	next.Ctime = time.Now()
-	if err := layer.persistObjectHeader(ctx, next);
+	if err := layer.persistObjectHeader(ctx, next); err != nil {
 		return err
 	}
 	object.header = next
