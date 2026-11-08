@@ -135,8 +135,8 @@ func TestSetattrCallbackRejectsInvalidTargetsAndSymlinkMode(t *testing.T) {
 		t.Fatalf("Mkdir: %v", errno)
 	}
 	dir := dirInode.Operations().(*node)
-	if errno := dir.Setattr(ctx, nil, sizeIn, &gofuse.AttrOut{}); errno != syscall.EINVAL {
-		t.Errorf("Setattr directory size errno = %v, want EINVAL", errno)
+	if errno := dir.Setattr(ctx, nil, sizeIn, &gofuse.AttrOut{}); errno != syscall.EISDIR {
+		t.Errorf("Setattr directory size errno = %v, want EISDIR", errno)
 	}
 }
 
