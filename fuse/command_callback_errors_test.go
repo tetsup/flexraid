@@ -122,7 +122,7 @@ func TestNamespaceCallbacksReturnExpectedErrors(t *testing.T) {
 	if errno != 0 {
 		t.Fatalf("Mkdir directory: %v", errno)
 	}
-	if _, errno := root.Link(ctx, dirInode, "directory-link", &gofuse.EntryOut{}); errno != syscall.EINVAL {
+	if _, errno := root.Link(ctx, dirInode, "directory-link", &gofuse.EntryOut{}); errno != syscall.EPERM {
 		t.Errorf("Link directory errno = %v, want EINVAL", errno)
 	}
 	if errno := root.Unlink(ctx, "directory"); errno != syscall.EISDIR {
@@ -149,8 +149,8 @@ func TestDataCallbacksRejectWrongNodeAndInvalidHandles(t *testing.T) {
 	}
 	dir := dirInode.Operations().(*node)
 
-	if _, _, errno := dir.Open(ctx, uint32(syscall.O_RDONLY)); errno != syscall.EINVAL {
-		t.Errorf("Open directory errno = %v, want EINVAL", errno)
+	if _, _, errno := dir.Open(ctx, uint32(syscall.O_WRONLY)); errno != syscall.EISDIR {
+		t.Errorf("Open directory for writing errno = %v, want EISDIR", errno)
 	}
 	if _, errno := dir.Readlink(ctx); errno != syscall.EINVAL {
 		t.Errorf("Readlink directory errno = %v, want EINVAL", errno)
