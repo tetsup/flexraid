@@ -187,8 +187,8 @@ func TestOpenReadWriteCallbackRejectInvalidModesAndForeignHandles(t *testing.T) 
 	}
 	second := secondInode.Operations().(*node)
 
-	if _, _, errno := first.Open(ctx, uint32(syscall.O_ACCMODE)); errno == 0 {
-		t.Error("Open invalid access mode succeeded")
+	if _, _, errno := first.Open(ctx, uint32(syscall.O_ACCMODE)); errno != syscall.EINVAL {
+		t.Errorf("Open invalid access mode errno = %v, want EINVAL", errno)
 	}
 	if _, errno := second.Read(ctx, firstHandle, make([]byte, 1), 0); errno == 0 {
 		t.Error("Read with another inode's handle succeeded")
