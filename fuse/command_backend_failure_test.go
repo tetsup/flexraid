@@ -127,5 +127,13 @@ func TestNamespaceAndPersistenceFailuresDoNotPublishPartialChanges(t *testing.T)
 	if errno := source.Release(ctx, sourceHandle); errno != 0 {
 		t.Errorf("Release after failed persistence: %v", errno)
 	}
+	for _, path := range roots {
+		if err := os.Remove(path); err != nil {
+			t.Fatalf("remove failed I/O root %q: %v", path, err)
+		}
+	}
+	if errno := root.Statfs(ctx, &gofuse.StatfsOut{}); errno == 0 {
+		t.Error("Statfs with unavailable physical roots succeeded")
+	}
 	_ = dirInode
 }
