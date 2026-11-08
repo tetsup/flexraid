@@ -77,6 +77,17 @@ func TestNamespaceCallbacksReturnExpectedErrors(t *testing.T) {
 		t.Errorf("Rename missing source errno = %v, want ENOENT", errno)
 	}
 
+	badInode, badHandle, _, badOpenErrno := root.Create(ctx, "bad-open-flags", uint32(syscall.O_ACCMODE), 0600, &gofuse.EntryOut{})
+	if badOpenErrno != syscall.EINVAL {
+		t.Errorf("Create with invalid access mode errno = %v, want EINVAL", badOpenErrno)
+	}
+	if badInode != nil || badHandle != nil {
+		t.Errorf("Create with invalid access mode returned inode/handle = %v/%v, want nil/nil", badInode, badHandle)
+	}
+	if _, errno := root.Lookup(ctx, "bad-open-flags", &gofuse.EntryOut{}); errno != syscall.ENOENT {
+		t.Errorf("Lookup after failed Create/Open errno = %v, want ENOENT", errno)
+	}
+
 	fileInode, fileHandle, _, errno := root.Create(ctx, "regular", uint32(syscall.O_RDWR), 0640, &gofuse.EntryOut{})
 	if errno != 0 {
 		t.Fatalf("Create regular file: %v", errno)
