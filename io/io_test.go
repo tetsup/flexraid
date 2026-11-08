@@ -185,7 +185,7 @@ func TestSyncExistingPhysicalFile(t *testing.T) {
 	if _, err := layer.Write(WriteRequest{Context: context.Background(), Key: key, Data: []byte("durable")}); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	if _, err := layer.Sync(SyncRequest{Context: context.Background(), Key: key}); err != nil {
-		t.Fatalf("Sync: %v", err)
+	if result, err := layer.Sync(SyncRequest{Context: context.Background(), Key: key}); err != nil || !result.Synced {
+		t.Fatalf("Sync = %+v, %v; want synced", result, err)
 	}
 }
