@@ -95,8 +95,8 @@ func TestSetAttrValidation(t *testing.T) {
 	}
 	directoryID := testID("52345678-9abc-4def-8abc-1234567890ab")
 	fixture.layer.objects[directoryID] = &runtimeObject{header: testHeader(objectKindDirectory, directoryID, nil, nil, "")}
-	if _, err := fixture.layer.SetAttr(SetAttrRequest{ObjectID: directoryID, Size: &size}); !errors.Is(err, os.ErrInvalid) {
-		t.Fatalf("directory size change = %v", err)
+	if _, err := fixture.layer.SetAttr(SetAttrRequest{ObjectID: directoryID, Size: &size}); !errors.Is(err, syscall.EINVAL) {
+		t.Fatalf("directory size change = %v, want EINVAL", err)
 	}
 }
 
