@@ -15,7 +15,7 @@ var _ fs.NodeAccesser = (*node)(nil)
 func (n *node) Access(ctx context.Context, mask uint32) syscall.Errno {
 	result, err := n.layer.GetAttr(orchestration.GetAttrRequest{Context: ctx, ObjectID: n.objectID})
 	if err != nil {
-		return gofuse.ToErrno(err)
+		return fs.ToErrno(err)
 	}
 	credentials, ok := gofuse.FromContext(ctx)
 	if !ok || credentials == nil {
