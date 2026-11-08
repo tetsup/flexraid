@@ -2,7 +2,6 @@ package fuse_test
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -78,23 +77,13 @@ func TestMountedOpenUnlinkRetainsOpenFileUntilRelease(t *testing.T) {
 	if _, err := file.WriteAt([]byte("after!"), 0); err != nil {
 		t.Errorf("Write through open unlinked handle: %v", err)
 	}
-	if _, err := file.Seek(0, 0); err != nil {
-		t.Errorf("Seek open unlinked handle: %v", err)
-	}
-	got, err := os.ReadFile("/proc/self/fd/" + itoaFD(file.Fd()))
-	if err != nil {
-		t.Errorf("read open unlinked descriptor: %v", err)
-	} else if string(got) != "after!" {
-		t.Errorf("open unlinked content = %q, want after!", got)
+	got := make([]byte, len("after!"))
+	if n, err := file.ReadAt(got, 0); err != nil || n != len(got) || string(got) != "after!" {
+		t.Errorf("ReadAt open unlinked handle = %q (%d bytes), %v; want after!", got, n, err)
 	}
 	if err := file.Close(); err != nil {
 		t.Errorf("Release: %v", err)
 	}
-}
-
-// itoaFD avoids adding formatting dependencies to this integration test.
-func itoaFD(fd uintptr) string {
-	return fmt.Sprintf("%d", fd)
 }
 
 func TestMountedRenameAcrossDirectoriesAndReplacementTypes(t *testing.T) {
