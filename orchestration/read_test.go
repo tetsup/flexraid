@@ -194,9 +194,12 @@ func TestOpenDirectoryReadOnlyAndRejectsWrites(t *testing.T) {
 	if _, err := layer.Release(ReleaseRequest{Handle: opened.Handle}); err != nil {
 		t.Fatalf("Release directory handle: %v", err)
 	}
-	for _, flags := range []uint32{uint32(syscall.O_WRONLY), uint32(syscall.O_RDWR)} {
+	for _, flags := range []uint32{uint32(syscall.O_WRONLY), uint32(syscall.O_RDWR), uint32(syscall.O_RDONLY | syscall.O_TRUNC)} {
 		if _, err := layer.Open(OpenRequest{ObjectID: id, Flags: flags}); !errors.Is(err, syscall.EISDIR) {
 			t.Errorf("Open directory flags %#x = %v, want EISDIR", flags, err)
 		}
+	}
+	if _, err := layer.Open(OpenRequest{ObjectID: id, Flags: uint32(syscall.O_ACCMODE)}); !errors.Is(err, syscall.EINVAL) {
+		t.Errorf("Open directory with invalid access mode = %v, want EINVAL", err)
 	}
 }
