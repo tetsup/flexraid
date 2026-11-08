@@ -270,7 +270,6 @@ func TestTruncateReplansAndZeroFillsGrowth(t *testing.T) {
 	}
 }
 
-
 func TestFsyncSynchronizesAlreadyCleanStripes(t *testing.T) {
 	fixture := newWriteFixture(t)
 	writer := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDWR))
