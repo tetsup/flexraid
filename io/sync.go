@@ -61,7 +61,6 @@ func (layer *IO) Sync(request SyncRequest) (response SyncResponse, err error) {
 	return response, nil
 }
 
-
 // syncDirectory persists the directory entry for a physical chunk file.
 func syncDirectory(path string) error {
 	directory, err := os.Open(path)
