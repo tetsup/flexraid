@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hanwen/go-fuse/v2/fs"
 	gofuse "github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/tetsup/flexraid/orchestration"
 )
@@ -150,4 +149,3 @@ func TestStatfsCallbackMatchesOrchestrationResponse(t *testing.T) {
 	}
 }
 
-var _ fs.FileHandle
