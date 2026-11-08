@@ -23,6 +23,9 @@ func TestOpenAppendCallbackSemantics(t *testing.T) {
 	if written, errno := n.Write(ctx, initialHandle, []byte("prefix"), 0); errno != 0 || written != 6 {
 		t.Fatalf("initial Write = %d, %v; want 6, success", written, errno)
 	}
+	if errno := n.Flush(ctx, initialHandle); errno != 0 {
+		t.Fatalf("Flush initial data: %v", errno)
+	}
 	if errno := n.Release(ctx, initialHandle); errno != 0 {
 		t.Fatalf("Release initial handle: %v", errno)
 	}
@@ -33,6 +36,9 @@ func TestOpenAppendCallbackSemantics(t *testing.T) {
 	}
 	if written, errno := n.Write(ctx, appendHandle, []byte("-suffix"), 0); errno != 0 || written != 7 {
 		t.Errorf("Write O_APPEND = %d, %v; want 7, success", written, errno)
+	}
+	if errno := n.Flush(ctx, appendHandle); errno != 0 {
+		t.Errorf("Flush O_APPEND data: %v", errno)
 	}
 	if errno := n.Release(ctx, appendHandle); errno != 0 {
 		t.Errorf("Release O_APPEND handle: %v", errno)
