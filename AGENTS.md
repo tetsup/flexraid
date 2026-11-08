@@ -678,3 +678,14 @@ The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing 
 ### その他の statfs fields
 
 - f_namemax など本契約で意味を定義していないフィールドは、FUSE / 実装ライブラリの既定値に委ねる。FUSE 層で独自の容量計算や推測値を設定しない。
+
+## HardLink の隠蔽と FUSE 境界
+
+- HardLink は Orchestration が管理する Namespace 内部の表現とする。FUSE 層に HardLink 専用の POSIX ファイル種別や、HardLink Object 自身の識別を要求しない。
+- Orchestration の公開属性取得（`GetAttr`）は、入力 ObjectID が File の場合はその File を、HardLink の場合は TargetID が直接指す File 実体を解決し、実体の ObjectID と実体 Header 由来の POSIX 属性を返す。HardLink 自身の ObjectID / Kind / Header を FUSE 向け属性応答に露出しない。
+- HardLink の TargetID は File 実体を直接指す。公開属性取得で参照先を解決できない場合は、属性を推測して返さず、Namespace の不整合としてエラーにする。
+- FUSE が同一ファイルとして扱う inode の識別子は、Orchestration の属性取得が返す実体 ObjectID から一貫して生成する。同じ実体を参照する File 名および HardLink 名は、同じ FUSE inode identity / stable attributes を共有する。
+- FUSE は実体の属性・データ操作には実体 ObjectID を使用する。一方、Namespace を変更する Unlink / Rename は、親ディレクトリと名前で Orchestration に要求し、Orchestration が現在の Namespace エントリを解決する。FUSE は HardLink ObjectID を保持・指定する必要がなく、実体 ObjectID を使って名前を削除・移動してはならない。
+- Lookup 等で HardLink 名を解決した後も、その名前に対する Unlink / Rename は当該パスの Namespace エントリだけに作用する。他の名前から同じ実体を参照する状態は維持する。
+- FUSE の公開動作では、HardLink 名を通常のファイルとして扱う。同一実体を参照する名前間では inode identity、ファイル内容、実体属性が一致する。名前・親ディレクトリは各 Namespace エントリに固有であり、Rename 成功後は移動元名が存在せず、移動先名から同じ実体を参照できる。
+- テスト責務を分離する。Orchestration のテストは HardLink の TargetID、名前解決、参照関係、実体属性・データの維持、および移動元名の消失を内部契約として検証する。FUSE のテストは POSIX の外部動作として、同じ実体を参照する名前の inode identity / stat 属性 / データの一致、Rename 後の移動先アクセス、移動元の ENOENT、Unlink による個別名の削除を検証する。内部 HardLink ObjectID の値を FUSE の契約として検証しない。
