@@ -46,7 +46,7 @@ func TestMountedEmptyFilesystem(t *testing.T) {
 	}
 	server, err := adapter.Mount(mountpoint, nil)
 	if err != nil {
-		if err == syscall.EPERM || err == syscall.EACCES {
+		if errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) {
 			t.Skipf("FUSE mounting is not permitted in this environment: %v", err)
 		}
 		t.Fatalf("mount empty filesystem: %v", err)
@@ -237,8 +237,8 @@ func TestMountedFilesystemReturnsExpectedErrors(t *testing.T) {
 	if err := os.WriteFile(filePath, []byte("x"), 0600); err != nil {
 		t.Fatalf("create regular file: %v", err)
 	}
-	if err := os.Mkdir(filePath, 0755); !errors.Is(err, syscall.EEXIST) && !errors.Is(err, syscall.ENOTDIR) {
-		t.Errorf("mkdir over regular file error = %v, want EEXIST or ENOTDIR", err)
+	if err := os.Mkdir(filePath, 0755); !errors.Is(err, syscall.EEXIST) {
+		t.Errorf("mkdir over existing regular file error = %v, want EEXIST", err)
 	}
 
 	if err := os.Remove(directory); err != nil {
