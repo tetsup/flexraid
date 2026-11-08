@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/tetsup/flexraid/pkg/shared"
@@ -48,8 +49,11 @@ func (layer *Orchestration) Symlink(request SymlinkRequest) (response SymlinkRes
 	if err = validateNewObjectName(request.Name); err != nil {
 		return response, err
 	}
-	if request.Target == "" || strings.IndexByte(request.Target, 0) >= 0 {
-		return response, fmt.Errorf("invalid symlink target: %w", os.ErrInvalid)
+	if request.Target == "" {
+		return response, syscall.ENOENT
+	}
+	if strings.IndexByte(request.Target, 0) >= 0 {
+		return response, syscall.EINVAL
 	}
 	parent, exists := layer.objects[request.ParentID]
 	if !exists || parent.header.Deleted {
