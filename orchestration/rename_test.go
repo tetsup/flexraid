@@ -203,8 +203,8 @@ func TestRenameRejectsDirectoryCycleAndIncompatibleReplacement(t *testing.T) {
 		SourceParentID: fixture.rootID, SourceName: "dir",
 		DestinationParentID: child.ObjectID, DestinationName: "moved",
 	})
-	if !errors.Is(err, os.ErrInvalid) {
-		t.Fatalf("directory cycle rename = %v, want invalid", err)
+	if !errors.Is(err, syscall.EINVAL) {
+		t.Fatalf("directory cycle rename = %v, want EINVAL", err)
 	}
 
 	_, err = fixture.layer.Create(CreateRequest{ParentID: fixture.rootID, Name: "file"})
