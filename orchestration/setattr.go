@@ -239,7 +239,8 @@ func (layer *Orchestration) updateHeaderStripeLocked(ctx context.Context, file *
 }
 
 // persistDirtyStripesLocked persists the dirty cache entries in StripeID order.
-func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file *runtimeFile) error {
+func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file *runtimeFile, syncToDisk ...bool) error {
+	sync := len(syncToDisk) > 0 && syncToDisk[0]
 	ids := make([]uint64, 0, len(file.stripeCache))
 	for id, entry := range file.stripeCache {
 		if entry != nil && entry.state == stripeCacheDirty {
@@ -279,7 +280,7 @@ func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file 
 		if _, err = layer.distribution.WriteStripe(distribution.WriteStripeRequest{
 			Context: ctx, ObjectID: file.objectID, StripeID: storage.StripeID(id),
 			ChunkSize: geometry.ChunkSize, Layout: geometry.Layout,
-			IOIndexes: indexes, Data: entry.data,
+			IOIndexes: indexes, Data: entry.data, Sync: sync,
 		}); err != nil {
 			return fmt.Errorf("persist stripe %d: %w", id, err)
 		}
