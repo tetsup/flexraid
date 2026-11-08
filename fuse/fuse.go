@@ -137,7 +137,7 @@ func (n *node) Read(ctx context.Context, fh fs.FileHandle, dest []byte, offset i
 
 func (n *node) Write(ctx context.Context, fh fs.FileHandle, data []byte, offset int64) (uint32, syscall.Errno) {
 	handle, ok := fh.(*fileHandle)
-	if !ok || handle == nil || handle.layer != n.layer || handle.objectID != n.objectID || offset < 0 {
+	if !ok || handle == nil || handle.layer != n.layer || offset < 0 {
 		return 0, syscall.EBADF
 	}
 	result, err := n.layer.Write(orchestration.WriteRequest{
