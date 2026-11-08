@@ -82,7 +82,7 @@ func TestSetattrIndividualFieldsAndPreservesUnspecifiedAttributes(t *testing.T) 
 		t.Errorf("mode after Setattr = %#o, want %#o", out.Attr.Mode&07777, mode)
 	}
 
-	uid := uint32(1234)
+	uid := uint32(os.Getuid()) ^ 1
 	uidIn := &gofuse.SetAttrIn{}
 	uidIn.Valid, uidIn.Uid = gofuse.FATTR_UID, uid
 	if errno := n.Setattr(ctx, nil, uidIn, &out); errno != 0 {
@@ -92,7 +92,7 @@ func TestSetattrIndividualFieldsAndPreservesUnspecifiedAttributes(t *testing.T) 
 		t.Errorf("attributes after UID change = uid %d mode %#o, want uid %d mode %#o", out.Attr.Uid, out.Attr.Mode&07777, uid, mode)
 	}
 
-	gid := uint32(2345)
+	gid := uint32(os.Getgid()) ^ 1
 	gidIn := &gofuse.SetAttrIn{}
 	gidIn.Valid, gidIn.Gid = gofuse.FATTR_GID, gid
 	if errno := n.Setattr(ctx, nil, gidIn, &out); errno != 0 {
