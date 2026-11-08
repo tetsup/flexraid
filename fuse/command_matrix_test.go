@@ -315,3 +315,55 @@ func TestMountedEmptyDirectoryAndStatfsLogicalCounts(t *testing.T) {
 		t.Errorf("Statfs Files after final Unlink = %d, want %d", afterDelete.Files, before.Files)
 	}
 }
+
+func TestMountedRenameDirectoryCycleAndEmptyDirectoryReplacement(t *testing.T) {
+	mountpoint := mountTestFilesystem(t)
+	parent := filepath.Join(mountpoint, "parent")
+	child := filepath.Join(parent, "child")
+	if err := os.Mkdir(parent, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(child, 0755); err != nil {
+		t.Fatal(err)
+	}
+	parentIno, parentLinks := statInode(t, parent)
+	rootIno, rootLinks := statInode(t, mountpoint)
+
+	if err := os.Rename(parent, child); !errors.Is(err, syscall.EINVAL) {
+		t.Errorf("Rename directory into its descendant = %v, want EINVAL", err)
+	}
+	if got, err := os.Stat(parent); err != nil || !got.IsDir() {
+		t.Errorf("parent after rejected cycle move: info=%v err=%v", got, err)
+	}
+	if got, err := os.Stat(child); err != nil || !got.IsDir() {
+		t.Errorf("child after rejected cycle move: info=%v err=%v", got, err)
+	}
+	if ino, links := statInode(t, parent); ino != parentIno || links != parentLinks+1 {
+		t.Errorf("parent identity/NLink after rejected cycle = %d/%d, want %d/%d", ino, links, parentIno, parentLinks+1)
+	}
+	if ino, links := statInode(t, mountpoint); ino != rootIno || links != rootLinks+1 {
+		t.Errorf("root identity/NLink after rejected cycle = %d/%d, want %d/%d", ino, links, rootIno, rootLinks+1)
+	}
+
+	source := filepath.Join(mountpoint, "source-dir")
+	destination := filepath.Join(mountpoint, "destination-dir")
+	if err := os.Mkdir(source, 0710); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(destination, 0700); err != nil {
+		t.Fatal(err)
+	}
+	sourceIno, _ := statInode(t, source)
+	if err := os.Rename(source, destination); err != nil {
+		t.Fatalf("Rename directory over empty directory: %v", err)
+	}
+	if _, err := os.Lstat(source); !errors.Is(err, syscall.ENOENT) {
+		t.Errorf("source directory after replacement = %v, want ENOENT", err)
+	}
+	if ino, links := statInode(t, destination); ino != sourceIno || links != 2 {
+		t.Errorf("destination identity/NLink after empty-dir replacement = %d/%d, want %d/2", ino, links, sourceIno)
+	}
+	if mode, err := os.Stat(destination); err != nil || mode.Mode().Perm() != 0710 {
+		t.Errorf("destination mode after replacement = %v, %v; want source mode 0710", mode, err)
+	}
+}
