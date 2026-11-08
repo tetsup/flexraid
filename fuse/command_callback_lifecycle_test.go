@@ -1,6 +1,7 @@
 package fuse
 
 import (
+	"context"
 	"os"
 	"syscall"
 	"testing"
