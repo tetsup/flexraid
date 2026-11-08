@@ -151,7 +151,10 @@ func TestSetattrNoopDoesNotChangeAttributes(t *testing.T) {
 	}
 	if before.Attr.Mode != after.Attr.Mode || before.Attr.Uid != after.Attr.Uid ||
 		before.Attr.Gid != after.Attr.Gid || before.Attr.Size != after.Attr.Size ||
-		before.Attr.Nlink != after.Attr.Nlink || before.Attr.Ino != after.Attr.Ino {
+		before.Attr.Nlink != after.Attr.Nlink || before.Attr.Ino != after.Attr.Ino ||
+		before.Attr.Atime != after.Attr.Atime || before.Attr.Atimensec != after.Attr.Atimensec ||
+		before.Attr.Mtime != after.Attr.Mtime || before.Attr.Mtimensec != after.Attr.Mtimensec ||
+		before.Attr.Ctime != after.Attr.Ctime || before.Attr.Ctimensec != after.Attr.Ctimensec {
 		t.Errorf("no-op Setattr changed attributes: before=%+v after=%+v", before.Attr, after.Attr)
 	}
 	if errno := n.Release(ctx, handle); errno != 0 {
