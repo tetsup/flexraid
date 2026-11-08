@@ -122,11 +122,11 @@ func (n *node) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, s
 
 func (n *node) Read(ctx context.Context, fh fs.FileHandle, dest []byte, offset int64) (gofuse.ReadResult, syscall.Errno) {
 	handle, ok := fh.(*fileHandle)
-	if !ok || handle == nil || handle.layer != n.layer || offset < 0 {
+	if !ok || handle == nil || handle.layer != n.layer || handle.objectID != n.objectID || offset < 0 {
 		return nil, syscall.EBADF
 	}
 	result, err := n.layer.Read(orchestration.ReadRequest{
-		Context: ctx, Handle: handle.handle, ObjectID: handle.objectID,
+		Context: ctx, Handle: handle.handle, ObjectID: n.objectID,
 		Offset: uint64(offset), Size: uint32(len(dest)),
 	})
 	if err != nil {
@@ -137,11 +137,11 @@ func (n *node) Read(ctx context.Context, fh fs.FileHandle, dest []byte, offset i
 
 func (n *node) Write(ctx context.Context, fh fs.FileHandle, data []byte, offset int64) (uint32, syscall.Errno) {
 	handle, ok := fh.(*fileHandle)
-	if !ok || handle == nil || handle.layer != n.layer || offset < 0 {
+	if !ok || handle == nil || handle.layer != n.layer || handle.objectID != n.objectID || offset < 0 {
 		return 0, syscall.EBADF
 	}
 	result, err := n.layer.Write(orchestration.WriteRequest{
-		Context: ctx, Handle: handle.handle, ObjectID: handle.objectID,
+		Context: ctx, Handle: handle.handle, ObjectID: n.objectID,
 		Offset: uint64(offset), Data: data,
 	})
 	if err != nil {
