@@ -138,7 +138,7 @@ func TestMountedMkdirUnlinkAndRmdirErrors(t *testing.T) {
 	if err := os.WriteFile(file, []byte("x"), 0600); err != nil {
 		t.Fatalf("create child: %v", err)
 	}
-	if err := os.Remove(dir); !errors.Is(err, syscall.EPERM) && !errors.Is(err, syscall.ENOTEMPTY) {
+	if err := os.Remove(dir); !errors.Is(err, syscall.ENOTEMPTY) {
 		t.Errorf("Rmdir non-empty directory error = %v, want EPERM or ENOTEMPTY", err)
 	}
 	if err := syscall.Unlink(dir); !errors.Is(err, syscall.EISDIR) {
@@ -197,7 +197,7 @@ func TestMountedHardLinkSharesInodeAndUnlinksOneName(t *testing.T) {
 	if err := os.Link(filepath.Join(mountpoint, "missing"), filepath.Join(mountpoint, "missing-alias")); !errors.Is(err, syscall.ENOENT) {
 		t.Errorf("Link missing source error = %v, want ENOENT", err)
 	}
-	if err := os.Link(mountpoint, filepath.Join(mountpoint, "directory-alias")); !errors.Is(err, syscall.EPERM) && !errors.Is(err, syscall.EISDIR) {
+	if err := os.Link(mountpoint, filepath.Join(mountpoint, "directory-alias")); !errors.Is(err, syscall.EPERM) {
 		t.Errorf("Link directory error = %v, want EPERM or EISDIR", err)
 	}
 	if err := os.Remove(source); err != nil {
@@ -286,7 +286,7 @@ func TestMountedRenameReplacementAndFailureCases(t *testing.T) {
 	if err := os.WriteFile(child, []byte("x"), 0600); err != nil {
 		t.Fatalf("create directory child: %v", err)
 	}
-	if err := os.Rename(dir, child); !errors.Is(err, syscall.ENOTDIR) && !errors.Is(err, syscall.EINVAL) {
+	if err := os.Rename(dir, child); !errors.Is(err, syscall.EINVAL) {
 		t.Errorf("Rename directory onto descendant error = %v, want ENOTDIR or EINVAL", err)
 	}
 	if err := os.Rename(dir, filepath.Join(mountpoint, "moved-dir")); err != nil {
