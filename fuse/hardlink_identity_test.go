@@ -205,6 +205,24 @@ func TestHardLinkCallbacksKeepBackingFileIdentity(t *testing.T) {
 		t.Errorf("Release original read handle: %v", errno)
 	}
 
+	// Attribute mutations through an alias must affect the shared backing
+	// inode, and the original name must observe the same attributes.
+	setattrIn := &gofuse.SetAttrIn{}
+	setattrIn.Valid = gofuse.FATTR_MODE
+	setattrIn.Mode = 0600
+	var aliasSetattrOut gofuse.AttrOut
+	if errno := aliasNode.Setattr(ctx, nil, setattrIn, &aliasSetattrOut); errno != 0 {
+		t.Errorf("Setattr mode through alias: %v", errno)
+	} else if aliasSetattrOut.Attr.Mode&07777 != 0600 {
+		t.Errorf("alias mode after Setattr = %#o, want 0600", aliasSetattrOut.Attr.Mode&07777)
+	}
+	var originalAfterSetattr gofuse.AttrOut
+	if errno := originalNode.Getattr(ctx, nil, &originalAfterSetattr); errno != 0 {
+		t.Errorf("Getattr original after alias Setattr: %v", errno)
+	} else if originalAfterSetattr.Attr.Mode&07777 != 0600 {
+		t.Errorf("original mode after alias Setattr = %#o, want 0600", originalAfterSetattr.Attr.Mode&07777)
+	}
+
 	// A second alias created through the first alias must still target the
 	// backing File, rather than trying to link the internal HardLink object.
 	var secondAliasEntry gofuse.EntryOut
@@ -266,6 +284,13 @@ func TestHardLinkCallbacksKeepBackingFileIdentity(t *testing.T) {
 	}
 	if _, errno := root.Lookup(ctx, "renamed", &gofuse.EntryOut{}); errno != syscall.ENOENT {
 		t.Errorf("Lookup after final Unlink errno = %v, want ENOENT", errno)
+	}
+
+	var statfsOut gofuse.StatfsOut
+	if errno := root.Statfs(ctx, &statfsOut); errno != 0 {
+		t.Errorf("Statfs: %v", errno)
+	} else if statfsOut.Bsize == 0 || statfsOut.Frsize == 0 {
+		t.Errorf("Statfs block sizes = %d/%d, want nonzero", statfsOut.Bsize, statfsOut.Frsize)
 	}
 
 }
