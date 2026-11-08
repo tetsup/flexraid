@@ -312,11 +312,31 @@ func TestSetattrRejectsReadonlyAndMismatchedHandles(t *testing.T) {
 	other := otherInode.Operations().(*node)
 	sizeIn := &gofuse.SetAttrIn{}
 	sizeIn.Valid, sizeIn.Size = gofuse.FATTR_SIZE, 4
+	var readonlyBefore, otherBefore gofuse.AttrOut
+	if errno := readonly.Getattr(ctx, nil, &readonlyBefore); errno != 0 {
+		t.Fatalf("Getattr readonly before rejected Setattr: %v", errno)
+	}
+	if errno := other.Getattr(ctx, nil, &otherBefore); errno != 0 {
+		t.Fatalf("Getattr other before rejected Setattr: %v", errno)
+	}
 	if errno := readonly.Setattr(ctx, readonlyHandle, sizeIn, &gofuse.AttrOut{}); errno == 0 {
 		t.Error("Setattr size through read-only handle succeeded")
 	}
 	if errno := readonly.Setattr(ctx, otherHandle, sizeIn, &gofuse.AttrOut{}); errno == 0 {
 		t.Error("Setattr with another file's handle succeeded")
+	}
+	var readonlyAfter, otherAfter gofuse.AttrOut
+	if errno := readonly.Getattr(ctx, nil, &readonlyAfter); errno != 0 {
+		t.Fatalf("Getattr readonly after rejected Setattr: %v", errno)
+	}
+	if errno := other.Getattr(ctx, nil, &otherAfter); errno != 0 {
+		t.Fatalf("Getattr other after rejected Setattr: %v", errno)
+	}
+	if readonlyAfter.Attr != readonlyBefore.Attr {
+		t.Errorf("readonly attributes changed after rejected Setattr: before=%+v after=%+v", readonlyBefore.Attr, readonlyAfter.Attr)
+	}
+	if otherAfter.Attr != otherBefore.Attr {
+		t.Errorf("other attributes changed after rejected Setattr: before=%+v after=%+v", otherBefore.Attr, otherAfter.Attr)
 	}
 	if errno := readonly.Release(ctx, readonlyHandle); errno != 0 {
 		t.Errorf("Release readonly: %v", errno)
