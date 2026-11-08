@@ -67,6 +67,18 @@ func TestNamespaceCallbacksReturnExpectedErrors(t *testing.T) {
 			t.Errorf("Symlink(%q) errno = %v, want EINVAL", name, errno)
 		}
 	}
+	for _, operation := range []struct {
+		name string
+		call func() syscall.Errno
+	}{
+		{"Create", func() syscall.Errno { _, _, _, errno := root.Create(ctx, "bad\\x00name", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{}); return errno }},
+		{"Mkdir", func() syscall.Errno { _, errno := root.Mkdir(ctx, "bad\\x00name", 0755, &gofuse.EntryOut{}); return errno }},
+		{"Symlink", func() syscall.Errno { _, errno := root.Symlink(ctx, "target", "bad\\x00name", &gofuse.EntryOut{}); return errno }},
+	} {
+		if errno := operation.call(); errno != syscall.EINVAL {
+			t.Errorf("%s with NUL-containing name errno = %v, want EINVAL", operation.name, errno)
+		}
+	}
 
 	if _, errno := root.Lookup(ctx, "missing", &gofuse.EntryOut{}); errno != syscall.ENOENT {
 		t.Errorf("Lookup missing errno = %v, want ENOENT", errno)
