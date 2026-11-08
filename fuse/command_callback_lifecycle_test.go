@@ -72,7 +72,15 @@ func TestSetattrCallbackMapsAllSupportedFields(t *testing.T) {
 	}
 	n := inode.Operations().(*node)
 
-	mode, uid, gid := uint32(0640), uint32(os.Getuid()+1), uint32(os.Getgid()+1)
+	uid := uint32(os.Getuid()) ^ 1
+	if uid == uint32(os.Getuid()) {
+		uid = uint32(os.Getuid()) + 1
+	}
+	gid := uint32(os.Getgid()) ^ 1
+	if gid == uint32(os.Getgid()) {
+		gid = uint32(os.Getgid()) + 1
+	}
+	mode := uint32(0640)
 	atime := time.Unix(1_710_000_000, 123_000_000)
 	mtime := time.Unix(1_710_000_100, 456_000_000)
 	in := &gofuse.SetAttrIn{}
