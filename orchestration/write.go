@@ -71,9 +71,9 @@ func (layer *Orchestration) Write(request WriteRequest) (response WriteResponse,
 	// Build changes in a private cache. Synchronous modes persist that snapshot
 	// before publishing it; a failed write leaves the in-memory file unchanged.
 	staged := &runtimeFile{
-		objectID: file.objectID,
-		header: file.header,
-		openCount: file.openCount,
+		objectID:    file.objectID,
+		header:      file.header,
+		openCount:   file.openCount,
 		stripeCache: make(map[uint64]*stripeCacheEntry, len(file.stripeCache)),
 	}
 	for id, entry := range file.stripeCache {
@@ -81,7 +81,7 @@ func (layer *Orchestration) Write(request WriteRequest) (response WriteResponse,
 			continue
 		}
 		staged.stripeCache[id] = &stripeCacheEntry{
-			data: append([]byte(nil), entry.data...),
+			data:  append([]byte(nil), entry.data...),
 			state: entry.state,
 		}
 	}
@@ -331,7 +331,6 @@ func (layer *Orchestration) readLogicalRangeLocked(
 	}
 	return result, nil
 }
-
 
 func cloneStripeCache(source map[uint64]*stripeCacheEntry) map[uint64]*stripeCacheEntry {
 	clone := make(map[uint64]*stripeCacheEntry, len(source))

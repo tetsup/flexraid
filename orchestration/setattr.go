@@ -84,9 +84,9 @@ func (layer *Orchestration) SetAttr(request SetAttrRequest) (response SetAttrRes
 		// must not leak the requested attributes or partially rebuilt cache into
 		// the live Runtime file.
 		staged := &runtimeFile{
-			objectID: file.objectID,
-			header: file.header,
-			openCount: file.openCount,
+			objectID:    file.objectID,
+			header:      file.header,
+			openCount:   file.openCount,
 			stripeCache: make(map[uint64]*stripeCacheEntry, len(file.stripeCache)),
 		}
 		for id, entry := range file.stripeCache {
@@ -94,7 +94,7 @@ func (layer *Orchestration) SetAttr(request SetAttrRequest) (response SetAttrRes
 				continue
 			}
 			staged.stripeCache[id] = &stripeCacheEntry{
-				data: append([]byte(nil), entry.data...),
+				data:  append([]byte(nil), entry.data...),
 				state: entry.state,
 			}
 		}
@@ -161,8 +161,8 @@ func (layer *Orchestration) SetAttr(request SetAttrRequest) (response SetAttrRes
 		return response, nil
 	}
 	temporary := &runtimeFile{
-		objectID: request.ObjectID,
-		header: next,
+		objectID:    request.ObjectID,
+		header:      next,
 		stripeCache: make(map[uint64]*stripeCacheEntry),
 	}
 	if err = layer.updateHeaderStripeLocked(ctx, temporary, next); err != nil {

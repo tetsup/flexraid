@@ -198,7 +198,6 @@ func (layer *Orchestration) persistObjectHeader(ctx context.Context, next header
 	return layer.persistHeaderUpdateLocked(ctx, file, next)
 }
 
-
 func openHandleCount(file *runtimeFile) uint64 {
 	file.mu.RLock()
 	defer file.mu.RUnlock()
