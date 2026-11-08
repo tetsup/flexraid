@@ -121,7 +121,6 @@ func TestDeleteObjectRemovesHeaderLastAndAllVersions(t *testing.T) {
 	}
 }
 
-
 func TestSyncObjectSynchronizesLatestChunksAcrossStripes(t *testing.T) {
 	ctx := context.Background()
 	ios := makeIOs(t, 2)
