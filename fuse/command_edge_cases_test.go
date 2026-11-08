@@ -122,6 +122,9 @@ func TestMountedRenameAcrossDirectoriesAndReplacementTypes(t *testing.T) {
 	if err := os.Mkdir(dirDestination, 0755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(dirDestination, "keep"), []byte("keep"), 0600); err != nil {
+		t.Fatalf("Create destination child: %v", err)
+	}
 	if err := os.Rename(dirSource, dirDestination); !errors.Is(err, syscall.ENOTEMPTY) {
 		t.Errorf("Rename directory onto existing directory = %v, want non-replacement error", err)
 	}
