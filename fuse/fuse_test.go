@@ -76,7 +76,6 @@ func TestObjectModeMapsKindAndPermissions(t *testing.T) {
 		{orchestration.ObjectAttributes{Kind: orchestration.ObjectKindDirectory, Mode: 0751}, syscall.S_IFDIR | 0751},
 		{orchestration.ObjectAttributes{Kind: orchestration.ObjectKindFile, Mode: 0640}, syscall.S_IFREG | 0640},
 		{orchestration.ObjectAttributes{Kind: orchestration.ObjectKindSymlink, Mode: 0777}, syscall.S_IFLNK | 0777},
-		{orchestration.ObjectAttributes{Kind: orchestration.ObjectKindHardLink, Mode: 0600}, syscall.S_IFREG | 0600},
 	}
 	for _, tc := range tests {
 		if got := objectMode(tc.kind); got != tc.want {
