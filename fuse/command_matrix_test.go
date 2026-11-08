@@ -415,7 +415,7 @@ func TestMountedRenameReplacesOneHardLinkWithoutLosingOtherAlias(t *testing.T) {
 
 func TestMountedReaddirPaginatesWithoutLosingOrDuplicatingEntries(t *testing.T) {
 	mountpoint := mountTestFilesystem(t)
-	const count = 128
+	const count = 256
 	for i := 0; i < count; i++ {
 		name := fmt.Sprintf("entry-%03d-%032x", i, i)
 		if err := os.WriteFile(filepath.Join(mountpoint, name), []byte{byte(i)}, 0600); err != nil {
