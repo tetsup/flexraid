@@ -388,7 +388,7 @@ FUSE callback は OS ABI / go-fuse の契約に従う。FUSE 層に Namespace / 
 - \`GetErrorStats\` の Request / Response の具体的なフィールド構成と、定期ログ出力の間隔・出力内容。
 - 上位層向けエラーコードの一覧と、内部診断情報との分離方法。
 - ストライプ書き込みの原子性をプロセス停止・電源断などのクラッシュ時にも保証する具体的な確定・復旧手順。
-- \`Rename\` の destination 置換条件、source / destination Kind 組み合わせ、エラーコード、複数 Header 更新時のクラッシュ復旧契約。
+- \\`Rename\\` の複数 Header 更新時のクラッシュ復旧契約（現状は逐次永続化であり、完全な原子性は保証しない）。
 - \`Rmdir\` と \`Unlink\` の内部共通 removal primitive をどこまで共有するか。公開 API と POSIX semantics は別操作として維持する。
 
 ## Symlink の POSIX 契約
