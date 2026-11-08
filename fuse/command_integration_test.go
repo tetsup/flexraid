@@ -2,6 +2,7 @@ package fuse_test
 
 import (
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -66,8 +67,8 @@ func TestMountedCreateOpenReadWriteFlushFsyncRelease(t *testing.T) {
 	if string(got) != "abXYef" {
 		t.Errorf("ReadAt content = %q, want %q", got, "abXYef")
 	}
-	if _, err := file.ReadAt(make([]byte, 1), 6); !errors.Is(err, syscall.EIO) && !errors.Is(err, os.ErrClosed) && err == nil {
-		t.Errorf("ReadAt at EOF unexpectedly succeeded")
+	if _, err := file.ReadAt(make([]byte, 1), 6); !errors.Is(err, io.EOF) {
+		t.Errorf("ReadAt at EOF error = %v, want EOF", err)
 	}
 	if err := file.Close(); err != nil {
 		t.Fatalf("Release/Close: %v", err)
