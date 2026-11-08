@@ -170,6 +170,62 @@ func TestHardLinkCallbacksKeepBackingFileIdentity(t *testing.T) {
 		t.Errorf("Release alias handle: %v", errno)
 	}
 
+	// Mutating data through one name must update the same backing File seen
+	// through every other name. This also catches adapters that accidentally
+	// retain the HardLink entry ID for subsequent data operations.
+	writeHandle, _, errno := aliasNode.Open(ctx, uint32(syscall.O_RDWR))
+	if errno != 0 {
+		t.Fatalf("Open alias for writing: %v", errno)
+	}
+	written, errno := aliasNode.Write(ctx, writeHandle, []byte("ALIAS"), 0)
+	if errno != 0 {
+		t.Errorf("Write through alias: %v", errno)
+	} else if written != uint32(len("ALIAS")) {
+		t.Errorf("Write through alias wrote %d bytes, want %d", written, len("ALIAS"))
+	}
+	if errno := aliasNode.Flush(ctx, writeHandle); errno != 0 {
+		t.Errorf("Flush alias write: %v", errno)
+	}
+	if errno := aliasNode.Release(ctx, writeHandle); errno != 0 {
+		t.Errorf("Release alias write handle: %v", errno)
+	}
+	originalHandle, _, errno := originalNode.Open(ctx, uint32(syscall.O_RDONLY))
+	if errno != 0 {
+		t.Fatalf("Open original after alias write: %v", errno)
+	}
+	originalRead, errno := originalNode.Read(ctx, originalHandle, make([]byte, len(payload)), 0)
+	if errno != 0 {
+		t.Errorf("Read original after alias write: %v", errno)
+	} else if got, status := originalRead.Bytes(make([]byte, len(payload))); status != 0 {
+		t.Errorf("decode original read after alias write: %v", status)
+	} else if want := append([]byte("ALIAS"), payload[len("ALIAS"):]...); !bytes.Equal(got, want) {
+		t.Errorf("original content after alias write = %q, want %q", got, want)
+	}
+	if errno := originalNode.Release(ctx, originalHandle); errno != 0 {
+		t.Errorf("Release original read handle: %v", errno)
+	}
+
+	// A second alias created through the first alias must still target the
+	// backing File, rather than trying to link the internal HardLink object.
+	var secondAliasEntry gofuse.EntryOut
+	secondAliasInode, errno := root.Link(ctx, aliasInode, "second-alias", &secondAliasEntry)
+	if errno != 0 {
+		t.Errorf("Link an existing alias: %v", errno)
+	} else {
+		secondAliasNode, ok := secondAliasInode.Operations().(*node)
+		if !ok {
+			t.Errorf("second alias inode operations have type %T", secondAliasInode.Operations())
+		} else if secondAliasNode.objectID != created.ObjectID {
+			t.Errorf("second alias node ObjectID = %s, want backing File %s", secondAliasNode.objectID, created.ObjectID)
+		}
+		if secondAliasEntry.Attr.Nlink != 3 {
+			t.Errorf("NLink after second alias = %d, want 3", secondAliasEntry.Attr.Nlink)
+		}
+	}
+	if _, errno := root.Link(ctx, originalInode, "alias", &gofuse.EntryOut{}); errno != syscall.EEXIST {
+		t.Errorf("Link existing alias name errno = %v, want EEXIST", errno)
+	}
+
 	// Namespace mutations must continue to address a name, not the backing
 	// ObjectID: removing the original name must leave the alias usable.
 	if errno := root.Unlink(ctx, "original"); errno != 0 {
