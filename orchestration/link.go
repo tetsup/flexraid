@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"syscall"
 	"time"
 
 	"github.com/tetsup/flexraid/distribution"
@@ -70,7 +71,10 @@ func (layer *Orchestration) Link(request LinkRequest) (response LinkResponse, er
 		return response, os.ErrNotExist
 	}
 	if source.header.Kind != objectKindFile && source.header.Kind != objectKindHardLink {
-		return response, fmt.Errorf("source %s is not a regular file: %w", request.SourceID.String(), os.ErrInvalid)
+		if source.header.Kind == objectKindDirectory {
+			return response, syscall.EPERM
+		}
+		return response, syscall.EPERM
 	}
 	if source.file == nil {
 		return response, fmt.Errorf("source file backing is unavailable: %w", os.ErrNotExist)
