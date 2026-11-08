@@ -246,6 +246,7 @@ func (n *node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 		Context: ctx, SourceParentID: n.objectID, SourceName: name,
 		DestinationParentID: destination.objectID, DestinationName: newName,
 	})
+	fmt.Printf("DEBUG rename callback %q -> %q (parent %s -> %s, flags=%d): %v\\n", name, newName, n.objectID, destination.objectID, flags, err)
 	return fs.ToErrno(err)
 }
 
