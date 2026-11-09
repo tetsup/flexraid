@@ -25,29 +25,12 @@ jobs:
         with:
           repository: linux-test-project/xfstests
           path: xfstests
-          # Pin the test suite to a known branch instead of tracking arbitrary changes.
           ref: master
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            libaio-dev \
-            libattr1-dev \
-            libcap-dev \
-            libgdbm-dev \
-            liburing-dev \
-            libtool \
-            libuuid1 \
-            uuid-dev \
-            xfsprogs \
-            acl \
-            attr \
-            quota \
-            python3 \
-            python3-pip \
-            fuse3
+          sudo apt-get install -y build-essential libaio-dev libattr1-dev libcap-dev libgdbm-dev liburing-dev libtool libuuid1 uuid-dev xfsprogs acl attr quota python3 python3-pip fuse3
 
       - name: Build xfstests
         working-directory: xfstests
@@ -57,40 +40,87 @@ jobs:
           configure_status=$?
           if [ "$configure_status" -eq 0 ]; then
             make -j"$(nproc)"
+            build_status=$?
           else
-            echo "xfstests configure failed with status $configure_status"
+            build_status=$configure_status
           fi
           echo "configure_status=$configure_status" >> "$GITHUB_ENV"
-          echo "build_status=$?" >> "$GITHUB_ENV"
+          echo "build_status=$build_status" >> "$GITHUB_ENV"
           exit 0
 
-      - name: Prepare FUSE test directories
+      - name: Build FlexRAID mount command
+        run: go build -o "$RUNNER_TEMP/flexraid" ./main
+
+      - name: Prepare FUSE storage and mountpoint
         run: |
-          mkdir -p "$RUNNER_TEMP/flexraid-test" "$RUNNER_TEMP/flexraid-scratch"
+          set -eu
+          root="$RUNNER_TEMP/flexraid-test"
+          mkdir -p "$root/disk1" "$root/disk2" "$root/disk3" "$root/disk4" "$root/mount"
+          cat > "$RUNNER_TEMP/flexraid.yaml" <<EOF
+          disks:
+            - "$root/disk1"
+            - "$root/disk2"
+            - "$root/disk3"
+            - "$root/disk4"
+          mountpoint: "$root/mount"
+          EOF
           mkdir -p xfstests/results
-          sudo chmod 0777 "$RUNNER_TEMP/flexraid-test" "$RUNNER_TEMP/flexraid-scratch"
+          sudo chmod 0777 "$root" "$root/mount"
 
       - name: Configure xfstests for FUSE
         working-directory: xfstests
         run: |
           cat > local.config <<EOF
-          export TEST_DIR="$RUNNER_TEMP/flexraid-test"
-          export SCRATCH_DIR="$RUNNER_TEMP/flexraid-scratch"
+          export TEST_DIR="$RUNNER_TEMP/flexraid-test/mount"
+          export SCRATCH_DIR="$RUNNER_TEMP/flexraid-test/mount/xfstests-scratch"
           export FSTYP=fuse
           export RESULTS_DIR="$PWD/results"
           EOF
+
+      - name: Start FlexRAID mount
+        run: |
+          set +e
+          "$RUNNER_TEMP/flexraid" -config "$RUNNER_TEMP/flexraid.yaml" > "$RUNNER_TEMP/flexraid-mount.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/flexraid.pid"
+          for attempt in $(seq 1 30); do
+            if mountpoint -q "$RUNNER_TEMP/flexraid-test/mount"; then
+              echo "FlexRAID mounted."
+              exit 0
+            fi
+            if ! kill -0 "$(cat "$RUNNER_TEMP/flexraid.pid")" 2>/dev/null; then
+              cat "$RUNNER_TEMP/flexraid-mount.log"
+              exit 1
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/flexraid-mount.log"
+          echo "Mount did not become ready."
+          exit 1
 
       - name: Run generic tests (non-blocking)
         working-directory: xfstests
         continue-on-error: true
         run: |
           set +e
-          echo "Starting xfstests generic group against the FUSE test setup."
+          mkdir -p "$SCRATCH_DIR"
           ./check -g generic 2>&1 | tee results/xfstests-generic.log
           test_status=${PIPESTATUS[0]}
           echo "xfstests generic exit status: $test_status"
           echo "$test_status" > results/xfstests-generic.exit-status
           exit 0
+
+      - name: Stop FlexRAID mount
+        if: always()
+        run: |
+          set +e
+          mountpoint="$RUNNER_TEMP/flexraid-test/mount"
+          if mountpoint -q "$mountpoint"; then
+            fusermount3 -u "$mountpoint" || sudo umount "$mountpoint"
+          fi
+          if [ -f "$RUNNER_TEMP/flexraid.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/flexraid.pid")" 2>/dev/null || true
+          fi
+          cat "$RUNNER_TEMP/flexraid-mount.log" 2>/dev/null || true
 
       - name: Upload xfstests logs
         if: always()
@@ -100,5 +130,7 @@ jobs:
           path: |
             xfstests/results/
             xfstests/local.config
+            ${{ runner.temp }}/flexraid-mount.log
+            ${{ runner.temp }}/flexraid.yaml
           if-no-files-found: warn
           retention-days: 14
