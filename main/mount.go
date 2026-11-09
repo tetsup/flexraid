@@ -37,11 +37,11 @@ func mountFilesystem(config mountConfig) (*gofuse.Server, error) {
 		return nil, fmt.Errorf("initialize Distribution: %w", err)
 	}
 	created, err := orchestration.CreateRoot(orchestration.CreateRootRequest{
-		Context: context.Background(),
+		Context:      context.Background(),
 		Distribution: distributed.Layer,
-		Mode: 0755,
-		UID: uint32(os.Getuid()),
-		GID: uint32(os.Getgid()),
+		Mode:         0755,
+		UID:          uint32(os.Getuid()),
+		GID:          uint32(os.Getgid()),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("initialize filesystem root: %w", err)
