@@ -32,21 +32,41 @@ func mountFilesystem(config mountConfig) (*gofuse.Server, error) {
 		}
 		ioLayers = append(ioLayers, physicalio.New(physicalio.NewRequest{Root: root}).Layer)
 	}
-	distributed, err := distribution.New(distribution.NewRequest{Context: context.Background(), IOs: ioLayers})
+	ctx := context.Background()
+	distributed, err := distribution.New(distribution.NewRequest{Context: ctx, IOs: ioLayers})
 	if err != nil {
 		return nil, fmt.Errorf("initialize Distribution: %w", err)
 	}
-	created, err := orchestration.CreateRoot(orchestration.CreateRootRequest{
-		Context:      context.Background(),
-		Distribution: distributed.Layer,
-		Mode:         0755,
-		UID:          uint32(os.Getuid()),
-		GID:          uint32(os.Getgid()),
-	})
+
+	objects, err := distributed.Layer.ListObjects(distribution.ListObjectsRequest{Context: ctx})
 	if err != nil {
-		return nil, fmt.Errorf("initialize filesystem root: %w", err)
+		return nil, fmt.Errorf("list filesystem objects: %w", err)
 	}
-	adapter, err := flexfuse.New(created.Layer, created.RootID)
+
+	var layer *orchestration.Orchestration
+	var rootID = objectsRootID{}
+	if len(objects.ObjectIDs) == 0 {
+		created, createErr := orchestration.CreateRoot(orchestration.CreateRootRequest{
+			Context: ctx, Distribution: distributed.Layer,
+			Mode: 0755, UID: uint32(os.Getuid()), GID: uint32(os.Getgid()),
+		})
+		if createErr != nil {
+			return nil, fmt.Errorf("initialize filesystem root: %w", createErr)
+		}
+		layer = created.Layer
+		rootID.value = created.RootID
+	} else {
+		initialized, initErr := orchestration.New(orchestration.NewRequest{
+			Context: ctx, Distribution: distributed.Layer,
+		})
+		if initErr != nil {
+			return nil, fmt.Errorf("restore filesystem namespace: %w", initErr)
+		}
+		layer = initialized.Layer
+		rootID.value = initialized.RootID
+	}
+
+	adapter, err := flexfuse.New(layer, rootID.value)
 	if err != nil {
 		return nil, fmt.Errorf("create FUSE adapter: %w", err)
 	}
