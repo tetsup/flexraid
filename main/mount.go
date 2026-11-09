@@ -82,7 +82,6 @@ func mountFilesystem(config mountConfig) (*gofuse.Server, error) {
 		NullPermissions: true,
 		MountOptions: gofuse.MountOptions{
 			FsName: "flexraid-fuse",
-			Name:   "flexraid",
 		},
 	})
 	if err != nil {
