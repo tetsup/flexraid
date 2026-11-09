@@ -80,8 +80,6 @@ jobs:
           export FLEXRAID_LOG="$RUNNER_TEMP/flexraid-mount.log"
           export FLEXRAID_XFSTESTS_RC="$GITHUB_WORKSPACE/.github/xfstests/flexraid.rc"
           EOF
-          # common/config sources local.config before common/rc defines its
-          # defaults. Source the override after those defaults are defined.
           printf '\n# FlexRAID mount lifecycle override (injected by CI).\nif [ -n "${FLEXRAID_XFSTESTS_RC:-}" ]; then\n  . "$FLEXRAID_XFSTESTS_RC"\nfi\n' >> common/rc
 
       - name: Run generic tests (non-blocking)
@@ -92,7 +90,7 @@ jobs:
           source ./local.config
           mkdir -p "$SCRATCH_DIR" "$RESULTS_DIR"
           set -o pipefail
-          ./check -g generic 2>&1 | tee results/xfstests-generic.log
+          bash -x ./check -g generic 2>&1 | tee results/xfstests-generic.log
           test_status=${PIPESTATUS[0]}
           echo "xfstests generic exit status: $test_status"
           echo "$test_status" > results/xfstests-generic.exit-status
