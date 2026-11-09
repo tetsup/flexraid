@@ -78,7 +78,13 @@ func mountFilesystem(config mountConfig) (*gofuse.Server, error) {
 	if err := os.MkdirAll(mountpoint, 0755); err != nil {
 		return nil, fmt.Errorf("create mountpoint: %w", err)
 	}
-	server, err := adapter.Mount(mountpoint, &fs.Options{NullPermissions: true})
+	server, err := adapter.Mount(mountpoint, &fs.Options{
+		NullPermissions: true,
+		MountOptions: gofuse.MountOptions{
+			FsName: "flexraid-fuse",
+			Name:   "flexraid",
+		},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("mount at %s: %w", mountpoint, err)
 	}
