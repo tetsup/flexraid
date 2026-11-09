@@ -42,19 +42,14 @@ jobs:
         working-directory: xfstests
         run: |
           set -euxo pipefail
-          # xfstests-dev is built with make; it does not have a ./configure
-          # entry point. Fail this setup step rather than running tests with
-          # missing helper binaries.
           make -j"$(nproc)" 2>&1 | tee ../xfstests-build.log
-          # The LTP helpers are built under ltp/, not src/.
           test -x ltp/fsstress
           test -x ltp/fsx
-          echo "xfstests build completed; ltp/fsstress and ltp/fsx are executable."
 
-      - name: Build FlexRAID mount command
+      - name: Build FlexRAID
         run: go build -o "$RUNNER_TEMP/flexraid" ./main
 
-      - name: Prepare FUSE storage and mountpoint
+      - name: Prepare FUSE storage
         run: |
           set -eu
           root="$RUNNER_TEMP/flexraid-test"
@@ -70,65 +65,30 @@ jobs:
           mkdir -p xfstests/results
           sudo chmod 0777 "$root" "$root/mount"
 
-      - name: Configure xfstests for FUSE
+      - name: Configure xfstests mount lifecycle
         working-directory: xfstests
         run: |
           cat > local.config <<EOF
           export TEST_DIR="$RUNNER_TEMP/flexraid-test/mount"
-          # FUSE uses a mount-source tag, not a block device. xfstests
-          # requires TEST_DEV even when TEST_DIR is already mounted.
           export TEST_DEV=flexraid-fuse
-          export SCRATCH_DIR="$RUNNER_TEMP/flexraid-test/mount/xfstests-scratch"
+          export SCRATCH_DIR="$RUNNER_TEMP/flexraid-test/scratch"
           export FSTYP=fuse
           export RESULTS_DIR="$PWD/results"
+          export FLEXRAID_BIN="$RUNNER_TEMP/flexraid"
+          export FLEXRAID_CONFIG="$RUNNER_TEMP/flexraid.yaml"
+          export FLEXRAID_PID_FILE="$RUNNER_TEMP/flexraid.pid"
+          export FLEXRAID_LOG="$RUNNER_TEMP/flexraid-mount.log"
+          export FLEXRAID_XFSTESTS_RC="$GITHUB_WORKSPACE/.github/xfstests/flexraid.rc"
           EOF
-
-      - name: Start FlexRAID mount
-        run: |
-          set +e
-          mount_dir="$RUNNER_TEMP/flexraid-test/mount"
-          "$RUNNER_TEMP/flexraid" -config "$RUNNER_TEMP/flexraid.yaml" > "$RUNNER_TEMP/flexraid-mount.log" 2>&1 &
-          mount_pid=$!
-          echo "$mount_pid" > "$RUNNER_TEMP/flexraid.pid"
-          for attempt in $(seq 1 30); do
-            if mountpoint -q "$mount_dir"; then
-              echo "FlexRAID mount is visible in this job's mount namespace."
-              findmnt -T "$mount_dir" || true
-              ls -la "$mount_dir" || true
-              exit 0
-            fi
-            if ! kill -0 "$mount_pid" 2>/dev/null; then
-              echo "FlexRAID process exited before mount became visible (pid=$mount_pid)."
-              cat "$RUNNER_TEMP/flexraid-mount.log"
-              exit 1
-            fi
-            sleep 1
-          done
-          echo "Mount readiness timed out; diagnostics follow."
-          echo "--- mount process ---"
-          ps -o pid,ppid,stat,cmd -p "$mount_pid" || true
-          echo "--- mountpoint status ---"
-          mountpoint "$mount_dir" || true
-          echo "--- findmnt ---"
-          findmnt -T "$mount_dir" || true
-          echo "--- mountinfo matching mount path ---"
-          grep -F "$mount_dir" /proc/self/mountinfo || true
-          echo "--- mount directory ---"
-          ls -lad "$mount_dir" || true
-          ls -la "$mount_dir" || true
-          echo "--- FUSE device ---"
-          ls -l /dev/fuse || true
-          echo "--- mount process log ---"
-          cat "$RUNNER_TEMP/flexraid-mount.log"
-          exit 1
+          # common/config sources local.config before common/rc defines its
+          # defaults. Source the override after those defaults are defined.
+          printf '\n# FlexRAID mount lifecycle override (injected by CI).\nif [ -n "${FLEXRAID_XFSTESTS_RC:-}" ]; then\n  . "$FLEXRAID_XFSTESTS_RC"\nfi\n' >> common/rc
 
       - name: Run generic tests (non-blocking)
         working-directory: xfstests
         continue-on-error: true
         run: |
           set +e
-          # local.config is sourced by ./check, not by this Actions shell.
-          # Source it here too so SCRATCH_DIR is defined for preparation.
           source ./local.config
           mkdir -p "$SCRATCH_DIR" "$RESULTS_DIR"
           set -o pipefail
@@ -142,14 +102,19 @@ jobs:
         if: always()
         run: |
           set +e
-          mountpoint="$RUNNER_TEMP/flexraid-test/mount"
-          if mountpoint -q "$mountpoint"; then
-            fusermount3 -u "$mountpoint" || sudo umount "$mountpoint"
+          source xfstests/local.config
+          if mountpoint -q "$TEST_DIR"; then
+            fusermount3 -u "$TEST_DIR" || sudo umount "$TEST_DIR"
           fi
-          if [ -f "$RUNNER_TEMP/flexraid.pid" ]; then
-            kill "$(cat "$RUNNER_TEMP/flexraid.pid")" 2>/dev/null || true
+          if [ -f "$FLEXRAID_PID_FILE" ]; then
+            pid=$(cat "$FLEXRAID_PID_FILE")
+            for attempt in $(seq 1 10); do
+              kill -0 "$pid" 2>/dev/null || break
+              sleep 1
+            done
+            kill "$pid" 2>/dev/null || true
           fi
-          cat "$RUNNER_TEMP/flexraid-mount.log" 2>/dev/null || true
+          cat "$FLEXRAID_LOG" 2>/dev/null || true
 
       - name: Upload xfstests logs
         if: always()
@@ -159,6 +124,7 @@ jobs:
           path: |
             xfstests/results/
             xfstests/local.config
+            xfstests/common/rc
             xfstests-build.log
             ${{ runner.temp }}/flexraid-mount.log
             ${{ runner.temp }}/flexraid.yaml
