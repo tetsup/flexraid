@@ -91,7 +91,7 @@ jobs:
           mkdir -p "$SCRATCH_DIR" "$RESULTS_DIR"
           set -o pipefail
           sudo --preserve-env=TEST_DIR,TEST_DEV,SCRATCH_DIR,FSTYP,RESULTS_DIR,FLEXRAID_BIN,FLEXRAID_CONFIG,FLEXRAID_PID_FILE,FLEXRAID_LOG,FLEXRAID_XFSTESTS_RC,GITHUB_WORKSPACE,RUNNER_TEMP \
-            bash -c 'set +e; mkdir -p "$SCRATCH_DIR" "$RESULTS_DIR"; set -o pipefail; bash -x ./check -g generic/auto 2>&1 | tee results/xfstests-generic.log; test_status=${PIPESTATUS[0]}; echo "xfstests generic exit status: $test_status"; echo "$test_status" > results/xfstests-generic.exit-status; exit 0'
+            bash -c 'set +e; mkdir -p "$SCRATCH_DIR" "$RESULTS_DIR"; set -o pipefail; bash ./check -g generic/auto 2>&1 | tee results/xfstests-generic.log; test_status=${PIPESTATUS[0]}; echo "xfstests generic exit status: $test_status"; echo "$test_status" > results/xfstests-generic.exit-status; exit 0'
 
       - name: Stop FlexRAID mount
         if: always()
