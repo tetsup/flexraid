@@ -46,9 +46,10 @@ jobs:
           # entry point. Fail this setup step rather than running tests with
           # missing helper binaries.
           make -j"$(nproc)" 2>&1 | tee ../xfstests-build.log
-          test -x src/fsstress
-          test -x src/fsx
-          echo "xfstests build completed; fsstress and fsx are executable."
+          # The LTP helpers are built under ltp/, not src/.
+          test -x ltp/fsstress
+          test -x ltp/fsx
+          echo "xfstests build completed; ltp/fsstress and ltp/fsx are executable."
 
       - name: Build FlexRAID mount command
         run: go build -o "$RUNNER_TEMP/flexraid" ./main
