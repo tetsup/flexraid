@@ -52,7 +52,7 @@ jobs:
           fi
           echo "configure_status=$configure_status" >> "$GITHUB_ENV"
           echo "build_status=$build_status" >> "$GITHUB_ENV"
-          exit 0
+          echo "xfstests configure=$configure_status build=$build_status"
 
       - name: Build FlexRAID mount command
         run: go build -o "$RUNNER_TEMP/flexraid" ./main
@@ -86,21 +86,40 @@ jobs:
       - name: Start FlexRAID mount
         run: |
           set +e
+          mount_dir="$RUNNER_TEMP/flexraid-test/mount"
           "$RUNNER_TEMP/flexraid" -config "$RUNNER_TEMP/flexraid.yaml" > "$RUNNER_TEMP/flexraid-mount.log" 2>&1 &
-          echo $! > "$RUNNER_TEMP/flexraid.pid"
+          mount_pid=$!
+          echo "$mount_pid" > "$RUNNER_TEMP/flexraid.pid"
           for attempt in $(seq 1 30); do
-            if mountpoint -q "$RUNNER_TEMP/flexraid-test/mount"; then
-              echo "FlexRAID mounted."
+            if mountpoint -q "$mount_dir"; then
+              echo "FlexRAID mount is visible in this job's mount namespace."
+              findmnt -T "$mount_dir" || true
+              ls -la "$mount_dir" || true
               exit 0
             fi
-            if ! kill -0 "$(cat "$RUNNER_TEMP/flexraid.pid")" 2>/dev/null; then
+            if ! kill -0 "$mount_pid" 2>/dev/null; then
+              echo "FlexRAID process exited before mount became visible (pid=$mount_pid)."
               cat "$RUNNER_TEMP/flexraid-mount.log"
               exit 1
             fi
             sleep 1
           done
+          echo "Mount readiness timed out; diagnostics follow."
+          echo "--- mount process ---"
+          ps -o pid,ppid,stat,cmd -p "$mount_pid" || true
+          echo "--- mountpoint status ---"
+          mountpoint "$mount_dir" || true
+          echo "--- findmnt ---"
+          findmnt -T "$mount_dir" || true
+          echo "--- mountinfo matching mount path ---"
+          grep -F "$mount_dir" /proc/self/mountinfo || true
+          echo "--- mount directory ---"
+          ls -lad "$mount_dir" || true
+          ls -la "$mount_dir" || true
+          echo "--- FUSE device ---"
+          ls -l /dev/fuse || true
+          echo "--- mount process log ---"
           cat "$RUNNER_TEMP/flexraid-mount.log"
-          echo "Mount did not become ready."
           exit 1
 
       - name: Run generic tests (non-blocking)
