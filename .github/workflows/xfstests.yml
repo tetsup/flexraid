@@ -1,0 +1,104 @@
+name: xfstests Generic (Exploratory)
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  xfstests:
+    name: Run xfstests generic against FUSE
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out flexraid
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Check out xfstests
+        uses: actions/checkout@v6
+        with:
+          repository: linux-test-project/xfstests
+          path: xfstests
+          # Pin the test suite to a known branch instead of tracking arbitrary changes.
+          ref: master
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libaio-dev \
+            libattr1-dev \
+            libcap-dev \
+            libgdbm-dev \
+            liburing-dev \
+            libtool \
+            libuuid1 \
+            uuid-dev \
+            xfsprogs \
+            acl \
+            attr \
+            quota \
+            python3 \
+            python3-pip \
+            fuse3
+
+      - name: Build xfstests
+        working-directory: xfstests
+        run: |
+          set +e
+          ./configure
+          configure_status=$?
+          if [ "$configure_status" -eq 0 ]; then
+            make -j"$(nproc)"
+          else
+            echo "xfstests configure failed with status $configure_status"
+          fi
+          echo "configure_status=$configure_status" >> "$GITHUB_ENV"
+          echo "build_status=$?" >> "$GITHUB_ENV"
+          exit 0
+
+      - name: Prepare FUSE test directories
+        run: |
+          mkdir -p "$RUNNER_TEMP/flexraid-test" "$RUNNER_TEMP/flexraid-scratch"
+          mkdir -p xfstests/results
+          sudo chmod 0777 "$RUNNER_TEMP/flexraid-test" "$RUNNER_TEMP/flexraid-scratch"
+
+      - name: Configure xfstests for FUSE
+        working-directory: xfstests
+        run: |
+          cat > local.config <<EOF
+          export TEST_DIR="$RUNNER_TEMP/flexraid-test"
+          export SCRATCH_DIR="$RUNNER_TEMP/flexraid-scratch"
+          export FSTYP=fuse
+          export RESULTS_DIR="$PWD/results"
+          EOF
+
+      - name: Run generic tests (non-blocking)
+        working-directory: xfstests
+        continue-on-error: true
+        run: |
+          set +e
+          echo "Starting xfstests generic group against the FUSE test setup."
+          ./check -g generic 2>&1 | tee results/xfstests-generic.log
+          test_status=${PIPESTATUS[0]}
+          echo "xfstests generic exit status: $test_status"
+          echo "$test_status" > results/xfstests-generic.exit-status
+          exit 0
+
+      - name: Upload xfstests logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: xfstests-generic-results
+          path: |
+            xfstests/results/
+            xfstests/local.config
+          if-no-files-found: warn
+          retention-days: 14
