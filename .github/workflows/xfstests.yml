@@ -1,10 +1,9 @@
 name: xfstests Generic (Exploratory)
 
 on:
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * 1'
 
 permissions:
   contents: read
@@ -17,8 +16,6 @@ jobs:
     steps:
       - name: Check out flexraid
         uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -82,16 +79,15 @@ jobs:
           EOF
           printf '\n# FlexRAID mount lifecycle override (injected by CI).\nif [ -n "${FLEXRAID_XFSTESTS_RC:-}" ]; then\n  . "$FLEXRAID_XFSTESTS_RC"\nfi\n' >> common/rc
 
-      - name: Run generic tests as root (non-blocking)
+      - name: Run generic tests as root
         working-directory: xfstests
-        continue-on-error: true
         run: |
           set +e
           source ./local.config
           mkdir -p "$SCRATCH_DIR" "$RESULTS_DIR"
           set -o pipefail
           sudo --preserve-env=TEST_DIR,TEST_DEV,SCRATCH_DIR,FSTYP,RESULTS_DIR,FLEXRAID_BIN,FLEXRAID_CONFIG,FLEXRAID_PID_FILE,FLEXRAID_LOG,FLEXRAID_XFSTESTS_RC,GITHUB_WORKSPACE,RUNNER_TEMP \
-            bash -c 'set +e; mkdir -p "$SCRATCH_DIR" "$RESULTS_DIR"; set -o pipefail; bash ./check -g generic/auto 2>&1 | tee results/xfstests-generic.log; test_status=${PIPESTATUS[0]}; echo "xfstests generic exit status: $test_status"; echo "$test_status" > results/xfstests-generic.exit-status; exit 0'
+            bash -c 'set +e; mkdir -p "$SCRATCH_DIR" "$RESULTS_DIR"; set -o pipefail; bash ./check -g generic/auto 2>&1 | tee results/xfstests-generic.log; test_status=${PIPESTATUS[0]}; echo "xfstests generic exit status: $test_status"; echo "$test_status" > results/xfstests-generic.exit-status; exit "$test_status"'
 
       - name: Stop FlexRAID mount
         if: always()
