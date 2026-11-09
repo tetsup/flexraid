@@ -25,5 +25,16 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Run tests
-        run: go test ./...
+      - name: Run tests and report statement coverage
+        shell: bash
+        run: |
+          set +e
+          go test -coverprofile=coverage.out ./...
+          test_status=$?
+          set -e
+          if [[ -f coverage.out ]]; then
+            go tool cover -func=coverage.out
+          else
+            echo "Coverage profile was not generated."
+          fi
+          exit "$test_status"

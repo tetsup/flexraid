@@ -67,7 +67,7 @@ func (layer *Orchestration) Rename(request RenameRequest) (response RenameRespon
 	// A directory cannot be moved beneath itself or any descendant.
 	if source.header.Kind == objectKindDirectory &&
 		layer.renameDirectoryContains(source, destinationParent) {
-		return response, fmt.Errorf("cannot move a directory into itself or a descendant: %w", os.ErrInvalid)
+		return response, syscall.EINVAL
 	}
 
 	destination, destinationExists := destinationParent.children[request.DestinationName]

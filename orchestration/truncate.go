@@ -39,7 +39,7 @@ func (layer *Orchestration) Truncate(request TruncateRequest) (TruncateResponse,
 		return TruncateResponse{}, os.ErrPermission
 	}
 	object, exists := layer.objects[request.ObjectID]
-	if !exists || object.header.Deleted {
+	if !exists || (object.header.Deleted && (object.file == nil || object.file != handle.runtimeFile)) {
 		return TruncateResponse{}, os.ErrNotExist
 	}
 	if (object.header.Kind != objectKindFile && object.header.Kind != objectKindHardLink) || object.file == nil || object.file != handle.runtimeFile {

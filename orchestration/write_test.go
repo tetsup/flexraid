@@ -12,9 +12,11 @@ import (
 	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/pkg/shared"
 	cfg "github.com/tetsup/flexraid/pkg/shared/config"
+	"github.com/tetsup/flexraid/storage"
 )
 
 type writeFixture struct {
+	ios        []*physicalio.IO
 	layer      *Orchestration
 	fileID     shared.ObjectID
 	linkID     shared.ObjectID
@@ -65,7 +67,7 @@ func newWriteFixture(t *testing.T) writeFixture {
 			linkID: {header: testHeader(objectKindHardLink, linkID, &parentID, &fileID, "alias"), file: file},
 		},
 	}
-	return writeFixture{layer: layer, fileID: fileID, linkID: linkID, payload: payload, headerData: append([]byte(nil), headerData...)}
+	return writeFixture{ios: ios, layer: layer, fileID: fileID, linkID: linkID, payload: payload, headerData: append([]byte(nil), headerData...)}
 }
 
 func openWriteHandle(t *testing.T, layer *Orchestration, id shared.ObjectID, flags uint32) *FileHandle {
@@ -179,11 +181,30 @@ func TestWriteRejectsInvalidHandleAndAccessMode(t *testing.T) {
 	}
 }
 
-func TestWriteRejectsSyncModeUntilPersistenceExists(t *testing.T) {
-	fixture := newWriteFixture(t)
-	writer := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_WRONLY|syscall.O_SYNC))
-	if _, err := fixture.layer.Write(WriteRequest{Handle: writer, ObjectID: fixture.fileID, Data: []byte("x")}); !errors.Is(err, syscall.ENOTSUP) {
-		t.Fatalf("synchronous Write = %v, want ENOTSUP", err)
+func TestWriteSyncModesPersistBeforeReturning(t *testing.T) {
+	for _, mode := range []struct {
+		name string
+		flag uint32
+	}{
+		{name: "O_SYNC", flag: uint32(syscall.O_SYNC)},
+		{name: "O_DSYNC", flag: uint32(syscall.O_DSYNC)},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			fixture := newWriteFixture(t)
+			writer := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_WRONLY)|mode.flag)
+			if got, err := fixture.layer.Write(WriteRequest{Handle: writer, ObjectID: fixture.fileID, Data: []byte("x")}); err != nil || got.Written != 1 {
+				t.Fatalf("synchronous Write = %+v, %v; want one byte, success", got, err)
+			}
+			persisted, err := fixture.layer.distribution.ReadStripe(distribution.ReadStripeRequest{
+				Context: context.Background(), ObjectID: fixture.fileID, StripeID: 0, ChunkSize: 4096,
+			})
+			if err != nil {
+				t.Fatalf("read persisted stripe: %v", err)
+			}
+			if got := persisted.Data[int(cfg.HeaderReservedSize)]; got != 'x' {
+				t.Errorf("persisted first data byte = %q, want x", got)
+			}
+		})
 	}
 }
 
@@ -246,5 +267,49 @@ func TestTruncateReplansAndZeroFillsGrowth(t *testing.T) {
 	}
 	if !bytes.Equal(got.Data, make([]byte, 20)) {
 		t.Fatalf("truncate growth = %v, want zero-filled bytes", got.Data)
+	}
+}
+
+func TestFsyncSynchronizesAlreadyCleanStripes(t *testing.T) {
+	fixture := newWriteFixture(t)
+	writer := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDWR))
+	if _, err := fixture.layer.Write(WriteRequest{Handle: writer, ObjectID: fixture.fileID, Data: []byte("sync")}); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if result, err := fixture.layer.Flush(FlushRequest{Handle: writer}); err != nil || result.PersistedStripes == 0 {
+		t.Fatalf("Flush before Fsync = %+v, %v; want persisted stripe", result, err)
+	}
+	if result, err := fixture.layer.Fsync(FsyncRequest{Handle: writer}); err != nil || result.PersistedStripes != 0 {
+		t.Fatalf("Fsync clean cache = %+v, %v; want no pending stripe writes", result, err)
+	}
+
+	placement, err := fixture.layer.distribution.StripeIOIndexes(distribution.StripeIOIndexesRequest{ObjectID: fixture.fileID, StripeID: 0})
+	if err != nil || len(placement.IOIndexes) == 0 {
+		t.Fatalf("StripeIOIndexes = %+v, %v", placement, err)
+	}
+	ioLayer := fixture.ios[placement.IOIndexes[0]]
+	var chunkKey storage.FileKey
+	found := false
+	_, err = ioLayer.ListChunks(physicalio.ListChunksRequest{
+		Context: context.Background(),
+		Callback: func(entry physicalio.ScanEntry) error {
+			if entry.Error == nil && entry.Key.ObjectID == fixture.fileID && entry.Key.StripeID == 0 &&
+				(!found || entry.Key.StripeVersion > chunkKey.StripeVersion) {
+				chunkKey, found = entry.Key, true
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("ListChunks: %v", err)
+	}
+	if !found {
+		t.Fatal("did not find a physical chunk for the flushed stripe")
+	}
+	if _, err := ioLayer.Delete(physicalio.DeleteRequest{Context: context.Background(), Key: chunkKey}); err != nil {
+		t.Fatalf("delete chunk to make Fsync fail: %v", err)
+	}
+	if _, err := fixture.layer.Fsync(FsyncRequest{Handle: writer}); err == nil {
+		t.Error("Fsync succeeded after a latest physical chunk was removed; want synchronization error")
 	}
 }

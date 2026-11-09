@@ -18,6 +18,7 @@ type WriteStripeRequest struct {
 	Layout    Layout
 	IOIndexes []int
 	Data      []byte
+	Sync      bool
 }
 type WriteStripeResponse struct{ Version storage.StripeVersion }
 
@@ -88,7 +89,7 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 			ioIndex = request.IOIndexes[int(method.numChunks)]
 		}
 		fileKey := storage.FileKey{ObjectID: request.ObjectID, StripeVersion: version, LayoutID: layoutFor(method, no), StripeID: request.StripeID}
-		_, writeErr := d.ios[ioIndex].Write(physicalio.WriteRequest{Context: request.Context, Key: fileKey, Data: encodeChunk(uint64(len(request.Data)), chunks[no])})
+		_, writeErr := d.ios[ioIndex].Write(physicalio.WriteRequest{Context: request.Context, Key: fileKey, Data: encodeChunk(uint64(len(request.Data)), chunks[no]), Sync: request.Sync})
 		if writeErr != nil {
 			savePartial()
 			err = fmt.Errorf("write chunk %d to I/O %d: %w", no, ioIndex, writeErr)

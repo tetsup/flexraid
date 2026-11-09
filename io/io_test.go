@@ -178,3 +178,14 @@ func TestScanCallbackError(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestSyncExistingPhysicalFile(t *testing.T) {
+	layer := newTestLayer(t, t.TempDir())
+	key := testFileKey(0)
+	if _, err := layer.Write(WriteRequest{Context: context.Background(), Key: key, Data: []byte("durable")}); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if result, err := layer.Sync(SyncRequest{Context: context.Background(), Key: key}); err != nil || !result.Synced {
+		t.Fatalf("Sync = %+v, %v; want synced", result, err)
+	}
+}

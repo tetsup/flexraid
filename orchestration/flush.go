@@ -13,6 +13,7 @@ import (
 type FlushRequest struct {
 	Context context.Context
 	Handle  *FileHandle
+	Sync    bool
 }
 type FlushResponse struct{ PersistedStripes uint32 }
 
@@ -83,13 +84,18 @@ func (o *Orchestration) Flush(r FlushRequest) (FlushResponse, error) {
 		_, err = o.distribution.WriteStripe(distribution.WriteStripeRequest{
 			Context: ctx, ObjectID: f.objectID, StripeID: storage.StripeID(id),
 			ChunkSize: geometry.ChunkSize, Layout: geometry.Layout,
-			IOIndexes: indexes, Data: entry.data,
+			IOIndexes: indexes, Data: entry.data, Sync: r.Sync,
 		})
 		if err != nil {
 			return out, fmt.Errorf("persist stripe %d: %w", id, err)
 		}
 		entry.state = stripeCacheClean
 		out.PersistedStripes++
+	}
+	if r.Sync {
+		if _, err := o.distribution.SyncObject(distribution.SyncObjectRequest{Context: ctx, ObjectID: f.objectID}); err != nil {
+			return out, fmt.Errorf("sync object %s: %w", f.objectID.String(), err)
+		}
 	}
 	return out, nil
 }
@@ -101,6 +107,6 @@ type FsyncRequest struct {
 type FsyncResponse struct{ PersistedStripes uint32 }
 
 func (o *Orchestration) Fsync(r FsyncRequest) (FsyncResponse, error) {
-	result, err := o.Flush(FlushRequest{Context: r.Context, Handle: r.Handle})
+	result, err := o.Flush(FlushRequest{Context: r.Context, Handle: r.Handle, Sync: true})
 	return FsyncResponse{PersistedStripes: result.PersistedStripes}, err
 }

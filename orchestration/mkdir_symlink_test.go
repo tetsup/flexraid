@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/tetsup/flexraid/distribution"
@@ -134,8 +135,8 @@ func TestMkdirAndSymlinkRejectInvalidRequests(t *testing.T) {
 	if _, err := fixture.layer.Symlink(SymlinkRequest{ParentID: fixture.rootID, Name: "existing", Target: "target"}); !errors.Is(err, os.ErrExist) {
 		t.Fatalf("duplicate Symlink = %v, want os.ErrExist", err)
 	}
-	if _, err := fixture.layer.Symlink(SymlinkRequest{ParentID: fixture.rootID, Name: "empty", Target: ""}); !errors.Is(err, os.ErrInvalid) {
-		t.Fatalf("empty Symlink target = %v, want os.ErrInvalid", err)
+	if _, err := fixture.layer.Symlink(SymlinkRequest{ParentID: fixture.rootID, Name: "empty", Target: ""}); !errors.Is(err, syscall.ENOENT) {
+		t.Fatalf("empty Symlink target = %v, want ENOENT", err)
 	}
 	nonDirectory, err := fixture.layer.Symlink(SymlinkRequest{ParentID: fixture.rootID, Name: "not-directory", Target: "target"})
 	if err != nil {

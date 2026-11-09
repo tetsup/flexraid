@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"syscall"
 
 	"github.com/tetsup/flexraid/pkg/shared"
 )
 
-var errNotDirectory = fmt.Errorf("not a directory")
+var errNotDirectory = syscall.ENOTDIR
 
 // resolvePath resolves an absolute logical path from the restored root.
 func (layer *Orchestration) resolvePath(value string) (*runtimeObject, error) {

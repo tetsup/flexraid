@@ -27,16 +27,12 @@ func TestInodeNumberIsStableAndNonzero(t *testing.T) {
 	}
 }
 
-func TestInodeNumberUsesBigEndianPrefixAndAvoidsZero(t *testing.T) {
-	var id shared.ObjectID
-	copy(id[:8], []byte{1, 2, 3, 4, 5, 6, 7, 8})
-	if got, want := inodeNumber(id), uint64(0x0102030405060708); got != want {
+func TestInodeNumberUsesBigEndianPrefix(t *testing.T) {
+	id := testObjectID(t)
+	want := uint64(id[0])<<56 | uint64(id[1])<<48 | uint64(id[2])<<40 | uint64(id[3])<<32 |
+		uint64(id[4])<<24 | uint64(id[5])<<16 | uint64(id[6])<<8 | uint64(id[7])
+	if got := inodeNumber(id); got != want {
 		t.Fatalf("inodeNumber=%#x, want %#x", got, want)
-	}
-
-	var zeroPrefix shared.ObjectID
-	if got := inodeNumber(zeroPrefix); got != 1 {
-		t.Fatalf("zero prefix inodeNumber=%d, want fallback 1", got)
 	}
 }
 
@@ -106,11 +102,21 @@ func TestReadWriteRejectInvalidHandleAndOffset(t *testing.T) {
 			t.Errorf("Write invalid handle errno=%v, want EBADF", errno)
 		}
 	}
-	if _, errno := n.Read(nil, nil, make([]byte, 1), -1); errno != syscall.EBADF {
-		t.Errorf("Read negative offset errno=%v, want EBADF", errno)
+
+	adapter, ctx := newCallbackTestFilesystem(t)
+	inode, handle, _, errno := adapter.root.Create(ctx, "negative-offset", uint32(syscall.O_RDWR), 0600, &gofuse.EntryOut{})
+	if errno != 0 {
+		t.Fatalf("Create for negative-offset checks: %v", errno)
 	}
-	if _, errno := n.Write(nil, nil, []byte("x"), -1); errno != syscall.EBADF {
-		t.Errorf("Write negative offset errno=%v, want EBADF", errno)
+	file := inode.Operations().(*node)
+	if _, errno := file.Read(ctx, handle, make([]byte, 1), -1); errno == 0 {
+		t.Error("Read with negative offset succeeded")
+	}
+	if _, errno := file.Write(ctx, handle, []byte("x"), -1); errno == 0 {
+		t.Error("Write with negative offset succeeded")
+	}
+	if errno := file.Release(ctx, handle); errno != 0 {
+		t.Errorf("Release negative-offset test handle: %v", errno)
 	}
 }
 

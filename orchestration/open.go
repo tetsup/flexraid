@@ -34,6 +34,7 @@ type FileHandle struct {
 
 	runtimeFile *runtimeFile
 	closed      bool
+	directory   bool
 	accessMode  AccessMode
 	append      bool
 	syncMode    SyncMode
@@ -76,8 +77,19 @@ func (layer *Orchestration) Open(request OpenRequest) (response OpenResponse, er
 	if !exists || object.header.Deleted {
 		return response, os.ErrNotExist
 	}
+	accessBits := request.Flags & uint32(syscall.O_ACCMODE)
+	if accessBits == uint32(syscall.O_ACCMODE) {
+		return response, syscall.EINVAL
+	}
+	if object.header.Kind == objectKindDirectory {
+		if accessBits != uint32(syscall.O_RDONLY) ||
+			request.Flags&uint32(syscall.O_TRUNC|syscall.O_APPEND) != 0 {
+			return response, syscall.EISDIR
+		}
+		return OpenResponse{Handle: &FileHandle{directory: true}}, nil
+	}
 	if object.header.Kind != objectKindFile && object.header.Kind != objectKindHardLink {
-		return response, fmt.Errorf("object %s is not a regular file: %w", request.ObjectID.String(), os.ErrInvalid)
+		return response, syscall.EINVAL
 	}
 	if object.file == nil {
 		return response, fmt.Errorf("file backing is unavailable: %w", os.ErrNotExist)
@@ -133,14 +145,24 @@ func (layer *Orchestration) Release(request ReleaseRequest) (response ReleaseRes
 		handle.mu.Unlock()
 		return response, nil
 	}
+	if handle.directory {
+		handle.closed = true
+		handle.mu.Unlock()
+		return response, nil
+	}
 	handle.closed = true
 	handle.hasActiveStripeID = false
-	handle.runtimeFile.mu.Lock()
-	if handle.runtimeFile.openCount > 0 {
-		handle.runtimeFile.openCount--
+	file := handle.runtimeFile
+	file.mu.Lock()
+	if file.openCount > 0 {
+		file.openCount--
 	}
-	handle.runtimeFile.mu.Unlock()
+	shouldEnqueue := file.openCount == 0 && file.header.Deleted
+	file.mu.Unlock()
 	handle.mu.Unlock()
+	if shouldEnqueue {
+		layer.enqueueDeletion(file.objectID)
+	}
 
 	if layer.logger != nil {
 		layer.logger.Debug("Orchestration Release completed", "duration", time.Since(started))

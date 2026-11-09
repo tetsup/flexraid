@@ -46,7 +46,7 @@ func TestMountedEmptyFilesystem(t *testing.T) {
 	}
 	server, err := adapter.Mount(mountpoint, nil)
 	if err != nil {
-		if err == syscall.EPERM || err == syscall.EACCES {
+		if errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) {
 			t.Skipf("FUSE mounting is not permitted in this environment: %v", err)
 		}
 		t.Fatalf("mount empty filesystem: %v", err)
@@ -237,8 +237,8 @@ func TestMountedFilesystemReturnsExpectedErrors(t *testing.T) {
 	if err := os.WriteFile(filePath, []byte("x"), 0600); err != nil {
 		t.Fatalf("create regular file: %v", err)
 	}
-	if err := os.Mkdir(filePath, 0755); !errors.Is(err, syscall.EEXIST) && !errors.Is(err, syscall.ENOTDIR) {
-		t.Errorf("mkdir over regular file error = %v, want EEXIST or ENOTDIR", err)
+	if err := os.Mkdir(filePath, 0755); !errors.Is(err, syscall.EEXIST) {
+		t.Errorf("mkdir over existing regular file error = %v, want EEXIST", err)
 	}
 
 	if err := os.Remove(directory); err != nil {
@@ -266,6 +266,20 @@ func TestMountedRmdirReturnsPOSIXErrnos(t *testing.T) {
 	}
 	if err := syscall.Rmdir(filePath); !errors.Is(err, syscall.ENOTDIR) {
 		t.Errorf("rmdir regular file error = %v, want ENOTDIR", err)
+	}
+
+	symlinkPath := filepath.Join(mountpoint, "symlink")
+	if err := os.Symlink("missing-target", symlinkPath); err != nil {
+		t.Fatalf("create symlink for rmdir check: %v", err)
+	}
+	if err := syscall.Rmdir(symlinkPath); !errors.Is(err, syscall.ENOTDIR) {
+		t.Errorf("rmdir symlink error = %v, want ENOTDIR", err)
+	}
+	if info, err := os.Lstat(symlinkPath); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("symlink after rejected rmdir = %v, %v; want existing symlink", info, err)
+	}
+	if err := os.Remove(symlinkPath); err != nil {
+		t.Errorf("unlink symlink after rejected rmdir: %v", err)
 	}
 
 	nonEmpty := filepath.Join(mountpoint, "non-empty-directory")

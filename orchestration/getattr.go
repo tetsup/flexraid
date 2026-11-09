@@ -43,8 +43,13 @@ func (layer *Orchestration) GetAttr(request GetAttrRequest) (GetAttrResponse, er
 		return GetAttrResponse{}, err
 	}
 	object, exists := layer.objects[request.ObjectID]
-	if !exists || object.header.Deleted {
+	if !exists {
 		return GetAttrResponse{}, os.ErrNotExist
+	}
+	if object.header.Deleted {
+		if object.file == nil || openHandleCount(object.file) == 0 {
+			return GetAttrResponse{}, os.ErrNotExist
+		}
 	}
 	if _, protected := layer.protectedObjects[request.ObjectID]; protected {
 		return GetAttrResponse{}, os.ErrNotExist
@@ -53,7 +58,8 @@ func (layer *Orchestration) GetAttr(request GetAttrRequest) (GetAttrResponse, er
 	if object.header.Kind == objectKindHardLink && (object.header.TargetID == nil || object.file == nil) {
 		return GetAttrResponse{}, fmt.Errorf("HardLink %s has no resolvable File target: %w", request.ObjectID, errInvalidHeader)
 	}
-	if object.header.Kind == objectKindFile && object.header.ParentID == nil && layer.deriveHardLinkCount(object.header.ObjectID) == 0 {
+	if object.header.Kind == objectKindFile && object.header.ParentID == nil && layer.deriveHardLinkCount(object.header.ObjectID) == 0 &&
+		(object.file == nil || openHandleCount(object.file) == 0) {
 		return GetAttrResponse{}, os.ErrNotExist
 	}
 	if object.file != nil {

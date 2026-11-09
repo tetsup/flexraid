@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"syscall"
 	"time"
 
 	"github.com/tetsup/flexraid/distribution"
@@ -44,14 +45,18 @@ func (layer *Orchestration) SetAttr(request SetAttrRequest) (response SetAttrRes
 	}
 
 	object, exists := layer.objects[request.ObjectID]
-	if !exists || object.header.Deleted {
+	if !exists {
+		return response, os.ErrNotExist
+	}
+	if object.header.Deleted &&
+		(request.Handle == nil || object.file == nil || openHandleCount(object.file) == 0) {
 		return response, os.ErrNotExist
 	}
 	if request.Size != nil && object.header.Kind != objectKindFile && object.header.Kind != objectKindHardLink {
-		return response, fmt.Errorf("object %s does not support size changes: %w", request.ObjectID.String(), os.ErrInvalid)
+		return response, syscall.EINVAL
 	}
 	if request.Mode != nil && object.header.Kind == objectKindSymlink {
-		return response, os.ErrPermission
+		return response, syscall.EPERM
 	}
 
 	var handle *FileHandle
@@ -78,6 +83,25 @@ func (layer *Orchestration) SetAttr(request SetAttrRequest) (response SetAttrRes
 		if err = ctx.Err(); err != nil {
 			return response, err
 		}
+
+		// Apply changes to a private snapshot. A failed synchronous persistence
+		// must not leak the requested attributes or partially rebuilt cache into
+		// the live Runtime file.
+		staged := &runtimeFile{
+			objectID:    file.objectID,
+			header:      file.header,
+			openCount:   file.openCount,
+			stripeCache: make(map[uint64]*stripeCacheEntry, len(file.stripeCache)),
+		}
+		for id, entry := range file.stripeCache {
+			if entry == nil {
+				continue
+			}
+			staged.stripeCache[id] = &stripeCacheEntry{
+				data:  append([]byte(nil), entry.data...),
+				state: entry.state,
+			}
+		}
 		next := file.header
 		if request.Size != nil && *request.Size != next.Size {
 			if *request.Size > uint64(int(^uint(0)>>1)) {
@@ -93,47 +117,46 @@ func (layer *Orchestration) SetAttr(request SetAttrRequest) (response SetAttrRes
 			}
 			if len(plan) > 1 {
 				next.Layout.ChunkSize = plan[1].ChunkSize
+			} else {
+				next.Layout.ChunkSize = cfg.MinimumChunkSize
 			}
 			if err = applyAttributeChanges(&next, request, now); err != nil {
 				return response, err
 			}
-			if err = layer.rebuildFileCacheFromStripes(ctx, file, file.header, next, plan, ^uint64(0), nil); err != nil {
+			if err = layer.rebuildFileCacheFromStripes(ctx, staged, file.header, next, plan, ^uint64(0), nil); err != nil {
 				return response, err
 			}
 		} else {
 			if err = applyAttributeChanges(&next, request, now); err != nil {
 				return response, err
 			}
-			if next == file.header {
-				if handle == nil {
-					if err = layer.persistDirtyStripesLocked(ctx, file); err != nil {
-						return response, err
-					}
+			if next != file.header {
+				if err = layer.updateHeaderStripeLocked(ctx, staged, next); err != nil {
+					return response, err
 				}
-				return response, nil
 			}
-			if err = layer.updateHeaderStripeLocked(ctx, file, next); err != nil {
+		}
+
+		staged.header = next
+		if handle == nil {
+			if err = layer.persistDirtyStripesLocked(ctx, staged); err != nil {
 				return response, err
 			}
 		}
-		file.header = next
+		file.header = staged.header
+		file.stripeCache = staged.stripeCache
 		if layer.headers == nil {
 			layer.headers = make(map[shared.ObjectID]header)
 		}
-		layer.headers[file.objectID] = next
-		if handle == nil {
-			if err = layer.persistDirtyStripesLocked(ctx, file); err != nil {
-				return response, err
-			}
-		}
+		layer.headers[file.objectID] = staged.header
 		return response, nil
 	}
 
-	// Directories and symlinks have no runtime file handle. Use a temporary
-	// stripe cache to update and synchronously persist their Header stripe.
+	// Namespace-only objects have no shared data Runtime. Persist their updated
+	// Header before publishing it in memory.
 	next := object.header
 	if request.Size != nil && *request.Size != next.Size {
-		return response, fmt.Errorf("object %s does not support size changes: %w", request.ObjectID.String(), os.ErrInvalid)
+		return response, syscall.EINVAL
 	}
 	if err = applyAttributeChanges(&next, request, now); err != nil {
 		return response, err
@@ -220,7 +243,8 @@ func (layer *Orchestration) updateHeaderStripeLocked(ctx context.Context, file *
 }
 
 // persistDirtyStripesLocked persists the dirty cache entries in StripeID order.
-func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file *runtimeFile) error {
+func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file *runtimeFile, syncToDisk ...bool) error {
+	sync := len(syncToDisk) > 0 && syncToDisk[0]
 	ids := make([]uint64, 0, len(file.stripeCache))
 	for id, entry := range file.stripeCache {
 		if entry != nil && entry.state == stripeCacheDirty {
@@ -260,7 +284,7 @@ func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file 
 		if _, err = layer.distribution.WriteStripe(distribution.WriteStripeRequest{
 			Context: ctx, ObjectID: file.objectID, StripeID: storage.StripeID(id),
 			ChunkSize: geometry.ChunkSize, Layout: geometry.Layout,
-			IOIndexes: indexes, Data: entry.data,
+			IOIndexes: indexes, Data: entry.data, Sync: sync,
 		}); err != nil {
 			return fmt.Errorf("persist stripe %d: %w", id, err)
 		}

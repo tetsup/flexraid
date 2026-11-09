@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"syscall"
 	"time"
 
 	"github.com/tetsup/flexraid/distribution"
@@ -49,14 +48,13 @@ func (layer *Orchestration) Write(request WriteRequest) (response WriteResponse,
 	if handle.accessMode == AccessModeReadOnly {
 		return response, os.ErrPermission
 	}
-	if handle.syncMode != SyncModeNone {
-		return response, fmt.Errorf("synchronous writes require persistence support: %w", syscall.ENOTSUP)
-	}
+
 	object, exists := layer.objects[request.ObjectID]
-	if !exists || object.header.Deleted {
+	if !exists {
 		return response, os.ErrNotExist
 	}
-	if (object.header.Kind != objectKindFile && object.header.Kind != objectKindHardLink) || object.file == nil || object.file != handle.runtimeFile {
+	if (object.header.Kind != objectKindFile && object.header.Kind != objectKindHardLink) ||
+		object.file == nil || object.file != handle.runtimeFile {
 		return response, fmt.Errorf("handle does not refer to writable file %s: %w", request.ObjectID.String(), os.ErrInvalid)
 	}
 	if len(request.Data) == 0 {
@@ -69,8 +67,23 @@ func (layer *Orchestration) Write(request WriteRequest) (response WriteResponse,
 	if err = ctx.Err(); err != nil {
 		return response, err
 	}
-	if file.stripeCache == nil {
-		file.stripeCache = make(map[uint64]*stripeCacheEntry)
+
+	// Build changes in a private cache. Synchronous modes persist that snapshot
+	// before publishing it; a failed write leaves the in-memory file unchanged.
+	staged := &runtimeFile{
+		objectID:    file.objectID,
+		header:      file.header,
+		openCount:   file.openCount,
+		stripeCache: make(map[uint64]*stripeCacheEntry, len(file.stripeCache)),
+	}
+	for id, entry := range file.stripeCache {
+		if entry == nil {
+			continue
+		}
+		staged.stripeCache[id] = &stripeCacheEntry{
+			data:  append([]byte(nil), entry.data...),
+			state: entry.state,
+		}
 	}
 	oldHeader := file.header
 	writeOffset := request.Offset
@@ -100,75 +113,81 @@ func (layer *Orchestration) Write(request WriteRequest) (response WriteResponse,
 		} else {
 			nextHeader.Layout.ChunkSize = cfg.MinimumChunkSize
 		}
-		if err = layer.rebuildFileCacheFromStripes(ctx, file, oldHeader, nextHeader, plan, writeOffset, request.Data); err != nil {
+		if err = layer.rebuildFileCacheFromStripes(ctx, staged, oldHeader, nextHeader, plan, writeOffset, request.Data); err != nil {
 			return response, err
 		}
-		file.header = nextHeader
-		response.Written = uint32(len(request.Data))
-		return response, nil
-	}
-
-	// A size-preserving overwrite keeps the established placement and only dirties touched stripes.
-	nextHeader := oldHeader
-	nextHeader.Mtime, nextHeader.Ctime = time.Now(), time.Now()
-	geometry, local, locateErr := locateFileOffset(nextHeader, writeOffset)
-	if locateErr != nil {
-		return response, locateErr
-	}
-	remaining := request.Data
-	dirty := make(map[uint64]*stripeCacheEntry)
-	for len(remaining) > 0 {
-		g := geometry
-		entry, loadErr := layer.loadStripeForWriteLocked(ctx, file, g)
-		if loadErr != nil {
-			return response, loadErr
+		staged.header = nextHeader
+	} else {
+		nextHeader := oldHeader
+		now := time.Now()
+		nextHeader.Mtime, nextHeader.Ctime = now, now
+		geometry, local, locateErr := locateFileOffset(nextHeader, writeOffset)
+		if locateErr != nil {
+			return response, locateErr
 		}
-		localOffset := local
-		if g.StripeID != 0 {
-			localOffset = local
-		}
-		count := uint64(len(remaining))
-		available := g.Capacity - (localOffset - g.DataOffset)
-		if count > available {
-			count = available
-		}
-		end := localOffset + count
-		if uint64(len(entry.data)) < end {
-			entry.data = append(entry.data, make([]byte, int(end)-len(entry.data))...)
-		}
-		copy(entry.data[int(localOffset):int(end)], remaining[:int(count)])
-		dirty[uint64(g.StripeID)] = entry
-		remaining = remaining[int(count):]
-		writeOffset += count
-		if len(remaining) > 0 {
-			geometry, local, locateErr = locateFileOffset(nextHeader, writeOffset)
-			if locateErr != nil {
-				return response, locateErr
+		remaining := request.Data
+		dirty := make(map[uint64]*stripeCacheEntry)
+		for len(remaining) > 0 {
+			g := geometry
+			entry, loadErr := layer.loadStripeForWriteLocked(ctx, staged, g)
+			if loadErr != nil {
+				return response, loadErr
+			}
+			localOffset := local
+			count := uint64(len(remaining))
+			available := g.Capacity - (localOffset - g.DataOffset)
+			if count > available {
+				count = available
+			}
+			end := localOffset + count
+			if uint64(len(entry.data)) < end {
+				entry.data = append(entry.data, make([]byte, int(end)-len(entry.data))...)
+			}
+			copy(entry.data[int(localOffset):int(end)], remaining[:int(count)])
+			dirty[uint64(g.StripeID)] = entry
+			remaining = remaining[int(count):]
+			writeOffset += count
+			if len(remaining) > 0 {
+				geometry, local, locateErr = locateFileOffset(nextHeader, writeOffset)
+				if locateErr != nil {
+					return response, locateErr
+				}
 			}
 		}
+		headerBytes, marshalErr := nextHeader.MarshalBinary()
+		if marshalErr != nil {
+			return response, marshalErr
+		}
+		headerEntry := dirty[0]
+		if headerEntry == nil {
+			var loadErr error
+			headerEntry, loadErr = layer.loadStripeForWriteLocked(ctx, staged, mustGeometry(nextHeader, 0))
+			if loadErr != nil {
+				return response, loadErr
+			}
+		}
+		if len(headerEntry.data) < int(cfg.HeaderReservedSize) {
+			headerEntry.data = append(headerEntry.data, make([]byte, int(cfg.HeaderReservedSize)-len(headerEntry.data))...)
+		}
+		copy(headerEntry.data[:len(headerBytes)], headerBytes)
+		dirty[0] = headerEntry
+		for id, entry := range dirty {
+			entry.state = stripeCacheDirty
+			staged.stripeCache[id] = entry
+		}
+		staged.header = nextHeader
 	}
-	headerBytes, marshalErr := nextHeader.MarshalBinary()
-	if marshalErr != nil {
-		return response, marshalErr
-	}
-	headerEntry := dirty[0]
-	if headerEntry == nil {
-		var loadErr error
-		headerEntry, loadErr = layer.loadStripeForWriteLocked(ctx, file, mustGeometry(nextHeader, 0))
-		if loadErr != nil {
-			return response, loadErr
+
+	if handle.syncMode != SyncModeNone {
+		if err = layer.persistDirtyStripesLocked(ctx, staged, true); err != nil {
+			return response, err
+		}
+		if _, err = layer.distribution.SyncObject(distribution.SyncObjectRequest{Context: ctx, ObjectID: file.objectID}); err != nil {
+			return response, fmt.Errorf("sync object %s: %w", file.objectID.String(), err)
 		}
 	}
-	if len(headerEntry.data) < int(cfg.HeaderReservedSize) {
-		headerEntry.data = append(headerEntry.data, make([]byte, int(cfg.HeaderReservedSize)-len(headerEntry.data))...)
-	}
-	copy(headerEntry.data[:len(headerBytes)], headerBytes)
-	dirty[0] = headerEntry
-	for id, entry := range dirty {
-		entry.state = stripeCacheDirty
-		file.stripeCache[id] = entry
-	}
-	file.header = nextHeader
+	file.header = staged.header
+	file.stripeCache = staged.stripeCache
 	response.Written = uint32(len(request.Data))
 	return response, nil
 }
@@ -314,4 +333,19 @@ func (layer *Orchestration) readLogicalRangeLocked(
 		offset += count
 	}
 	return result, nil
+}
+
+func cloneStripeCache(source map[uint64]*stripeCacheEntry) map[uint64]*stripeCacheEntry {
+	clone := make(map[uint64]*stripeCacheEntry, len(source))
+	for id, entry := range source {
+		if entry == nil {
+			clone[id] = nil
+			continue
+		}
+		clone[id] = &stripeCacheEntry{
+			data:  append([]byte(nil), entry.data...),
+			state: entry.state,
+		}
+	}
+	return clone
 }

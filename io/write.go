@@ -2,6 +2,7 @@ package io
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -14,6 +15,7 @@ type WriteRequest struct {
 	Context context.Context
 	Key     storage.FileKey
 	Data    []byte
+	Sync    bool
 }
 
 // WriteResponse reports the number of bytes written.
@@ -49,6 +51,12 @@ func (layer *IO) Write(request WriteRequest) (response WriteResponse, err error)
 	}
 	written, writeErr := file.Write(request.Data)
 	response.BytesWritten = written
+	if writeErr == nil && written != len(request.Data) {
+		writeErr = io.ErrShortWrite
+	}
+	if writeErr == nil && request.Sync {
+		writeErr = file.Sync()
+	}
 	if writeErr != nil {
 		_ = file.Close()
 		_ = os.Remove(path)
@@ -59,6 +67,11 @@ func (layer *IO) Write(request WriteRequest) (response WriteResponse, err error)
 		_ = os.Remove(path)
 		err = closeErr
 		return response, err
+	}
+	if request.Sync {
+		if err = syncDirectory(filepath.Dir(path)); err != nil {
+			return response, err
+		}
 	}
 	return response, nil
 }
