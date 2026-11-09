@@ -75,6 +75,9 @@ jobs:
         run: |
           cat > local.config <<EOF
           export TEST_DIR="$RUNNER_TEMP/flexraid-test/mount"
+          # FUSE uses a mount-source tag, not a block device. xfstests
+          # requires TEST_DEV even when TEST_DIR is already mounted.
+          export TEST_DEV=flexraid-fuse
           export SCRATCH_DIR="$RUNNER_TEMP/flexraid-test/mount/xfstests-scratch"
           export FSTYP=fuse
           export RESULTS_DIR="$PWD/results"
