@@ -41,18 +41,14 @@ jobs:
       - name: Build xfstests
         working-directory: xfstests
         run: |
-          set +e
-          ./configure
-          configure_status=$?
-          if [ "$configure_status" -eq 0 ]; then
-            make -j"$(nproc)"
-            build_status=$?
-          else
-            build_status=$configure_status
-          fi
-          echo "configure_status=$configure_status" >> "$GITHUB_ENV"
-          echo "build_status=$build_status" >> "$GITHUB_ENV"
-          echo "xfstests configure=$configure_status build=$build_status"
+          set -euxo pipefail
+          # xfstests-dev is built with make; it does not have a ./configure
+          # entry point. Fail this setup step rather than running tests with
+          # missing helper binaries.
+          make -j"$(nproc)" 2>&1 | tee ../xfstests-build.log
+          test -x src/fsstress
+          test -x src/fsx
+          echo "xfstests build completed; fsstress and fsx are executable."
 
       - name: Build FlexRAID mount command
         run: go build -o "$RUNNER_TEMP/flexraid" ./main
@@ -127,7 +123,11 @@ jobs:
         continue-on-error: true
         run: |
           set +e
-          mkdir -p "$SCRATCH_DIR"
+          # local.config is sourced by ./check, not by this Actions shell.
+          # Source it here too so SCRATCH_DIR is defined for preparation.
+          source ./local.config
+          mkdir -p "$SCRATCH_DIR" "$RESULTS_DIR"
+          set -o pipefail
           ./check -g generic 2>&1 | tee results/xfstests-generic.log
           test_status=${PIPESTATUS[0]}
           echo "xfstests generic exit status: $test_status"
