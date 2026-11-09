@@ -12,6 +12,7 @@ import (
 	flexfuse "github.com/tetsup/flexraid/fuse"
 	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/orchestration"
+	"github.com/tetsup/flexraid/pkg/shared"
 )
 
 func mountFilesystem(config mountConfig) (*gofuse.Server, error) {
@@ -44,7 +45,7 @@ func mountFilesystem(config mountConfig) (*gofuse.Server, error) {
 	}
 
 	var layer *orchestration.Orchestration
-	var rootID = objectsRootID{}
+	var rootID shared.ObjectID
 	if len(objects.ObjectIDs) == 0 {
 		created, createErr := orchestration.CreateRoot(orchestration.CreateRootRequest{
 			Context: ctx, Distribution: distributed.Layer,
@@ -54,7 +55,7 @@ func mountFilesystem(config mountConfig) (*gofuse.Server, error) {
 			return nil, fmt.Errorf("initialize filesystem root: %w", createErr)
 		}
 		layer = created.Layer
-		rootID.value = created.RootID
+		rootID = created.RootID
 	} else {
 		initialized, initErr := orchestration.New(orchestration.NewRequest{
 			Context: ctx, Distribution: distributed.Layer,
@@ -63,10 +64,10 @@ func mountFilesystem(config mountConfig) (*gofuse.Server, error) {
 			return nil, fmt.Errorf("restore filesystem namespace: %w", initErr)
 		}
 		layer = initialized.Layer
-		rootID.value = initialized.RootID
+		rootID = initialized.RootID
 	}
 
-	adapter, err := flexfuse.New(layer, rootID.value)
+	adapter, err := flexfuse.New(layer, rootID)
 	if err != nil {
 		return nil, fmt.Errorf("create FUSE adapter: %w", err)
 	}
