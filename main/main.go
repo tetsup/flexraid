@@ -24,4 +24,7 @@ func main() {
 		_ = server.Unmount()
 		log.Fatalf("wait for mount: %v", err)
 	}
+	// WaitMount only confirms that the first FUSE request was served. Keep
+	// the daemon alive until the mount is unmounted and the serve loop exits.
+	server.Wait()
 }
