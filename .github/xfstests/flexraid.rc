@@ -1,0 +1,92 @@
+# FlexRAID-specific mount lifecycle for xfstests.
+#
+# common/rc loads this file after defining its default _test_mount and
+# _test_unmount functions. xfstests calls these functions whenever it needs
+# to mount, unmount, or cycle the test filesystem.
+
+_flexraid_mount_error()
+{
+	printf 'FlexRAID xfstests mount error: %s\n' "$*" >&2
+	if [ -n "${FLEXRAID_LOG:-}" ] && [ -f "$FLEXRAID_LOG" ]; then
+		cat "$FLEXRAID_LOG" >&2
+	fi
+}
+
+_test_mount()
+{
+	local pid attempt
+
+	: "${FLEXRAID_BIN:?FLEXRAID_BIN is required}"
+	: "${FLEXRAID_CONFIG:?FLEXRAID_CONFIG is required}"
+	: "${FLEXRAID_PID_FILE:?FLEXRAID_PID_FILE is required}"
+	: "${FLEXRAID_LOG:?FLEXRAID_LOG is required}"
+
+	if mountpoint -q "$TEST_DIR"; then
+		return 0
+	fi
+
+	mkdir -p "$TEST_DIR"
+	rm -f "$FLEXRAID_PID_FILE"
+	"$FLEXRAID_BIN" -config "$FLEXRAID_CONFIG" >"$FLEXRAID_LOG" 2>&1 &
+	pid=$!
+	printf '%s\n' "$pid" >"$FLEXRAID_PID_FILE"
+
+	for attempt in $(seq 1 30); do
+		if ! kill -0 "$pid" 2>/dev/null; then
+			_flexraid_mount_error "daemon exited before mounting TEST_DIR=$TEST_DIR (pid=$pid)"
+			rm -f "$FLEXRAID_PID_FILE"
+			return 1
+		fi
+
+		if mountpoint -q "$TEST_DIR" && stat "$TEST_DIR" >/dev/null 2>&1; then
+			return 0
+		fi
+		sleep 1
+	done
+
+	_flexraid_mount_error "timed out waiting for TEST_DIR=$TEST_DIR (pid=$pid)"
+	if mountpoint -q "$TEST_DIR"; then
+		"${FUSERMOUNT_PROG:-fusermount3}" -u "$TEST_DIR" || true
+	fi
+	kill "$pid" 2>/dev/null || true
+	rm -f "$FLEXRAID_PID_FILE"
+	return 1
+}
+
+_test_unmount()
+{
+	local pid attempt
+
+	if mountpoint -q "$TEST_DIR"; then
+		"${FUSERMOUNT_PROG:-fusermount3}" -u "$TEST_DIR" || {
+			_flexraid_mount_error "failed to unmount TEST_DIR=$TEST_DIR"
+			return 1
+		}
+	fi
+
+	if [ -f "${FLEXRAID_PID_FILE:-}" ]; then
+		pid=$(cat "$FLEXRAID_PID_FILE")
+		if [[ "$pid" =~ ^[0-9]+$ ]]; then
+			for attempt in $(seq 1 10); do
+				if ! kill -0 "$pid" 2>/dev/null; then
+					break
+				fi
+				sleep 1
+			done
+			if kill -0 "$pid" 2>/dev/null; then
+				kill "$pid" 2>/dev/null || true
+				for attempt in $(seq 1 5); do
+					kill -0 "$pid" 2>/dev/null || break
+					sleep 1
+				 done
+			fi
+		fi
+		rm -f "$FLEXRAID_PID_FILE"
+	fi
+
+	if mountpoint -q "$TEST_DIR"; then
+		_flexraid_mount_error "TEST_DIR is still mounted after unmount"
+		return 1
+	fi
+	return 0
+}
