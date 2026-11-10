@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
       - name: Check out flexraid
         uses: actions/checkout@v6
@@ -64,8 +64,8 @@ jobs:
             - "$root/disk4"
           mountpoint: "$root/mount"
           EOF
-          mkdir -p xfstests/results
-          sudo chmod 0777 "$root" "$root/mount"
+          mkdir -p xfstests/results "$RUNNER_TEMP/flexraid-logs"
+          sudo chmod 0777 "$root" "$root/mount" "$RUNNER_TEMP/flexraid-logs"
 
       - name: Configure xfstests mount lifecycle
         working-directory: xfstests
@@ -79,6 +79,7 @@ jobs:
           export FLEXRAID_BIN="$RUNNER_TEMP/flexraid"
           export FLEXRAID_CONFIG="$RUNNER_TEMP/flexraid.yaml"
           export FLEXRAID_PID_FILE="$RUNNER_TEMP/flexraid.pid"
+          export FLEXRAID_LOG_DIR="$RUNNER_TEMP/flexraid-logs"
           export FLEXRAID_LOG="$RUNNER_TEMP/flexraid-mount.log"
           export FLEXRAID_XFSTESTS_RC="$GITHUB_WORKSPACE/.github/xfstests/flexraid.rc"
           EOF
@@ -88,7 +89,7 @@ jobs:
         working-directory: xfstests
         env:
           SHARD_INDEX: ${{ matrix.shard }}
-          SHARD_COUNT: 4
+          SHARD_COUNT: 8
         run: |
           set -euo pipefail
           test_list="$RUNNER_TEMP/xfstests-shard-tests.txt"
@@ -118,7 +119,7 @@ jobs:
           set -euo pipefail
           source ./local.config
           mkdir -p "$SCRATCH_DIR" "$RESULTS_DIR"
-          sudo --preserve-env=TEST_DIR,TEST_DEV,SCRATCH_DIR,FSTYP,RESULTS_DIR,FLEXRAID_BIN,FLEXRAID_CONFIG,FLEXRAID_PID_FILE,FLEXRAID_LOG,FLEXRAID_XFSTESTS_RC,GITHUB_WORKSPACE,RUNNER_TEMP,XFSTESTS_SHARD_TEST_LIST,XFSTESTS_SHARD_INDEX,XFSTESTS_SHARD_COUNT \
+          sudo --preserve-env=TEST_DIR,TEST_DEV,SCRATCH_DIR,FSTYP,RESULTS_DIR,FLEXRAID_BIN,FLEXRAID_CONFIG,FLEXRAID_PID_FILE,FLEXRAID_LOG,FLEXRAID_LOG_DIR,FLEXRAID_XFSTESTS_RC,GITHUB_WORKSPACE,RUNNER_TEMP,XFSTESTS_SHARD_TEST_LIST,XFSTESTS_SHARD_INDEX,XFSTESTS_SHARD_COUNT \
             bash -c 'set -euo pipefail
               mapfile -t tests < "$XFSTESTS_SHARD_TEST_LIST"
               printf "Running shard %s/%s (%s tests)\\n" "$XFSTESTS_SHARD_INDEX" "$XFSTESTS_SHARD_COUNT" "${#tests[@]}"
@@ -146,7 +147,8 @@ jobs:
             done
             kill "$pid" 2>/dev/null || true
           fi
-          cat "$FLEXRAID_LOG" 2>/dev/null || true
+          echo "FlexRAID daemon logs:"
+          find "$FLEXRAID_LOG_DIR" -maxdepth 1 -type f -name 'flexraid-*.log' -printf '%f (%s bytes)\n' 2>/dev/null | sort || true
 
       - name: Upload xfstests logs
         if: always()
@@ -159,6 +161,7 @@ jobs:
             xfstests/common/rc
             xfstests-build.log
             ${{ runner.temp }}/xfstests-shard-tests.txt
+            ${{ runner.temp }}/flexraid-logs/
             ${{ runner.temp }}/flexraid-mount.log
             ${{ runner.temp }}/flexraid.yaml
           if-no-files-found: warn

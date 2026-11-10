@@ -7,14 +7,15 @@
 _flexraid_mount_error()
 {
 	printf 'FlexRAID xfstests mount error: %s\n' "$*" >&2
-	if [ -n "${FLEXRAID_LOG:-}" ] && [ -f "$FLEXRAID_LOG" ]; then
-		cat "$FLEXRAID_LOG" >&2
+	if [ -n "${FLEXRAID_LOG_CURRENT:-}" ] && [ -f "$FLEXRAID_LOG_CURRENT" ]; then
+		printf '%s\n' "--- FlexRAID daemon log: $FLEXRAID_LOG_CURRENT ---" >&2
+		cat "$FLEXRAID_LOG_CURRENT" >&2
 	fi
 }
 
 _test_mount()
 {
-	local pid attempt
+	local pid attempt timestamp log_dir log_file
 
 	: "${FLEXRAID_BIN:?FLEXRAID_BIN is required}"
 	: "${FLEXRAID_CONFIG:?FLEXRAID_CONFIG is required}"
@@ -26,10 +27,24 @@ _test_mount()
 	fi
 
 	mkdir -p "$TEST_DIR"
+	log_dir="${FLEXRAID_LOG_DIR:-$(dirname "$FLEXRAID_LOG")}"
+	mkdir -p "$log_dir"
+	timestamp=$(date -u +%Y%m%dT%H%M%S%N)
+	log_file="$log_dir/flexraid-$timestamp-$$.log"
+	FLEXRAID_LOG_CURRENT="$log_file"
+	export FLEXRAID_LOG_CURRENT
+
 	rm -f "$FLEXRAID_PID_FILE"
-	"$FLEXRAID_BIN" -config "$FLEXRAID_CONFIG" >"$FLEXRAID_LOG" 2>&1 &
+	"$FLEXRAID_BIN" -config "$FLEXRAID_CONFIG" >"$log_file" 2>&1 &
 	pid=$!
 	printf '%s\n' "$pid" >"$FLEXRAID_PID_FILE"
+	{
+		printf 'started_at=%s\n' "$timestamp"
+		printf 'pid=%s\n' "$pid"
+		printf 'mountpoint=%s\n' "$TEST_DIR"
+		printf 'config=%s\n' "$FLEXRAID_CONFIG"
+		printf 'log=%s\n' "$log_file"
+	} >"$log_file.meta"
 
 	for attempt in $(seq 1 30); do
 		if ! kill -0 "$pid" 2>/dev/null; then
@@ -78,7 +93,7 @@ _test_unmount()
 				for attempt in $(seq 1 5); do
 					kill -0 "$pid" 2>/dev/null || break
 					sleep 1
-				 done
+				done
 			fi
 		fi
 		rm -f "$FLEXRAID_PID_FILE"
