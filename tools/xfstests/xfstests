@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "docker is required" >&2
+  exit 127
+fi
+if ! docker compose version >/dev/null 2>&1; then
+  echo "Docker Compose plugin is required (docker compose)" >&2
+  exit 127
+fi
+
+usage() {
+  cat <<'EOF'
+FlexRAID xfstests environment
+
+Usage:
+  ./tools/xfstests/xfstests build
+  ./tools/xfstests/xfstests shell
+  ./tools/xfstests/xfstests list
+  ./tools/xfstests/xfstests run <test> [<test> ...]
+  ./tools/xfstests/xfstests run-generic
+  ./tools/xfstests/xfstests clean
+
+Commands:
+  build       Build the isolated xfstests Docker image
+  shell       Open an interactive root shell in the test container
+  list        List generic tests tagged "auto"
+  run         Run one or more tests (for example: generic/089)
+  run-generic Run all generic tests tagged "auto"
+  clean       Stop and remove Compose containers (keeps data/results)
+
+Environment:
+  XFSTESTS_REF  xfstests Git ref used when building the image (default: master)
+
+Results and virtual disks are stored under tools/xfstests/data/.
+EOF
+}
+
+case "${1:-help}" in
+  build)
+    shift
+    docker compose -f compose.yaml build "$@"
+    ;;
+  shell)
+    shift
+    docker compose -f compose.yaml run --rm xfstests shell "$@"
+    ;;
+  list)
+    shift
+    docker compose -f compose.yaml run --rm xfstests list "$@"
+    ;;
+  run)
+    shift
+    if [ "$#" -eq 0 ]; then
+      echo "run requires at least one test name (for example generic/089)" >&2
+      exit 2
+    fi
+    docker compose -f compose.yaml run --rm xfstests run "$@"
+    ;;
+  run-generic)
+    shift
+    docker compose -f compose.yaml run --rm xfstests run-generic "$@"
+    ;;
+  clean)
+    shift
+    docker compose -f compose.yaml down --remove-orphans
+    ;;
+  -h|--help|help)
+    usage
+    ;;
+  *)
+    echo "unknown command: $1" >&2
+    usage >&2
+    exit 2
+    ;;
+esac
