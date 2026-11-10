@@ -1,0 +1,16 @@
+services:
+  xfstests:
+    build:
+      context: ../..
+      dockerfile: tools/xfstests/Dockerfile
+      args:
+        XFSTESTS_REF: ${XFSTESTS_REF:-master}
+    image: flexraid-xfstests:local
+    privileged: true
+    devices:
+      - /dev/fuse:/dev/fuse
+    init: true
+    working_dir: /workspace/flexraid
+    volumes:
+      - ../..:/workspace/flexraid
+      - ./data:/xfstests-data
