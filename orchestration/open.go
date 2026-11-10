@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sync"
 	"syscall"
 	"time"
 
@@ -30,8 +29,6 @@ const (
 // FileHandle represents one independent open-file description.
 // Its concrete state is owned by Orchestration, never by the FUSE adapter.
 type FileHandle struct {
-	mu sync.Mutex
-
 	runtimeFile *runtimeFile
 	closed      bool
 	directory   bool
@@ -54,6 +51,12 @@ type OpenResponse struct {
 }
 
 func (layer *Orchestration) Open(request OpenRequest) (response OpenResponse, err error) {
+	layer.mu.Lock()
+	defer layer.mu.Unlock()
+	return layer.openLocked(request)
+}
+
+func (layer *Orchestration) openLocked(request OpenRequest) (response OpenResponse, err error) {
 	started := time.Now()
 	ctx := request.Context
 	if ctx == nil {
@@ -120,9 +123,7 @@ func (layer *Orchestration) Open(request OpenRequest) (response OpenResponse, er
 		append:      request.Flags&uint32(syscall.O_APPEND) != 0,
 		syncMode:    syncMode,
 	}
-	object.file.mu.Lock()
 	object.file.openCount++
-	object.file.mu.Unlock()
 	return OpenResponse{Handle: handle}, nil
 }
 
@@ -134,32 +135,32 @@ type ReleaseRequest struct {
 type ReleaseResponse struct{}
 
 func (layer *Orchestration) Release(request ReleaseRequest) (response ReleaseResponse, err error) {
+	layer.mu.Lock()
+	defer layer.mu.Unlock()
+	return layer.releaseLocked(request)
+}
+
+func (layer *Orchestration) releaseLocked(request ReleaseRequest) (response ReleaseResponse, err error) {
 	started := time.Now()
 	if request.Handle == nil {
 		return response, os.ErrInvalid
 	}
 
 	handle := request.Handle
-	handle.mu.Lock()
 	if handle.closed {
-		handle.mu.Unlock()
 		return response, nil
 	}
 	if handle.directory {
 		handle.closed = true
-		handle.mu.Unlock()
 		return response, nil
 	}
 	handle.closed = true
 	handle.hasActiveStripeID = false
 	file := handle.runtimeFile
-	file.mu.Lock()
 	if file.openCount > 0 {
 		file.openCount--
 	}
 	shouldEnqueue := file.openCount == 0 && file.header.Deleted
-	file.mu.Unlock()
-	handle.mu.Unlock()
 	if shouldEnqueue {
 		layer.enqueueDeletion(file.objectID)
 	}

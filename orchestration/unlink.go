@@ -21,6 +21,12 @@ type UnlinkResponse struct{}
 // Unlink removes a name from a directory. Object-kind-specific state changes
 // are kept in separate internal functions.
 func (layer *Orchestration) Unlink(request UnlinkRequest) (response UnlinkResponse, err error) {
+	layer.mu.Lock()
+	defer layer.mu.Unlock()
+	return layer.unlinkLocked(request)
+}
+
+func (layer *Orchestration) unlinkLocked(request UnlinkRequest) (response UnlinkResponse, err error) {
 	ctx := request.Context
 	if ctx == nil {
 		ctx = context.Background()
@@ -69,9 +75,7 @@ func (layer *Orchestration) unlinkFile(ctx context.Context, parent, object *runt
 	// Mutable file attributes are authoritative in runtimeFile.header. A prior
 	// Write/SetAttr may have updated them without replacing the namespace copy.
 	if object.file != nil {
-		object.file.mu.RLock()
 		next = object.file.header
-		object.file.mu.RUnlock()
 	}
 	next.ParentID = nil
 	next.Ctime = time.Now()
@@ -81,9 +85,7 @@ func (layer *Orchestration) unlinkFile(ctx context.Context, parent, object *runt
 	object.header = next
 	layer.headers[next.ObjectID] = next
 	if object.file != nil {
-		object.file.mu.Lock()
 		object.file.header = next
-		object.file.mu.Unlock()
 	}
 	delete(parent.children, next.Name)
 	return nil
@@ -153,9 +155,7 @@ func (layer *Orchestration) unlinkHardLink(ctx context.Context, parent, object *
 	}
 	target.header = nextTarget
 	if target.file != nil {
-		target.file.mu.Lock()
 		target.file.header = nextTarget
-		target.file.mu.Unlock()
 	}
 	layer.headers[nextTarget.ObjectID] = nextTarget
 	if nextTarget.Deleted && (target.file == nil || openHandleCount(target.file) == 0) {
@@ -180,8 +180,6 @@ func (layer *Orchestration) persistObjectHeader(ctx context.Context, next header
 	if next.Kind == objectKindFile {
 		if object := layer.objects[next.ObjectID]; object != nil && object.file != nil {
 			file := object.file
-			file.mu.Lock()
-			defer file.mu.Unlock()
 			return layer.persistHeaderUpdateLocked(ctx, file, next)
 		}
 	}
@@ -193,13 +191,9 @@ func (layer *Orchestration) persistObjectHeader(ctx context.Context, next header
 		header:      next,
 		stripeCache: make(map[uint64]*stripeCacheEntry),
 	}
-	file.mu.Lock()
-	defer file.mu.Unlock()
 	return layer.persistHeaderUpdateLocked(ctx, file, next)
 }
 
 func openHandleCount(file *runtimeFile) uint64 {
-	file.mu.RLock()
-	defer file.mu.RUnlock()
 	return file.openCount
 }

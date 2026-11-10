@@ -23,6 +23,12 @@ type ReadLinkResponse struct {
 // ReadLink returns the target path stored in a symlink without resolving it.
 // The target is loaded during initialization, so this operation performs no I/O.
 func (layer *Orchestration) ReadLink(request ReadLinkRequest) (ReadLinkResponse, error) {
+	layer.mu.Lock()
+	defer layer.mu.Unlock()
+	return layer.readLinkLocked(request)
+}
+
+func (layer *Orchestration) readLinkLocked(request ReadLinkRequest) (ReadLinkResponse, error) {
 	ctx := request.Context
 	if ctx == nil {
 		ctx = context.Background()

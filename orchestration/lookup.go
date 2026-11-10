@@ -24,6 +24,12 @@ type LookupResponse struct {
 
 // Lookup resolves a child name in a directory.
 func (layer *Orchestration) Lookup(request LookupRequest) (LookupResponse, error) {
+	layer.mu.Lock()
+	defer layer.mu.Unlock()
+	return layer.lookupLocked(request)
+}
+
+func (layer *Orchestration) lookupLocked(request LookupRequest) (LookupResponse, error) {
 	ctx := request.Context
 	if ctx == nil {
 		ctx = context.Background()

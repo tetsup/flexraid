@@ -27,6 +27,12 @@ type SymlinkResponse struct {
 // Symlink stores the target path as ordinary logical data and publishes the
 // namespace entry only after all target-data stripes have been persisted.
 func (layer *Orchestration) Symlink(request SymlinkRequest) (response SymlinkResponse, err error) {
+	layer.mu.Lock()
+	defer layer.mu.Unlock()
+	return layer.symlinkLocked(request)
+}
+
+func (layer *Orchestration) symlinkLocked(request SymlinkRequest) (response SymlinkResponse, err error) {
 	started := time.Now()
 	ctx := request.Context
 	if ctx == nil {

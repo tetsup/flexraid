@@ -26,6 +26,12 @@ type WriteResponse struct {
 
 // Write updates logical file content in the shared stripe cache.
 func (layer *Orchestration) Write(request WriteRequest) (response WriteResponse, err error) {
+	layer.mu.Lock()
+	defer layer.mu.Unlock()
+	return layer.writeLocked(request)
+}
+
+func (layer *Orchestration) writeLocked(request WriteRequest) (response WriteResponse, err error) {
 	ctx := request.Context
 	if ctx == nil {
 		ctx = context.Background()
@@ -40,8 +46,6 @@ func (layer *Orchestration) Write(request WriteRequest) (response WriteResponse,
 		return response, fmt.Errorf("write request exceeds maximum size: %w", os.ErrInvalid)
 	}
 	handle := request.Handle
-	handle.mu.Lock()
-	defer handle.mu.Unlock()
 	if handle.closed || handle.runtimeFile == nil {
 		return response, os.ErrInvalid
 	}
@@ -62,8 +66,6 @@ func (layer *Orchestration) Write(request WriteRequest) (response WriteResponse,
 	}
 
 	file := handle.runtimeFile
-	file.mu.Lock()
-	defer file.mu.Unlock()
 	if err = ctx.Err(); err != nil {
 		return response, err
 	}

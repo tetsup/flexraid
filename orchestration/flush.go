@@ -18,6 +18,12 @@ type FlushRequest struct {
 type FlushResponse struct{ PersistedStripes uint32 }
 
 func (o *Orchestration) Flush(r FlushRequest) (FlushResponse, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.flushLocked(r)
+}
+
+func (o *Orchestration) flushLocked(r FlushRequest) (FlushResponse, error) {
 	var out FlushResponse
 	ctx := r.Context
 	if ctx == nil {
@@ -30,14 +36,10 @@ func (o *Orchestration) Flush(r FlushRequest) (FlushResponse, error) {
 		return out, os.ErrInvalid
 	}
 	h := r.Handle
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	if h.closed || h.runtimeFile == nil {
 		return out, os.ErrInvalid
 	}
 	f := h.runtimeFile
-	f.mu.Lock()
-	defer f.mu.Unlock()
 	ids := make([]uint64, 0)
 	for id, entry := range f.stripeCache {
 		if entry != nil && entry.state == stripeCacheDirty {
@@ -107,6 +109,12 @@ type FsyncRequest struct {
 type FsyncResponse struct{ PersistedStripes uint32 }
 
 func (o *Orchestration) Fsync(r FsyncRequest) (FsyncResponse, error) {
-	result, err := o.Flush(FlushRequest{Context: r.Context, Handle: r.Handle, Sync: true})
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.fsyncLocked(r)
+}
+
+func (o *Orchestration) fsyncLocked(r FsyncRequest) (FsyncResponse, error) {
+	result, err := o.flushLocked(FlushRequest{Context: r.Context, Handle: r.Handle, Sync: true})
 	return FsyncResponse{PersistedStripes: result.PersistedStripes}, err
 }
