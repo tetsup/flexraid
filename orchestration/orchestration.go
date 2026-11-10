@@ -16,7 +16,10 @@ type NewRequest struct {
 	LogLevel     slog.Level
 	Logger       *slog.Logger
 }
-type NewResponse struct{ Layer *Orchestration }
+type NewResponse struct {
+	Layer  *Orchestration
+	RootID shared.ObjectID
+}
 
 type Orchestration struct {
 	distribution     *distribution.Distribution
@@ -57,6 +60,6 @@ func New(request NewRequest) (NewResponse, error) {
 	if err := layer.initialize(initialObjects); err != nil {
 		return NewResponse{}, err
 	}
-	logger.Debug("Orchestration initialized", "objects", len(layer.headers), "deletion_queue", len(layer.deletionQueue), "protected_objects", len(layer.protectedObjects), "warnings", len(layer.warnings))
-	return NewResponse{Layer: layer}, nil
+	logger.Debug("Orchestration initialized", "root_id", layer.root.header.ObjectID.String(), "objects", len(layer.headers), "deletion_queue", len(layer.deletionQueue), "protected_objects", len(layer.protectedObjects), "warnings", len(layer.warnings))
+	return NewResponse{Layer: layer, RootID: layer.root.header.ObjectID}, nil
 }

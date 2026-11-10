@@ -412,13 +412,29 @@ func MountOptions() *fs.Options {
 	return &fs.Options{NullPermissions: true}
 }
 
+// rawFSWithoutSubtype keeps go-fuse's generated "rawBridge" name from
+// becoming a Linux FUSE subtype. A plain "fuse" filesystem type is required
+// by tools such as xfstests, which validate the type reported by df -T.
+type rawFSWithoutSubtype struct {
+	gofuse.RawFileSystem
+}
+
+func (rawFSWithoutSubtype) String() string { return "" }
+
 // Mount mounts the adapter and returns the go-fuse server.
 func (filesystem *FileSystem) Mount(mountpoint string, options *fs.Options) (*gofuse.Server, error) {
 	if options == nil {
 		options = MountOptions()
 	}
-	server, err := fs.Mount(mountpoint, filesystem.root, options)
+
+	rawFS := fs.NewNodeFS(filesystem.root, options)
+	server, err := gofuse.NewServer(rawFSWithoutSubtype{RawFileSystem: rawFS}, mountpoint, &options.MountOptions)
 	if err != nil {
+		return nil, err
+	}
+	go server.Serve()
+	if err := server.WaitMount(); err != nil {
+		_ = server.Unmount()
 		return nil, err
 	}
 	return server, nil

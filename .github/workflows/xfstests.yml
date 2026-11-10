@@ -1,0 +1,165 @@
+name: xfstests Generic (Exploratory)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  xfstests:
+    name: Run xfstests generic shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - name: Check out flexraid
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.x'
+          cache: true
+
+      - name: Check out xfstests
+        uses: actions/checkout@v6
+        with:
+          repository: kdave/xfstests
+          path: xfstests
+          ref: master
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential automake bc gawk libaio-dev libattr1-dev libcap-dev libgdbm-dev libgdbm-compat-dev liburing-dev xfslibs-dev libtool libtool-bin libuuid1 psmisc sed sqlite3 uuid-dev xfsprogs acl libacl1-dev attr quota python3 python3-pip fuse3
+
+      - name: Build xfstests
+        working-directory: xfstests
+        run: |
+          set -euxo pipefail
+          make -j"$(nproc)" 2>&1 | tee ../xfstests-build.log
+          test -x ltp/fsstress
+          test -x ltp/fsx
+          test -s tests/generic/group.list
+
+      - name: Build FlexRAID
+        run: go build -o "$RUNNER_TEMP/flexraid" ./main
+
+      - name: Prepare FUSE storage
+        run: |
+          set -eu
+          root="$RUNNER_TEMP/flexraid-test"
+          mkdir -p "$root/disk1" "$root/disk2" "$root/disk3" "$root/disk4" "$root/mount"
+          cat > "$RUNNER_TEMP/flexraid.yaml" <<EOF
+          disks:
+            - "$root/disk1"
+            - "$root/disk2"
+            - "$root/disk3"
+            - "$root/disk4"
+          mountpoint: "$root/mount"
+          EOF
+          mkdir -p xfstests/results
+          sudo chmod 0777 "$root" "$root/mount"
+
+      - name: Configure xfstests mount lifecycle
+        working-directory: xfstests
+        run: |
+          cat > local.config <<EOF
+          export TEST_DIR="$RUNNER_TEMP/flexraid-test/mount"
+          export TEST_DEV=flexraid-fuse
+          export SCRATCH_DIR="$RUNNER_TEMP/flexraid-test/scratch"
+          export FSTYP=fuse
+          export RESULTS_DIR="$PWD/results"
+          export FLEXRAID_BIN="$RUNNER_TEMP/flexraid"
+          export FLEXRAID_CONFIG="$RUNNER_TEMP/flexraid.yaml"
+          export FLEXRAID_PID_FILE="$RUNNER_TEMP/flexraid.pid"
+          export FLEXRAID_LOG="$RUNNER_TEMP/flexraid-mount.log"
+          export FLEXRAID_XFSTESTS_RC="$GITHUB_WORKSPACE/.github/xfstests/flexraid.rc"
+          EOF
+          printf '\n# FlexRAID mount lifecycle override (injected by CI).\nif [ -n "${FLEXRAID_XFSTESTS_RC:-}" ]; then\n  . "$FLEXRAID_XFSTESTS_RC"\nfi\n' >> common/rc
+
+      - name: Select generic auto tests for this shard
+        working-directory: xfstests
+        env:
+          SHARD_INDEX: ${{ matrix.shard }}
+          SHARD_COUNT: 4
+        run: |
+          set -euo pipefail
+          test_list="$RUNNER_TEMP/xfstests-shard-tests.txt"
+          awk -v shard="$SHARD_INDEX" -v count="$SHARD_COUNT" '
+            {
+              sub(/[[:space:]]*#.*/, "")
+              if (NF < 2) next
+              is_auto = 0
+              for (i = 2; i <= NF; i++) {
+                if ($i == "auto") is_auto = 1
+              }
+              if (is_auto) {
+                if (selected++ % count == shard) print "generic/" $1
+              }
+            }
+          ' tests/generic/group.list > "$test_list"
+          test -s "$test_list"
+          printf 'Shard %s/%s selected %s tests:\n' "$SHARD_INDEX" "$SHARD_COUNT" "$(wc -l < "$test_list")"
+          cat "$test_list"
+          echo "XFSTESTS_SHARD_TEST_LIST=$test_list" >> "$GITHUB_ENV"
+          echo "XFSTESTS_SHARD_INDEX=$SHARD_INDEX" >> "$GITHUB_ENV"
+          echo "XFSTESTS_SHARD_COUNT=$SHARD_COUNT" >> "$GITHUB_ENV"
+
+      - name: Run generic tests as root
+        working-directory: xfstests
+        run: |
+          set -euo pipefail
+          source ./local.config
+          mkdir -p "$SCRATCH_DIR" "$RESULTS_DIR"
+          sudo --preserve-env=TEST_DIR,TEST_DEV,SCRATCH_DIR,FSTYP,RESULTS_DIR,FLEXRAID_BIN,FLEXRAID_CONFIG,FLEXRAID_PID_FILE,FLEXRAID_LOG,FLEXRAID_XFSTESTS_RC,GITHUB_WORKSPACE,RUNNER_TEMP,XFSTESTS_SHARD_TEST_LIST,XFSTESTS_SHARD_INDEX,XFSTESTS_SHARD_COUNT \
+            bash -c 'set -euo pipefail
+              mapfile -t tests < "$XFSTESTS_SHARD_TEST_LIST"
+              printf "Running shard %s/%s (%s tests)\\n" "$XFSTESTS_SHARD_INDEX" "$XFSTESTS_SHARD_COUNT" "${#tests[@]}"
+              set +e
+              bash ./check "${tests[@]}" 2>&1 | tee "results/xfstests-generic-shard-${XFSTESTS_SHARD_INDEX}.log"
+              test_status=${PIPESTATUS[0]}
+              set -e
+              echo "xfstests shard ${XFSTESTS_SHARD_INDEX} exit status: $test_status"
+              echo "$test_status" > "results/xfstests-generic-shard-${XFSTESTS_SHARD_INDEX}.exit-status"
+              exit "$test_status"'
+
+      - name: Stop FlexRAID mount
+        if: always()
+        run: |
+          set +e
+          source xfstests/local.config
+          if mountpoint -q "$TEST_DIR"; then
+            fusermount3 -u "$TEST_DIR" || sudo umount "$TEST_DIR"
+          fi
+          if [ -f "$FLEXRAID_PID_FILE" ]; then
+            pid=$(cat "$FLEXRAID_PID_FILE")
+            for attempt in $(seq 1 10); do
+              kill -0 "$pid" 2>/dev/null || break
+              sleep 1
+            done
+            kill "$pid" 2>/dev/null || true
+          fi
+          cat "$FLEXRAID_LOG" 2>/dev/null || true
+
+      - name: Upload xfstests logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: xfstests-generic-shard-${{ matrix.shard }}-results
+          path: |
+            xfstests/results/
+            xfstests/local.config
+            xfstests/common/rc
+            xfstests-build.log
+            ${{ runner.temp }}/xfstests-shard-tests.txt
+            ${{ runner.temp }}/flexraid-mount.log
+            ${{ runner.temp }}/flexraid.yaml
+          if-no-files-found: warn
+          retention-days: 14
