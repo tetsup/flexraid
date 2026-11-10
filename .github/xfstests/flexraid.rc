@@ -4,9 +4,43 @@
 # _test_unmount functions. xfstests calls these functions whenever it needs
 # to mount, unmount, or cycle the test filesystem.
 
+_flexraid_mount_snapshot()
+{
+	local label="$1" pid=""
+
+	printf '%s\n' "--- FlexRAID mount snapshot: $label ---" >&2
+	printf 'time=%s TEST_DIR=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$TEST_DIR" >&2
+	if mountpoint -q "$TEST_DIR"; then
+		printf 'mountpoint=mounted\n' >&2
+	else
+		printf 'mountpoint=not-mounted (status=%s)\n' "$?" >&2
+	fi
+	if command -v findmnt >/dev/null 2>&1; then
+		findmnt -T "$TEST_DIR" -o TARGET,SOURCE,FSTYPE,OPTIONS >&2 || true
+	fi
+	if [ -d "$TEST_DIR" ]; then
+		printf 'directory=exists\n' >&2
+	else
+		printf 'directory=missing\n' >&2
+	fi
+	if [ -f "${FLEXRAID_PID_FILE:-}" ]; then
+		pid=$(cat "$FLEXRAID_PID_FILE" 2>/dev/null || true)
+		printf 'pid_file=%s pid=%s\n' "$FLEXRAID_PID_FILE" "$pid" >&2
+		if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+			printf 'daemon_pid=alive\n' >&2
+			ps -o pid,ppid,stat,args -p "$pid" >&2 || true
+		else
+			printf 'daemon_pid=dead-or-invalid\n' >&2
+		fi
+	else
+		printf 'pid_file=missing\n' >&2
+	fi
+}
+
 _flexraid_mount_error()
 {
 	printf 'FlexRAID xfstests mount error: %s\n' "$*" >&2
+	_flexraid_mount_snapshot "failure: $*"
 	if [ -n "${FLEXRAID_LOG_CURRENT:-}" ] && [ -f "$FLEXRAID_LOG_CURRENT" ]; then
 		printf '%s\n' "--- FlexRAID daemon log: $FLEXRAID_LOG_CURRENT ---" >&2
 		cat "$FLEXRAID_LOG_CURRENT" >&2
@@ -22,19 +56,32 @@ _test_mount()
 	: "${FLEXRAID_PID_FILE:?FLEXRAID_PID_FILE is required}"
 	: "${FLEXRAID_LOG:?FLEXRAID_LOG is required}"
 
+	_flexraid_mount_snapshot "before _test_mount"
 	if mountpoint -q "$TEST_DIR"; then
-		return 0
+		if stat "$TEST_DIR" >/dev/null 2>&1; then
+			printf 'FlexRAID TEST_DIR already mounted and accessible: %s\n' "$TEST_DIR" >&2
+			return 0
+		fi
+		_flexraid_mount_error "mountpoint reports mounted but TEST_DIR is inaccessible: $TEST_DIR"
+		return 1
 	fi
 
-	mkdir -p "$TEST_DIR"
+	mkdir -p "$TEST_DIR" || {
+		_flexraid_mount_error "mkdir -p failed for TEST_DIR=$TEST_DIR"
+		return 1
+	}
 	log_dir="${FLEXRAID_LOG_DIR:-$(dirname "$FLEXRAID_LOG")}"
-	mkdir -p "$log_dir"
+	mkdir -p "$log_dir" || {
+		_flexraid_mount_error "mkdir -p failed for log directory=$log_dir"
+		return 1
+	}
 	timestamp=$(date -u +%Y%m%dT%H%M%S%N)
 	log_file="$log_dir/flexraid-$timestamp-$$.log"
 	FLEXRAID_LOG_CURRENT="$log_file"
 	export FLEXRAID_LOG_CURRENT
 
 	rm -f "$FLEXRAID_PID_FILE"
+	_flexraid_mount_snapshot "immediately before daemon launch"
 	"$FLEXRAID_BIN" -config "$FLEXRAID_CONFIG" >"$log_file" 2>&1 &
 	pid=$!
 	printf '%s\n' "$pid" >"$FLEXRAID_PID_FILE"
@@ -45,6 +92,7 @@ _test_mount()
 		printf 'config=%s\n' "$FLEXRAID_CONFIG"
 		printf 'log=%s\n' "$log_file"
 	} >"$log_file.meta"
+	printf 'FlexRAID daemon launched: pid=%s mountpoint=%s log=%s\n' "$pid" "$TEST_DIR" "$log_file" >&2
 
 	for attempt in $(seq 1 30); do
 		if ! kill -0 "$pid" 2>/dev/null; then
@@ -54,6 +102,7 @@ _test_mount()
 		fi
 
 		if mountpoint -q "$TEST_DIR" && stat "$TEST_DIR" >/dev/null 2>&1; then
+			_flexraid_mount_snapshot "mount succeeded (pid=$pid)"
 			return 0
 		fi
 		sleep 1
@@ -72,6 +121,7 @@ _test_unmount()
 {
 	local pid attempt
 
+	_flexraid_mount_snapshot "before _test_unmount"
 	if mountpoint -q "$TEST_DIR"; then
 		"${FUSERMOUNT_PROG:-fusermount3}" -u "$TEST_DIR" || {
 			_flexraid_mount_error "failed to unmount TEST_DIR=$TEST_DIR"
@@ -103,5 +153,6 @@ _test_unmount()
 		_flexraid_mount_error "TEST_DIR is still mounted after unmount"
 		return 1
 	fi
+	_flexraid_mount_snapshot "after _test_unmount"
 	return 0
 }
