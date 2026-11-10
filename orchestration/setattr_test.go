@@ -30,9 +30,9 @@ func TestSetAttrUpdatesMetadataThroughSharedFileHandle(t *testing.T) {
 		t.Fatalf("attributes after SetAttr = %+v", got)
 	}
 	file := fixture.layer.objects[fixture.fileID].file
-	file.mu.RLock()
+	fixture.layer.mu.Lock()
 	entry := file.stripeCache[0]
-	file.mu.RUnlock()
+	fixture.layer.mu.Unlock()
 	if entry == nil || entry.state != stripeCacheDirty {
 		t.Fatal("SetAttr did not dirty Header stripe")
 	}
