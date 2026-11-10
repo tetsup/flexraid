@@ -5,10 +5,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV XFSTESTS_DIR=/opt/xfstests
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    acl attr bc build-essential fio gawk git kmod libaio-dev libattr1-dev \
-    libcap-dev libgdbm-dev libgdbm-compat-dev libtool libtool-bin liburing-dev \
-    psmisc python3 quota rsync sed sqlite3 uuid-dev xfsprogs xfslibs-dev \
-    fuse3 util-linux e2fsprogs ca-certificates \
+    acl attr automake bc build-essential fio gawk git kmod libaio-dev \
+    libacl1-dev libattr1-dev libcap-dev libgdbm-dev libgdbm-compat-dev \
+    libtool libtool-bin liburing-dev libuuid1 psmisc python3 python3-pip \
+    quota rsync sed sqlite3 uuid-dev xfsprogs xfslibs-dev fuse3 util-linux \
+    e2fsprogs ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 RUN git clone --depth 1 --branch "${XFSTESTS_REF}" \
