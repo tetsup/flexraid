@@ -26,6 +26,12 @@ type LinkResponse struct {
 
 // Link creates a namespace entry that directly references the source File data object.
 func (layer *Orchestration) Link(request LinkRequest) (response LinkResponse, err error) {
+	layer.mu.Lock()
+	defer layer.mu.Unlock()
+	return layer.linkLocked(request)
+}
+
+func (layer *Orchestration) linkLocked(request LinkRequest) (response LinkResponse, err error) {
 	started := time.Now()
 	ctx := request.Context
 	if ctx == nil {
@@ -81,8 +87,6 @@ func (layer *Orchestration) Link(request LinkRequest) (response LinkResponse, er
 	}
 
 	file := source.file
-	file.mu.Lock()
-	defer file.mu.Unlock()
 	if err = ctx.Err(); err != nil {
 		return response, err
 	}

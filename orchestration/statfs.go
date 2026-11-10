@@ -27,6 +27,12 @@ type StatFsResponse struct {
 // StatFs reports physical totals/free space and the logical space that can be
 // newly placed using the configured Mirror and Parity layouts.
 func (layer *Orchestration) StatFs(request StatFsRequest) (StatFsResponse, error) {
+	layer.mu.Lock()
+	defer layer.mu.Unlock()
+	return layer.statFsLocked(request)
+}
+
+func (layer *Orchestration) statFsLocked(request StatFsRequest) (StatFsResponse, error) {
 	ctx := request.Context
 	if ctx == nil {
 		ctx = context.Background()

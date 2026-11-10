@@ -22,6 +22,12 @@ type CleanupResponse struct {
 }
 
 func (layer *Orchestration) Cleanup(request CleanupRequest) (response CleanupResponse, err error) {
+	layer.mu.Lock()
+	defer layer.mu.Unlock()
+	return layer.cleanupLocked(request)
+}
+
+func (layer *Orchestration) cleanupLocked(request CleanupRequest) (response CleanupResponse, err error) {
 	started := time.Now()
 	ctx := request.Context
 	if ctx == nil {

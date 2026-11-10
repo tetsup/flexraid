@@ -19,6 +19,12 @@ type TruncateRequest struct {
 type TruncateResponse struct{}
 
 func (layer *Orchestration) Truncate(request TruncateRequest) (TruncateResponse, error) {
+	layer.mu.Lock()
+	defer layer.mu.Unlock()
+	return layer.truncateLocked(request)
+}
+
+func (layer *Orchestration) truncateLocked(request TruncateRequest) (TruncateResponse, error) {
 	ctx := request.Context
 	if ctx == nil {
 		ctx = context.Background()
@@ -30,8 +36,6 @@ func (layer *Orchestration) Truncate(request TruncateRequest) (TruncateResponse,
 		return TruncateResponse{}, os.ErrInvalid
 	}
 	handle := request.Handle
-	handle.mu.Lock()
-	defer handle.mu.Unlock()
 	if handle.closed || handle.runtimeFile == nil {
 		return TruncateResponse{}, os.ErrInvalid
 	}
@@ -50,8 +54,6 @@ func (layer *Orchestration) Truncate(request TruncateRequest) (TruncateResponse,
 	}
 
 	file := handle.runtimeFile
-	file.mu.Lock()
-	defer file.mu.Unlock()
 	if request.Size == file.header.Size {
 		return TruncateResponse{}, nil
 	}

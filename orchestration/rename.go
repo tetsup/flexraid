@@ -27,6 +27,12 @@ type RenameResponse struct{}
 // a directory requires it to be empty. Header updates are persisted in order
 // and are not crash-atomic across multiple objects.
 func (layer *Orchestration) Rename(request RenameRequest) (response RenameResponse, err error) {
+	layer.mu.Lock()
+	defer layer.mu.Unlock()
+	return layer.renameLocked(request)
+}
+
+func (layer *Orchestration) renameLocked(request RenameRequest) (response RenameResponse, err error) {
 	ctx := request.Context
 	if ctx == nil {
 		ctx = context.Background()
@@ -98,13 +104,13 @@ func (layer *Orchestration) Rename(request RenameRequest) (response RenameRespon
 				return response, fmt.Errorf("remove rename destination: %w", err)
 			}
 		}
-		if _, err = layer.Link(LinkRequest{
+		if _, err = layer.linkLocked(LinkRequest{
 			Context: ctx, SourceID: source.header.ObjectID,
 			ParentID: request.DestinationParentID, Name: request.DestinationName,
 		}); err != nil {
 			return response, fmt.Errorf("create destination HardLink: %w", err)
 		}
-		if _, err = layer.Unlink(UnlinkRequest{
+		if _, err = layer.unlinkLocked(UnlinkRequest{
 			Context: ctx, ParentID: request.SourceParentID, Name: request.SourceName,
 		}); err != nil {
 			return response, fmt.Errorf("unlink rename source after destination link: %w", err)
@@ -126,9 +132,7 @@ func (layer *Orchestration) Rename(request RenameRequest) (response RenameRespon
 	// copy, so start a rename from the backing Header to avoid restoring stale
 	// size, timestamps, or permissions while changing the namespace fields.
 	if source.file != nil && source.header.Kind == objectKindFile {
-		source.file.mu.RLock()
 		next = source.file.header
-		source.file.mu.RUnlock()
 	}
 	parentID := request.DestinationParentID
 	next.ParentID = &parentID
@@ -142,9 +146,7 @@ func (layer *Orchestration) Rename(request RenameRequest) (response RenameRespon
 	source.header = next
 	layer.headers[next.ObjectID] = next
 	if source.file != nil && next.Kind == objectKindFile {
-		source.file.mu.Lock()
 		source.file.header = next
-		source.file.mu.Unlock()
 	}
 	if destinationParent.children == nil {
 		destinationParent.children = make(map[string]*runtimeObject)

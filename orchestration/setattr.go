@@ -33,6 +33,12 @@ type SetAttrResponse struct{}
 // SetAttr updates logical attributes. A handle is optional, as FUSE may invoke
 // setattr for path-based operations without an open file description.
 func (layer *Orchestration) SetAttr(request SetAttrRequest) (response SetAttrResponse, err error) {
+	layer.mu.Lock()
+	defer layer.mu.Unlock()
+	return layer.setAttrLocked(request)
+}
+
+func (layer *Orchestration) setAttrLocked(request SetAttrRequest) (response SetAttrResponse, err error) {
 	ctx := request.Context
 	if ctx == nil {
 		ctx = context.Background()
@@ -62,8 +68,6 @@ func (layer *Orchestration) SetAttr(request SetAttrRequest) (response SetAttrRes
 	var handle *FileHandle
 	if request.Handle != nil {
 		handle = request.Handle
-		handle.mu.Lock()
-		defer handle.mu.Unlock()
 		if handle.closed || handle.runtimeFile == nil {
 			return response, os.ErrInvalid
 		}
@@ -78,8 +82,6 @@ func (layer *Orchestration) SetAttr(request SetAttrRequest) (response SetAttrRes
 	now := time.Now()
 	if object.file != nil {
 		file := object.file
-		file.mu.Lock()
-		defer file.mu.Unlock()
 		if err = ctx.Err(); err != nil {
 			return response, err
 		}

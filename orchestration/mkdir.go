@@ -24,6 +24,12 @@ type MkdirResponse struct {
 
 // Mkdir creates and persists a Directory before publishing it in its parent.
 func (layer *Orchestration) Mkdir(request MkdirRequest) (response MkdirResponse, err error) {
+	layer.mu.Lock()
+	defer layer.mu.Unlock()
+	return layer.mkdirLocked(request)
+}
+
+func (layer *Orchestration) mkdirLocked(request MkdirRequest) (response MkdirResponse, err error) {
 	started := time.Now()
 	ctx := request.Context
 	if ctx == nil {

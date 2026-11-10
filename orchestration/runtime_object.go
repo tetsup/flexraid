@@ -1,8 +1,6 @@
 package orchestration
 
 import (
-	"sync"
-
 	"github.com/tetsup/flexraid/pkg/shared"
 )
 
@@ -15,8 +13,6 @@ type runtimeObject struct {
 }
 
 type runtimeFile struct {
-	mu sync.RWMutex
-
 	objectID    shared.ObjectID
 	header      header
 	openCount   uint64

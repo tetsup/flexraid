@@ -26,6 +26,12 @@ type ReadResponse struct {
 // Header bytes are hidden from callers; Offset is relative to file content.
 // A valid handle from Open is mandatory.
 func (layer *Orchestration) Read(request ReadRequest) (response ReadResponse, err error) {
+	layer.mu.Lock()
+	defer layer.mu.Unlock()
+	return layer.readLocked(request)
+}
+
+func (layer *Orchestration) readLocked(request ReadRequest) (response ReadResponse, err error) {
 	started := time.Now()
 	ctx := request.Context
 	if ctx == nil {
@@ -50,8 +56,6 @@ func (layer *Orchestration) Read(request ReadRequest) (response ReadResponse, er
 		return response, os.ErrInvalid
 	}
 	handle := request.Handle
-	handle.mu.Lock()
-	defer handle.mu.Unlock()
 	if handle.closed || handle.runtimeFile == nil {
 		return response, os.ErrInvalid
 	}
@@ -70,10 +74,7 @@ func (layer *Orchestration) Read(request ReadRequest) (response ReadResponse, er
 		return response, fmt.Errorf("handle does not refer to object %s: %w", request.ObjectID.String(), os.ErrInvalid)
 	}
 	file := handle.runtimeFile
-
-	file.mu.RLock()
 	fileHeader := file.header
-	file.mu.RUnlock()
 	fileSize := fileHeader.Size
 	if request.Size == 0 || request.Offset >= fileSize {
 		return response, nil
@@ -117,18 +118,11 @@ func (layer *Orchestration) Read(request ReadRequest) (response ReadResponse, er
 func (layer *Orchestration) getStripeData(ctx context.Context, file *runtimeFile, geometry stripeGeometry) ([]byte, error) {
 	stripeID := geometry.StripeID
 	key := uint64(stripeID)
-
-	file.mu.RLock()
 	entry := file.stripeCache[key]
 	if entry != nil {
 		data := append([]byte(nil), entry.data...)
-		file.mu.RUnlock()
 		return data, nil
 	}
-	file.mu.RUnlock()
-
-	file.mu.Lock()
-	defer file.mu.Unlock()
 	if file.stripeCache == nil {
 		file.stripeCache = make(map[uint64]*stripeCacheEntry)
 	}

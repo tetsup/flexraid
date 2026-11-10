@@ -98,8 +98,8 @@ func TestWriteUpdatesSharedCacheVisibleToOtherHandle(t *testing.T) {
 		t.Fatalf("Read after Write = %q, want %q", read.Data, want)
 	}
 	file := fixture.layer.objects[fixture.fileID].file
-	file.mu.RLock()
-	defer file.mu.RUnlock()
+	fixture.layer.mu.Lock()
+	defer fixture.layer.mu.Unlock()
 	if file.header.Size != uint64(len(fixture.payload)) {
 		t.Fatalf("logical size = %d, want %d", file.header.Size, len(fixture.payload))
 	}
@@ -217,8 +217,8 @@ func TestWriteCancellationDoesNotChangeCache(t *testing.T) {
 		t.Fatalf("canceled Write = %v", err)
 	}
 	file := fixture.layer.objects[fixture.fileID].file
-	file.mu.RLock()
-	defer file.mu.RUnlock()
+	fixture.layer.mu.Lock()
+	defer fixture.layer.mu.Unlock()
 	if len(file.stripeCache) != 0 || file.header.Size != uint64(len(fixture.payload)) {
 		t.Fatal("canceled Write changed runtime file state")
 	}
@@ -231,19 +231,19 @@ func TestWriteReplansAndFlushesAcrossMirrorParityBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	file := fixture.layer.objects[fixture.fileID].file
-	file.mu.RLock()
+	fixture.layer.mu.Lock()
 	if file.header.Size != 3073 || file.header.Layout.Mode != layoutModeStripe {
-		file.mu.RUnlock()
+		fixture.layer.mu.Unlock()
 		t.Fatalf("updated header = %+v", file.header)
 	}
-	file.mu.RUnlock()
+	fixture.layer.mu.Unlock()
 	flushed, err := fixture.layer.Flush(FlushRequest{Handle: writer})
 	if err != nil || flushed.PersistedStripes != 1 {
 		t.Fatalf("Flush = %+v, %v", flushed, err)
 	}
-	file.mu.Lock()
+	fixture.layer.mu.Lock()
 	file.stripeCache = make(map[uint64]*stripeCacheEntry)
-	file.mu.Unlock()
+	fixture.layer.mu.Unlock()
 	reader := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDONLY))
 	got, err := fixture.layer.Read(ReadRequest{Handle: reader, ObjectID: fixture.fileID, Offset: 3072, Size: 1})
 	if err != nil || !bytes.Equal(got.Data, []byte("x")) {

@@ -160,24 +160,24 @@ func TestOpenCreatesIndependentHandlesForSharedRuntimeFile(t *testing.T) {
 	if first.Handle.runtimeFile != second.Handle.runtimeFile {
 		t.Fatal("handles do not share the same runtime file")
 	}
-	file.mu.RLock()
+	layer.mu.Lock()
 	if file.openCount != 2 {
-		file.mu.RUnlock()
+		layer.mu.Unlock()
 		t.Fatalf("tracked %d open handles, want 2", file.openCount)
 	}
-	file.mu.RUnlock()
+	layer.mu.Unlock()
 	if _, err := layer.Release(ReleaseRequest{Handle: first.Handle}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := layer.Release(ReleaseRequest{Handle: first.Handle}); err != nil {
 		t.Fatalf("repeated Release failed: %v", err)
 	}
-	file.mu.RLock()
+	layer.mu.Lock()
 	if file.openCount != 1 {
-		file.mu.RUnlock()
+		layer.mu.Unlock()
 		t.Fatalf("tracked %d open handles after Release, want 1", file.openCount)
 	}
-	file.mu.RUnlock()
+	layer.mu.Unlock()
 	if _, err := layer.Release(ReleaseRequest{Handle: second.Handle}); err != nil {
 		t.Fatal(err)
 	}

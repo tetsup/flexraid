@@ -35,6 +35,12 @@ type GetAttrResponse struct{ Attributes ObjectAttributes }
 
 // GetAttr returns the in-memory logical attributes of an object.
 func (layer *Orchestration) GetAttr(request GetAttrRequest) (GetAttrResponse, error) {
+	layer.mu.Lock()
+	defer layer.mu.Unlock()
+	return layer.getAttrLocked(request)
+}
+
+func (layer *Orchestration) getAttrLocked(request GetAttrRequest) (GetAttrResponse, error) {
 	ctx := request.Context
 	if ctx == nil {
 		ctx = context.Background()
@@ -63,7 +69,6 @@ func (layer *Orchestration) GetAttr(request GetAttrRequest) (GetAttrResponse, er
 		return GetAttrResponse{}, os.ErrNotExist
 	}
 	if object.file != nil {
-		object.file.mu.RLock()
 		backing := object.file.header
 		h.Mode, h.UID, h.GID = backing.Mode, backing.UID, backing.GID
 		h.Size = backing.Size
@@ -72,7 +77,6 @@ func (layer *Orchestration) GetAttr(request GetAttrRequest) (GetAttrResponse, er
 			h.ObjectID = backing.ObjectID
 			h.Kind = objectKindFile
 		}
-		object.file.mu.RUnlock()
 	}
 	attributes := ObjectAttributes{
 		ObjectID: h.ObjectID, Kind: h.Kind, Name: object.header.Name, Mode: h.Mode,
