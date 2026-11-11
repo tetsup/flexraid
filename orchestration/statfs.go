@@ -16,13 +16,13 @@ type StatFsRequest struct {
 
 type StatFsResponse struct {
 	NameLen uint32
-	Blocks uint64
-	Bfree  uint64
-	Bavail uint64
-	Bsize  uint64
-	Frsize uint64
-	Files  uint64
-	Ffree  uint64
+	Blocks  uint64
+	Bfree   uint64
+	Bavail  uint64
+	Bsize   uint64
+	Frsize  uint64
+	Files   uint64
+	Ffree   uint64
 }
 
 // StatFs reports physical totals/free space and the logical space that can be
@@ -58,12 +58,12 @@ func (layer *Orchestration) statFsLocked(request StatFsRequest) (StatFsResponse,
 	response := StatFsResponse{
 		NameLen: 255,
 		Blocks:  totalBytes / config.BlockSize,
-		Bfree:  freeBytes / config.BlockSize,
-		Bavail: min(capacity.MirrorAvailableBlocks, capacity.ParityAvailableBlocks),
-		Bsize:  config.BlockSize,
-		Frsize: config.BlockSize,
-		Files:  layer.countReachableObjects(),
-		Ffree:  0,
+		Bfree:   freeBytes / config.BlockSize,
+		Bavail:  min(capacity.MirrorAvailableBlocks, capacity.ParityAvailableBlocks),
+		Bsize:   config.BlockSize,
+		Frsize:  config.BlockSize,
+		Files:   layer.countReachableObjects(),
+		Ffree:   0,
 	}
 	if layer.logger != nil {
 		layer.logger.Debug("orchestration StatFs completed",
