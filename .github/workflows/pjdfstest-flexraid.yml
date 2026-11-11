@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   pjdfstest:
-    name: FlexRAID pjdfstest shard ${${ matrix.shard }}
+    name: FlexRAID pjdfstest shard ${{ matrix.shard }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -72,7 +72,7 @@ jobs:
 
       - name: Select pjdfstest cases for this shard
         env:
-          SHARD_INDEX: ${${ matrix.shard }}
+          SHARD_INDEX: ${{ matrix.shard }}
           SHARD_COUNT: 8
         run: |
           set -euo pipefail
@@ -188,10 +188,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: pjdfstest-flexraid-shard-${${ matrix.shard }}-results
+          name: pjdfstest-flexraid-shard-${{ matrix.shard }}-results
           path: |
             pjdfstest-build.log
-            ${${ runner.temp }}/pjdfstest-flexraid/
-            ${${ runner.temp }}/pjdfstest-flexraid-shard-tests.txt
+            ${{ runner.temp }}/pjdfstest-flexraid/
+            ${{ runner.temp }}/pjdfstest-flexraid-shard-tests.txt
           if-no-files-found: warn
           retention-days: 14
