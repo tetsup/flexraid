@@ -1,0 +1,177 @@
+name: pjdfstest go-fuse Baseline
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pjdfstest:
+    name: go-fuse pjdfstest shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - name: Check out flexraid
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.x'
+          cache: true
+
+      - name: Check out pjdfstest
+        uses: actions/checkout@v6
+        with:
+          repository: pjd/pjdfstest
+          path: pjdfstest
+          # Pin the baseline to an exact source revision.
+          ref: 85a8aea9e685999ef0540392fd80535f873d7ff7
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential autoconf automake libtool m4 perl openssl fuse3
+
+      - name: Build pjdfstest
+        working-directory: pjdfstest
+        run: |
+          set -euxo pipefail
+          autoreconf -ifs
+          ./configure
+          make -j"$(nproc)" 2>&1 | tee ../pjdfstest-build.log
+          test -x pjdfstest
+          prove --version
+
+      - name: Build go-fuse loopback baseline
+        run: go build -o "$RUNNER_TEMP/gofuse-loopback" ./cmd/xfstests-gofuse
+
+      - name: Prepare test directories
+        run: |
+          set -eu
+          root="$RUNNER_TEMP/pjdfstest-gofuse"
+          mkdir -p "$root/backing" "$root/mount" "$root/logs" "$root/results"
+          sudo chmod 0777 "$root" "$root/backing" "$root/mount" "$root/logs" "$root/results"
+
+      - name: Select pjdfstest cases for this shard
+        env:
+          SHARD_INDEX: ${{ matrix.shard }}
+          SHARD_COUNT: 8
+        run: |
+          set -euo pipefail
+          test_list="$RUNNER_TEMP/pjdfstest-gofuse-shard-tests.txt"
+          find "$GITHUB_WORKSPACE/pjdfstest/tests" -type f -name '*.t' -print |
+            sort |
+            awk -v shard="$SHARD_INDEX" -v count="$SHARD_COUNT" '(NR - 1) % count == shard' > "$test_list"
+          test -s "$test_list"
+          printf 'pjdfstest shard %s/%s selected %s test files:\n' "$SHARD_INDEX" "$SHARD_COUNT" "$(wc -l < "$test_list")"
+          cat "$test_list"
+          echo "PJDFSTEST_SHARD_TEST_LIST=$test_list" >> "$GITHUB_ENV"
+          echo "PJDFSTEST_SHARD_INDEX=$SHARD_INDEX" >> "$GITHUB_ENV"
+          echo "PJDFSTEST_SHARD_COUNT=$SHARD_COUNT" >> "$GITHUB_ENV"
+
+      - name: Run pjdfstest against go-fuse as root
+        run: |
+          set -euo pipefail
+          sudo --preserve-env=GITHUB_WORKSPACE,RUNNER_TEMP,PJDFSTEST_SHARD_TEST_LIST,PJDFSTEST_SHARD_INDEX,PJDFSTEST_SHARD_COUNT env GOFUSE_BIN="$RUNNER_TEMP/gofuse-loopback" bash -c 'set -euo pipefail
+            root="$RUNNER_TEMP/pjdfstest-gofuse"
+            mount_dir="$root/mount"
+            backing_dir="$root/backing"
+            log_file="$root/logs/gofuse-loopback.log"
+            result_file="$root/results/pjdfstest-shard-${PJDFSTEST_SHARD_INDEX}.log"
+
+            "$GOFUSE_BIN" "$mount_dir" "$backing_dir" >"$log_file" 2>&1 &
+            mount_pid=$!
+
+            cleanup() {
+              local exit_status=$?
+              trap - EXIT
+
+              # The test runner cwd is inside the FUSE mount. Move out before
+              # unmounting, otherwise this shell itself keeps the mount busy.
+              cd "$root" || cd /
+
+              if mountpoint -q "$mount_dir"; then
+                if ! fusermount3 -u "$mount_dir"; then
+                  echo "normal unmount failed; checking remaining users" >&2
+                  fuser -vm "$mount_dir" >&2 || true
+                  # Last-resort detach so a failed test cannot strand the job.
+                  fusermount3 -uz "$mount_dir" || umount -l "$mount_dir" || true
+                fi
+              fi
+
+              # A successful unmount should make server.Wait return. Signal it
+              # as a fallback, then always reap the child process.
+              kill -TERM "$mount_pid" 2>/dev/null || true
+              for attempt in $(seq 1 10); do
+                if ! kill -0 "$mount_pid" 2>/dev/null; then
+                  break
+                fi
+                sleep 1
+              done
+              if kill -0 "$mount_pid" 2>/dev/null; then
+                echo "go-fuse did not stop after SIGTERM; sending SIGKILL" >&2
+                kill -KILL "$mount_pid" 2>/dev/null || true
+              fi
+              wait "$mount_pid" 2>/dev/null || true
+              exit "$exit_status"
+            }
+            trap cleanup EXIT
+
+            mounted=false
+            for attempt in $(seq 1 30); do
+              if ! kill -0 "$mount_pid" 2>/dev/null; then
+                echo "go-fuse exited before mounting" >&2
+                cat "$log_file" >&2 || true
+                exit 1
+              fi
+              if mountpoint -q "$mount_dir" && stat "$mount_dir" >/dev/null 2>&1; then
+                mounted=true
+                break
+              fi
+              sleep 1
+            done
+            if [ "$mounted" != true ]; then
+              echo "timed out waiting for go-fuse mount" >&2
+              cat "$log_file" >&2 || true
+              exit 1
+            fi
+
+            mapfile -t tests < "$PJDFSTEST_SHARD_TEST_LIST"
+            printf "Running pjdfstest shard %s/%s (%s test files) on %s\n" "$PJDFSTEST_SHARD_INDEX" "$PJDFSTEST_SHARD_COUNT" "${#tests[@]}" "$mount_dir"
+            cd "$mount_dir"
+            set +e
+            prove -v "${tests[@]}" 2>&1 | tee "$result_file"
+            test_status=${PIPESTATUS[0]}
+            set -e
+            echo "pjdfstest shard ${PJDFSTEST_SHARD_INDEX} exit status: $test_status"
+            exit "$test_status"'
+
+      - name: Stop go-fuse mount
+        if: always()
+        run: |
+          set +e
+          root="$RUNNER_TEMP/pjdfstest-gofuse"
+          if mountpoint -q "$root/mount"; then
+            fusermount3 -u "$root/mount" || sudo umount "$root/mount"
+          fi
+          echo "go-fuse baseline logs:"
+          find "$root/logs" "$root/results" -maxdepth 1 -type f -printf '%p (%s bytes)\n' 2>/dev/null | sort || true
+
+      - name: Upload pjdfstest logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: pjdfstest-gofuse-shard-${{ matrix.shard }}-results
+          path: |
+            pjdfstest-build.log
+            ${{ runner.temp }}/pjdfstest-gofuse/logs/
+            ${{ runner.temp }}/pjdfstest-gofuse/results/
+            ${{ runner.temp }}/pjdfstest-gofuse-shard-tests.txt
+          if-no-files-found: warn
+          retention-days: 14
