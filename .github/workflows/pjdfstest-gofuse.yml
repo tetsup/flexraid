@@ -111,6 +111,16 @@ jobs:
               # A successful unmount should make server.Wait return. Signal it
               # as a fallback, then always reap the child process.
               kill -TERM "$mount_pid" 2>/dev/null || true
+              for attempt in $(seq 1 10); do
+                if ! kill -0 "$mount_pid" 2>/dev/null; then
+                  break
+                fi
+                sleep 1
+              done
+              if kill -0 "$mount_pid" 2>/dev/null; then
+                echo "go-fuse did not stop after SIGTERM; sending SIGKILL" >&2
+                kill -KILL "$mount_pid" 2>/dev/null || true
+              fi
               wait "$mount_pid" 2>/dev/null || true
               exit "$exit_status"
             }
