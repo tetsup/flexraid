@@ -29,8 +29,8 @@ func main() {
 		AttrTimeout:  &timeout,
 		EntryTimeout: &timeout,
 		MountOptions: fuse.MountOptions{
-			FsName:    backingDir,
-			Name:      "gofuse-loopback",
+			FsName:     backingDir,
+			Name:       "gofuse-loopback",
 			AllowOther: true,
 			// Let the kernel enforce POSIX mode bits for callers using
 			// different UIDs, as pjdfstest does.
