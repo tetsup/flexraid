@@ -15,6 +15,7 @@ type StatFsRequest struct {
 }
 
 type StatFsResponse struct {
+	NameLen uint32
 	Blocks uint64
 	Bfree  uint64
 	Bavail uint64
@@ -55,7 +56,8 @@ func (layer *Orchestration) statFsLocked(request StatFsRequest) (StatFsResponse,
 	}
 
 	response := StatFsResponse{
-		Blocks: totalBytes / config.BlockSize,
+		NameLen: 255,
+		Blocks:  totalBytes / config.BlockSize,
 		Bfree:  freeBytes / config.BlockSize,
 		Bavail: min(capacity.MirrorAvailableBlocks, capacity.ParityAvailableBlocks),
 		Bsize:  config.BlockSize,
