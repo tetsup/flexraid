@@ -344,6 +344,7 @@ func (n *node) Statfs(ctx context.Context, out *gofuse.StatfsOut) syscall.Errno 
 	out.Blocks, out.Bfree, out.Bavail = result.Blocks, result.Bfree, result.Bavail
 	out.Bsize, out.Frsize = uint32(result.Bsize), uint32(result.Frsize)
 	out.Files, out.Ffree = result.Files, result.Ffree
+	out.NameLen = result.NameLen
 	return 0
 }
 
