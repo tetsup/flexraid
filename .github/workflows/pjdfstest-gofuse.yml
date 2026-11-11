@@ -2,9 +2,6 @@ name: pjdfstest go-fuse Baseline
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - 'ci/**'
 
 permissions:
   contents: read
