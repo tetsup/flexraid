@@ -137,5 +137,5 @@ _fs_type()
 		sed -e 's/nfs4/nfs/' \
 		    -e 's/fuse.glusterfs/glusterfs/' \
 		    -e 's/fuse.ceph-fuse/ceph-fuse/' \
-		    -e 's/^fuse\\..*/fuse/'
+		    -e 's/^fuse[.].*/fuse/'
 }
