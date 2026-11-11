@@ -122,3 +122,20 @@ _scratch_unmount()
 {
 	_gofuse_stop_instance "$SCRATCH_MNT" "$GOFUSE_SCRATCH_PID_FILE" "scratch"
 }
+
+# Linux reports FUSE filesystems as fuse.<subtype> in df/findmnt.
+# xfstests' FSTYP contract uses the generic type "fuse", so normalize
+# the subtype for its mount validation without changing the actual mount.
+_fs_type()
+{
+	if [ $# -ne 1 ]; then
+		echo "Usage: _fs_type device" >&2
+		_exit 1
+	fi
+
+	_df_device "$1" | $AWK_PROG '{ print $2 }' | \
+		sed -e 's/nfs4/nfs/' \
+		    -e 's/fuse.glusterfs/glusterfs/' \
+		    -e 's/fuse.ceph-fuse/ceph-fuse/' \
+		    -e 's/^fuse\\..*/fuse/'
+}
