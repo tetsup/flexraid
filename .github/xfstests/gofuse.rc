@@ -1,9 +1,81 @@
 # go-fuse loopback mount lifecycle for xfstests.
 # common/rc sources this file after defining its default mount helpers.
 
+_gofuse_start_instance()
+{
+	local mount_dir="$1" backing_dir="$2" pid_file="$3" log_file="$4" label="$5"
+	local pid attempt
+
+	mkdir -p "$mount_dir" "$backing_dir"
+	if mountpoint -q "$mount_dir"; then
+		stat "$mount_dir" >/dev/null 2>&1 && return 0
+		echo "go-fuse $label mount exists but is inaccessible: $mount_dir" >&2
+		return 1
+	fi
+
+	rm -f "$pid_file"
+	"$GOFUSE_BIN" "$mount_dir" "$backing_dir" >"$log_file" 2>&1 &
+	pid=$!
+	printf '%s\n' "$pid" > "$pid_file"
+
+	for attempt in $(seq 1 30); do
+		if ! kill -0 "$pid" 2>/dev/null; then
+			echo "go-fuse $label exited before mounting (pid=$pid)" >&2
+			cat "$log_file" >&2 || true
+			rm -f "$pid_file"
+			return 1
+		fi
+		if mountpoint -q "$mount_dir" && stat "$mount_dir" >/dev/null 2>&1; then
+			printf 'go-fuse %s mounted: %s (pid=%s)\n' "$label" "$mount_dir" "$pid" >&2
+			return 0
+		fi
+		sleep 1
+	done
+
+	echo "timed out waiting for go-fuse $label mount: $mount_dir" >&2
+	cat "$log_file" >&2 || true
+	kill "$pid" 2>/dev/null || true
+	rm -f "$pid_file"
+	return 1
+}
+
+_gofuse_stop_instance()
+{
+	local mount_dir="$1" pid_file="$2" label="$3"
+	local pid attempt
+
+	if mountpoint -q "$mount_dir"; then
+		"${FUSERMOUNT_PROG:-fusermount3}" -u "$mount_dir" || {
+			echo "failed to unmount go-fuse $label: $mount_dir" >&2
+			return 1
+		}
+	fi
+
+	if [ -f "$pid_file" ]; then
+		pid=$(cat "$pid_file" 2>/dev/null || true)
+		if [[ "$pid" =~ ^[0-9]+$ ]]; then
+			for attempt in $(seq 1 10); do
+				kill -0 "$pid" 2>/dev/null || break
+				sleep 1
+			done
+			if kill -0 "$pid" 2>/dev/null; then
+				kill "$pid" 2>/dev/null || true
+			fi
+		fi
+		rm -f "$pid_file"
+	fi
+
+	if mountpoint -q "$mount_dir"; then
+		echo "go-fuse $label is still mounted: $mount_dir" >&2
+		return 1
+	fi
+	return 0
+}
+
 _gofuse_mount_snapshot()
 {
-	printf '%s\n' "--- go-fuse mount snapshot: $1 ---" >&2
+	local label="$1"
+	printf '%s\n' "--- go-fuse mount snapshot: $label ---" >&2
 	printf 'time=%s TEST_DIR=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$TEST_DIR" >&2
 	mountpoint -q "$TEST_DIR" && echo "mountpoint=mounted" >&2 || echo "mountpoint=not-mounted" >&2
 	[ -d "$TEST_DIR" ] && echo "directory=exists" >&2 || echo "directory=missing" >&2
@@ -22,70 +94,31 @@ _test_mount()
 	: "${GOFUSE_BIN:?GOFUSE_BIN is required}"
 	: "${GOFUSE_BACKING_DIR:?GOFUSE_BACKING_DIR is required}"
 	: "${GOFUSE_PID_FILE:?GOFUSE_PID_FILE is required}"
+	: "${GOFUSE_LOG:?GOFUSE_LOG is required}"
 
 	_gofuse_mount_snapshot "before _test_mount"
-	if mountpoint -q "$TEST_DIR"; then
-		stat "$TEST_DIR" >/dev/null 2>&1 && return 0
-		echo "go-fuse mount exists but is inaccessible: $TEST_DIR" >&2
-		return 1
-	fi
-
-	mkdir -p "$TEST_DIR" "$GOFUSE_BACKING_DIR"
-	rm -f "$GOFUSE_PID_FILE"
-	"$GOFUSE_BIN" "$TEST_DIR" "$GOFUSE_BACKING_DIR" >"${GOFUSE_LOG:-/tmp/gofuse-loopback.log}" 2>&1 &
-	local pid=$!
-	printf '%s\n' "$pid" > "$GOFUSE_PID_FILE"
-
-	local attempt
-	for attempt in $(seq 1 30); do
-		if ! kill -0 "$pid" 2>/dev/null; then
-			echo "go-fuse loopback exited before mounting (pid=$pid)" >&2
-			cat "${GOFUSE_LOG:-/tmp/gofuse-loopback.log}" >&2 || true
-			rm -f "$GOFUSE_PID_FILE"
-			return 1
-		fi
-		if mountpoint -q "$TEST_DIR" && stat "$TEST_DIR" >/dev/null 2>&1; then
-			_gofuse_mount_snapshot "mount succeeded"
-			return 0
-		fi
-		sleep 1
-	done
-
-	echo "timed out waiting for go-fuse mount: $TEST_DIR" >&2
-	cat "${GOFUSE_LOG:-/tmp/gofuse-loopback.log}" >&2 || true
-	kill "$pid" 2>/dev/null || true
-	rm -f "$GOFUSE_PID_FILE"
-	return 1
+	_gofuse_start_instance "$TEST_DIR" "$GOFUSE_BACKING_DIR" "$GOFUSE_PID_FILE" "$GOFUSE_LOG" "test"
 }
 
 _test_unmount()
 {
 	_gofuse_mount_snapshot "before _test_unmount"
-	if mountpoint -q "$TEST_DIR"; then
-		"${FUSERMOUNT_PROG:-fusermount3}" -u "$TEST_DIR" || {
-			echo "failed to unmount go-fuse TEST_DIR=$TEST_DIR" >&2
-			return 1
-		}
-	fi
-
-	if [ -f "${GOFUSE_PID_FILE:-}" ]; then
-		local pid attempt
-		pid=$(cat "$GOFUSE_PID_FILE" 2>/dev/null || true)
-		if [[ "$pid" =~ ^[0-9]+$ ]]; then
-			for attempt in $(seq 1 10); do
-				kill -0 "$pid" 2>/dev/null || break
-				sleep 1
-			done
-			if kill -0 "$pid" 2>/dev/null; then
-				kill "$pid" 2>/dev/null || true
-			fi
-		fi
-		rm -f "$GOFUSE_PID_FILE"
-	fi
-
-	if mountpoint -q "$TEST_DIR"; then
-		echo "go-fuse TEST_DIR is still mounted after unmount" >&2
-		return 1
-	fi
+	_gofuse_stop_instance "$TEST_DIR" "$GOFUSE_PID_FILE" "test" || return 1
 	_gofuse_mount_snapshot "after _test_unmount"
+}
+
+# FUSE has no mkfs operation. xfstests' default _scratch_mkfs path already
+# clears SCRATCH_MNT by calling _scratch_mount/_scratch_unmount for FUSE.
+# Provide a second independent loopback mount for that scratch filesystem.
+_try_scratch_mount()
+{
+	: "${GOFUSE_SCRATCH_BACKING_DIR:?GOFUSE_SCRATCH_BACKING_DIR is required}"
+	: "${GOFUSE_SCRATCH_PID_FILE:?GOFUSE_SCRATCH_PID_FILE is required}"
+	: "${GOFUSE_SCRATCH_LOG:?GOFUSE_SCRATCH_LOG is required}"
+	_gofuse_start_instance "$SCRATCH_MNT" "$GOFUSE_SCRATCH_BACKING_DIR" "$GOFUSE_SCRATCH_PID_FILE" "$GOFUSE_SCRATCH_LOG" "scratch"
+}
+
+_scratch_unmount()
+{
+	_gofuse_stop_instance "$SCRATCH_MNT" "$GOFUSE_SCRATCH_PID_FILE" "scratch"
 }
