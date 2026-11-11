@@ -72,7 +72,7 @@ jobs:
             sort |
             awk -v shard="$SHARD_INDEX" -v count="$SHARD_COUNT" '(NR - 1) % count == shard' > "$test_list"
           test -s "$test_list"
-          printf 'pjdfstest shard %s/%s selected %s test files:\\n' "$SHARD_INDEX" "$SHARD_COUNT" "$(wc -l < "$test_list")"
+          printf 'pjdfstest shard %s/%s selected %s test files:\n' "$SHARD_INDEX" "$SHARD_COUNT" "$(wc -l < "$test_list")"
           cat "$test_list"
           echo "PJDFSTEST_SHARD_TEST_LIST=$test_list" >> "$GITHUB_ENV"
           echo "PJDFSTEST_SHARD_INDEX=$SHARD_INDEX" >> "$GITHUB_ENV"
@@ -95,7 +95,7 @@ jobs:
               local exit_status=$?
               trap - EXIT
 
-              # The test runner's cwd is inside the FUSE mount. Move out before
+              # The test runner cwd is inside the FUSE mount. Move out before
               # unmounting, otherwise this shell itself keeps the mount busy.
               cd "$root" || cd /
 
@@ -146,7 +146,7 @@ jobs:
             fi
 
             mapfile -t tests < "$PJDFSTEST_SHARD_TEST_LIST"
-            printf "Running pjdfstest shard %s/%s (%s test files) on %s\\n" "$PJDFSTEST_SHARD_INDEX" "$PJDFSTEST_SHARD_COUNT" "${#tests[@]}" "$mount_dir"
+            printf "Running pjdfstest shard %s/%s (%s test files) on %s\n" "$PJDFSTEST_SHARD_INDEX" "$PJDFSTEST_SHARD_COUNT" "${#tests[@]}" "$mount_dir"
             cd "$mount_dir"
             set +e
             prove -v "${tests[@]}" 2>&1 | tee "$result_file"
@@ -164,7 +164,7 @@ jobs:
             fusermount3 -u "$root/mount" || sudo umount "$root/mount"
           fi
           echo "go-fuse baseline logs:"
-          find "$root/logs" "$root/results" -maxdepth 1 -type f -printf '%p (%s bytes)\\n' 2>/dev/null | sort || true
+          find "$root/logs" "$root/results" -maxdepth 1 -type f -printf '%p (%s bytes)\n' 2>/dev/null | sort || true
 
       - name: Upload pjdfstest logs
         if: always()
