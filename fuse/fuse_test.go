@@ -219,3 +219,14 @@ func TestMountOptionsEnableNullPermissions(t *testing.T) {
 		t.Fatalf("MountOptions()=%+v, want NullPermissions enabled", options)
 	}
 }
+
+func TestStatfsMapsMaximumNameLength(t *testing.T) {
+	adapter, ctx := newCallbackTestFilesystem(t)
+	var out gofuse.StatfsOut
+	if errno := adapter.root.Statfs(ctx, &out); errno != 0 {
+		t.Fatalf("Statfs errno=%v", errno)
+	}
+	if out.NameLen != 255 {
+		t.Fatalf("Statfs NameLen=%d, want 255", out.NameLen)
+	}
+}
