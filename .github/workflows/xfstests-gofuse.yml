@@ -56,8 +56,9 @@ jobs:
         run: |
           set -eu
           root="$RUNNER_TEMP/gofuse-xfstests"
-          mkdir -p "$root/backing" "$root/mount" "$root/scratch" "$root/results" "$root/logs"
-          sudo chmod 0777 "$root" "$root/backing" "$root/mount" "$root/scratch" "$root/results" "$root/logs"
+          mkdir -p "$root/test-backing" "$root/scratch-backing" "$root/mount" "$root/scratch-mount" "$root/results" "$root/logs"
+          sudo chmod 0777 "$root" "$root/test-backing" "$root/scratch-backing" "$root/mount" "$root/scratch-mount" "$root/results" "$root/logs"
+          mkdir -p xfstests/results
 
       - name: Configure xfstests mount lifecycle
         working-directory: xfstests
@@ -66,13 +67,17 @@ jobs:
           cat > local.config <<EOF
           export TEST_DIR="$root/mount"
           export TEST_DEV=gofuse-loopback
-          export SCRATCH_DIR="$root/scratch"
+          export SCRATCH_DEV=gofuse-loopback-scratch
+          export SCRATCH_MNT="$root/scratch-mount"
           export FSTYP=fuse
-          export RESULTS_DIR="$root/results"
+          export RESULT_BASE="$PWD/results/"
           export GOFUSE_BIN="$RUNNER_TEMP/gofuse-loopback"
-          export GOFUSE_BACKING_DIR="$root/backing"
+          export GOFUSE_BACKING_DIR="$root/test-backing"
           export GOFUSE_PID_FILE="$root/gofuse.pid"
           export GOFUSE_LOG="$root/logs/gofuse-loopback.log"
+          export GOFUSE_SCRATCH_BACKING_DIR="$root/scratch-backing"
+          export GOFUSE_SCRATCH_PID_FILE="$root/gofuse-scratch.pid"
+          export GOFUSE_SCRATCH_LOG="$root/logs/gofuse-scratch.log"
           EOF
           printf '\n# go-fuse baseline mount lifecycle (injected by CI).\nif [ -n "${GOFUSE_PID_FILE:-}" ]; then\n  . "$GITHUB_WORKSPACE/.github/xfstests/gofuse.rc"\nfi\n' >> common/rc
 
@@ -105,7 +110,7 @@ jobs:
         run: |
           set -euo pipefail
           source ./local.config
-          sudo --preserve-env=TEST_DIR,TEST_DEV,SCRATCH_DIR,FSTYP,RESULTS_DIR,GOFUSE_BIN,GOFUSE_BACKING_DIR,GOFUSE_PID_FILE,GOFUSE_LOG,GITHUB_WORKSPACE,RUNNER_TEMP,XFSTESTS_SHARD_TEST_LIST,XFSTESTS_SHARD_INDEX,XFSTESTS_SHARD_COUNT \
+          sudo --preserve-env=TEST_DIR,TEST_DEV,SCRATCH_DEV,SCRATCH_MNT,FSTYP,RESULT_BASE,GOFUSE_BIN,GOFUSE_BACKING_DIR,GOFUSE_PID_FILE,GOFUSE_LOG,GOFUSE_SCRATCH_BACKING_DIR,GOFUSE_SCRATCH_PID_FILE,GOFUSE_SCRATCH_LOG,GITHUB_WORKSPACE,RUNNER_TEMP,XFSTESTS_SHARD_TEST_LIST,XFSTESTS_SHARD_INDEX,XFSTESTS_SHARD_COUNT \
             bash -c 'set -euo pipefail
               mapfile -t tests < "$XFSTESTS_SHARD_TEST_LIST"
               printf "Running go-fuse shard %s/%s (%s tests)\\n" "$XFSTESTS_SHARD_INDEX" "$XFSTESTS_SHARD_COUNT" "${#tests[@]}"
@@ -121,13 +126,23 @@ jobs:
         if: always()
         run: |
           set +e
-          if [ -f "$RUNNER_TEMP/gofuse-xfstests/gofuse.pid" ]; then
-            pid=$(cat "$RUNNER_TEMP/gofuse-xfstests/gofuse.pid")
-            kill "$pid" 2>/dev/null || true
-          fi
-          if mountpoint -q "$RUNNER_TEMP/gofuse-xfstests/mount"; then
-            fusermount3 -u "$RUNNER_TEMP/gofuse-xfstests/mount" || sudo umount "$RUNNER_TEMP/gofuse-xfstests/mount"
-          fi
+          root="$RUNNER_TEMP/gofuse-xfstests"
+          for mount_dir in "$root/scratch-mount" "$root/mount"; do
+            if mountpoint -q "$mount_dir"; then
+              fusermount3 -u "$mount_dir" || sudo umount "$mount_dir"
+            fi
+          done
+          for pid_file in "$root/gofuse-scratch.pid" "$root/gofuse.pid"; do
+            if [ -f "$pid_file" ]; then
+              pid=$(cat "$pid_file")
+              for attempt in $(seq 1 10); do
+                kill -0 "$pid" 2>/dev/null || break
+                sleep 1
+              done
+              kill "$pid" 2>/dev/null || true
+              rm -f "$pid_file"
+            fi
+          done
           echo "go-fuse baseline logs:"
           find "$RUNNER_TEMP/gofuse-xfstests/logs" -maxdepth 1 -type f -printf '%f (%s bytes)\\n' 2>/dev/null | sort || true
 
@@ -140,6 +155,7 @@ jobs:
             xfstests/results/
             xfstests/local.config
             xfstests/common/rc
+            xfstests/check.out
             xfstests-build.log
             ${{ runner.temp }}/xfstests-gofuse-shard-tests.txt
             ${{ runner.temp }}/gofuse-xfstests/logs/
