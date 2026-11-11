@@ -31,6 +31,7 @@ func main() {
 		NullPermissions: true,
 		MountOptions: fuse.MountOptions{
 			FsName: backingDir,
+			Name:   "gofuse-loopback",
 		},
 	})
 	if err != nil {
