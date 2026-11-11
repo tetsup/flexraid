@@ -66,8 +66,8 @@ jobs:
           root="$RUNNER_TEMP/gofuse-xfstests"
           cat > local.config <<EOF
           export TEST_DIR="$root/mount"
-          export TEST_DEV=gofuse-loopback
-          export SCRATCH_DEV=gofuse-loopback-scratch
+          export TEST_DEV="$root/test-backing"
+          export SCRATCH_DEV="$root/scratch-backing"
           export SCRATCH_MNT="$root/scratch-mount"
           export FSTYP=fuse
           export RESULT_BASE="$PWD/results/"
