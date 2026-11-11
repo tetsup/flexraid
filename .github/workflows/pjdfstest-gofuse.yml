@@ -92,11 +92,27 @@ jobs:
             mount_pid=$!
 
             cleanup() {
+              local exit_status=$?
+              trap - EXIT
+
+              # The test runner's cwd is inside the FUSE mount. Move out before
+              # unmounting, otherwise this shell itself keeps the mount busy.
+              cd "$root" || cd /
+
               if mountpoint -q "$mount_dir"; then
-                fusermount3 -u "$mount_dir" || umount "$mount_dir" || true
+                if ! fusermount3 -u "$mount_dir"; then
+                  echo "normal unmount failed; checking remaining users" >&2
+                  fuser -vm "$mount_dir" >&2 || true
+                  # Last-resort detach so a failed test cannot strand the job.
+                  fusermount3 -uz "$mount_dir" || umount -l "$mount_dir" || true
+                fi
               fi
-              kill "$mount_pid" 2>/dev/null || true
+
+              # A successful unmount should make server.Wait return. Signal it
+              # as a fallback, then always reap the child process.
+              kill -TERM "$mount_pid" 2>/dev/null || true
               wait "$mount_pid" 2>/dev/null || true
+              exit "$exit_status"
             }
             trap cleanup EXIT
 
