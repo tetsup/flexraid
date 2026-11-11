@@ -115,11 +115,17 @@ jobs:
               mapfile -t tests < "$XFSTESTS_SHARD_TEST_LIST"
               printf "Running go-fuse shard %s/%s (%s tests)\\n" "$XFSTESTS_SHARD_INDEX" "$XFSTESTS_SHARD_COUNT" "${#tests[@]}"
               set +e
-              bash ./check "${tests[@]}" 2>&1 | tee "results/xfstests-gofuse-shard-${XFSTESTS_SHARD_INDEX}.log"
+              if [ "$XFSTESTS_SHARD_INDEX" = "0" ]; then
+                bash -x ./check "${tests[@]}" 2>&1 | tee "results/xfstests-gofuse-shard-${XFSTESTS_SHARD_INDEX}.log"
+              else
+                bash ./check "${tests[@]}" 2>&1 | tee "results/xfstests-gofuse-shard-${XFSTESTS_SHARD_INDEX}.log"
+              fi
               test_status=${PIPESTATUS[0]}
               set -e
               echo "go-fuse shard ${XFSTESTS_SHARD_INDEX} exit status: $test_status"
               echo "$test_status" > "results/xfstests-gofuse-shard-${XFSTESTS_SHARD_INDEX}.exit-status"
+              echo "xfstests result inventory:"
+              find results -maxdepth 2 -type f -printf '%p (%s bytes)\\n' | sort | tail -80
               exit "$test_status"'
 
       - name: Stop go-fuse mount
