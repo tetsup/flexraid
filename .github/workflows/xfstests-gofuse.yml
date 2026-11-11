@@ -70,6 +70,7 @@ jobs:
           export SCRATCH_DEV="$root/scratch-backing"
           export SCRATCH_MNT="$root/scratch-mount"
           export FSTYP=fuse
+          export FUSE_SUBTYP=.gofuse-loopback
           export RESULT_BASE="$PWD/results/"
           export GOFUSE_BIN="$RUNNER_TEMP/gofuse-loopback"
           export GOFUSE_BACKING_DIR="$root/test-backing"
