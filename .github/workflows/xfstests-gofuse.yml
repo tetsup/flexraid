@@ -125,7 +125,7 @@ jobs:
               echo "go-fuse shard ${XFSTESTS_SHARD_INDEX} exit status: $test_status"
               echo "$test_status" > "results/xfstests-gofuse-shard-${XFSTESTS_SHARD_INDEX}.exit-status"
               echo "xfstests result inventory:"
-              find results -maxdepth 2 -type f -printf '%p (%s bytes)\\n' | sort | tail -80
+              find results -maxdepth 2 -type f -printf "%p (%s bytes)\\n" | sort | tail -80
               exit "$test_status"'
 
       - name: Stop go-fuse mount
