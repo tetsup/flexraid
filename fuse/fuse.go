@@ -410,7 +410,10 @@ func caller(ctx context.Context) gofuse.Owner {
 // MountOptions returns conservative go-fuse defaults for FlexRAID. Advisory
 // locks are intentionally not enabled until their callback contract is ready.
 func MountOptions() *fs.Options {
-	return &fs.Options{NullPermissions: true}
+	return &fs.Options{
+		NullPermissions: true,
+		MountOptions: gofuse.MountOptions{Options: []string{"default_permissions"}},
+	}
 }
 
 // rawFSWithoutSubtype keeps go-fuse's generated "rawBridge" name from
