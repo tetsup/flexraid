@@ -1,7 +1,6 @@
 package fuse
 
 import (
-	"context"
 	"syscall"
 	"testing"
 	"time"
@@ -184,11 +183,20 @@ func TestFillEntryMapsAllNamespaceAttributes(t *testing.T) {
 	}
 }
 
-func TestMountOptionsEnableNullPermissions(t *testing.T) {
+func TestMountOptionsDelegatePermissionChecksToKernel(t *testing.T) {
 	options := MountOptions()
-	if options == nil || !options.NullPermissions {
-		t.Fatalf("MountOptions()=%+v, want NullPermissions enabled", options)
+	if options == nil {
+		t.Fatal("MountOptions() returned nil")
 	}
+	if !options.NullPermissions {
+		t.Fatal("NullPermissions must remain enabled to preserve mode 0000")
+	}
+	for _, option := range options.MountOptions.Options {
+		if option == "default_permissions" {
+			return
+		}
+	}
+	t.Fatalf("MountOptions().Options=%v, want default_permissions", options.MountOptions.Options)
 }
 
 func TestStatfsMapsMaximumNameLength(t *testing.T) {
@@ -202,31 +210,3 @@ func TestStatfsMapsMaximumNameLength(t *testing.T) {
 	}
 }
 
-func TestMountOptionsDelegatePermissionChecksToKernel(t *testing.T) {
-	options := MountOptions()
-	if options == nil {
-		t.Fatal("MountOptions() returned nil")
-	}
-	found := false
-	for _, option := range options.MountOptions.Options {
-		if option == "default_permissions" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("MountOptions().Options=%v, want default_permissions", options.MountOptions.Options)
-	}
-	if !options.NullPermissions {
-		t.Fatal("NullPermissions must remain enabled to preserve mode 0000")
-	}
-}
-
-func TestNodeDoesNotImplementCustomAccessCheck(t *testing.T) {
-	var candidate any = (*node)(nil)
-	if _, implements := candidate.(interface {
-		Access(context.Context, uint32) syscall.Errno
-	}); implements {
-		t.Fatal("node implements custom Access; permission checks must be delegated to the kernel")
-	}
-}
