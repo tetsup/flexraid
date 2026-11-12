@@ -677,7 +677,7 @@ The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing 
 
 ### その他の statfs fields
 
-- f_namemax など本契約で意味を定義していないフィールドは、FUSE / 実装ライブラリの既定値に委ねる。FUSE 層で独自の容量計算や推測値を設定しない。
+- `f_namemax` は 255 とする。Orchestration の `StatFsResponse.NameLen` で明示し、FUSE 層は Linux FUSE の `StatfsOut.NameLen` へそのまま写像する。go-fuse のゼロ値に委ねてはならない。
 
 ## HardLink の隠蔽と FUSE 境界
 
