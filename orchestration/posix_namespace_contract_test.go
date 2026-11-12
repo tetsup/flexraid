@@ -2,7 +2,6 @@ package orchestration
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"os"
 	"syscall"
@@ -10,6 +9,7 @@ import (
 	"time"
 
 	"github.com/tetsup/flexraid/distribution"
+	"github.com/tetsup/flexraid/pkg/shared"
 )
 
 // POSIX metadata belongs to the backing File and must be identical through
@@ -43,9 +43,8 @@ func TestSetAttrUpdatesAllPOSIXMetadataAcrossHardLinksAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, objectID := range []interface{ String() string }{file.ObjectID, link.ObjectID} {
-		parsed := testID(objectID.String())
-		got, err := fixture.layer.GetAttr(GetAttrRequest{ObjectID: parsed})
+	for _, objectID := range []shared.ObjectID{file.ObjectID, link.ObjectID} {
+		got, err := fixture.layer.GetAttr(GetAttrRequest{ObjectID: objectID})
 		if err != nil {
 			t.Fatalf("GetAttr(%s): %v", objectID.String(), err)
 		}
@@ -208,7 +207,7 @@ func TestUnlinkRegularFileAndSymlinkRemovesOnlyTheirNames(t *testing.T) {
 		}
 	}
 	for _, objectID := range []interface{ String() string }{file.ObjectID, link.ObjectID} {
-		if _, err := fixture.layer.GetAttr(GetAttrRequest{ObjectID: testID(objectID.String())}); !errors.Is(err, os.ErrNotExist) {
+		if _, err := fixture.layer.GetAttr(GetAttrRequest{ObjectID: objectID}); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("GetAttr(%s) after Unlink = %v, want not-exist", objectID.String(), err)
 		}
 	}
