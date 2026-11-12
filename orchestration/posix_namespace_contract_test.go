@@ -206,7 +206,7 @@ func TestUnlinkRegularFileAndSymlinkRemovesOnlyTheirNames(t *testing.T) {
 			t.Errorf("Lookup(%q) after Unlink = %v, want not-exist", name, err)
 		}
 	}
-	for _, objectID := range []interface{ String() string }{file.ObjectID, link.ObjectID} {
+	for _, objectID := range []shared.ObjectID{file.ObjectID, link.ObjectID} {
 		if _, err := fixture.layer.GetAttr(GetAttrRequest{ObjectID: objectID}); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("GetAttr(%s) after Unlink = %v, want not-exist", objectID.String(), err)
 		}
