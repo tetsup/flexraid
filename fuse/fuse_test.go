@@ -1,6 +1,7 @@
 package fuse
 
 import (
+	"context"
 	"syscall"
 	"testing"
 	"time"
@@ -165,36 +166,6 @@ func TestParseObjectID(t *testing.T) {
 	}
 }
 
-func TestCheckAccessOwnerGroupOtherAndRoot(t *testing.T) {
-	tests := []struct {
-		name           string
-		mode           uint32
-		uid, gid, mask uint32
-		want           syscall.Errno
-	}{
-		{"owner read/write", 0700, 1001, 9999, gofuse.R_OK | gofuse.W_OK, 0},
-		{"owner denied execute", 0640, 1001, 9999, gofuse.X_OK, syscall.EACCES},
-		{"group execute", 0750, 1002, 2001, gofuse.X_OK, 0},
-		{"group denied write", 0750, 1002, 2001, gofuse.W_OK, syscall.EACCES},
-		{"other denied read", 0750, 1002, 9999, gofuse.R_OK, syscall.EACCES},
-		{"root read/write", 0640, 0, 0, gofuse.R_OK | gofuse.W_OK, 0},
-		{"root execute without execute bit", 0640, 0, 0, gofuse.X_OK, syscall.EACCES},
-		{"root execute when any execute bit exists", 0010, 0, 0, gofuse.X_OK, 0},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			attributes := orchestration.ObjectAttributes{
-				Mode: syscall.S_IFREG | tc.mode,
-				UID:  1001,
-				GID:  2001,
-			}
-			if got := checkAccess(attributes, tc.uid, tc.gid, tc.mask); got != tc.want {
-				t.Fatalf("checkAccess=%v, want %v", got, tc.want)
-			}
-		})
-	}
-}
-
 func TestFillEntryMapsAllNamespaceAttributes(t *testing.T) {
 	id := testObjectID(t)
 	attributes := orchestration.ObjectAttributes{
@@ -228,5 +199,34 @@ func TestStatfsMapsMaximumNameLength(t *testing.T) {
 	}
 	if out.NameLen != 255 {
 		t.Fatalf("Statfs NameLen=%d, want 255", out.NameLen)
+	}
+}
+
+func TestMountOptionsDelegatePermissionChecksToKernel(t *testing.T) {
+	options := MountOptions()
+	if options == nil {
+		t.Fatal("MountOptions() returned nil")
+	}
+	found := false
+	for _, option := range options.MountOptions.Options {
+		if option == "default_permissions" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("MountOptions().Options=%v, want default_permissions", options.MountOptions.Options)
+	}
+	if !options.NullPermissions {
+		t.Fatal("NullPermissions must remain enabled to preserve mode 0000")
+	}
+}
+
+func TestNodeDoesNotImplementCustomAccessCheck(t *testing.T) {
+	var candidate any = (*node)(nil)
+	if _, implements := candidate.(interface {
+		Access(context.Context, uint32) syscall.Errno
+	}); implements {
+		t.Fatal("node implements custom Access; permission checks must be delegated to the kernel")
 	}
 }
