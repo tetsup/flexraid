@@ -209,4 +209,3 @@ func TestStatfsMapsMaximumNameLength(t *testing.T) {
 		t.Fatalf("Statfs NameLen=%d, want 255", out.NameLen)
 	}
 }
-

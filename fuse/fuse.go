@@ -412,7 +412,7 @@ func caller(ctx context.Context) gofuse.Owner {
 func MountOptions() *fs.Options {
 	return &fs.Options{
 		NullPermissions: true,
-		MountOptions: gofuse.MountOptions{Options: []string{"default_permissions"}},
+		MountOptions:    gofuse.MountOptions{Options: []string{"default_permissions"}},
 	}
 }
 
