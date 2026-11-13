@@ -125,7 +125,7 @@ func New(request NewRequest) (NewResponse, error) {
 				return nil
 			}
 			version.chunks[no] = chunkLocation{ioIndex: index, key: entry.Key, data: payload, totalLength: total}
-			if method.distributionType == distributionParity && !no.isParity() {
+			if method.distributionType == distributionParity {
 				if version.chunkSize == 0 {
 					version.chunkSize = uint32(len(payload))
 				} else if version.chunkSize != uint32(len(payload)) {
