@@ -62,6 +62,47 @@ func planPlacement(size uint64, overrides ...cfg.Placement) ([]stripePlacement, 
 	}
 	return plan, nil
 }
+
+// planPlacementForResize preserves the existing multi-stripe layout. A new
+// placement policy is selected only when the resulting file fits in Stripe 0.
+func planPlacementForResize(old header, size uint64) ([]stripePlacement, error) {
+	first, err := geometryFor(old, 0)
+	if err != nil {
+		return nil, err
+	}
+	if size <= first.Capacity {
+		return planPlacement(size)
+	}
+	if first.Layout.Type != distribution.LayoutParity || old.Layout.ChunkSize == 0 {
+		return nil, fmt.Errorf("%w: cannot extend a single-stripe mirror without replanning", errInvalidHeader)
+	}
+	regularCapacity := uint64(old.Layout.ChunkSize) * uint64(first.Layout.NumChunks)
+	if regularCapacity == 0 {
+		return nil, errInvalidHeader
+	}
+	remaining := size - first.Capacity
+	count := 1 + (remaining-1)/regularCapacity
+	if count > uint64(int(^uint(0)>>1))-1 {
+		return nil, fmt.Errorf("stripe count exceeds addressable range: %w", os.ErrInvalid)
+	}
+	plan := make([]stripePlacement, 0, int(count)+1)
+	firstPlacement := stripePlacement{
+		StripeID: 0, ChunkSize: cfg.MinimumChunkSize, Layout: old.Layout, DataSize: first.Capacity,
+	}
+	plan = append(plan, firstPlacement)
+	for id := uint64(1); id <= count; id++ {
+		n := remaining
+		if n > regularCapacity {
+			n = regularCapacity
+		}
+		plan = append(plan, stripePlacement{
+			StripeID: id, ChunkSize: old.Layout.ChunkSize, Layout: old.Layout, DataSize: n,
+		})
+		remaining -= n
+	}
+	return plan, nil
+}
+
 func selectIOIndexes(capacities []shared.Capacity, count int) ([]int, error) {
 	if count < 1 || count > len(capacities) {
 		return nil, fmt.Errorf("cannot select %d I/Os from %d", count, len(capacities))
