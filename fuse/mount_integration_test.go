@@ -44,7 +44,12 @@ func TestMountedEmptyFilesystem(t *testing.T) {
 	if err := os.Mkdir(mountpoint, 0700); err != nil {
 		t.Fatalf("create mountpoint: %v", err)
 	}
-	server, err := adapter.Mount(mountpoint, nil)
+	options := fuse.MountOptions()
+	// These integration tests exercise the mounted filesystem as its owner.
+	// They do not need cross-user access, which requires user_allow_other in
+	// the host's /etc/fuse.conf. The production default is covered separately.
+	options.MountOptions.AllowOther = false
+	server, err := adapter.Mount(mountpoint, options)
 	if err != nil {
 		if errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) {
 			t.Skipf("FUSE mounting is not permitted in this environment: %v", err)
