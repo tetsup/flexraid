@@ -72,6 +72,17 @@ func TestValidateHeaderStripeLayoutsRejectsLatestMismatchedChunkSize(t *testing.
 	if err := validateHeaderStripeLayouts(context.Background(), fixture.layer.distribution, fixture.fileID, h); !errors.Is(err, distribution.ErrDataCorrupted) {
 		t.Fatalf("mismatched latest layout = %v, want ErrDataCorrupted", err)
 	}
+	restarted, err := distribution.New(distribution.NewRequest{IOs: fixture.ios})
+	if err != nil {
+		t.Fatalf("reinitialize Distribution: %v", err)
+	}
+	info, err := restarted.Layer.GetStripeInfo(distribution.GetStripeInfoRequest{ObjectID: fixture.fileID, StripeID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.ChunkSize != 8192 {
+		t.Fatalf("scanned latest chunk size = %d, want 8192", info.ChunkSize)
+	}
 	fixture.layer.objects[fixture.fileID].file.header = h
 	geometry, err := geometryFor(h, storage.StripeID(1))
 	if err != nil {
