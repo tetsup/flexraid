@@ -111,6 +111,7 @@ func (layer *Orchestration) setAttrLocked(request SetAttrRequest) (response SetA
 			if err = applyAttributeChanges(&next, request, now); err != nil {
 				return response, err
 			}
+			staged.stripeCache = file.stripeCache
 			if err = layer.rebuildFileCacheFromStripes(ctx, staged, file.header, next, plan, ^uint64(0), nil); err != nil {
 				return response, err
 			}
