@@ -95,6 +95,9 @@ func (layer *Orchestration) writeLocked(request WriteRequest) (response WriteRes
 		staged.zeroStripeRanges = cloneStripeRanges(file.zeroStripeRanges)
 	}
 	if newSize != oldHeader.Size {
+		if err = layer.validateResizeCapacity(ctx, oldHeader, newSize); err != nil {
+			return response, err
+		}
 		nextHeader, headerErr := updateHeader(oldHeader, newSize, time.Now())
 		if headerErr != nil {
 			return response, headerErr
