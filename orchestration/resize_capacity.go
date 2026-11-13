@@ -6,6 +6,7 @@ import (
 	"syscall"
 
 	"github.com/tetsup/flexraid/distribution"
+	"github.com/tetsup/flexraid/pkg/shared"
 	cfg "github.com/tetsup/flexraid/pkg/shared/config"
 	"github.com/tetsup/flexraid/storage"
 )
@@ -101,6 +102,34 @@ func (layer *Orchestration) validateResizeCapacity(ctx context.Context, old head
 		return syscall.ENOSPC
 	}
 	newCount := 1 + (newSize-firstCapacity-1)/regularCapacity
+
+	// EFBIG means the requested logical size exceeds the filesystem's
+	// theoretical distributable capacity. ENOSPC is reserved for requests
+	// that fit within total capacity but cannot fit in the currently free space.
+	totalCapacity := make([]uint64, len(capacity.Capacities))
+	totalDevices := make([]shared.Capacity, len(capacity.Capacities))
+	for i, item := range capacity.Capacities {
+		totalCapacity[i] = item.TotalBytes / uint64(regularChunk)
+		totalDevices[i] = item
+		totalDevices[i].AvailableBytes = item.TotalBytes
+	}
+	totalFirstIndexes, err := selectIOIndexes(totalDevices, firstRequired)
+	if err != nil {
+		return fmt.Errorf("select devices for total-capacity check: %w", err)
+	}
+	for _, index := range totalFirstIndexes {
+		if totalCapacity[index] > 0 {
+			totalCapacity[index]--
+		}
+	}
+	devicesPerStripe := int(regularLayout.NumChunks)
+	if regularLayout.Type == distribution.LayoutParity {
+		devicesPerStripe++
+	}
+	if maxDistributableStripeCount(totalCapacity, devicesPerStripe) < newCount {
+		return syscall.EFBIG
+	}
+
 	var oldCount uint64
 	if first.Layout.Type == distribution.LayoutParity && old.Size > firstCapacity {
 		oldRegularCapacity := uint64(old.Layout.ChunkSize) * uint64(first.Layout.NumChunks)
@@ -125,7 +154,7 @@ func (layer *Orchestration) validateResizeCapacity(ctx context.Context, old head
 	for i, bytes := range available {
 		chunksPerDevice[i] = bytes / uint64(regularChunk)
 	}
-	if maxDistributableStripeCount(chunksPerDevice, int(regularLayout.NumChunks)+1) < required {
+	if maxDistributableStripeCount(chunksPerDevice, devicesPerStripe) < required {
 		return syscall.ENOSPC
 	}
 	return nil
