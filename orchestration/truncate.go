@@ -79,5 +79,6 @@ func (layer *Orchestration) truncateLocked(request TruncateRequest) (TruncateRes
 	}
 	file.header = next
 	file.stripeCache = staged.stripeCache
+	file.zeroStripeRanges = staged.zeroStripeRanges
 	return TruncateResponse{}, nil
 }
