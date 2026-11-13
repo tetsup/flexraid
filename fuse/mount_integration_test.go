@@ -7,6 +7,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/tetsup/flexraid/distribution"
 	"github.com/tetsup/flexraid/fuse"
 	physicalio "github.com/tetsup/flexraid/io"
@@ -44,12 +45,7 @@ func TestMountedEmptyFilesystem(t *testing.T) {
 	if err := os.Mkdir(mountpoint, 0700); err != nil {
 		t.Fatalf("create mountpoint: %v", err)
 	}
-	options := fuse.MountOptions()
-	// These integration tests exercise the mounted filesystem as its owner.
-	// They do not need cross-user access, which requires user_allow_other in
-	// the host's /etc/fuse.conf. The production default is covered separately.
-	options.MountOptions.AllowOther = false
-	server, err := adapter.Mount(mountpoint, options)
+	server, err := adapter.Mount(mountpoint, mountTestOptions())
 	if err != nil {
 		if errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) {
 			t.Skipf("FUSE mounting is not permitted in this environment: %v", err)
@@ -308,6 +304,15 @@ func TestMountedRmdirReturnsPOSIXErrnos(t *testing.T) {
 	}
 }
 
+// mountTestOptions reuses production defaults while disabling allow_other,
+// which requires host-level user_allow_other configuration. These integration
+// tests run as the mount owner and do not exercise cross-user access.
+func mountTestOptions() *fs.Options {
+	options := fuse.MountOptions()
+	options.MountOptions.AllowOther = false
+	return options
+}
+
 // mountTestFilesystem creates and mounts a fresh empty filesystem for OS-level
 // integration tests. The mounted server is unmounted automatically at cleanup.
 func mountTestFilesystem(t *testing.T) string {
@@ -342,7 +347,7 @@ func mountTestFilesystem(t *testing.T) string {
 	if err := os.Mkdir(mountpoint, 0700); err != nil {
 		t.Fatalf("create mountpoint: %v", err)
 	}
-	server, err := adapter.Mount(mountpoint, nil)
+	server, err := adapter.Mount(mountpoint, mountTestOptions())
 	if err != nil {
 		if errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) {
 			t.Skipf("FUSE mounting is not permitted in this environment: %v", err)
