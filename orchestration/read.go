@@ -130,16 +130,11 @@ func (layer *Orchestration) getStripeData(ctx context.Context, file *runtimeFile
 		return append([]byte(nil), entry.data...), nil
 	}
 
-	stripe, err := layer.distribution.ReadStripe(distribution.ReadStripeRequest{
-		Context:   ctx,
-		ObjectID:  file.objectID,
-		StripeID:  stripeID,
-		ChunkSize: geometry.ChunkSize,
-	})
+	data, err := layer.readStripeValidated(ctx, file.objectID, file.header, geometry)
 	if err != nil {
 		return nil, err
 	}
-	entry = &stripeCacheEntry{data: append([]byte(nil), stripe.Data...), state: stripeCacheClean}
+	entry = &stripeCacheEntry{data: append([]byte(nil), data...), state: stripeCacheClean}
 	file.stripeCache[key] = entry
 	return append([]byte(nil), entry.data...), nil
 }
