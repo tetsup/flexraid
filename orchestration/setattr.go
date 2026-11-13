@@ -96,6 +96,9 @@ func (layer *Orchestration) setAttrLocked(request SetAttrRequest) (response SetA
 		}
 		next := file.header
 		if request.Size != nil && *request.Size != next.Size {
+			if err = layer.validateResizeCapacity(ctx, file.header, *request.Size); err != nil {
+				return response, err
+			}
 			next, err = updateHeader(next, *request.Size, now)
 			if err != nil {
 				return response, err
