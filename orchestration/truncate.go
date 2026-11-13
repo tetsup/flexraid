@@ -73,7 +73,7 @@ func (layer *Orchestration) truncateLocked(request TruncateRequest) (TruncateRes
 	} else {
 		next.Layout.ChunkSize = cfg.MinimumChunkSize
 	}
-	staged := &runtimeFile{objectID: file.objectID, header: file.header, openCount: file.openCount, stripeCache: file.stripeCache}
+	staged := &runtimeFile{objectID: file.objectID, header: file.header, openCount: file.openCount, stripeCache: file.stripeCache, zeroStripeRanges: file.zeroStripeRanges}
 	if err := layer.rebuildFileCacheFromStripes(ctx, staged, file.header, next, plan, ^uint64(0), nil); err != nil {
 		return TruncateResponse{}, err
 	}
