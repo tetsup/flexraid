@@ -236,6 +236,34 @@ func (layer *Orchestration) rebuildFileCacheFromStripes(
 		}
 		// Preserve only the old file range that overlaps this destination stripe.
 		destinationEnd := destinationOffset + placement.DataSize
+		writeEnd := writeOffset + uint64(len(writeData))
+		overlapStart := destinationOffset
+		if writeOffset > overlapStart {
+			overlapStart = writeOffset
+		}
+		overlapEnd := destinationEnd
+		if writeEnd < overlapEnd {
+			overlapEnd = writeEnd
+		}
+		hasWrite := overlapStart < overlapEnd
+
+		// If this regular stripe is wholly inside the old EOF, its geometry is
+		// unchanged, and no caller data touches it, retain its existing version.
+		// This keeps ordinary growth/shrink operations limited to changed stripes.
+		if placement.StripeID > 0 && destinationEnd <= oldHeader.Size && !hasWrite {
+			oldGeometry, geometryErr := geometryFor(oldHeader, storage.StripeID(placement.StripeID))
+			newLayout, layoutErr := distributionLayout(placement.Layout)
+			if geometryErr == nil && layoutErr == nil &&
+				oldGeometry.FileOffset == destinationOffset &&
+				oldGeometry.ChunkSize == placement.ChunkSize &&
+				oldGeometry.Layout == newLayout {
+				if existing := file.stripeCache[placement.StripeID]; existing != nil {
+					cache[placement.StripeID] = existing
+				}
+				destinationOffset += placement.DataSize
+				continue
+			}
+		}
 		preserveEnd := destinationEnd
 		if preserveEnd > oldHeader.Size {
 			preserveEnd = oldHeader.Size
@@ -250,16 +278,6 @@ func (layer *Orchestration) rebuildFileCacheFromStripes(
 		}
 
 		// Apply the caller's write only to the overlapping destination stripe.
-		writeEnd := writeOffset + uint64(len(writeData))
-		overlapStart := destinationOffset
-		if writeOffset > overlapStart {
-			overlapStart = writeOffset
-		}
-		overlapEnd := destinationEnd
-		if writeEnd < overlapEnd {
-			overlapEnd = writeEnd
-		}
-		hasWrite := overlapStart < overlapEnd
 		// Fully zero-filled regular stripes share one immutable zero buffer.
 		// This keeps payload memory bounded even when a write creates a huge gap.
 		if placement.StripeID > 0 && len(preserved) == 0 && !hasWrite {
