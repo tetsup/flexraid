@@ -273,7 +273,7 @@ func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file 
 		}
 		geometry, err := geometryFor(file.header, storage.StripeID(id))
 		if err != nil {
-			return err
+			return persisted, err
 		}
 		data := []byte(nil)
 		if entry != nil && entry.state == stripeCacheDirty {
@@ -297,7 +297,7 @@ func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file 
 			}
 			indexes, err = selectIOIndexes(capacity.Capacities, required)
 			if err != nil {
-				return fmt.Errorf("select I/O devices for stripe %d: %w", id, err)
+				return persisted, fmt.Errorf("select I/O devices for stripe %d: %w", id, err)
 			}
 		}
 		if _, err = layer.distribution.WriteStripe(distribution.WriteStripeRequest{
@@ -305,7 +305,7 @@ func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file 
 			ChunkSize: geometry.ChunkSize, Layout: geometry.Layout,
 			IOIndexes: indexes, Data: data, Sync: sync,
 		}); err != nil {
-			return fmt.Errorf("persist stripe %d: %w", id, err)
+			return persisted, fmt.Errorf("persist stripe %d: %w", id, err)
 		}
 		if entry != nil {
 			entry.state = stripeCacheClean
