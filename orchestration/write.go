@@ -92,6 +92,7 @@ func (layer *Orchestration) writeLocked(request WriteRequest) (response WriteRes
 
 	if newSize == oldHeader.Size {
 		staged.stripeCache = cloneStripeCache(file.stripeCache)
+		staged.zeroStripeRanges = cloneStripeRanges(file.zeroStripeRanges)
 	}
 	if newSize != oldHeader.Size {
 		nextHeader, headerErr := updateHeader(oldHeader, newSize, time.Now())
