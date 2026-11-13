@@ -28,7 +28,11 @@ func validateHeaderStripeLayouts(ctx context.Context, layer *distribution.Distri
 			return errInvalidHeader
 		}
 		remaining := h.Size - first.Capacity
-		count += 1 + (remaining-1)/regularCapacity
+		additional := 1 + (remaining-1)/regularCapacity
+		if additional >= uint64(math.MaxInt64) {
+			return fmt.Errorf("%w: stripe count exceeds supported range", errInvalidHeader)
+		}
+		count += additional
 	}
 	if count > uint64(math.MaxInt64) {
 		return fmt.Errorf("%w: stripe count exceeds supported range", errInvalidHeader)
