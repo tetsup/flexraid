@@ -129,6 +129,9 @@ func (layer *Orchestration) getStripeData(ctx context.Context, file *runtimeFile
 	if entry = file.stripeCache[key]; entry != nil {
 		return append([]byte(nil), entry.data...), nil
 	}
+	if containsStripeRange(file.zeroStripeRanges, key) {
+		return make([]byte, int(geometry.Capacity)), nil
+	}
 
 	data, err := layer.readStripeValidated(ctx, file.objectID, file.header, geometry)
 	if err != nil {
