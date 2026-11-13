@@ -169,7 +169,7 @@ func TestTruncateToOneStripeDropsTailCacheAndPreservesPrefix(t *testing.T) {
 	}
 	file := fixture.layer.objects[fixture.fileID].file
 	if len(file.stripeCache) != 1 || file.stripeCache[0] == nil {
-		t.Fatalf("truncate retained out-of-range stripe cache entries: %v", sortedStripeCacheIDs(file.stripeCache))
+		t.Fatalf("truncate retained out-of-range stripe cache entries: %d", len(file.stripeCache))
 	}
 	if file.header.Size != size {
 		t.Fatalf("truncated size = %d, want %d", file.header.Size, size)
