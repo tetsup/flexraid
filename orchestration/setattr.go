@@ -90,30 +90,16 @@ func (layer *Orchestration) setAttrLocked(request SetAttrRequest) (response SetA
 		// must not leak the requested attributes or partially rebuilt cache into
 		// the live Runtime file.
 		staged := &runtimeFile{
-			objectID:    file.objectID,
-			header:      file.header,
-			openCount:   file.openCount,
-			stripeCache: make(map[uint64]*stripeCacheEntry, len(file.stripeCache)),
-		}
-		for id, entry := range file.stripeCache {
-			if entry == nil {
-				continue
-			}
-			staged.stripeCache[id] = &stripeCacheEntry{
-				data:  append([]byte(nil), entry.data...),
-				state: entry.state,
-			}
+			objectID: file.objectID, header: file.header, openCount: file.openCount,
+			stripeCache: make(map[uint64]*stripeCacheEntry),
 		}
 		next := file.header
 		if request.Size != nil && *request.Size != next.Size {
-			if *request.Size > uint64(int(^uint(0)>>1)) {
-				return response, fmt.Errorf("setattr size exceeds addressable memory: %w", os.ErrInvalid)
-			}
 			next, err = updateHeader(next, *request.Size, now)
 			if err != nil {
 				return response, err
 			}
-			plan, planErr := planPlacement(*request.Size)
+			plan, planErr := planPlacementForResize(file.header, *request.Size)
 			if planErr != nil {
 				return response, planErr
 			}
@@ -129,6 +115,7 @@ func (layer *Orchestration) setAttrLocked(request SetAttrRequest) (response SetA
 				return response, err
 			}
 		} else {
+			staged.stripeCache = cloneStripeCache(file.stripeCache)
 			if err = applyAttributeChanges(&next, request, now); err != nil {
 				return response, err
 			}
