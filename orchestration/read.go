@@ -6,7 +6,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/tetsup/flexraid/distribution"
 	"github.com/tetsup/flexraid/pkg/shared"
 )
 
