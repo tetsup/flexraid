@@ -198,6 +198,10 @@ func (layer *Orchestration) loadStripeForWriteLocked(ctx context.Context, file *
 	if cached := file.stripeCache[uint64(g.StripeID)]; cached != nil {
 		return &stripeCacheEntry{data: append([]byte(nil), cached.data...), state: cached.state}, nil
 	}
+	if containsStripeRange(file.zeroStripeRanges, uint64(g.StripeID)) {
+		file.zeroStripeRanges = removeStripeFromRanges(file.zeroStripeRanges, uint64(g.StripeID))
+		return &stripeCacheEntry{data: make([]byte, int(g.Capacity)), state: stripeCacheDirty}, nil
+	}
 	data, err := layer.readStripeValidated(ctx, file.objectID, file.header, g)
 	if err != nil {
 		return nil, err
@@ -222,7 +226,6 @@ func (layer *Orchestration) rebuildFileCacheFromStripes(
 	}
 	cache := make(map[uint64]*stripeCacheEntry)
 	var zeroRanges []stripeRange
-	var zeroStripe []byte
 	var destinationOffset uint64
 	for _, placement := range plan {
 		if err := ctx.Err(); err != nil {
@@ -284,9 +287,6 @@ func (layer *Orchestration) rebuildFileCacheFromStripes(
 		// Fully zero-filled regular stripes share one immutable zero buffer.
 		// This keeps payload memory bounded even when a write creates a huge gap.
 		if placement.StripeID > 0 && len(preserved) == 0 && !hasWrite {
-			if zeroStripe == nil {
-				zeroStripe = make([]byte, int(placement.ChunkSize)*int(placement.Layout.DataChunks))
-			}
 			zeroRanges = appendStripeRange(zeroRanges, placement.StripeID)
 			destinationOffset += placement.DataSize
 			continue
