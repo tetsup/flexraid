@@ -63,10 +63,11 @@ func (layer *Orchestration) validateResizeCapacity(ctx context.Context, old head
 			remaining := newSize - firstCapacity
 			blocks := (remaining + uint64(p.DataChunks)*uint64(cfg.MinimumChunkSize) - 1) /
 				(uint64(p.DataChunks) * uint64(cfg.MinimumChunkSize))
-			regularChunk = uint32(blocks * uint64(cfg.MinimumChunkSize))
-			if regularChunk > p.MaxChunkSize {
-				regularChunk = p.MaxChunkSize
+			chunk := blocks * uint64(cfg.MinimumChunkSize)
+			if chunk > uint64(p.MaxChunkSize) {
+				chunk = uint64(p.MaxChunkSize)
 			}
+			regularChunk = uint32(chunk)
 		}
 	}
 
@@ -84,16 +85,19 @@ func (layer *Orchestration) validateResizeCapacity(ctx context.Context, old head
 		}
 	}
 	available := make([]uint64, len(capacity.Capacities))
+	totalChunks := make([]uint64, len(capacity.Capacities))
 	for i, item := range capacity.Capacities {
 		available[i] = item.AvailableBytes
 	}
 	for _, index := range firstIndexes.IOIndexes {
+		if index < 0 || index >= len(available) {
+			return fmt.Errorf("invalid I/O index %d for first stripe", index)
+		}
 		if available[index] < uint64(firstChunk) {
 			return syscall.ENOSPC
 		}
 		available[index] -= uint64(firstChunk)
 	}
-
 	if regularChunk == 0 || newSize <= firstCapacity {
 		return nil
 	}
@@ -103,30 +107,22 @@ func (layer *Orchestration) validateResizeCapacity(ctx context.Context, old head
 	}
 	newCount := 1 + (newSize-firstCapacity-1)/regularCapacity
 
-	// EFBIG means the requested logical size exceeds the filesystem's
-	// theoretical distributable capacity. ENOSPC is reserved for requests
-	// that fit within total capacity but cannot fit in the currently free space.
-	totalCapacity := make([]uint64, len(capacity.Capacities))
-	totalDevices := make([]shared.Capacity, len(capacity.Capacities))
+	// Compare against total (not free) capacity first. EFBIG means the
+	// requested logical size exceeds the filesystem's theoretical capacity;
+	// ENOSPC means it could fit in principle, but not in currently free space.
 	for i, item := range capacity.Capacities {
-		totalCapacity[i] = item.TotalBytes / uint64(regularChunk)
-		totalDevices[i] = item
-		totalDevices[i].AvailableBytes = item.TotalBytes
+		totalChunks[i] = item.TotalBytes / uint64(regularChunk)
 	}
-	totalFirstIndexes, err := selectIOIndexes(totalDevices, firstRequired)
-	if err != nil {
-		return fmt.Errorf("select devices for total-capacity check: %w", err)
-	}
-	for _, index := range totalFirstIndexes {
-		if totalCapacity[index] > 0 {
-			totalCapacity[index]--
+	for _, index := range firstIndexes.IOIndexes {
+		if totalChunks[index] > 0 {
+			totalChunks[index]--
 		}
 	}
 	devicesPerStripe := int(regularLayout.NumChunks)
 	if regularLayout.Type == distribution.LayoutParity {
 		devicesPerStripe++
 	}
-	if maxDistributableStripeCount(totalCapacity, devicesPerStripe) < newCount {
+	if maxDistributableStripeCount(totalChunks, devicesPerStripe) < newCount {
 		return syscall.EFBIG
 	}
 
