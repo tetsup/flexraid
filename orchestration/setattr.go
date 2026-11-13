@@ -117,6 +117,7 @@ func (layer *Orchestration) setAttrLocked(request SetAttrRequest) (response SetA
 			}
 		} else {
 			staged.stripeCache = cloneStripeCache(file.stripeCache)
+			staged.zeroStripeRanges = cloneStripeRanges(file.zeroStripeRanges)
 			if err = applyAttributeChanges(&next, request, now); err != nil {
 				return response, err
 			}
