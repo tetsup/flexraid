@@ -111,7 +111,7 @@ func (layer *Orchestration) validateResizeCapacity(ctx context.Context, old head
 		required = newCount - oldCount
 	}
 	if first.Layout.Type == distribution.LayoutParity && old.Size > firstCapacity &&
-		old.Size% (uint64(old.Layout.ChunkSize)*uint64(first.Layout.NumChunks)) != 0 {
+		old.Size%(uint64(old.Layout.ChunkSize)*uint64(first.Layout.NumChunks)) != 0 {
 		// The old partial tail must be rewritten to add its zero-filled suffix.
 		required++
 	}
