@@ -14,6 +14,9 @@ import (
 // plan or allocating per-stripe metadata. It counts distributable data stripes,
 // not the aggregate raw byte capacity.
 func (layer *Orchestration) validateResizeCapacity(ctx context.Context, old header, newSize uint64) error {
+	if newSize > cfg.MaxFileSize {
+		return syscall.EFBIG
+	}
 	if newSize <= old.Size {
 		return nil
 	}
@@ -84,7 +87,6 @@ func (layer *Orchestration) validateResizeCapacity(ctx context.Context, old head
 		}
 	}
 	available := make([]uint64, len(capacity.Capacities))
-	totalChunks := make([]uint64, len(capacity.Capacities))
 	for i, item := range capacity.Capacities {
 		available[i] = item.AvailableBytes
 	}
@@ -106,23 +108,9 @@ func (layer *Orchestration) validateResizeCapacity(ctx context.Context, old head
 	}
 	newCount := 1 + (newSize-firstCapacity-1)/regularCapacity
 
-	// Compare against total (not free) capacity first. EFBIG means the
-	// requested logical size exceeds the filesystem's theoretical capacity;
-	// ENOSPC means it could fit in principle, but not in currently free space.
-	for i, item := range capacity.Capacities {
-		totalChunks[i] = item.TotalBytes / uint64(regularChunk)
-	}
-	for _, index := range firstIndexes.IOIndexes {
-		if totalChunks[index] > 0 {
-			totalChunks[index]--
-		}
-	}
 	devicesPerStripe := int(regularLayout.NumChunks)
 	if regularLayout.Type == distribution.LayoutParity {
 		devicesPerStripe++
-	}
-	if maxDistributableStripeCount(totalChunks, devicesPerStripe) < newCount {
-		return syscall.EFBIG
 	}
 
 	var oldCount uint64
