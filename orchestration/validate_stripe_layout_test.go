@@ -25,6 +25,9 @@ func TestValidateHeaderStripeLayoutsIgnoresStripesBeyondEOF(t *testing.T) {
 	if err := validateHeaderStripeLayouts(context.Background(), fixture.layer.distribution, fixture.fileID, fixture.layer.objects[fixture.fileID].file.header); err != nil {
 		t.Fatalf("stale stripe beyond EOF rejected: %v", err)
 	}
+	if _, err := readInitialObjects(context.Background(), fixture.layer.distribution); err != nil {
+		t.Fatalf("initialization rejected stale stripe beyond EOF: %v", err)
+	}
 }
 
 func TestValidateHeaderStripeLayoutsRejectsLatestMismatchedChunkSize(t *testing.T) {
@@ -68,6 +71,17 @@ func TestValidateHeaderStripeLayoutsRejectsLatestMismatchedChunkSize(t *testing.
 	}
 	if err := validateHeaderStripeLayouts(context.Background(), fixture.layer.distribution, fixture.fileID, h); !errors.Is(err, distribution.ErrDataCorrupted) {
 		t.Fatalf("mismatched latest layout = %v, want ErrDataCorrupted", err)
+	}
+	fixture.layer.objects[fixture.fileID].file.header = h
+	geometry, err := geometryFor(h, storage.StripeID(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.layer.readStripeValidated(context.Background(), fixture.fileID, h, geometry); !errors.Is(err, distribution.ErrDataCorrupted) {
+		t.Fatalf("runtime stripe read mismatch = %v, want ErrDataCorrupted", err)
+	}
+	if _, err := readInitialObjects(context.Background(), fixture.layer.distribution); !errors.Is(err, distribution.ErrDataCorrupted) {
+		t.Fatalf("initialization with mismatched latest stripe = %v, want ErrDataCorrupted", err)
 	}
 }
 
