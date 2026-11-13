@@ -36,17 +36,23 @@ func validateHeaderStripeLayouts(ctx context.Context, layer *distribution.Distri
 	if count > uint64(math.MaxInt64) {
 		return fmt.Errorf("%w: stripe count exceeds supported range", errInvalidHeader)
 	}
-	for id := uint64(0); id < count; id++ {
+	stripes, err := layer.ListStripeInfos(distribution.ListStripeInfosRequest{Context: ctx, ObjectID: objectID})
+	if err != nil {
+		return err
+	}
+	var validated uint64
+	for _, info := range stripes.Stripes {
+		id := uint64(info.StripeID)
+		if id >= count {
+			// A physical stripe left behind by a previous larger layout is stale.
+			continue
+		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		geometry, err := geometryFor(h, storage.StripeID(id))
+		geometry, err := geometryFor(h, info.StripeID)
 		if err != nil {
 			return fmt.Errorf("invalid header geometry for stripe %d: %w", id, err)
-		}
-		info, err := layer.GetStripeInfo(distribution.GetStripeInfoRequest{ObjectID: objectID, StripeID: storage.StripeID(id)})
-		if err != nil {
-			return fmt.Errorf("required stripe %d is unavailable: %w", id, err)
 		}
 		if info.Layout != geometry.Layout {
 			return fmt.Errorf("%w: stripe %d layout %v does not match header layout %v",
@@ -59,6 +65,11 @@ func validateHeaderStripeLayouts(ctx context.Context, layer *distribution.Distri
 			return fmt.Errorf("%w: stripe %d chunk size %d does not match header chunk size %d",
 				distribution.ErrDataCorrupted, id, info.ChunkSize, geometry.ChunkSize)
 		}
+		validated++
+	}
+	if validated != count {
+		return fmt.Errorf("%w: header requires %d stripes but only %d recoverable stripes are present",
+			distribution.ErrDataCorrupted, count, validated)
 	}
 	return nil
 }
