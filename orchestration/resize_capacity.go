@@ -6,7 +6,6 @@ import (
 	"syscall"
 
 	"github.com/tetsup/flexraid/distribution"
-	"github.com/tetsup/flexraid/pkg/shared"
 	cfg "github.com/tetsup/flexraid/pkg/shared/config"
 	"github.com/tetsup/flexraid/storage"
 )
@@ -61,8 +60,8 @@ func (layer *Orchestration) validateResizeCapacity(ctx context.Context, old head
 		regularLayout = firstLayout
 		if newSize > firstCapacity {
 			remaining := newSize - firstCapacity
-			blocks := (remaining + uint64(p.DataChunks)*uint64(cfg.MinimumChunkSize) - 1) /
-				(uint64(p.DataChunks) * uint64(cfg.MinimumChunkSize))
+			blockCapacity := uint64(p.DataChunks) * uint64(cfg.MinimumChunkSize)
+			blocks := 1 + (remaining-1)/blockCapacity
 			chunk := blocks * uint64(cfg.MinimumChunkSize)
 			if chunk > uint64(p.MaxChunkSize) {
 				chunk = uint64(p.MaxChunkSize)
