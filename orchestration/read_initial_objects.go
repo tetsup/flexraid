@@ -31,6 +31,9 @@ func readInitialObjects(ctx context.Context, layer *distribution.Distribution) (
 		if err != nil {
 			return nil, err
 		}
+		if err := validateHeaderStripeLayouts(ctx, layer, objectID, objectHeader); err != nil {
+			return nil, fmt.Errorf("validate object %s stripe layouts: %w", objectID.String(), err)
+		}
 		if objectHeader.Kind == objectKindSymlink {
 			if objectHeader.Size > uint64(int(^uint(0)>>1))-cfg.HeaderReservedSize {
 				// Preserve the Header so initialization can exclude and protect the
