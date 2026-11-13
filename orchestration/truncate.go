@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/tetsup/flexraid/pkg/shared"
-	cfg "github.com/tetsup/flexraid/pkg/shared/config"
 )
 
 type TruncateRequest struct {
@@ -64,7 +63,7 @@ func (layer *Orchestration) truncateLocked(request TruncateRequest) (TruncateRes
 	if err != nil {
 		return TruncateResponse{}, err
 	}
-	plan, err := planPlacement(request.Size, cfg.DefaultPlacement())
+	plan, err := planPlacementForResize(file.header, request.Size)
 	if err != nil {
 		return TruncateResponse{}, err
 	}
@@ -73,9 +72,11 @@ func (layer *Orchestration) truncateLocked(request TruncateRequest) (TruncateRes
 	} else {
 		next.Layout.ChunkSize = cfg.MinimumChunkSize
 	}
-	if err := layer.rebuildFileCacheFromStripes(ctx, file, file.header, next, plan, ^uint64(0), nil); err != nil {
+	staged := &runtimeFile{objectID: file.objectID, header: file.header, openCount: file.openCount, stripeCache: make(map[uint64]*stripeCacheEntry)}
+	if err := layer.rebuildFileCacheFromStripes(ctx, staged, file.header, next, plan, ^uint64(0), nil); err != nil {
 		return TruncateResponse{}, err
 	}
 	file.header = next
+	file.stripeCache = staged.stripeCache
 	return TruncateResponse{}, nil
 }
