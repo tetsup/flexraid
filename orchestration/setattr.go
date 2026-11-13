@@ -130,7 +130,7 @@ func (layer *Orchestration) setAttrLocked(request SetAttrRequest) (response SetA
 
 		staged.header = next
 		if handle == nil {
-			if err = layer.persistDirtyStripesLocked(ctx, staged); err != nil {
+			if _, err = layer.persistDirtyStripesLocked(ctx, staged); err != nil {
 				return response, err
 			}
 		}
