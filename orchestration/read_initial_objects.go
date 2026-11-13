@@ -74,11 +74,15 @@ func readInitialObjectData(ctx context.Context, layer *distribution.Distribution
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+		stripeChunkSize := chunkSize
+		if stripeID == 0 {
+			stripeChunkSize = cfg.MinimumChunkSize
+		}
 		read, err := layer.ReadStripe(distribution.ReadStripeRequest{
 			Context:   ctx,
 			ObjectID:  objectID,
 			StripeID:  storage.StripeID(stripeID),
-			ChunkSize: chunkSize,
+			ChunkSize: stripeChunkSize,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("read object %s at stripe %d: %w", objectID.String(), stripeID, err)
