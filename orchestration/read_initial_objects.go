@@ -31,7 +31,7 @@ func readInitialObjects(ctx context.Context, layer *distribution.Distribution) (
 		if err != nil {
 			return nil, err
 		}
-		if !objectHeader.Deleted {
+		if !objectHeader.Deleted && (objectHeader.Kind == objectKindFile || objectHeader.Kind == objectKindSymlink) {
 			if err := validateHeaderStripeLayouts(ctx, layer, objectID, objectHeader); err != nil {
 				if ctx.Err() != nil {
 					return nil, ctx.Err()
