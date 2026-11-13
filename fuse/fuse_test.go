@@ -191,6 +191,9 @@ func TestMountOptionsDelegatePermissionChecksToKernel(t *testing.T) {
 	if !options.NullPermissions {
 		t.Fatal("NullPermissions must remain enabled to preserve mode 0000")
 	}
+	if !options.MountOptions.AllowOther {
+		t.Fatal("AllowOther must be enabled so non-mount-owner users can access the filesystem")
+	}
 	for _, option := range options.MountOptions.Options {
 		if option == "default_permissions" {
 			return
