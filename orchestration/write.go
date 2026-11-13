@@ -107,6 +107,9 @@ func (layer *Orchestration) writeLocked(request WriteRequest) (response WriteRes
 		} else {
 			nextHeader.Layout.ChunkSize = cfg.MinimumChunkSize
 		}
+		// The rebuild reads old cached stripes but never mutates them. Share the
+		// old map until the complete destination cache is ready.
+		staged.stripeCache = file.stripeCache
 		if err = layer.rebuildFileCacheFromStripes(ctx, staged, oldHeader, nextHeader, plan, writeOffset, request.Data); err != nil {
 			return response, err
 		}
