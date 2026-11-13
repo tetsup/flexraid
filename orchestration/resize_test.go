@@ -186,6 +186,18 @@ func TestTruncateToOneStripeDropsTailCacheAndPreservesPrefix(t *testing.T) {
 	}
 }
 
+func TestMaximumFileSizeIsFixedAt16TiB(t *testing.T) {
+	fixture := newWriteFixture(t)
+	old := fixture.layer.objects[fixture.fileID].file.header
+
+	if err := fixture.layer.validateResizeCapacity(context.Background(), old, cfg.MaxFileSize+1); err != syscall.EFBIG {
+		t.Fatalf("size above MaxFileSize = %v, want EFBIG", err)
+	}
+	if err := fixture.layer.validateResizeCapacity(context.Background(), old, cfg.MaxFileSize); err == syscall.EFBIG {
+		t.Fatalf("size equal to MaxFileSize returned EFBIG")
+	}
+}
+
 func TestHugeResizeIsRejectedBeforePlacementExpansion(t *testing.T) {
 	const hugeSize = uint64(1) << 50
 
