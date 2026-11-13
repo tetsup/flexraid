@@ -79,6 +79,11 @@ func TestWriteGrowthPreservesExistingMultiStripeLayoutAndData(t *testing.T) {
 		file.header.Layout.ParityChunks != 1 {
 		t.Fatalf("multi-stripe layout changed during growth: %+v", file.header.Layout)
 	}
+	for _, unchanged := range []uint64{1, 2} {
+		if _, cached := file.stripeCache[unchanged]; cached {
+			t.Fatalf("unchanged full stripe %d was needlessly rebuilt", unchanged)
+		}
+	}
 	reader := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDONLY))
 	got, err := fixture.layer.Read(ReadRequest{
 		Handle: reader, ObjectID: fixture.fileID, Offset: 0, Size: uint32(len(payload)),
