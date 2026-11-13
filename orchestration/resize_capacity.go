@@ -58,12 +58,14 @@ func (layer *Orchestration) validateResizeCapacity(ctx context.Context, old head
 		firstLayout = distribution.Layout{Type: distribution.LayoutParity, NumChunks: uint8(p.DataChunks)}
 		firstChunk = cfg.MinimumChunkSize
 		regularLayout = firstLayout
-		remaining := newSize - firstCapacity
-		blocks := (remaining + uint64(p.DataChunks)*uint64(cfg.MinimumChunkSize) - 1) /
-			(uint64(p.DataChunks) * uint64(cfg.MinimumChunkSize))
-		regularChunk = uint32(blocks * uint64(cfg.MinimumChunkSize))
-		if regularChunk > p.MaxChunkSize {
-			regularChunk = p.MaxChunkSize
+		if newSize > firstCapacity {
+			remaining := newSize - firstCapacity
+			blocks := (remaining + uint64(p.DataChunks)*uint64(cfg.MinimumChunkSize) - 1) /
+				(uint64(p.DataChunks) * uint64(cfg.MinimumChunkSize))
+			regularChunk = uint32(blocks * uint64(cfg.MinimumChunkSize))
+			if regularChunk > p.MaxChunkSize {
+				regularChunk = p.MaxChunkSize
+			}
 		}
 	}
 
