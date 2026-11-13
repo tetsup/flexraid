@@ -49,10 +49,6 @@ func (layer *Orchestration) truncateLocked(request TruncateRequest) (TruncateRes
 	if (object.header.Kind != objectKindFile && object.header.Kind != objectKindHardLink) || object.file == nil || object.file != handle.runtimeFile {
 		return TruncateResponse{}, fmt.Errorf("handle does not refer to writable file %s: %w", request.ObjectID.String(), os.ErrInvalid)
 	}
-	if request.Size > uint64(int(^uint(0)>>1)) {
-		return TruncateResponse{}, fmt.Errorf("truncate size exceeds addressable memory: %w", os.ErrInvalid)
-	}
-
 	file := handle.runtimeFile
 	if request.Size == file.header.Size {
 		return TruncateResponse{}, nil
@@ -62,6 +58,9 @@ func (layer *Orchestration) truncateLocked(request TruncateRequest) (TruncateRes
 	}
 	if err := layer.validateResizeCapacity(ctx, file.header, request.Size); err != nil {
 		return TruncateResponse{}, err
+	}
+	if request.Size > uint64(int(^uint(0)>>1)) {
+		return TruncateResponse{}, fmt.Errorf("truncate size exceeds addressable memory: %w", os.ErrInvalid)
 	}
 	next, err := updateHeader(file.header, request.Size, time.Now())
 	if err != nil {
