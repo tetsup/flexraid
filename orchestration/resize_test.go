@@ -118,26 +118,20 @@ func TestSparseWriteSharesSingleZeroStripeBuffer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The old partial tail stripe needs its own buffer. Entirely zero-filled
-	// intermediate stripes must share one immutable zero buffer instead of
-	// allocating a full stripe for every gap position.
-	zeroStripeIDs := []uint64{4, 5, 6}
-	var zeroBuffer []byte
-	for _, id := range zeroStripeIDs {
-		entry := fixture.layer.objects[fixture.fileID].file.stripeCache[id]
-		if entry == nil || len(entry.data) != int(regularCapacity) {
-			t.Fatalf("zero stripe %d cache entry = %#v", id, entry)
-		}
-		if zeroBuffer == nil {
-			zeroBuffer = entry.data
-			continue
-		}
-		if len(entry.data) == 0 || &entry.data[0] != &zeroBuffer[0] {
-			t.Fatalf("zero stripe %d does not share the reusable zero buffer", id)
+	// Fully zero-filled intermediate stripes are represented by one compact
+	// range descriptor; no per-stripe byte buffers or cache entries are retained.
+	file := fixture.layer.objects[fixture.fileID].file
+	if len(file.zeroStripeRanges) != 1 ||
+		file.zeroStripeRanges[0] != (stripeRange{start: 4, end: 6}) {
+		t.Fatalf("zero stripe ranges = %+v, want [4,6]", file.zeroStripeRanges)
+	}
+	for _, id := range []uint64{4, 5, 6} {
+		if _, cached := file.stripeCache[id]; cached {
+			t.Fatalf("zero stripe %d unexpectedly has a materialized cache entry", id)
 		}
 	}
-	if len(fixture.layer.objects[fixture.fileID].file.stripeCache) > 8 {
-		t.Fatalf("sparse write cached too many stripes: %d", len(fixture.layer.objects[fixture.fileID].file.stripeCache))
+	if len(file.stripeCache) > 5 {
+		t.Fatalf("sparse write materialized too many stripes: %d", len(file.stripeCache))
 	}
 	if _, err := fixture.layer.Flush(FlushRequest{Handle: writer}); err != nil {
 		t.Fatal(err)
