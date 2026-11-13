@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	fuseMemoryTraceEnabled = os.Getenv("FLEXRAID_MEMORY_TRACE") == "1"
+	fuseMemoryTraceEnabled  = os.Getenv("FLEXRAID_MEMORY_TRACE") == "1"
 	fuseMemoryTraceSequence atomic.Uint64
 )
 
