@@ -60,6 +60,9 @@ func (layer *Orchestration) truncateLocked(request TruncateRequest) (TruncateRes
 	if err := ctx.Err(); err != nil {
 		return TruncateResponse{}, err
 	}
+	if err := layer.validateResizeCapacity(ctx, file.header, request.Size); err != nil {
+		return TruncateResponse{}, err
+	}
 	next, err := updateHeader(file.header, request.Size, time.Now())
 	if err != nil {
 		return TruncateResponse{}, err
