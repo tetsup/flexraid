@@ -29,8 +29,8 @@ func (d *Distribution) GetStripeInfo(request GetStripeInfoRequest) (GetStripeInf
 		return GetStripeInfoResponse{}, fmt.Errorf("stripe %d has no selected version: %w", request.StripeID, ErrStripeNotFound)
 	}
 	return GetStripeInfoResponse{
-		Version: info.version,
-		Layout: info.method.layout(),
+		Version:   info.version,
+		Layout:    info.method.layout(),
 		ChunkSize: info.chunkSize,
 	}, nil
 }
