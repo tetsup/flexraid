@@ -6,8 +6,10 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"syscall"
 
 	"github.com/tetsup/flexraid/pkg/shared"
+	"github.com/tetsup/flexraid/pkg/shared/config"
 )
 
 type LookupRequest struct {
@@ -36,6 +38,9 @@ func (layer *Orchestration) lookupLocked(request LookupRequest) (LookupResponse,
 	}
 	if err := ctx.Err(); err != nil {
 		return LookupResponse{}, err
+	}
+	if uint64(len(request.Name)) > uint64(config.MaxNameLength) {
+		return LookupResponse{}, syscall.ENAMETOOLONG
 	}
 	if request.Name == "" || request.Name == "." || request.Name == ".." || strings.Contains(request.Name, "/") {
 		return LookupResponse{}, fmt.Errorf("invalid child name %q", request.Name)
