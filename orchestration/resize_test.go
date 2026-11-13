@@ -192,8 +192,8 @@ func TestHugeResizeIsRejectedBeforePlacementExpansion(t *testing.T) {
 	t.Run("SetAttr", func(t *testing.T) {
 		fixture := newWriteFixture(t)
 		before := fixture.layer.objects[fixture.fileID].file.header
-		if _, err := fixture.layer.SetAttr(SetAttrRequest{ObjectID: fixture.fileID, Size: ptrUint64(hugeSize)}); err != syscall.ENOSPC {
-			t.Fatalf("SetAttr huge size = %v, want ENOSPC", err)
+		if _, err := fixture.layer.SetAttr(SetAttrRequest{ObjectID: fixture.fileID, Size: ptrUint64(hugeSize)}); err != syscall.EFBIG {
+			t.Fatalf("SetAttr huge size = %v, want EFBIG", err)
 		}
 		if got := fixture.layer.objects[fixture.fileID].file.header; got != before {
 			t.Fatal("failed SetAttr changed the live Header")
@@ -204,8 +204,8 @@ func TestHugeResizeIsRejectedBeforePlacementExpansion(t *testing.T) {
 		fixture := newWriteFixture(t)
 		handle := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDWR))
 		before := fixture.layer.objects[fixture.fileID].file.header
-		if _, err := fixture.layer.Truncate(TruncateRequest{Handle: handle, ObjectID: fixture.fileID, Size: hugeSize}); err != syscall.ENOSPC {
-			t.Fatalf("Truncate huge size = %v, want ENOSPC", err)
+		if _, err := fixture.layer.Truncate(TruncateRequest{Handle: handle, ObjectID: fixture.fileID, Size: hugeSize}); err != syscall.EFBIG {
+			t.Fatalf("Truncate huge size = %v, want EFBIG", err)
 		}
 		if got := fixture.layer.objects[fixture.fileID].file.header; got != before {
 			t.Fatal("failed Truncate changed the live Header")
@@ -216,8 +216,8 @@ func TestHugeResizeIsRejectedBeforePlacementExpansion(t *testing.T) {
 		fixture := newWriteFixture(t)
 		handle := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDWR))
 		before := fixture.layer.objects[fixture.fileID].file.header
-		if _, err := fixture.layer.Write(WriteRequest{Handle: handle, ObjectID: fixture.fileID, Offset: hugeSize, Data: []byte("x")}); err != syscall.ENOSPC {
-			t.Fatalf("Write huge offset = %v, want ENOSPC", err)
+		if _, err := fixture.layer.Write(WriteRequest{Handle: handle, ObjectID: fixture.fileID, Offset: hugeSize, Data: []byte("x")}); err != syscall.EFBIG {
+			t.Fatalf("Write huge offset = %v, want EFBIG", err)
 		}
 		if got := fixture.layer.objects[fixture.fileID].file.header; got != before {
 			t.Fatal("failed Write changed the live Header")
