@@ -185,3 +185,44 @@ func TestTruncateToOneStripeDropsTailCacheAndPreservesPrefix(t *testing.T) {
 		t.Fatal("truncate changed retained prefix")
 	}
 }
+
+func TestHugeResizeIsRejectedBeforePlacementExpansion(t *testing.T) {
+	const hugeSize = uint64(1) << 50
+
+	t.Run("SetAttr", func(t *testing.T) {
+		fixture := newWriteFixture(t)
+		before := fixture.layer.objects[fixture.fileID].file.header
+		if _, err := fixture.layer.SetAttr(SetAttrRequest{ObjectID: fixture.fileID, Size: ptrUint64(hugeSize)}); err != syscall.ENOSPC {
+			t.Fatalf("SetAttr huge size = %v, want ENOSPC", err)
+		}
+		if got := fixture.layer.objects[fixture.fileID].file.header; got != before {
+			t.Fatal("failed SetAttr changed the live Header")
+		}
+	})
+
+	t.Run("Truncate", func(t *testing.T) {
+		fixture := newWriteFixture(t)
+		handle := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDWR))
+		before := fixture.layer.objects[fixture.fileID].file.header
+		if _, err := fixture.layer.Truncate(TruncateRequest{Handle: handle, ObjectID: fixture.fileID, Size: hugeSize}); err != syscall.ENOSPC {
+			t.Fatalf("Truncate huge size = %v, want ENOSPC", err)
+		}
+		if got := fixture.layer.objects[fixture.fileID].file.header; got != before {
+			t.Fatal("failed Truncate changed the live Header")
+		}
+	})
+
+	t.Run("Write", func(t *testing.T) {
+		fixture := newWriteFixture(t)
+		handle := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDWR))
+		before := fixture.layer.objects[fixture.fileID].file.header
+		if _, err := fixture.layer.Write(WriteRequest{Handle: handle, ObjectID: fixture.fileID, Offset: hugeSize, Data: []byte("x")}); err != syscall.ENOSPC {
+			t.Fatalf("Write huge offset = %v, want ENOSPC", err)
+		}
+		if got := fixture.layer.objects[fixture.fileID].file.header; got != before {
+			t.Fatal("failed Write changed the live Header")
+		}
+	})
+}
+
+func ptrUint64(value uint64) *uint64 { return &value }
