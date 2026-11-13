@@ -94,6 +94,18 @@ func TestValidateHeaderStripeLayoutsRejectsLatestMismatchedChunkSize(t *testing.
 	if _, err := readInitialObjects(context.Background(), fixture.layer.distribution); !errors.Is(err, distribution.ErrDataCorrupted) {
 		t.Fatalf("initialization with mismatched latest stripe = %v, want ErrDataCorrupted", err)
 	}
+	// A newer, internally recoverable stripe using a different redundancy
+	// layout must also be rejected, rather than selecting the older parity version.
+	if _, err := fixture.layer.distribution.WriteStripe(distribution.WriteStripeRequest{
+		Context: context.Background(), ObjectID: fixture.fileID, StripeID: 1,
+		ChunkSize: 4096, Layout: distribution.Layout{Type: distribution.LayoutMirror, NumChunks: 2},
+		IOIndexes: []int{0, 1}, Data: []byte("new mirror"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateHeaderStripeLayouts(context.Background(), fixture.layer.distribution, fixture.fileID, h); !errors.Is(err, distribution.ErrDataCorrupted) {
+		t.Fatalf("mismatched latest layout = %v, want ErrDataCorrupted", err)
+	}
 }
 
 func TestGetStripeInfoReturnsSelectedVersionLayout(t *testing.T) {
