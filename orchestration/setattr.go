@@ -136,6 +136,7 @@ func (layer *Orchestration) setAttrLocked(request SetAttrRequest) (response SetA
 		}
 		file.header = staged.header
 		file.stripeCache = staged.stripeCache
+		file.zeroStripeRanges = staged.zeroStripeRanges
 		if layer.headers == nil {
 			layer.headers = make(map[shared.ObjectID]header)
 		}
