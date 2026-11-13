@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/hanwen/go-fuse/v2/fs"
 	gofuse "github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/tetsup/flexraid/distribution"
 	flexfuse "github.com/tetsup/flexraid/fuse"
@@ -78,12 +77,9 @@ func mountFilesystem(config mountConfig) (*gofuse.Server, error) {
 	if err := os.MkdirAll(mountpoint, 0755); err != nil {
 		return nil, fmt.Errorf("create mountpoint: %w", err)
 	}
-	server, err := adapter.Mount(mountpoint, &fs.Options{
-		NullPermissions: true,
-		MountOptions: gofuse.MountOptions{
-			FsName: "flexraid-fuse",
-		},
-	})
+	options := flexfuse.MountOptions()
+	options.MountOptions.FsName = "flexraid-fuse"
+	server, err := adapter.Mount(mountpoint, options)
 	if err != nil {
 		return nil, fmt.Errorf("mount at %s: %w", mountpoint, err)
 	}
