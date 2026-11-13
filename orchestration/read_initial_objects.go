@@ -31,8 +31,19 @@ func readInitialObjects(ctx context.Context, layer *distribution.Distribution) (
 		if err != nil {
 			return nil, err
 		}
-		if err := validateHeaderStripeLayouts(ctx, layer, objectID, objectHeader); err != nil {
-			return nil, fmt.Errorf("validate object %s stripe layouts: %w", objectID.String(), err)
+		if !objectHeader.Deleted {
+			if err := validateHeaderStripeLayouts(ctx, layer, objectID, objectHeader); err != nil {
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				if objectHeader.Kind != objectKindSymlink {
+					return nil, fmt.Errorf("validate object %s stripe layouts: %w", objectID.String(), err)
+				}
+				// A broken symlink target is a localized namespace problem.
+				// Keep its Header so initialize can protect and hide the link.
+				initialObjects = append(initialObjects, initialObject{objectID: objectID, data: data})
+				continue
+			}
 		}
 		if objectHeader.Kind == objectKindSymlink {
 			if objectHeader.Size > uint64(int(^uint(0)>>1))-cfg.HeaderReservedSize {
