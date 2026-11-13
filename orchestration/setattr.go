@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"syscall"
 	"time"
 
@@ -164,7 +165,7 @@ func (layer *Orchestration) setAttrLocked(request SetAttrRequest) (response SetA
 	if err = layer.updateHeaderStripeLocked(ctx, temporary, next); err != nil {
 		return response, err
 	}
-	if err = layer.persistDirtyStripesLocked(ctx, temporary); err != nil {
+	if _, err = layer.persistDirtyStripesLocked(ctx, temporary); err != nil {
 		return response, err
 	}
 	object.header = next
