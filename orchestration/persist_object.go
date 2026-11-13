@@ -66,7 +66,7 @@ func (layer *Orchestration) persistNewObject(ctx context.Context, objectHeader h
 	if contentOffset != objectHeader.Size {
 		return header{}, fmt.Errorf("placement plan covers %d bytes, want %d", contentOffset, objectHeader.Size)
 	}
-	if err := layer.persistDirtyStripesLocked(ctx, file); err != nil {
+	if _, err := layer.persistDirtyStripesLocked(ctx, file); err != nil {
 		return header{}, err
 	}
 	return objectHeader, nil
