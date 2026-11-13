@@ -237,86 +237,94 @@ func (layer *Orchestration) updateHeaderStripeLocked(ctx context.Context, file *
 // persistDirtyStripesLocked persists the dirty cache entries in StripeID order.
 func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file *runtimeFile, syncToDisk ...bool) (uint32, error) {
 	sync := len(syncToDisk) > 0 && syncToDisk[0]
-	var maxID uint64
-	hasWork := false
+	work := append([]stripeRange(nil), file.zeroStripeRanges...)
 	for id, entry := range file.stripeCache {
 		if entry != nil && entry.state == stripeCacheDirty {
-			if !hasWork || id > maxID {
-				maxID = id
-			}
-			hasWork = true
+			work = append(work, stripeRange{start: id, end: id})
 		}
 	}
-	for _, item := range file.zeroStripeRanges {
-		if !hasWork || item.end > maxID {
-			maxID = item.end
-		}
-		hasWork = true
-	}
-	if !hasWork {
+	if len(work) == 0 {
 		return 0, nil
 	}
-
-	// StripeID order is intentional: Stripe 0 contains the authoritative Header.
-	var zeroData []byte
-	var persisted uint32
-	for id := uint64(0); ; id++ {
-		if err := ctx.Err(); err != nil {
-			return persisted, err
+	sort.Slice(work, func(i, j int) bool { return work[i].start < work[j].start })
+	merged := make([]stripeRange, 0, len(work))
+	for _, item := range work {
+		if len(merged) == 0 {
+			merged = append(merged, item)
+			continue
 		}
-		entry := file.stripeCache[id]
-		isZero := containsStripeRange(file.zeroStripeRanges, id)
-		if (entry == nil || entry.state != stripeCacheDirty) && !isZero {
-			if id == maxID {
-				break
+		last := &merged[len(merged)-1]
+		if item.start <= last.end || (last.end != ^uint64(0) && item.start == last.end+1) {
+			if item.end > last.end {
+				last.end = item.end
 			}
 			continue
 		}
-		geometry, err := geometryFor(file.header, storage.StripeID(id))
-		if err != nil {
-			return persisted, err
-		}
-		data := []byte(nil)
-		if entry != nil && entry.state == stripeCacheDirty {
-			data = entry.data
-		} else {
-			if zeroData == nil || uint64(len(zeroData)) != geometry.Capacity {
-				zeroData = make([]byte, int(geometry.Capacity))
+		merged = append(merged, item)
+	}
+
+	// Persist only dirty stripes and zero ranges, in StripeID order. Stripe 0
+	// therefore remains the first commit and the zero payload stays O(1) in RAM.
+	var zeroData []byte
+	var persisted uint32
+	for _, item := range merged {
+		for id := item.start; ; id++ {
+			if err := ctx.Err(); err != nil {
+				return persisted, err
 			}
-			data = zeroData
-		}
-		required := int(geometry.Layout.NumChunks)
-		if geometry.Layout.Type == distribution.LayoutParity {
-			required++
-		}
-		placement, placementErr := layer.distribution.StripeIOIndexes(distribution.StripeIOIndexesRequest{ObjectID: file.objectID, StripeID: storage.StripeID(id)})
-		indexes := placement.IOIndexes
-		if placementErr != nil || len(indexes) != required {
-			capacity, capacityErr := layer.distribution.GetCapacity(distribution.CapacityRequest{})
-			if capacityErr != nil {
-				return persisted, fmt.Errorf("read I/O capacities for stripe %d: %w", id, capacityErr)
-			}
-			indexes, err = selectIOIndexes(capacity.Capacities, required)
+			entry := file.stripeCache[id]
+			isZero := containsStripeRange(file.zeroStripeRanges, id)
+			geometry, err := geometryFor(file.header, storage.StripeID(id))
 			if err != nil {
-				return persisted, fmt.Errorf("select I/O devices for stripe %d: %w", id, err)
+				return persisted, err
 			}
-		}
-		if _, err = layer.distribution.WriteStripe(distribution.WriteStripeRequest{
-			Context: ctx, ObjectID: file.objectID, StripeID: storage.StripeID(id),
-			ChunkSize: geometry.ChunkSize, Layout: geometry.Layout,
-			IOIndexes: indexes, Data: data, Sync: sync,
-		}); err != nil {
-			return persisted, fmt.Errorf("persist stripe %d: %w", id, err)
-		}
-		if entry != nil {
-			entry.state = stripeCacheClean
-		}
-		if isZero {
-			file.zeroStripeRanges = removeStripeFromRanges(file.zeroStripeRanges, id)
-		}
-		persisted++
-		if id == maxID {
-			break
+			data := []byte(nil)
+			if entry != nil && entry.state == stripeCacheDirty {
+				data = entry.data
+			} else if isZero {
+				if zeroData == nil || uint64(len(zeroData)) != geometry.Capacity {
+					zeroData = make([]byte, int(geometry.Capacity))
+				}
+				data = zeroData
+			} else {
+				if id == item.end {
+					break
+				}
+				continue
+			}
+			required := int(geometry.Layout.NumChunks)
+			if geometry.Layout.Type == distribution.LayoutParity {
+				required++
+			}
+			placement, placementErr := layer.distribution.StripeIOIndexes(distribution.StripeIOIndexesRequest{ObjectID: file.objectID, StripeID: storage.StripeID(id)})
+			indexes := placement.IOIndexes
+			if placementErr != nil || len(indexes) != required {
+				capacity, capacityErr := layer.distribution.GetCapacity(distribution.CapacityRequest{})
+				if capacityErr != nil {
+					return persisted, fmt.Errorf("read I/O capacities for stripe %d: %w", id, capacityErr)
+				}
+				indexes, err = selectIOIndexes(capacity.Capacities, required)
+				if err != nil {
+					return persisted, fmt.Errorf("select I/O devices for stripe %d: %w", id, err)
+				}
+			}
+			if _, err = layer.distribution.WriteStripe(distribution.WriteStripeRequest{
+				Context: ctx, ObjectID: file.objectID, StripeID: storage.StripeID(id),
+				ChunkSize: geometry.ChunkSize, Layout: geometry.Layout,
+				IOIndexes: indexes, Data: data, Sync: sync,
+			}); err != nil {
+				return persisted, fmt.Errorf("persist stripe %d: %w", id, err)
+			}
+			if entry != nil {
+				entry.state = stripeCacheClean
+			}
+			if isZero {
+				file.zeroStripeRanges = removeStripeFromRanges(file.zeroStripeRanges, id)
+			}
+			persisted++
+			if id == item.end {
+				break
+			}
 		}
 	}
 	return persisted, nil
