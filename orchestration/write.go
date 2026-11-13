@@ -70,22 +70,11 @@ func (layer *Orchestration) writeLocked(request WriteRequest) (response WriteRes
 		return response, err
 	}
 
-	// Build changes in a private cache. Synchronous modes persist that snapshot
-	// before publishing it; a failed write leaves the in-memory file unchanged.
+	// Build changes in a private cache. Resize rebuilds only the destination
+	// stripes and must not clone the old cache first.
 	staged := &runtimeFile{
-		objectID:    file.objectID,
-		header:      file.header,
-		openCount:   file.openCount,
-		stripeCache: make(map[uint64]*stripeCacheEntry, len(file.stripeCache)),
-	}
-	for id, entry := range file.stripeCache {
-		if entry == nil {
-			continue
-		}
-		staged.stripeCache[id] = &stripeCacheEntry{
-			data:  append([]byte(nil), entry.data...),
-			state: entry.state,
-		}
+		objectID: file.objectID, header: file.header, openCount: file.openCount,
+		stripeCache: make(map[uint64]*stripeCacheEntry),
 	}
 	oldHeader := file.header
 	writeOffset := request.Offset
@@ -101,12 +90,15 @@ func (layer *Orchestration) writeLocked(request WriteRequest) (response WriteRes
 		newSize = writeEnd
 	}
 
+	if newSize == oldHeader.Size {
+		staged.stripeCache = cloneStripeCache(file.stripeCache)
+	}
 	if newSize != oldHeader.Size {
 		nextHeader, headerErr := updateHeader(oldHeader, newSize, time.Now())
 		if headerErr != nil {
 			return response, headerErr
 		}
-		plan, planErr := planPlacement(newSize)
+		plan, planErr := planPlacementForResize(oldHeader, newSize)
 		if planErr != nil {
 			return response, planErr
 		}
