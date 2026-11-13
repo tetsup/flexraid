@@ -218,6 +218,7 @@ func (layer *Orchestration) rebuildFileCacheFromStripes(
 		return err
 	}
 	cache := make(map[uint64]*stripeCacheEntry, len(plan))
+	var zeroStripe []byte
 	var destinationOffset uint64
 	for _, placement := range plan {
 		if err := ctx.Err(); err != nil {
@@ -230,23 +231,19 @@ func (layer *Orchestration) rebuildFileCacheFromStripes(
 		if placement.DataSize > uint64(int(^uint(0)>>1))-prefix {
 			return fmt.Errorf("stripe %d exceeds addressable memory: %w", placement.StripeID, os.ErrInvalid)
 		}
-		stripeData := make([]byte, int(prefix+placement.DataSize))
-		if placement.StripeID == 0 {
-			copy(stripeData, headerBytes)
-		}
-
 		// Preserve only the old file range that overlaps this destination stripe.
 		destinationEnd := destinationOffset + placement.DataSize
 		preserveEnd := destinationEnd
 		if preserveEnd > oldHeader.Size {
 			preserveEnd = oldHeader.Size
 		}
+		var preserved []byte
 		if destinationOffset < preserveEnd {
-			preserved, readErr := layer.readLogicalRangeLocked(ctx, file, oldHeader, destinationOffset, preserveEnd-destinationOffset)
+			var readErr error
+			preserved, readErr = layer.readLogicalRangeLocked(ctx, file, oldHeader, destinationOffset, preserveEnd-destinationOffset)
 			if readErr != nil {
 				return fmt.Errorf("read source range for stripe %d: %w", placement.StripeID, readErr)
 			}
-			copy(stripeData[int(prefix):], preserved)
 		}
 
 		// Apply the caller's write only to the overlapping destination stripe.
@@ -259,7 +256,25 @@ func (layer *Orchestration) rebuildFileCacheFromStripes(
 		if writeEnd < overlapEnd {
 			overlapEnd = writeEnd
 		}
-		if overlapStart < overlapEnd {
+		hasWrite := overlapStart < overlapEnd
+		// Fully zero-filled regular stripes share one immutable zero buffer.
+		// This keeps payload memory bounded even when a write creates a huge gap.
+		if placement.StripeID > 0 && len(preserved) == 0 && !hasWrite {
+			if zeroStripe == nil {
+				zeroStripe = make([]byte, int(placement.ChunkSize)*int(placement.Layout.DataChunks))
+			}
+			cache[placement.StripeID] = &stripeCacheEntry{data: zeroStripe, state: stripeCacheDirty}
+			destinationOffset += placement.DataSize
+			continue
+		}
+		stripeData := make([]byte, int(prefix+placement.DataSize))
+		if placement.StripeID == 0 {
+			copy(stripeData, headerBytes)
+		}
+		if len(preserved) > 0 {
+			copy(stripeData[int(prefix):], preserved)
+		}
+		if hasWrite {
 			srcStart := overlapStart - writeOffset
 			dstStart := prefix + overlapStart - destinationOffset
 			copy(stripeData[int(dstStart):int(dstStart+overlapEnd-overlapStart)], writeData[int(srcStart):int(srcStart+overlapEnd-overlapStart)])
