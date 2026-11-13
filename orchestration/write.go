@@ -177,7 +177,7 @@ func (layer *Orchestration) writeLocked(request WriteRequest) (response WriteRes
 	}
 
 	if handle.syncMode != SyncModeNone {
-		if err = layer.persistDirtyStripesLocked(ctx, staged, true); err != nil {
+		if _, err = layer.persistDirtyStripesLocked(ctx, staged, true); err != nil {
 			return response, err
 		}
 		if _, err = layer.distribution.SyncObject(distribution.SyncObjectRequest{Context: ctx, ObjectID: file.objectID}); err != nil {
