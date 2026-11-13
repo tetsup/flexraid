@@ -220,7 +220,8 @@ func (layer *Orchestration) rebuildFileCacheFromStripes(
 	if err != nil {
 		return err
 	}
-	cache := make(map[uint64]*stripeCacheEntry, len(plan))
+	cache := make(map[uint64]*stripeCacheEntry)
+	var zeroRanges []stripeRange
 	var zeroStripe []byte
 	var destinationOffset uint64
 	for _, placement := range plan {
@@ -257,7 +258,9 @@ func (layer *Orchestration) rebuildFileCacheFromStripes(
 				oldGeometry.FileOffset == destinationOffset &&
 				oldGeometry.ChunkSize == placement.ChunkSize &&
 				oldGeometry.Layout == newLayout {
-				if existing := file.stripeCache[placement.StripeID]; existing != nil {
+				if containsStripeRange(file.zeroStripeRanges, placement.StripeID) {
+					zeroRanges = appendStripeRange(zeroRanges, placement.StripeID)
+				} else if existing := file.stripeCache[placement.StripeID]; existing != nil {
 					cache[placement.StripeID] = existing
 				}
 				destinationOffset += placement.DataSize
@@ -284,7 +287,7 @@ func (layer *Orchestration) rebuildFileCacheFromStripes(
 			if zeroStripe == nil {
 				zeroStripe = make([]byte, int(placement.ChunkSize)*int(placement.Layout.DataChunks))
 			}
-			cache[placement.StripeID] = &stripeCacheEntry{data: zeroStripe, state: stripeCacheDirty}
+			zeroRanges = appendStripeRange(zeroRanges, placement.StripeID)
 			destinationOffset += placement.DataSize
 			continue
 		}
@@ -304,6 +307,7 @@ func (layer *Orchestration) rebuildFileCacheFromStripes(
 		destinationOffset += placement.DataSize
 	}
 	file.stripeCache = cache
+	file.zeroStripeRanges = zeroRanges
 	return nil
 }
 
@@ -336,6 +340,8 @@ func (layer *Orchestration) readLogicalRangeLocked(
 		var data []byte
 		if entry != nil {
 			data = entry.data
+		} else if containsStripeRange(file.zeroStripeRanges, uint64(geometry.StripeID)) {
+			data = make([]byte, int(geometry.Capacity))
 		} else {
 			readData, readErr := layer.readStripeValidated(ctx, file.objectID, h, geometry)
 			if readErr != nil {
