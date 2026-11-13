@@ -111,6 +111,7 @@ func (layer *Orchestration) writeLocked(request WriteRequest) (response WriteRes
 		// The rebuild reads old cached stripes but never mutates them. Share the
 		// old map until the complete destination cache is ready.
 		staged.stripeCache = file.stripeCache
+		staged.zeroStripeRanges = file.zeroStripeRanges
 		if err = layer.rebuildFileCacheFromStripes(ctx, staged, oldHeader, nextHeader, plan, writeOffset, request.Data); err != nil {
 			return response, err
 		}
@@ -186,6 +187,7 @@ func (layer *Orchestration) writeLocked(request WriteRequest) (response WriteRes
 	}
 	file.header = staged.header
 	file.stripeCache = staged.stripeCache
+	file.zeroStripeRanges = staged.zeroStripeRanges
 	response.Written = uint32(len(request.Data))
 	return response, nil
 }
