@@ -37,11 +37,13 @@ type stripeIDKey struct {
 type stripeInfo struct {
 	version   storage.StripeVersion
 	method    distributionMethod
+	chunkSize uint32
 	chunks    map[chunkNo]chunkLocation
 	corrupted bool
 }
 type versionInfo struct {
 	method      distributionMethod
+	chunkSize   uint32
 	chunks      map[chunkNo]chunkLocation
 	recoverable bool
 }
@@ -120,6 +122,14 @@ func New(request NewRequest) (NewResponse, error) {
 				return nil
 			}
 			version.chunks[no] = chunkLocation{ioIndex: index, key: entry.Key, data: payload, totalLength: total}
+			if method.distributionType == distributionParity && !no.isParity() {
+				if version.chunkSize == 0 {
+					version.chunkSize = uint32(len(payload))
+				} else if version.chunkSize != uint32(len(payload)) {
+					d.recordIOError(index, errInvalidChunk)
+					return nil
+				}
+			}
 			return nil
 		}})
 		if ctx.Err() != nil {
@@ -160,7 +170,7 @@ func New(request NewRequest) (NewResponse, error) {
 				stripes = make(map[storage.StripeID]*stripeInfo)
 				d.objects[key.objectID] = stripes
 			}
-			stripes[key.stripeID] = &stripeInfo{version: selected, method: selectedInfo.method, chunks: cloneChunks(selectedInfo.chunks)}
+			stripes[key.stripeID] = &stripeInfo{version: selected, method: selectedInfo.method, chunkSize: selectedInfo.chunkSize, chunks: cloneChunks(selectedInfo.chunks)}
 		}
 	}
 	logger.Debug("Distribution initialized", "ios", len(d.ios), "usable_ios", usable, "objects", len(d.objects))
