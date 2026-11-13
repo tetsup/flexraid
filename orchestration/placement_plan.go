@@ -2,8 +2,10 @@ package orchestration
 
 import (
 	"fmt"
+	"os"
 	"sort"
 
+	"github.com/tetsup/flexraid/distribution"
 	"github.com/tetsup/flexraid/pkg/shared"
 	cfg "github.com/tetsup/flexraid/pkg/shared/config"
 )
@@ -73,8 +75,11 @@ func planPlacementForResize(old header, size uint64) ([]stripePlacement, error) 
 	if size <= first.Capacity {
 		return planPlacement(size)
 	}
-	if first.Layout.Type != distribution.LayoutParity || old.Layout.ChunkSize == 0 {
-		return nil, fmt.Errorf("%w: cannot extend a single-stripe mirror without replanning", errInvalidHeader)
+	if first.Layout.Type == distribution.LayoutMirror {
+		return planPlacement(size)
+	}
+	if old.Layout.ChunkSize == 0 {
+		return nil, errInvalidHeader
 	}
 	regularCapacity := uint64(old.Layout.ChunkSize) * uint64(first.Layout.NumChunks)
 	if regularCapacity == 0 {
