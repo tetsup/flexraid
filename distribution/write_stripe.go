@@ -76,7 +76,7 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 				versions = make(map[storage.StripeVersion]*versionInfo)
 				d.versions[key] = versions
 			}
-			versions[version] = &versionInfo{method: method, chunks: cloneChunks(written), recoverable: false}
+			versions[version] = &versionInfo{method: method, chunkSize: request.ChunkSize, chunks: cloneChunks(written), recoverable: false}
 		}
 	}
 	for _, no := range orderedChunkNos(chunks) {
@@ -103,13 +103,13 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 		versions = make(map[storage.StripeVersion]*versionInfo)
 		d.versions[key] = versions
 	}
-	versions[version] = &versionInfo{method: method, chunks: cloneChunks(written), recoverable: true}
+	versions[version] = &versionInfo{method: method, chunkSize: request.ChunkSize, chunks: cloneChunks(written), recoverable: true}
 	stripes := d.objects[request.ObjectID]
 	if stripes == nil {
 		stripes = make(map[storage.StripeID]*stripeInfo)
 		d.objects[request.ObjectID] = stripes
 	}
-	stripes[request.StripeID] = &stripeInfo{version: version, method: method, chunks: cloneChunks(written)}
+	stripes[request.StripeID] = &stripeInfo{version: version, method: method, chunkSize: request.ChunkSize, chunks: cloneChunks(written)}
 	response.Version = version
 	return response, nil
 }
