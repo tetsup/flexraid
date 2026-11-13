@@ -203,11 +203,11 @@ func (layer *Orchestration) loadStripeForWriteLocked(ctx context.Context, file *
 	if cached := file.stripeCache[uint64(g.StripeID)]; cached != nil {
 		return &stripeCacheEntry{data: append([]byte(nil), cached.data...), state: cached.state}, nil
 	}
-	stripe, err := layer.distribution.ReadStripe(distribution.ReadStripeRequest{Context: ctx, ObjectID: file.objectID, StripeID: g.StripeID, ChunkSize: g.ChunkSize})
+	data, err := layer.readStripeValidated(ctx, file.objectID, file.header, g)
 	if err != nil {
 		return nil, err
 	}
-	return &stripeCacheEntry{data: append([]byte(nil), stripe.Data...), state: stripeCacheClean}, nil
+	return &stripeCacheEntry{data: append([]byte(nil), data...), state: stripeCacheClean}, nil
 }
 
 // rebuildFileCacheFromStripes maps old logical ranges to the new stripe geometry.
@@ -309,13 +309,11 @@ func (layer *Orchestration) readLogicalRangeLocked(
 		if entry != nil {
 			data = entry.data
 		} else {
-			stripe, readErr := layer.distribution.ReadStripe(distribution.ReadStripeRequest{
-				Context: ctx, ObjectID: file.objectID, StripeID: geometry.StripeID, ChunkSize: geometry.ChunkSize,
-			})
+			readData, readErr := layer.readStripeValidated(ctx, file.objectID, h, geometry)
 			if readErr != nil {
 				return nil, readErr
 			}
-			data = stripe.Data
+			data = readData
 		}
 		if local >= uint64(len(data)) {
 			return nil, distribution.ErrDataCorrupted
