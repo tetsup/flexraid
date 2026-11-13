@@ -234,7 +234,7 @@ func (layer *Orchestration) updateHeaderStripeLocked(ctx context.Context, file *
 }
 
 // persistDirtyStripesLocked persists the dirty cache entries in StripeID order.
-func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file *runtimeFile, syncToDisk ...bool) error {
+func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file *runtimeFile, syncToDisk ...bool) (uint32, error) {
 	sync := len(syncToDisk) > 0 && syncToDisk[0]
 	var maxID uint64
 	hasWork := false
@@ -253,14 +253,15 @@ func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file 
 		hasWork = true
 	}
 	if !hasWork {
-		return nil
+		return 0, nil
 	}
 
 	// StripeID order is intentional: Stripe 0 contains the authoritative Header.
 	var zeroData []byte
+	var persisted uint32
 	for id := uint64(0); ; id++ {
 		if err := ctx.Err(); err != nil {
-			return err
+			return persisted, err
 		}
 		entry := file.stripeCache[id]
 		isZero := containsStripeRange(file.zeroStripeRanges, id)
@@ -292,7 +293,7 @@ func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file 
 		if placementErr != nil || len(indexes) != required {
 			capacity, capacityErr := layer.distribution.GetCapacity(distribution.CapacityRequest{})
 			if capacityErr != nil {
-				return fmt.Errorf("read I/O capacities for stripe %d: %w", id, capacityErr)
+				return persisted, fmt.Errorf("read I/O capacities for stripe %d: %w", id, capacityErr)
 			}
 			indexes, err = selectIOIndexes(capacity.Capacities, required)
 			if err != nil {
@@ -312,11 +313,12 @@ func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file 
 		if isZero {
 			file.zeroStripeRanges = removeStripeFromRanges(file.zeroStripeRanges, id)
 		}
+		persisted++
 		if id == maxID {
 			break
 		}
 	}
-	return nil
+	return persisted, nil
 }
 
 func sortStripeIDs(ids []uint64) {
