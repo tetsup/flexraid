@@ -236,25 +236,52 @@ func (layer *Orchestration) updateHeaderStripeLocked(ctx context.Context, file *
 // persistDirtyStripesLocked persists the dirty cache entries in StripeID order.
 func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file *runtimeFile, syncToDisk ...bool) error {
 	sync := len(syncToDisk) > 0 && syncToDisk[0]
-	ids := make([]uint64, 0, len(file.stripeCache))
+	var maxID uint64
+	hasWork := false
 	for id, entry := range file.stripeCache {
 		if entry != nil && entry.state == stripeCacheDirty {
-			ids = append(ids, id)
+			if !hasWork || id > maxID {
+				maxID = id
+			}
+			hasWork = true
 		}
 	}
-	// Stripe 0 must be committed first because it contains the authoritative Header.
-	sortStripeIDs(ids)
-	for _, id := range ids {
+	for _, item := range file.zeroStripeRanges {
+		if !hasWork || item.end > maxID {
+			maxID = item.end
+		}
+		hasWork = true
+	}
+	if !hasWork {
+		return nil
+	}
+
+	// StripeID order is intentional: Stripe 0 contains the authoritative Header.
+	var zeroData []byte
+	for id := uint64(0); ; id++ {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		entry := file.stripeCache[id]
-		if entry == nil || entry.state != stripeCacheDirty {
+		isZero := containsStripeRange(file.zeroStripeRanges, id)
+		if (entry == nil || entry.state != stripeCacheDirty) && !isZero {
+			if id == maxID {
+				break
+			}
 			continue
 		}
 		geometry, err := geometryFor(file.header, storage.StripeID(id))
 		if err != nil {
 			return err
+		}
+		data := []byte(nil)
+		if entry != nil && entry.state == stripeCacheDirty {
+			data = entry.data
+		} else {
+			if zeroData == nil || uint64(len(zeroData)) != geometry.Capacity {
+				zeroData = make([]byte, int(geometry.Capacity))
+			}
+			data = zeroData
 		}
 		required := int(geometry.Layout.NumChunks)
 		if geometry.Layout.Type == distribution.LayoutParity {
@@ -275,11 +302,19 @@ func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file 
 		if _, err = layer.distribution.WriteStripe(distribution.WriteStripeRequest{
 			Context: ctx, ObjectID: file.objectID, StripeID: storage.StripeID(id),
 			ChunkSize: geometry.ChunkSize, Layout: geometry.Layout,
-			IOIndexes: indexes, Data: entry.data, Sync: sync,
+			IOIndexes: indexes, Data: data, Sync: sync,
 		}); err != nil {
 			return fmt.Errorf("persist stripe %d: %w", id, err)
 		}
-		entry.state = stripeCacheClean
+		if entry != nil {
+			entry.state = stripeCacheClean
+		}
+		if isZero {
+			file.zeroStripeRanges = removeStripeFromRanges(file.zeroStripeRanges, id)
+		}
+		if id == maxID {
+			break
+		}
 	}
 	return nil
 }
