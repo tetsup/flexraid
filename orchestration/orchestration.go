@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"sync"
 
 	"github.com/tetsup/flexraid/distribution"
 	"github.com/tetsup/flexraid/pkg/shared"
@@ -23,7 +22,6 @@ type NewResponse struct {
 }
 
 type Orchestration struct {
-	mu               sync.Mutex
 	distribution     *distribution.Distribution
 	logger           *slog.Logger
 	headers          map[shared.ObjectID]header
