@@ -71,6 +71,28 @@
 - Namespace の変更と NLink の導出元は同じ親子関係・参照関係とする。NLink の数値を個別に加減算して永続化しない。
 - 複数 Header を更新する Namespace 操作について、クラッシュ時の完全な原子性を保証できない場合は、その制約を隠さず明示する。部分更新を成功状態として誤認させない。
 
+### 永続化モデルと Namespace の対応
+
+Namespace は独立したツリーやデータベースとして保存せず、各 Object の Header を正として起動時に再構築する。
+
+| 論理要素 | 永続化単位 | 永続化する情報 | メモリ上だけに保持する情報 |
+|---|---|---|---|
+| root Directory | 通常の Directory Object | 有効な ObjectID、Kind、ParentID=nil、属性 | children |
+| Directory | Directory Object | ObjectID、Kind、ParentID、Name、属性 | children |
+| File | File Object | ObjectID、Kind、ParentID（直接の名前がなければ nil）、Name、属性、および Distribution が管理するデータストライプ | Runtime 状態、open handle、キャッシュ |
+| HardLink | 独立した HardLink Object | ObjectID、Kind、ParentID、Name、TargetID | TargetID から解決した File Runtime への参照 |
+| Symlink | Symlink Object | ObjectID、Kind、ParentID、Name、属性。リンク先文字列は Header ではなく通常の論理データ | Runtime 状態 |
+
+- ObjectID は永続化された Object の識別子であり、Namespace の親子関係は Header の ParentID / Name で表す。
+- Directory の children、HardLink の解決済み参照、NLink、Namespace の検索用構造など、永続 Header / データから再構築できる情報を独立した永続データとして重複保存しない。
+- File の実データは File Object に一つだけ保持する。HardLink Object は名前と TargetID のみを保持し、データストライプを複製しない。
+- 起動時は永続 Object を読み込み、Header を検証したうえで ParentID / Name から Directory children を構築し、HardLink の TargetID を File に解決する。構築後の Namespace と Runtime の参照関係が、実行中の論理状態となる。
+- Namespace の追加・削除・移動では、対象 Object の Header に保持する ParentID / Name 等を更新する。Directory children を永続化したり、親 Directory に子一覧を別途書き込んだりしない。
+- File の属性変更は該当 Header を更新し、ファイル内容の変更は Distribution のストライプ API を通じてデータを更新する。サイズ変更で配置計画が変わる場合の移行規則は Orchestration の責務に従う。
+- HardLink の追加・削除は HardLink Object 自身の永続化・削除と、参照先 File の ParentID / Deleted 状態の更新で表現する。参照先 File のデータを HardLink ごとに複製しない。
+- Namespace 操作が複数 Header の更新を伴う場合、更新順序と失敗時の状態を考慮する。複数 Header をまたぐトランザクションやクラッシュ時の完全な原子性は保証されないため、途中状態を成功として扱ったり、未完了の更新を隠したりしない。
+- 論理削除は Header の Deleted 状態で表し、物理削除は Cleanup に委ねる。Namespace から見えなくなったことだけを理由に、open handle が利用中の File 実体や不整合保護対象を削除してはならない。
+
 ## 5. レイヤーの責務
 
 ### I/O
@@ -124,6 +146,17 @@
 - ロック取得・解放を内部関数へ分散させない。ロック取得済みの公開操作から別の公開操作を呼ばず、共有処理は非公開関数へ切り出す。
 - ロック取得前に対象を調査した場合は、ロック取得後に対象と前提条件を再検証する。
 - go-fuse の SyncRead などの mount option を内部同期の代替にしない。異なる handle、HardLink、read/write、metadata 操作間の整合性は Orchestration が保証する。
+
+### 公開 API と非公開処理のロック境界
+
+- 排他制御を所有するレイヤーでは、外部から呼び出される公開操作関数が必要なロックを取得し、処理終了時に解放する。ロック取得・解放の責務を複数の内部関数へ分散させない。
+- Orchestration の公開操作は、原則としてロック取得後に非公開の `*Locked` 関数へ処理を委譲する。非公開の `*Locked` 関数は、呼び出し元が必要なロックを保持していることを前提とし、自身ではロックを取得・解放しない。
+- 公開操作関数から別の公開操作関数を呼び出してはならない。複数操作で共有する処理は非公開関数へ切り出し、各公開操作関数が必要なロックを取得したうえで、その非公開関数を呼び出す。
+- ロックを必要とする非公開関数には、保護対象と必要なロックをコメント等で明記する。`*Locked` という名前だけを前提条件の説明の代わりにしない。
+- ロック取得前に Namespace や参照関係を調べてロック対象を決めた場合、取得後に対象と前提条件を再検証する。ロック集合が不足または不適切なら、安全に解放して取得し直す。
+- FUSE callback は go-fuse から呼ばれるアダプターであり、Namespace やファイル状態を保護する Orchestration のロックを独自に取得しない。状態変更・整合性制御は Orchestration の公開 API に集約する。
+- FUSE callback 内で複数の Orchestration 公開 API を呼び出しても、それらをまたぐ原子性は得られない。複数 API を一つの不可分な操作として扱う必要がある場合は、FUSE 側でロックしてつなぎ合わせず、必要なロックを管理する Orchestration の公開操作として実装する。
+- go-fuse の mount option や callback の呼び出し順序を、Orchestration 内部の排他制御の代替にしない。異なる handle、HardLink、read/write、metadata 操作間の整合性は Orchestration が保証する。
 
 ## 8. ログ
 
