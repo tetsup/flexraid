@@ -152,9 +152,21 @@ jobs:
             test_status=0
             for test_file in "${tests[@]}"; do
               case_started=$(date +%s)
-              echo "PJDFSTEST_CASE phase=start test=$test_file timestamp=$(date --iso-8601=seconds)"
+              relative_test=${test_file#"$GITHUB_WORKSPACE/pjdfstest/"}
+              skip_reason=$(awk -F '\t' -v path="$relative_test" '$1 == path { print $2; exit }' "$GITHUB_WORKSPACE/tools/pjdfstest-flexraid-skiplist.tsv")
+              run_file="$test_file"
+              if [ -n "$skip_reason" ]; then
+                skip_file="$root/results/skip-${relative_test//\//_}"
+                skip_file="${skip_file%.t}.t"
+                printf '#!/bin/sh\nprintf "1..0 # SKIP %s\\n"\n' "$skip_reason" > "$skip_file"
+                chmod +x "$skip_file"
+                run_file="$skip_file"
+                echo "PJDFSTEST_CASE phase=skip test=$relative_test reason=$skip_reason timestamp=$(date --iso-8601=seconds)"
+              else
+                echo "PJDFSTEST_CASE phase=start test=$test_file timestamp=$(date --iso-8601=seconds)"
+              fi
               set +e
-              prove -v "$test_file" 2>&1 | tee -a "$result_file"
+              prove -v "$run_file" 2>&1 | tee -a "$result_file"
               case_status=${PIPESTATUS[0]}
               set -e
               case_duration=$(( $(date +%s) - case_started ))
