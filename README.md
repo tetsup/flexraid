@@ -23,14 +23,45 @@ FlexRAID は初期開発段階の実験的なソフトウェアです。基本�
 
 ## アーキテクチャ
 
-FlexRAID は次の4層で構成します。
+FlexRAID は、外部インターフェースを担う FUSE / Management と、データ処理を担う Orchestration / Distribution / I/O で構成します。依存関係は次の DAG です。矢印は呼び出し元から呼び出し先への依存を表します。
 
-1. **FUSE** — OS のファイルシステム操作を Orchestration に橋渡しします。
-2. **Orchestration** — Header、論理 Object、Namespace、ファイル offset、配置方針を管理します。
-3. **Distribution** — 論理ストライプをチャンクへ分割し、ミラー / パリティを生成し、物理配置と復旧を管理します。
-4. **I/O** — 指定されたストレージディレクトリ上で物理ファイルの読み書き・列挙・削除を行います。
+```mermaid
+flowchart TD
+    FUSE --> Management
+    Management --> Orchestration
+    Management --> Distribution
+    Orchestration --> Distribution
+    Distribution --> IO[I/O]
+```
 
-FUSE と Orchestration は論理ファイル単位の操作を扱います。Orchestration は論理ファイル offset をストライプ単位の要求へ変換し、Distribution はストライプ内のチャンク処理を行います。I/O 層は保存形式の意味を解釈しません。
+- **FUSE** — go-fuse と Management のアダプターです。OS の callback を Management のファイルシステム API に変換し、結果・エラーを FUSE の形式へ写像します。
+- **Management** — ファイルシステム操作、管理操作、監視、制御の公開窓口です。Orchestration と Distribution を統括し、通常操作と Cleanup / Recovery などの管理タスクの調整、Object 単位の排他制御、操作メトリクスの集計を担当します。
+- **Orchestration** — Header、論理 Object、Namespace、ファイル offset、ストライプ geometry、配置方針を管理します。通常のファイル操作では Distribution を直接利用し、論理ファイルの意味を保ったままストライプ単位の要求へ変換します。
+- **Distribution** — 論理ストライプをチャンクへ分割し、ミラー / パリティを生成し、Version・物理配置・復旧を管理します。同一 ObjectID + StripeID の競合を防ぐ Stripe 単位の排他制御も所有します。
+- **I/O** — 指定されたストレージディレクトリ上で物理ファイルの読み書き・同期・列挙・削除を行います。Header やストライプの意味、配置・復旧方針、ディスク電源制御は扱いません。
+
+### 操作経路と責務境界
+
+通常の FUSE ファイル操作は `FUSE -> Management -> Orchestration -> Distribution -> I/O` の経路を通ります。Management は Orchestration と Distribution の両方を直接利用できる統括レイヤーですが、Orchestration と Distribution の親子関係は維持します。Management から Distribution への直接呼び出しは、論理ファイル操作を必要としない Cleanup の物理処理や監視情報の取得などに限定し、通常のファイルデータ操作を Orchestration 経由から迂回させません。
+
+Management が提供する外部 API は次の領域を想定します。
+
+- **Filesystem API** — FUSE が必要とする Lookup / Getattr / Read / Write / Create / Rename 等の論理ファイルシステム操作。
+- **Administration API** — Cleanup / Recovery / Scrub 等の管理タスクの開始・進捗確認・キャンセル。
+- **Monitoring API** — 操作回数・所要時間・結果、ドライブ別 I/O エラー数などの状態・統計 snapshot の取得。
+- **Control API** — 管理タスクの pause / resume や実行制御。個々の物理 I/O の意味解釈は行わない。
+
+通常のファイル操作は結果・エラーを同期的に返します。長時間の管理タスクは、呼び出し元を物理削除や復旧の完了まで拘束せず、有限単位の処理と進捗を扱える API とします。
+
+### 排他制御と Cleanup
+
+レイヤー横断の操作調整と Object 単位のロックは Management が所有します。Namespace / Header / Runtime の状態は Orchestration が所有し、Management が必要な Object ロックを取得したうえで Orchestration API を呼び出します。異なる Object の操作を全体 mutex で一律に直列化せず、親 Directory や対象 Object など操作に必要なロック範囲で並行性を保ちます。
+
+Distribution はストライプ状態を所有し、同一 ObjectID + StripeID の Read / Write / Recovery / Cleanup を直列化する Stripe ロックを所有します。Management / Orchestration はこの内部ロックを直接操作しません。I/O は物理ファイル操作に専念し、上位層の Object / Stripe ロックを管理しません。
+
+削除は論理削除と物理削除を分離します。Orchestration は Header の Deleted 状態と ObjectID 単位の削除待ちを管理し、Distribution は旧 Version・孤立チャンク・論理削除 Object の Stripe / Chunk 単位の物理削除候補と処理結果を管理します。Management は Cleanup の実行タイミング・実行量を制御し、有限単位でバックグラウンド実行します。Object 全体の物理削除では Stripe 0 / Header を最後に処理し、全 Stripe の削除完了後に Object の削除完了を Orchestration に反映します。
+
+この Management を含む構成は今後の目標アーキテクチャです。現行実装では FUSE が Orchestration を直接呼び出し、Orchestration が mutex を所有しています。Management 導入時にこの排他責務を移行し、Orchestration のロックを単に削除して整合性を失わせないことを前提とします。
 
 ## 初期実装のデータ配置
 
