@@ -107,6 +107,9 @@ func (layer *Orchestration) symlinkLocked(request SymlinkRequest) (response Syml
 	if layer.headers == nil {
 		layer.headers = make(map[shared.ObjectID]header)
 	}
+	if err = layer.touchDirectoryLocked(ctx, parent, now); err != nil {
+		return response, fmt.Errorf("update parent directory timestamps: %w", err)
+	}
 	parent.children[request.Name] = object
 	layer.objects[objectID] = object
 	layer.headers[objectID] = objectHeader
