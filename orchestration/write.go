@@ -70,22 +70,11 @@ func (layer *Orchestration) writeLocked(request WriteRequest) (response WriteRes
 		return response, err
 	}
 
-	// Build changes in a private cache. Synchronous modes persist that snapshot
-	// before publishing it; a failed write leaves the in-memory file unchanged.
+	// Build changes in a private cache. Resize rebuilds only the destination
+	// stripes and must not clone the old cache first.
 	staged := &runtimeFile{
-		objectID:    file.objectID,
-		header:      file.header,
-		openCount:   file.openCount,
-		stripeCache: make(map[uint64]*stripeCacheEntry, len(file.stripeCache)),
-	}
-	for id, entry := range file.stripeCache {
-		if entry == nil {
-			continue
-		}
-		staged.stripeCache[id] = &stripeCacheEntry{
-			data:  append([]byte(nil), entry.data...),
-			state: entry.state,
-		}
+		objectID: file.objectID, header: file.header, openCount: file.openCount,
+		stripeCache: make(map[uint64]*stripeCacheEntry),
 	}
 	oldHeader := file.header
 	writeOffset := request.Offset
@@ -101,12 +90,19 @@ func (layer *Orchestration) writeLocked(request WriteRequest) (response WriteRes
 		newSize = writeEnd
 	}
 
+	if newSize == oldHeader.Size {
+		staged.stripeCache = cloneStripeCache(file.stripeCache)
+		staged.zeroStripeRanges = cloneStripeRanges(file.zeroStripeRanges)
+	}
 	if newSize != oldHeader.Size {
+		if err = layer.validateResizeCapacity(ctx, oldHeader, newSize); err != nil {
+			return response, err
+		}
 		nextHeader, headerErr := updateHeader(oldHeader, newSize, time.Now())
 		if headerErr != nil {
 			return response, headerErr
 		}
-		plan, planErr := planPlacement(newSize)
+		plan, planErr := planPlacementForResize(oldHeader, newSize)
 		if planErr != nil {
 			return response, planErr
 		}
@@ -115,6 +111,10 @@ func (layer *Orchestration) writeLocked(request WriteRequest) (response WriteRes
 		} else {
 			nextHeader.Layout.ChunkSize = cfg.MinimumChunkSize
 		}
+		// The rebuild reads old cached stripes but never mutates them. Share the
+		// old map until the complete destination cache is ready.
+		staged.stripeCache = file.stripeCache
+		staged.zeroStripeRanges = file.zeroStripeRanges
 		if err = layer.rebuildFileCacheFromStripes(ctx, staged, oldHeader, nextHeader, plan, writeOffset, request.Data); err != nil {
 			return response, err
 		}
@@ -181,7 +181,7 @@ func (layer *Orchestration) writeLocked(request WriteRequest) (response WriteRes
 	}
 
 	if handle.syncMode != SyncModeNone {
-		if err = layer.persistDirtyStripesLocked(ctx, staged, true); err != nil {
+		if _, err = layer.persistDirtyStripesLocked(ctx, staged, true); err != nil {
 			return response, err
 		}
 		if _, err = layer.distribution.SyncObject(distribution.SyncObjectRequest{Context: ctx, ObjectID: file.objectID}); err != nil {
@@ -190,6 +190,7 @@ func (layer *Orchestration) writeLocked(request WriteRequest) (response WriteRes
 	}
 	file.header = staged.header
 	file.stripeCache = staged.stripeCache
+	file.zeroStripeRanges = staged.zeroStripeRanges
 	response.Written = uint32(len(request.Data))
 	return response, nil
 }
@@ -203,11 +204,15 @@ func (layer *Orchestration) loadStripeForWriteLocked(ctx context.Context, file *
 	if cached := file.stripeCache[uint64(g.StripeID)]; cached != nil {
 		return &stripeCacheEntry{data: append([]byte(nil), cached.data...), state: cached.state}, nil
 	}
-	stripe, err := layer.distribution.ReadStripe(distribution.ReadStripeRequest{Context: ctx, ObjectID: file.objectID, StripeID: g.StripeID, ChunkSize: g.ChunkSize})
+	if containsStripeRange(file.zeroStripeRanges, uint64(g.StripeID)) {
+		file.zeroStripeRanges = removeStripeFromRanges(file.zeroStripeRanges, uint64(g.StripeID))
+		return &stripeCacheEntry{data: make([]byte, int(g.Capacity)), state: stripeCacheDirty}, nil
+	}
+	data, err := layer.readStripeValidated(ctx, file.objectID, file.header, g)
 	if err != nil {
 		return nil, err
 	}
-	return &stripeCacheEntry{data: append([]byte(nil), stripe.Data...), state: stripeCacheClean}, nil
+	return &stripeCacheEntry{data: append([]byte(nil), data...), state: stripeCacheClean}, nil
 }
 
 // rebuildFileCacheFromStripes maps old logical ranges to the new stripe geometry.
@@ -225,7 +230,8 @@ func (layer *Orchestration) rebuildFileCacheFromStripes(
 	if err != nil {
 		return err
 	}
-	cache := make(map[uint64]*stripeCacheEntry, len(plan))
+	cache := make(map[uint64]*stripeCacheEntry)
+	var zeroRanges []stripeRange
 	var destinationOffset uint64
 	for _, placement := range plan {
 		if err := ctx.Err(); err != nil {
@@ -238,26 +244,8 @@ func (layer *Orchestration) rebuildFileCacheFromStripes(
 		if placement.DataSize > uint64(int(^uint(0)>>1))-prefix {
 			return fmt.Errorf("stripe %d exceeds addressable memory: %w", placement.StripeID, os.ErrInvalid)
 		}
-		stripeData := make([]byte, int(prefix+placement.DataSize))
-		if placement.StripeID == 0 {
-			copy(stripeData, headerBytes)
-		}
-
 		// Preserve only the old file range that overlaps this destination stripe.
 		destinationEnd := destinationOffset + placement.DataSize
-		preserveEnd := destinationEnd
-		if preserveEnd > oldHeader.Size {
-			preserveEnd = oldHeader.Size
-		}
-		if destinationOffset < preserveEnd {
-			preserved, readErr := layer.readLogicalRangeLocked(ctx, file, oldHeader, destinationOffset, preserveEnd-destinationOffset)
-			if readErr != nil {
-				return fmt.Errorf("read source range for stripe %d: %w", placement.StripeID, readErr)
-			}
-			copy(stripeData[int(prefix):], preserved)
-		}
-
-		// Apply the caller's write only to the overlapping destination stripe.
 		writeEnd := writeOffset + uint64(len(writeData))
 		overlapStart := destinationOffset
 		if writeOffset > overlapStart {
@@ -267,7 +255,56 @@ func (layer *Orchestration) rebuildFileCacheFromStripes(
 		if writeEnd < overlapEnd {
 			overlapEnd = writeEnd
 		}
-		if overlapStart < overlapEnd {
+		hasWrite := overlapStart < overlapEnd
+
+		// If this regular stripe is wholly inside the old EOF, its geometry is
+		// unchanged, and no caller data touches it, retain its existing version.
+		// This keeps ordinary growth/shrink operations limited to changed stripes.
+		if placement.StripeID > 0 && destinationEnd <= oldHeader.Size && !hasWrite {
+			oldGeometry, geometryErr := geometryFor(oldHeader, storage.StripeID(placement.StripeID))
+			newLayout, layoutErr := distributionLayout(placement.Layout)
+			if geometryErr == nil && layoutErr == nil &&
+				oldGeometry.FileOffset == destinationOffset &&
+				oldGeometry.ChunkSize == placement.ChunkSize &&
+				oldGeometry.Layout == newLayout {
+				if containsStripeRange(file.zeroStripeRanges, placement.StripeID) {
+					zeroRanges = appendStripeRange(zeroRanges, placement.StripeID)
+				} else if existing := file.stripeCache[placement.StripeID]; existing != nil {
+					cache[placement.StripeID] = existing
+				}
+				destinationOffset += placement.DataSize
+				continue
+			}
+		}
+		preserveEnd := destinationEnd
+		if preserveEnd > oldHeader.Size {
+			preserveEnd = oldHeader.Size
+		}
+		var preserved []byte
+		if destinationOffset < preserveEnd {
+			var readErr error
+			preserved, readErr = layer.readLogicalRangeLocked(ctx, file, oldHeader, destinationOffset, preserveEnd-destinationOffset)
+			if readErr != nil {
+				return fmt.Errorf("read source range for stripe %d: %w", placement.StripeID, readErr)
+			}
+		}
+
+		// Apply the caller's write only to the overlapping destination stripe.
+		// Fully zero-filled regular stripes share one immutable zero buffer.
+		// This keeps payload memory bounded even when a write creates a huge gap.
+		if placement.StripeID > 0 && len(preserved) == 0 && !hasWrite {
+			zeroRanges = appendStripeRange(zeroRanges, placement.StripeID)
+			destinationOffset += placement.DataSize
+			continue
+		}
+		stripeData := make([]byte, int(prefix+placement.DataSize))
+		if placement.StripeID == 0 {
+			copy(stripeData, headerBytes)
+		}
+		if len(preserved) > 0 {
+			copy(stripeData[int(prefix):], preserved)
+		}
+		if hasWrite {
 			srcStart := overlapStart - writeOffset
 			dstStart := prefix + overlapStart - destinationOffset
 			copy(stripeData[int(dstStart):int(dstStart+overlapEnd-overlapStart)], writeData[int(srcStart):int(srcStart+overlapEnd-overlapStart)])
@@ -276,6 +313,7 @@ func (layer *Orchestration) rebuildFileCacheFromStripes(
 		destinationOffset += placement.DataSize
 	}
 	file.stripeCache = cache
+	file.zeroStripeRanges = zeroRanges
 	return nil
 }
 
@@ -308,14 +346,14 @@ func (layer *Orchestration) readLogicalRangeLocked(
 		var data []byte
 		if entry != nil {
 			data = entry.data
+		} else if containsStripeRange(file.zeroStripeRanges, uint64(geometry.StripeID)) {
+			data = make([]byte, int(geometry.Capacity))
 		} else {
-			stripe, readErr := layer.distribution.ReadStripe(distribution.ReadStripeRequest{
-				Context: ctx, ObjectID: file.objectID, StripeID: geometry.StripeID, ChunkSize: geometry.ChunkSize,
-			})
+			readData, readErr := layer.readStripeValidated(ctx, file.objectID, h, geometry)
 			if readErr != nil {
 				return nil, readErr
 			}
-			data = stripe.Data
+			data = readData
 		}
 		if local >= uint64(len(data)) {
 			return nil, distribution.ErrDataCorrupted

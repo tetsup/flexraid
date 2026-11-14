@@ -31,7 +31,21 @@ func readInitialObjects(ctx context.Context, layer *distribution.Distribution) (
 		if err != nil {
 			return nil, err
 		}
-		if objectHeader.Kind == objectKindSymlink {
+		if !objectHeader.Deleted && (objectHeader.Kind == objectKindFile || objectHeader.Kind == objectKindSymlink) {
+			if err := validateHeaderStripeLayouts(ctx, layer, objectID, objectHeader); err != nil {
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				if objectHeader.Kind != objectKindSymlink {
+					return nil, fmt.Errorf("validate object %s stripe layouts: %w", objectID.String(), err)
+				}
+				// A broken symlink target is a localized namespace problem.
+				// Keep its Header so initialize can protect and hide the link.
+				initialObjects = append(initialObjects, initialObject{objectID: objectID, data: data})
+				continue
+			}
+		}
+		if !objectHeader.Deleted && objectHeader.Kind == objectKindSymlink {
 			if objectHeader.Size > uint64(int(^uint(0)>>1))-cfg.HeaderReservedSize {
 				// Preserve the Header so initialization can exclude and protect the
 				// symlink instead of making the entire namespace unavailable.
@@ -71,11 +85,15 @@ func readInitialObjectData(ctx context.Context, layer *distribution.Distribution
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+		stripeChunkSize := chunkSize
+		if stripeID == 0 {
+			stripeChunkSize = cfg.MinimumChunkSize
+		}
 		read, err := layer.ReadStripe(distribution.ReadStripeRequest{
 			Context:   ctx,
 			ObjectID:  objectID,
 			StripeID:  storage.StripeID(stripeID),
-			ChunkSize: chunkSize,
+			ChunkSize: stripeChunkSize,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("read object %s at stripe %d: %w", objectID.String(), stripeID, err)

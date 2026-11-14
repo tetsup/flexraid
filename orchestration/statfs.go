@@ -56,7 +56,7 @@ func (layer *Orchestration) statFsLocked(request StatFsRequest) (StatFsResponse,
 	}
 
 	response := StatFsResponse{
-		NameLen: 255,
+		NameLen: config.MaxNameLength,
 		Blocks:  totalBytes / config.BlockSize,
 		Bfree:   freeBytes / config.BlockSize,
 		Bavail:  min(capacity.MirrorAvailableBlocks, capacity.ParityAvailableBlocks),

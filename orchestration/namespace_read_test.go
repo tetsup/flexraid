@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"reflect"
+	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/tetsup/flexraid/pkg/shared"
@@ -48,6 +50,22 @@ func TestLookup(t *testing.T) {
 	}
 	if _, err := layer.Lookup(LookupRequest{ParentID: rootID, Name: "../docs"}); err == nil {
 		t.Fatal("invalid child name accepted")
+	}
+	if _, err := layer.Lookup(LookupRequest{ParentID: rootID, Name: strings.Repeat("a", int(cfg.MaxNameLength))}); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("255-byte name: got %v, want os.ErrNotExist", err)
+	}
+	if _, err := layer.Lookup(LookupRequest{ParentID: rootID, Name: strings.Repeat("a", int(cfg.MaxNameLength)+1)}); !errors.Is(err, syscall.ENAMETOOLONG) {
+		t.Fatalf("256-byte name: got %v, want syscall.ENAMETOOLONG", err)
+	}
+	if _, err := layer.Lookup(LookupRequest{ParentID: rootID, Name: strings.Repeat("あ", int(cfg.MaxNameLength)/3)}); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("255-byte multibyte name: got %v, want os.ErrNotExist", err)
+	}
+	if _, err := layer.Lookup(LookupRequest{ParentID: rootID, Name: strings.Repeat("あ", int(cfg.MaxNameLength)/3+1)}); !errors.Is(err, syscall.ENAMETOOLONG) {
+		t.Fatalf("258-byte multibyte name: got %v, want syscall.ENAMETOOLONG", err)
+	}
+	missingParent := testID("42345678-9abc-4def-8abc-1234567890ab")
+	if _, err := layer.Lookup(LookupRequest{ParentID: missingParent, Name: strings.Repeat("a", int(cfg.MaxNameLength)+1)}); !errors.Is(err, syscall.ENAMETOOLONG) {
+		t.Fatalf("long name with missing parent: got %v, want syscall.ENAMETOOLONG", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

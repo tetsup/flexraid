@@ -49,10 +49,6 @@ func (layer *Orchestration) truncateLocked(request TruncateRequest) (TruncateRes
 	if (object.header.Kind != objectKindFile && object.header.Kind != objectKindHardLink) || object.file == nil || object.file != handle.runtimeFile {
 		return TruncateResponse{}, fmt.Errorf("handle does not refer to writable file %s: %w", request.ObjectID.String(), os.ErrInvalid)
 	}
-	if request.Size > uint64(int(^uint(0)>>1)) {
-		return TruncateResponse{}, fmt.Errorf("truncate size exceeds addressable memory: %w", os.ErrInvalid)
-	}
-
 	file := handle.runtimeFile
 	if request.Size == file.header.Size {
 		return TruncateResponse{}, nil
@@ -60,11 +56,17 @@ func (layer *Orchestration) truncateLocked(request TruncateRequest) (TruncateRes
 	if err := ctx.Err(); err != nil {
 		return TruncateResponse{}, err
 	}
+	if err := layer.validateResizeCapacity(ctx, file.header, request.Size); err != nil {
+		return TruncateResponse{}, err
+	}
+	if request.Size > uint64(int(^uint(0)>>1)) {
+		return TruncateResponse{}, fmt.Errorf("truncate size exceeds addressable memory: %w", os.ErrInvalid)
+	}
 	next, err := updateHeader(file.header, request.Size, time.Now())
 	if err != nil {
 		return TruncateResponse{}, err
 	}
-	plan, err := planPlacement(request.Size, cfg.DefaultPlacement())
+	plan, err := planPlacementForResize(file.header, request.Size)
 	if err != nil {
 		return TruncateResponse{}, err
 	}
@@ -73,9 +75,12 @@ func (layer *Orchestration) truncateLocked(request TruncateRequest) (TruncateRes
 	} else {
 		next.Layout.ChunkSize = cfg.MinimumChunkSize
 	}
-	if err := layer.rebuildFileCacheFromStripes(ctx, file, file.header, next, plan, ^uint64(0), nil); err != nil {
+	staged := &runtimeFile{objectID: file.objectID, header: file.header, openCount: file.openCount, stripeCache: file.stripeCache, zeroStripeRanges: file.zeroStripeRanges}
+	if err := layer.rebuildFileCacheFromStripes(ctx, staged, file.header, next, plan, ^uint64(0), nil); err != nil {
 		return TruncateResponse{}, err
 	}
 	file.header = next
+	file.stripeCache = staged.stripeCache
+	file.zeroStripeRanges = staged.zeroStripeRanges
 	return TruncateResponse{}, nil
 }

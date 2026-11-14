@@ -6,6 +6,8 @@ const (
 	DefaultDataChunks          = 3
 	DefaultParityChunks        = 1
 	DefaultChunkSize    uint32 = 2 * 1024 * 1024
+	MaxFileSize         uint64 = 16 * 1024 * 1024 * 1024 * 1024
+	MaxNameLength       uint32 = 255
 	MinimumChunkSize    uint32 = 4096
 	BlockSize           uint64 = 4096
 	HeaderReservedSize  uint64 = 1024

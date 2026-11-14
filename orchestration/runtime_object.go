@@ -13,10 +13,16 @@ type runtimeObject struct {
 }
 
 type runtimeFile struct {
-	objectID    shared.ObjectID
-	header      header
-	openCount   uint64
-	stripeCache map[uint64]*stripeCacheEntry
+	objectID         shared.ObjectID
+	header           header
+	openCount        uint64
+	stripeCache      map[uint64]*stripeCacheEntry
+	zeroStripeRanges []stripeRange
+}
+
+type stripeRange struct {
+	start uint64
+	end   uint64
 }
 
 type stripeCacheEntry struct {

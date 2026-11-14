@@ -37,11 +37,14 @@ type stripeIDKey struct {
 type stripeInfo struct {
 	version   storage.StripeVersion
 	method    distributionMethod
+	chunkSize uint32
 	chunks    map[chunkNo]chunkLocation
 	corrupted bool
 }
 type versionInfo struct {
 	method      distributionMethod
+	chunkSize   uint32
+	invalid     bool
 	chunks      map[chunkNo]chunkLocation
 	recoverable bool
 }
@@ -110,16 +113,27 @@ func New(request NewRequest) (NewResponse, error) {
 				versions[entry.Key.StripeVersion] = version
 			}
 			if version.method != method {
+				version.invalid = true
 				d.recordIOError(index, errInvalidChunk)
 				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key})
 				return nil
 			}
 			if _, exists := version.chunks[no]; exists {
+				version.invalid = true
 				d.recordIOError(index, fmt.Errorf("%w: duplicate chunk", errInvalidChunk))
 				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key})
 				return nil
 			}
 			version.chunks[no] = chunkLocation{ioIndex: index, key: entry.Key, data: payload, totalLength: total}
+			if method.distributionType == distributionParity {
+				if version.chunkSize == 0 {
+					version.chunkSize = uint32(len(payload))
+				} else if version.chunkSize != uint32(len(payload)) {
+					version.invalid = true
+					d.recordIOError(index, errInvalidChunk)
+					return nil
+				}
+			}
 			return nil
 		}})
 		if ctx.Err() != nil {
@@ -142,6 +156,9 @@ func New(request NewRequest) (NewResponse, error) {
 		var selected storage.StripeVersion
 		var selectedInfo *versionInfo
 		for versionNo, version := range versions {
+			if version.invalid {
+				continue
+			}
 			chunks := make([]chunkDataWithInfo, 0, len(version.chunks))
 			for no, location := range version.chunks {
 				chunks = append(chunks, chunkDataWithInfo{stripeKey: stripeKeyInfo{objectID: key.objectID, stripeID: key.stripeID, stripeVersion: versionNo}, distributionMethod: version.method, chunkNo: no, data: location.data, totalLength: location.totalLength})
@@ -160,7 +177,7 @@ func New(request NewRequest) (NewResponse, error) {
 				stripes = make(map[storage.StripeID]*stripeInfo)
 				d.objects[key.objectID] = stripes
 			}
-			stripes[key.stripeID] = &stripeInfo{version: selected, method: selectedInfo.method, chunks: cloneChunks(selectedInfo.chunks)}
+			stripes[key.stripeID] = &stripeInfo{version: selected, method: selectedInfo.method, chunkSize: selectedInfo.chunkSize, chunks: cloneChunks(selectedInfo.chunks)}
 		}
 	}
 	logger.Debug("Distribution initialized", "ios", len(d.ios), "usable_ios", usable, "objects", len(d.objects))
