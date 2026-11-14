@@ -23,7 +23,15 @@ type UnlinkResponse struct{}
 func (layer *Orchestration) Unlink(request UnlinkRequest) (response UnlinkResponse, err error) {
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
-	return layer.unlinkLocked(request)
+	response, err = layer.unlinkLocked(request)
+	if err != nil {
+		return response, err
+	}
+	parent := layer.objects[request.ParentID]
+	if err = layer.touchDirectoryLocked(request.Context, parent, time.Now()); err != nil {
+		return UnlinkResponse{}, fmt.Errorf("update parent directory timestamps: %w", err)
+	}
+	return response, nil
 }
 
 func (layer *Orchestration) unlinkLocked(request UnlinkRequest) (response UnlinkResponse, err error) {
@@ -99,6 +107,11 @@ func (layer *Orchestration) unlinkSymlink(ctx context.Context, parent, object *r
 // deletion is deferred to Cleanup.
 func (layer *Orchestration) unlinkNamedObject(ctx context.Context, parent, object *runtimeObject) error {
 	next := object.header
+	if object.file != nil {
+		// The runtime file Header is authoritative for mutable data attributes.
+		// Preserve its current size and timestamps when marking it deleted.
+		next = object.file.header
+	}
 	next.Deleted = true
 	next.Ctime = time.Now()
 	if err := layer.persistObjectHeader(ctx, next); err != nil {
@@ -146,6 +159,10 @@ func (layer *Orchestration) unlinkHardLink(ctx context.Context, parent, object *
 
 	// If no direct name or HardLink name remains, the File is logically deleted.
 	nextTarget := target.header
+	if target.file != nil {
+		// Preserve the authoritative data Header when removing the last alias.
+		nextTarget = target.file.header
+	}
 	nextTarget.Ctime = time.Now()
 	if nextTarget.ParentID == nil {
 		nextTarget.Deleted = true

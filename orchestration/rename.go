@@ -20,7 +20,9 @@ type RenameRequest struct {
 	DestinationName     string
 }
 
-type RenameResponse struct{}
+type RenameResponse struct {
+	Changed bool
+}
 
 // Rename applies POSIX-style namespace rename semantics. Replacement is
 // supported only when source and destination have compatible kinds; replacing
@@ -29,7 +31,22 @@ type RenameResponse struct{}
 func (layer *Orchestration) Rename(request RenameRequest) (response RenameResponse, err error) {
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
-	return layer.renameLocked(request)
+	response, err = layer.renameLocked(request)
+	if err != nil || !response.Changed {
+		return response, err
+	}
+	now := time.Now()
+	sourceParent := layer.objects[request.SourceParentID]
+	destinationParent := layer.objects[request.DestinationParentID]
+	if err = layer.touchDirectoryLocked(request.Context, sourceParent, now); err != nil {
+		return RenameResponse{}, fmt.Errorf("update source parent directory timestamps: %w", err)
+	}
+	if destinationParent != sourceParent {
+		if err = layer.touchDirectoryLocked(request.Context, destinationParent, now); err != nil {
+			return RenameResponse{}, fmt.Errorf("update destination parent directory timestamps: %w", err)
+		}
+	}
+	return response, nil
 }
 
 func (layer *Orchestration) renameLocked(request RenameRequest) (response RenameResponse, err error) {
@@ -115,6 +132,7 @@ func (layer *Orchestration) renameLocked(request RenameRequest) (response Rename
 		}); err != nil {
 			return response, fmt.Errorf("unlink rename source after destination link: %w", err)
 		}
+		response.Changed = true
 		return response, nil
 	}
 
@@ -152,6 +170,7 @@ func (layer *Orchestration) renameLocked(request RenameRequest) (response Rename
 		destinationParent.children = make(map[string]*runtimeObject)
 	}
 	destinationParent.children[request.DestinationName] = source
+	response.Changed = true
 	return response, nil
 }
 

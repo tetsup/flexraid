@@ -28,7 +28,15 @@ type LinkResponse struct {
 func (layer *Orchestration) Link(request LinkRequest) (response LinkResponse, err error) {
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
-	return layer.linkLocked(request)
+	response, err = layer.linkLocked(request)
+	if err != nil {
+		return response, err
+	}
+	parent := layer.objects[request.ParentID]
+	if err = layer.touchDirectoryLocked(request.Context, parent, time.Now()); err != nil {
+		return LinkResponse{}, fmt.Errorf("update parent directory timestamps: %w", err)
+	}
+	return response, nil
 }
 
 func (layer *Orchestration) linkLocked(request LinkRequest) (response LinkResponse, err error) {

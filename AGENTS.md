@@ -743,3 +743,12 @@ The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing 
 - SKIP 対象は実行時に `1..0 # SKIP <reason>` を出力する TAP テストとして扱い、CIログに元のテストパスと理由を記録する。単にテストファイルを選択対象から除外してはならない。
 - go-fuse baseline の pjdfstest は全ケースを実行し、FlexRAID 側の SKIP ポリシーを適用しない。比較時に baseline と FlexRAID の実行対象の違いを明示する。
 - pjdfstest のリビジョンを更新するときは、SKIP 対象のテスト内容を再確認し、通常ファイルやシステムコール境界の検証まで除外していないことを確認する。
+
+
+## Namespace entry timestamp updates
+
+- After a successful namespace entry addition, removal, or move, Orchestration updates the affected parent Directory Header's Mtime and Ctime to the same operation timestamp.
+- This applies to Create, Mknod (through Create), Mkdir, Symlink, Link, Unlink, Rmdir, and Rename. Rename within one parent updates that parent once; Rename across parents updates both.
+- Failed operations and no-op Rename requests do not update parent timestamps.
+- File content and metadata changes do not update the parent Directory timestamps.
+- The update is performed by the Orchestration namespace mutation path; FUSE callbacks do not modify parent timestamps independently.
