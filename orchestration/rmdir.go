@@ -24,7 +24,15 @@ type RmdirResponse struct{}
 func (layer *Orchestration) Rmdir(request RmdirRequest) (response RmdirResponse, err error) {
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
-	return layer.rmdirLocked(request)
+	response, err = layer.rmdirLocked(request)
+	if err != nil {
+		return response, err
+	}
+	parent := layer.objects[request.ParentID]
+	if err = layer.touchDirectoryLocked(request.Context, parent, time.Now()); err != nil {
+		return RmdirResponse{}, fmt.Errorf("update parent directory timestamps: %w", err)
+	}
+	return response, nil
 }
 
 func (layer *Orchestration) rmdirLocked(request RmdirRequest) (response RmdirResponse, err error) {
