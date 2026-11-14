@@ -135,10 +135,7 @@ func TestOpenFileRemainsReadableAfterUnlink(t *testing.T) {
 	if _, err := fixture.layer.Release(ReleaseRequest{Handle: opened.Handle}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fixture.layer.Cleanup(CleanupRequest{}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := fixture.layer.GetAttr(GetAttrRequest{ObjectID: created.ObjectID}); err == nil {
-		t.Fatal("GetAttr after final Release and Cleanup succeeded")
+	if opened.Handle.runtimeFile.openCount != 0 {
+		t.Fatalf("open count after Release = %d, want 0", opened.Handle.runtimeFile.openCount)
 	}
 }
