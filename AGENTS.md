@@ -20,7 +20,8 @@
 - `management/`: 外部 API、レイヤー横断の操作調整・排他制御、管理タスク、監視
 - `orchestration/`: Header、論理 Object、Namespace、ファイル offset、配置方針
 - `distribution/`: ストライプ、チャンク、冗長化、復旧、物理配置
-- `io/`: 物理ファイル操作
+- `io/`: Go の標準 API を中心とした基本的な物理ファイル操作
+- `platform/`: OS・実行環境に依存するファイルシステム情報、デバイス情報の取得およびデバイス制御
 - `fuse/`: go-fuse と Management のアダプター
 - `pkg/shared/`: レイヤー間で共有する型・定数
 - `storage/`: 物理保存形式の共通型
@@ -157,6 +158,15 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - `ScanHeaders` は StripeID 0 の物理ファイル列挙、`ListChunks` は全ストライプの物理ファイル列挙を行う。どちらも Header / Chunk の意味を解析しない。
 - ディスクの電源状態やスピンダウン・スピンアップを判断するポリシー、Cleanup のスケジューリングを持たない。必要な物理操作を実行し、その結果を上位層へ返す。
 
+### Platform
+
+- OS・実行環境ごとの差異を吸収し、FlexRAID が必要とする環境情報の取得およびデバイス制御 API を提供する。
+- ファイルシステム容量など OS 固有 API を必要とする情報、物理ドライブの識別・対応付け、ドライブの電源状態取得、スピンアップ / スピンダウン要求などを担当する。
+- Go の標準 API で実現できる基本的な物理ファイルの読み書き・同期・削除・列挙は担当せず、I/O パッケージの代替やラッパーにはならない。
+- I/O と Platform は独立した兄弟コンポーネントとし、相互に依存しない。Platform から I/O を呼び出さず、I/O から Platform を呼び出さない。
+- Platform は状態取得・デバイス制御の機構を提供する。スピンダウンの判断、電源状態の運用管理、処理スケジューリングは Management が担当する。
+- Platform は OS 固有実装を隔離する境界とする。OS ごとの差異は Platform 内の実装で吸収し、上位層には共通 API と共通の結果型を提供する。
+
 ### FUSE
 
 - go-fuse v2.12.0 の callback 契約に従い、OS からの操作を Management API へ変換する。Namespace や論理属性の独自キャッシュを持たない。
@@ -176,11 +186,16 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 FUSE -> Management
 Management -> Orchestration
 Management -> Distribution
+Management -> Platform
 Orchestration -> Distribution
 Distribution -> I/O
+Distribution -> Platform
 ```
 
 - Management は Orchestration と Distribution の双方を統括するが、Orchestration と Distribution の親子関係は維持する。通常のファイルシステム操作は Management -> Orchestration -> Distribution -> I/O の経路を通る。
+- Platform は I/O と同列の独立コンポーネントであり、Management と Distribution など必要な上位コンポーネントから利用する。I/O と Platform の間に依存関係を設けない。
+- Distribution は Platform から OS 固有のファイルシステム容量・デバイス情報を取得できる。Management は Platform を通じてドライブ状態の観測・制御を行う。Platform はそれらの判断ポリシーを持たない。
+- 現行の `io.GetCapacity` は `unix.Statfs` で容量を取得している。目標構成では、このような OS 固有の環境情報取得を Platform に分離し、I/O は Go の標準 API を中心とした基本ファイル操作に専念させる。
 - Management から Distribution への直接呼び出しは、管理タスク・監視など、論理ファイル操作を必要としない責務に限る。通常のファイルデータ操作を Orchestration 経由から迂回させない。
 - 下位層は上位層の型・状態・実装を参照しない。下位層から上位層への callback で依存グラフに逆向きの辺を作らない。結果・統計は下位層の公開 API を通じて上位層が取得する。
 - 依存関係は DAG とし、循環依存を作らない。
