@@ -101,20 +101,27 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 
 ### Management
 
-- FUSE および将来の管理 API に対する、ファイルシステム全体の公開窓口となる。FUSE からの通常操作は Management を経由し、FUSE から Orchestration を直接呼び出さない。
+- FUSE および将来の管理 API に対する、ファイルシステム全体の公開窓口となる。FUSE からの通常操作は Management を経由し、FUSE から Orchestration / Distribution を直接呼び出さない。
 - ファイルシステム操作 API、管理操作 API、監視 API、制御 API を提供する。ファイルシステム操作は同期的な結果・エラーを返し、長時間の Cleanup / Recovery 等はタスクの開始・進捗確認・キャンセルを扱える形にする。
+- **システム全体の実行状態を所有する唯一のレイヤー**となる。Initializing / Ready / Maintenance / Stopping / Stopped / Failed 等の状態区分や遷移条件は別途定義し、Orchestration / Distribution の内部状態と混同しない。
+- 各操作について、現在のシステム状態で受付可能かを判断する。状態と操作種別に応じた受付ポリシーを適用し、拒否する場合は下位レイヤーを呼び出す前に明確なエラーを返す。状態の具体的な一覧・遷移表・各操作の許可範囲は設計時に定義し、未確定の状態名や許可規則を実装で先に固定しない。
+- 操作受付判断はロック取得の前後で行う。ロック取得前に状態を確認して不要な待機を避け、必要な Object / メンテナンスロック取得後にも状態と操作前提を再確認する。待機中の状態変更との競合を防ぐため、受付中操作の admission と状態遷移の排他・drain 契約を設け、最終確認後から操作開始まで状態遷移が割り込まないようにする。
 - Orchestration と Distribution の双方を統括する。通常のファイル操作では Orchestration を呼び出し、Orchestration が Distribution を呼び出す親子関係を維持する。
 - Cleanup、Recovery、Scrub 等のレイヤー横断の管理ワークフローでは、必要な論理判断を Orchestration に依頼し、物理ストライプ処理を Distribution に依頼する。意味上 Orchestration を通すべき通常データ操作を、Management から Distribution へ迂回させない。
 - Orchestration / Distribution の内部状態を直接変更しない。各レイヤーが公開する API を通じて操作し、状態の所有者と排他制御の所有者を分離する。
 - 通常操作と管理タスクの調整、Object 単位のロック、複数 Object にまたがるロック取得、メンテナンス排他を所有する。全 FUSE 操作を単一の全体 mutex で直列化せず、操作対象に応じたロック範囲で並行性を保つ。
 - 操作回数・所要時間・結果などの上位操作メトリクスを集計し、Distribution が提供するドライブ別 I/O 統計などを統合して監視 API から返す。物理 I/O のエラー検出・計数は実際に I/O を実行する下位レイヤーで行い、Management はそれを集約・公開する。
 - Cleanup の実行タイミング、実行量、継続・一時停止を制御する。バックグラウンド Cleanup は通常操作と協調し、キャンセル可能かつ小さな単位で進められるようにする。スケジューリング判断と物理削除の実行責務を混同しない。
+- 起動・初期化・停止のライフサイクルを統括する。下位レイヤーの初期化を適切な順序で実行し、Orchestration に Header の読み込み・検証、Namespace 構築・整合性検査を行わせる。Orchestration が返す論理削除済みかつ保護対象外の ObjectID を受け取り、Management 自身の一時的な削除待ちキューを再構築する。全レイヤーの初期化と整合性確認が成功するまで外部操作を Ready として受け付けず、途中失敗時は部分初期化状態を公開しない。
+- Object の論理削除状態は Orchestration が Header に永続化するが、削除待ちキューと Cleanup の実行スケジュールは Management が所有する。キューは永続状態の複製を正とせず、起動時に Orchestration から再構築する。物理削除は Distribution に依頼し、完了後に Orchestration へ論理 Object のメモリ状態の確定を依頼する。
 
 ### Orchestration
 
 - Header の定義・生成・解析・シリアライズ・更新、論理 Object と Namespace、ファイル offset と StripeID / stripe 内 offset の変換、配置方針を担当する。
-- 通常のファイルシステム操作における論理状態の所有者である。Namespace、Header、Object の論理削除状態、ObjectID 単位の削除待ち情報、open handle 等を管理する。
+- 通常のファイルシステム操作における論理状態の所有者である。Namespace、Header、Object の論理削除状態、open handle 等を管理する。Object の論理削除状態は Header の Deleted を正とし、Management の削除待ちキューを Orchestration 内に重複保持しない。
 - Management が提供する排他制御契約の下で呼び出される。Management が必要な Object ロック等を取得していることを前提とし、Orchestration 自身はレイヤー横断のロック管理・ロック取得を行わない。Namespace の内部 map や Runtime 状態を外部へ直接公開しない。
+- 初期化では Header の読み込み・解析・検証、Namespace 構築、HardLink 解決、整合性検査を行う。論理削除済みであり、かつ不整合保護対象ではない ObjectID を Management が削除待ちキューへ登録できるよう、初期化結果として読み取り専用の候補一覧を返す。候補一覧は Orchestration 内部のキュー状態ではなく、永続 Header と初期化時の検査結果から導出する。
+- 論理削除操作では Header の Deleted 状態と Namespace の変更を担当する。物理削除完了後に Management から通知を受け、対応する Object のメモリ上の論理状態を確定する。Management の Cleanup キューやスケジューリングには関与しない。
 - Distribution の API は論理ストライプ単位で利用する。チャンク番号、StripeVersion、物理配置の内部表現を持ち込まない。
 - 通常の書き込みは変更対象ストライプだけを読み取り・変更・書き戻す。通常書き込みのためにファイル全体を RAM に読み込んで再構築しない。
 - ファイルサイズ変更などで配置計画が変わる場合は、必要な既存データを新しいストライプ境界・チャンクサイズへ移行する。サイズを変えない上書きでは配置計画を再計算しない。
@@ -193,12 +200,15 @@ Distribution -> I/O
 
 ## 7. 排他制御
 
-- レイヤー横断の操作調整と Object 単位の排他制御は Management が所有する。Orchestration は Namespace / Header / Runtime の状態を所有するが、ロック管理は所有しない。
+- レイヤー横断の操作調整、Object 単位の排他制御、システム状態と操作受付制御は Management が所有する。Orchestration は Namespace / Header / Runtime の状態を所有するが、システム状態・ロック管理・操作受付可否の判断は所有しない。
+- Management の各公開操作は、まず状態に基づく受付判断を行い、必要なロックを取得した後に状態と操作前提を再確認する。ロック待機中に状態が変化した場合は、再確認で拒否してロックを解放する。
+- 状態遷移と操作受付の競合を防ぐため、Management は受付済み操作の実行区間を追跡し、状態遷移時には新規受付を止めたうえで、遷移先の契約に必要な進行中操作の完了またはキャンセルを待つ。状態の最終確認から下位層呼び出しまでに状態遷移が割り込まないよう、Object ロックとは別の admission / lifecycle 同期契約を定義する。これは全 FUSE 操作を一つの mutex で直列化することを意味しない。
 - Distribution はストライプの状態と物理配置情報を所有し、同一 ObjectID + StripeID に対する Stripe ロックを所有する。Stripe ロックは Read / Write / Recovery / Cleanup の競合を防ぐ。
 - I/O は物理ファイル操作を実行する。上位層の Object / Stripe の意味に基づくロックを持たず、必要性が実証された物理ファイル単位の排他だけを内部実装として持つ。
 - Management の Object ロックは、同一 Object に対する操作を保護する。Directory entry の変更では親 Directory、変更対象 Object、Rename の移動元・移動先など、操作の整合性に必要な Object をロック対象に含める。複数 Object をロックする場合は一貫した順序で取得し、デッドロックを防ぐ。
 - Object ロックは無関係な Object の操作を不必要に直列化しない。ファイルシステム全体の整合性を必要とする管理処理のみ、Management のメンテナンス排他を利用する。Recovery 等で通常操作を停止する範囲は、処理の整合性要件に応じて明示する。
-- Management が必要なロックを取得してから Orchestration の公開 API を呼び出す。Orchestration の API は呼び出し元がロック契約を満たしていることを前提とし、ロック取得・解放を行わない。Orchestration の内部関数もロックの取得状態を暗黙に推測しない。
+- Management が状態受付判断を通過し、必要な Object / メンテナンスロックを取得してから Orchestration の公開 API を呼び出す。Orchestration の API は呼び出し元がロック契約を満たしていることを前提とし、ロック取得・解放やシステム状態による受付判断を行わない。Orchestration の内部関数もロックの取得状態を暗黙に推測しない。
+- ロック取得前の状態確認は早期拒否のための判定であり、実行許可の確定ではない。ロック取得後の状態再確認と admission / lifecycle 同期が成立して初めて下位層の処理を開始できる。
 - Orchestration の公開操作から別の公開操作を呼び出す場合、呼び出し元と呼び出し先でロックを二重取得する構造にしない。共有処理は非公開関数へ切り出すか、Management が一つの操作として必要なロック集合を確保できる API 境界にする。
 - Distribution の公開 Stripe 操作は対象 Stripe のロックを取得し、終了時に解放する。Stripe ロック取得前に削除候補を調査した場合は、ロック取得後に対象 Version / Chunk と削除可能条件を再検証する。
 - Object 全体の削除では、Management が対象 Object の操作を調整し、Distribution が Stripe 単位の排他を取得して物理削除する。Stripe ロックの解放後に別操作が削除済み状態を誤って再公開しないよう、Distribution の内部状態更新は Stripe ロックの保護下で完了させる。
