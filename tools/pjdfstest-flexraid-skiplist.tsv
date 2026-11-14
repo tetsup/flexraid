@@ -1,0 +1,25 @@
+# pjdfstest cases intentionally skipped by the FlexRAID v1 compatibility run.
+# Format: repository-relative test path<TAB>reason. Keep EFAULT syscall-boundary tests enabled.
+tests/mknod/00.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mknod/01.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mknod/02.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mknod/03.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mknod/04.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mknod/05.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mknod/06.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mknod/07.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mknod/08.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mknod/09.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mknod/11.t	Requires character/block device creation; device nodes are unsupported in FlexRAID v1.
+tests/mkfifo/00.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mkfifo/01.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mkfifo/02.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mkfifo/03.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mkfifo/04.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mkfifo/05.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mkfifo/06.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mkfifo/07.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mkfifo/08.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mkfifo/09.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mkfifo/10.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mkfifo/11.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
