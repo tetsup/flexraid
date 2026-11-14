@@ -94,7 +94,7 @@ go build -o flexraid ./main
 
 ## 設定
 
-現在の CLI は小さな YAML 形式の設定ファイルを受け付けます。ストレージディレクトリは **4つ以上** 指定してください。各ディレクトリは異なるパスにし、mountpoint と同じパスにしないでください。各ディレクトリは異なるパスにし、mountpoint と同じパスにしないでください。データチャンク数・パリティ数・最大チャンクサイズを指定する YAML 項目はなく、現行 CLI は既定の 3 データチャンク + 1 パリティ構成を使用します。
+現在の CLI は小さな YAML 形式の設定ファイルを受け付けます。ストレージディレクトリは **4つ以上** 指定してください。各ディレクトリは異なるパスにし、mountpoint と同じパスにしないでください。データチャンク数・パリティ数・最大チャンクサイズを指定する YAML 項目はなく、現行 CLI は既定の 3 データチャンク + 1 パリティ構成を使用します。
 
 ```yaml
 disks:
@@ -102,6 +102,7 @@ disks:
   - /srv/flexraid/disk2
   - /srv/flexraid/disk3
   - /srv/flexraid/disk4
+  - /srv/flexraid/disk5 # optional additional storage
 mountpoint: /mnt/flexraid
 ```
 
