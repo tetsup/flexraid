@@ -159,6 +159,10 @@ func (layer *Orchestration) unlinkHardLink(ctx context.Context, parent, object *
 
 	// If no direct name or HardLink name remains, the File is logically deleted.
 	nextTarget := target.header
+	if target.file != nil {
+		// Preserve the authoritative data Header when removing the last alias.
+		nextTarget = target.file.header
+	}
 	nextTarget.Ctime = time.Now()
 	if nextTarget.ParentID == nil {
 		nextTarget.Deleted = true
