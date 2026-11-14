@@ -144,7 +144,7 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - 読み込み時は選択済み Version の各チャンクを再読込し、物理読み取りエラーや不正なチャンクを欠落として扱って復元を試みる。復元できなければデータ破損エラーを返す。欠落チャンクを復元できた場合は、呼び出し元から修復配置が与えられていれば同じ Version の欠落チャンクを修復する。修復は新しい Version のコミットではない。
 - 復旧はチャンクの欠落または物理読み取りエラーにより取得できない場合を対象とする。読み取れたデータ同士の内容比較や、全データチャンクが読めた場合のパリティ不一致だけを理由にデータを訂正しない。チェックサム等によるサイレント破損・改ざん検出は保証しない。
 - Distribution は StripeID ごとの状態・物理チャンク候補を所有し、同一 ObjectID + StripeID を最小単位とする Stripe ロックで Read / Write / Recovery / Cleanup の競合を防ぐ。ロック取得後に削除対象 Version・Chunk がまだ不要であることを再検証し、物理削除と Distribution 内部状態の更新を一貫して行う。
-- Cleanup は旧 Version、不正・復元不能 Version、未完了チャンク、孤立チャンク、および論理削除 Object の物理チャンクを対象にする。Object 全体の削除では Stripe 単位で処理し、Header を含む Stripe 0 は他の Stripe の削除完了後に最後に処理する。Orchestration は ObjectID 単位の論理削除待ちを保持し、Distribution は Stripe / Chunk 単位の物理削除候補と処理結果を管理する。全 Stripe の削除完了を確認してから Management 経由で Object の削除完了を Orchestration に反映する。
+- Cleanup は旧 Version、不正・復元不能 Version、未完了チャンク、孤立チャンク、および論理削除 Object の物理チャンクを対象にする。Object 全体の削除では Stripe 単位で処理し、Header を含む Stripe 0 は他の Stripe の削除完了後に最後に処理する。Management は ObjectID 単位の論理削除済み Object の処理待ちを管理し、Distribution は Stripe / Chunk 単位の物理削除候補と処理結果を管理する。全 Stripe の削除完了を確認してから Management 経由で Object の削除完了を Orchestration に反映する。
 - Cleanup の候補追跡・物理削除の整合性は Distribution が担い、いつ・どれだけ実行するかというスケジューリングは Management が担う。長時間の全件削除を通常操作の呼び出し内で無制限に実行せず、Stripe などの有限単位で進められる API を提供する。
 - 初期パリティ方式は XOR 1 パリティであり、1 データチャンクの欠損まで復元できる。内容改ざん・サイレント破損の検出を保証しない。
 - 配置ポリシーは決定せず、Orchestration から渡された配置方針を実際のチャンク配置に反映する。
