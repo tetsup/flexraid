@@ -293,3 +293,34 @@ func TestMountedRenameReplacementAndFailureCases(t *testing.T) {
 		t.Errorf("child after directory Rename: %v", err)
 	}
 }
+
+func TestMountedMknodRegularFileAndUnsupportedSpecialFiles(t *testing.T) {
+	mountpoint := mountTestFilesystem(t)
+	regular := filepath.Join(mountpoint, "mknod-regular")
+	if err := syscall.Mknod(regular, syscall.S_IFREG|0640, 0); err != nil {
+		t.Fatalf("mknod regular file: %v", err)
+	}
+	info, err := os.Lstat(regular)
+	if err != nil {
+		t.Fatalf("stat mknod regular file: %v", err)
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm() != 0640 || info.Size() != 0 {
+		t.Errorf("mknod regular file attributes = mode %v size %d", info.Mode(), info.Size())
+	}
+
+	fifo := filepath.Join(mountpoint, "mknod-fifo")
+	if err := syscall.Mkfifo(fifo, 0600); !errors.Is(err, syscall.EOPNOTSUPP) {
+		t.Errorf("mkfifo error = %v, want EOPNOTSUPP", err)
+	}
+	if _, err := os.Lstat(fifo); !errors.Is(err, syscall.ENOENT) {
+		t.Errorf("stat rejected FIFO error = %v, want ENOENT", err)
+	}
+
+	device := filepath.Join(mountpoint, "mknod-device")
+	if err := syscall.Mknod(device, syscall.S_IFCHR|0600, 0); !errors.Is(err, syscall.EOPNOTSUPP) {
+		t.Errorf("mknod character device error = %v, want EOPNOTSUPP", err)
+	}
+	if _, err := os.Lstat(device); !errors.Is(err, syscall.ENOENT) {
+		t.Errorf("stat rejected device error = %v, want ENOENT", err)
+	}
+}
