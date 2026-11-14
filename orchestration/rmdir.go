@@ -21,9 +21,7 @@ type RmdirResponse struct{}
 // Rmdir removes an empty directory from its parent Namespace. NLink is
 // derived from the Namespace, so removing the child entry updates it without
 // persisting a separate link-count field.
-func (layer *Orchestration) Rmdir(request RmdirRequest) (response RmdirResponse, err error) {
-	layer.mu.Lock()
-	defer layer.mu.Unlock()
+func (layer *Orchestration) RmdirLocked(request RmdirRequest) (response RmdirResponse, err error) {
 	response, err = layer.rmdirLocked(request)
 	if err != nil {
 		return response, err

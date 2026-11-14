@@ -21,9 +21,7 @@ type CleanupResponse struct {
 	DeletedFiles   int
 }
 
-func (layer *Orchestration) Cleanup(request CleanupRequest) (response CleanupResponse, err error) {
-	layer.mu.Lock()
-	defer layer.mu.Unlock()
+func (layer *Orchestration) CleanupLocked(request CleanupRequest) (response CleanupResponse, err error) {
 	return layer.cleanupLocked(request)
 }
 

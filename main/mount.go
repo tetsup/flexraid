@@ -10,6 +10,7 @@ import (
 	"github.com/tetsup/flexraid/distribution"
 	flexfuse "github.com/tetsup/flexraid/fuse"
 	physicalio "github.com/tetsup/flexraid/io"
+	"github.com/tetsup/flexraid/management"
 	"github.com/tetsup/flexraid/orchestration"
 	"github.com/tetsup/flexraid/pkg/shared"
 )
@@ -66,7 +67,8 @@ func mountFilesystem(config mountConfig) (*gofuse.Server, error) {
 		rootID = initialized.RootID
 	}
 
-	adapter, err := flexfuse.New(layer, rootID)
+	managed := management.New(layer)
+	adapter, err := flexfuse.New(managed, rootID)
 	if err != nil {
 		return nil, fmt.Errorf("create FUSE adapter: %w", err)
 	}
