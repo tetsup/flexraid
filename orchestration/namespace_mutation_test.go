@@ -9,8 +9,6 @@ import (
 
 func TestNamespaceEntryMutationsUpdateParentTimestamps(t *testing.T) {
 	fixture := newNamespaceFixture(t)
-	getTimes := func(id interface{ }) (time.Time, time.Time) { return time.Time{}, time.Time{} }
-	_ = getTimes
 	parentTimes := func() (time.Time, time.Time) {
 		t.Helper()
 		attr, err := fixture.layer.GetAttr(GetAttrRequest{ObjectID: fixture.rootID})
