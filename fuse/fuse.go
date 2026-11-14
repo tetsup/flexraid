@@ -401,7 +401,7 @@ func (n *node) Statfs(ctx context.Context, out *gofuse.StatfsOut) syscall.Errno 
 }
 
 type fileHandle struct {
-	layer    *orchestration.Orchestration
+	layer    *management.Management
 	objectID shared.ObjectID
 	handle   *orchestration.FileHandle
 }
