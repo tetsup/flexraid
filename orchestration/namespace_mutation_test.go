@@ -48,7 +48,7 @@ func TestNamespaceEntryMutationsUpdateParentTimestamps(t *testing.T) {
 	}
 	mtime, ctime = assertUpdated(mtime, ctime)
 
-	dir, err := fixture.layer.Mkdir(MkdirRequest{ParentID: fixture.rootID, Name: "directory"})
+	_, err = fixture.layer.Mkdir(MkdirRequest{ParentID: fixture.rootID, Name: "directory"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,6 +80,10 @@ func TestNamespaceEntryMutationsUpdateParentTimestamps(t *testing.T) {
 		t.Fatal(err)
 	}
 	mtime, ctime = assertUpdated(mtime, ctime)
+	destinationBefore, err := fixture.layer.GetAttr(GetAttrRequest{ObjectID: dest.ObjectID})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err = fixture.layer.Rename(RenameRequest{
 		SourceParentID: fixture.rootID, SourceName: "renamed",
 		DestinationParentID: dest.ObjectID, DestinationName: "moved",
@@ -88,14 +92,19 @@ func TestNamespaceEntryMutationsUpdateParentTimestamps(t *testing.T) {
 	}
 	assertUpdated(mtime, ctime)
 
-	// The destination directory's timestamps are updated as well on a cross-parent move.
+	// A cross-parent move updates both affected directories.
 	attr, err := fixture.layer.GetAttr(GetAttrRequest{ObjectID: dest.ObjectID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !attr.Attributes.Mtime.Equal(attr.Attributes.Ctime) {
-		t.Fatalf("destination directory mtime %s and ctime %s differ", attr.Attributes.Mtime, attr.Attributes.Ctime)
+	if !attr.Attributes.Mtime.After(destinationBefore.Attributes.Mtime) ||
+		!attr.Attributes.Ctime.After(destinationBefore.Attributes.Ctime) ||
+		!attr.Attributes.Mtime.Equal(attr.Attributes.Ctime) {
+		t.Fatalf("destination timestamps = mtime %s ctime %s; before mtime %s ctime %s",
+			attr.Attributes.Mtime, attr.Attributes.Ctime,
+			destinationBefore.Attributes.Mtime, destinationBefore.Attributes.Ctime)
 	}
+
 }
 
 func TestOpenFileRemainsReadableAfterUnlink(t *testing.T) {
