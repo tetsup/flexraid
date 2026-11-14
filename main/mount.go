@@ -15,14 +15,14 @@ import (
 )
 
 func mountFilesystem(config mountConfig) (*gofuse.Server, error) {
-	if len(config.DiskRoots) != diskCount {
-		return nil, fmt.Errorf("got %d disk roots; want %d", len(config.DiskRoots), diskCount)
+	if len(config.DiskRoots) < minimumDiskCount {
+		return nil, fmt.Errorf("got %d disk roots; want at least %d", len(config.DiskRoots), minimumDiskCount)
 	}
 	if config.Mountpoint == "" {
 		return nil, fmt.Errorf("mountpoint is required")
 	}
 
-	ioLayers := make([]*physicalio.IO, 0, diskCount)
+	ioLayers := make([]*physicalio.IO, 0, len(config.DiskRoots))
 	for index, root := range config.DiskRoots {
 		if root == "" {
 			return nil, fmt.Errorf("disk root %d is empty", index+1)
