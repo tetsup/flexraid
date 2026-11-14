@@ -334,3 +334,53 @@ func TestRootAccessorAndMountRejectMissingMountpoint(t *testing.T) {
 		t.Fatal("Mount on a nonexistent mountpoint succeeded")
 	}
 }
+
+func TestMknodCreatesRegularFileAndRejectsSpecialFiles(t *testing.T) {
+	adapter, ctx := newCallbackTestFilesystem(t)
+	root := adapter.root
+
+	var out gofuse.EntryOut
+	inode, errno := root.Mknod(ctx, "mknod-regular", syscall.S_IFREG|0640, 0, &out)
+	if errno != 0 {
+		t.Fatalf("Mknod regular file: %v", errno)
+	}
+	created := inode.Operations().(*node)
+	if out.Attr.Mode != syscall.S_IFREG|0640 || out.Attr.Size != 0 || out.Attr.Nlink != 1 {
+		t.Errorf("Mknod EntryOut = mode %#o size %d nlink %d", out.Attr.Mode, out.Attr.Size, out.Attr.Nlink)
+	}
+	var attr gofuse.AttrOut
+	if errno := created.Getattr(ctx, nil, &attr); errno != 0 {
+		t.Fatalf("Getattr mknod file: %v", errno)
+	}
+	if attr.Attr.Mode != syscall.S_IFREG|0640 || attr.Attr.Uid != caller(ctx).Uid || attr.Attr.Gid != caller(ctx).Gid {
+		t.Errorf("mknod attributes = mode %#o owner %d:%d", attr.Attr.Mode, attr.Attr.Uid, attr.Attr.Gid)
+	}
+	if _, errno := root.Lookup(ctx, "mknod-regular", &gofuse.EntryOut{}); errno != 0 {
+		t.Errorf("Lookup mknod file: %v", errno)
+	}
+
+	for _, tc := range []struct {
+		name string
+		mode uint32
+	}{
+		{"fifo", syscall.S_IFIFO | 0600},
+		{"character-device", syscall.S_IFCHR | 0600},
+		{"block-device", syscall.S_IFBLK | 0600},
+		{"socket", syscall.S_IFSOCK | 0600},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, errno := root.Mknod(ctx, tc.name, tc.mode, 0, &gofuse.EntryOut{}); errno != syscall.EOPNOTSUPP {
+				t.Errorf("Mknod %s errno = %v, want EOPNOTSUPP", tc.name, errno)
+			}
+			if _, errno := root.Lookup(ctx, tc.name, &gofuse.EntryOut{}); errno != syscall.ENOENT {
+				t.Errorf("Lookup rejected %s errno = %v, want ENOENT", tc.name, errno)
+			}
+		})
+	}
+	if _, errno := root.Mknod(ctx, "missing-type", 0644, 0, &gofuse.EntryOut{}); errno != syscall.EINVAL {
+		t.Errorf("Mknod without file type errno = %v, want EINVAL", errno)
+	}
+	if _, errno := root.Mknod(ctx, "mknod-regular", syscall.S_IFREG|0600, 0, &gofuse.EntryOut{}); errno != syscall.EEXIST {
+		t.Errorf("Mknod duplicate errno = %v, want EEXIST", errno)
+	}
+}
