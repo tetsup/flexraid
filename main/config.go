@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/tetsup/flexraid/pkg/shared/config"
 )
 
-const diskCount = 4
+const minimumDiskCount = config.DefaultDiskCount
 
 type mountConfig struct {
 	DiskRoots  []string
@@ -64,8 +66,8 @@ func loadConfig(path string) (mountConfig, error) {
 	if err := scanner.Err(); err != nil {
 		return mountConfig{}, fmt.Errorf("read %q: %w", path, err)
 	}
-	if len(config.DiskRoots) != diskCount {
-		return mountConfig{}, fmt.Errorf("got %d disk roots; want exactly %d", len(config.DiskRoots), diskCount)
+	if len(config.DiskRoots) < minimumDiskCount {
+		return mountConfig{}, fmt.Errorf("got %d disk roots; want at least %d", len(config.DiskRoots), minimumDiskCount)
 	}
 	if config.Mountpoint == "" {
 		return mountConfig{}, fmt.Errorf("mountpoint is required")
