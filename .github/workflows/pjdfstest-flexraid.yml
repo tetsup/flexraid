@@ -164,7 +164,7 @@ jobs:
               if [ -n "$skip_reason" ]; then
                 skip_file="$root/results/skip-${relative_test//\//_}"
                 skip_file="${skip_file%.t}.t"
-                printf "print \\"1..0 # SKIP %s\\\\n\\";\\n" "$skip_reason" > "$skip_file"
+                printf "%s\\n" "print \\"1..0 # SKIP ${skip_reason}\\\\n\\";" > "$skip_file"
                 chmod +x "$skip_file"
                 run_file="$skip_file"
                 echo "PJDFSTEST_CASE phase=skip test=$relative_test reason=$skip_reason timestamp=$(date --iso-8601=seconds)"
