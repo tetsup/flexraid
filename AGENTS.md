@@ -327,7 +327,8 @@ Distribution の公開 API は論理ストライプ単位の読み書き操作�
 | Access 専用 API | 不要 | \`Access\`。GetAttr 属性と request credentials で FUSE 側判定 |
 | Directory handle API | 未整理 | regular-file FileHandle と分離 |
 | advisory lock API | 未対応 | \`Getlk\` / \`Setlk\` / \`Setlkw\`。実装・テスト前に mount option を有効化しない |
-| \`Mknod\` / \`Tmpfile\` | 方針未確定 | callback を有効化する前に Object kind / handle 契約を定義 |
+| \`Mknod\` | FUSE callback 対応 | 通常ファイル (\`S_IFREG\`) のみ \`Create\` と同じ Orchestration 作成経路で作成。特殊ファイルは \`EOPNOTSUPP\` |
+| \`Tmpfile\` | 未対応 | unnamed temporary file の Namespace / lifetime 契約が必要 |
 
 \`Access\` は属性取得 API とは別の判定だが、Orchestration の新規公開 API は不要とする。FUSE は GetAttr の mode / UID / GID 等と request credentials を用いる。\`StatFs\` は filesystem 全体の容量情報を必要とするため、Orchestration に容量情報取得 API を追加する。
 
@@ -373,7 +374,8 @@ FUSE callback は OS ABI / go-fuse の契約に従う。FUSE 層に Namespace / 
 | \`Statfs\` | Orchestration の容量スナップショット取得 API（追加が必要） |
 | \`Fallocate\` / \`Lseek\` | \`Allocate\` / \`Lseek\`（未実装） |
 | \`Opendir\` / \`Readdir\` / \`Releasedir\` | regular-file handle と分離した Directory handle 契約が必要 |
-| \`Mknod\` / \`Tmpfile\` | サポート方針と Orchestration Object / handle 契約が未確定 |
+| \`Mknod\` | \`S_IFREG\` は \`Create\` を利用し、inode を返す。FIFO / character device / block device / socket は \`EOPNOTSUPP\` |
+| \`Tmpfile\` | unnamed temporary file の Namespace / lifetime 契約が必要なため未対応 |
 | \`Getlk\` / \`Setlk\` / \`Setlkw\` | advisory lock の仕様・実装・テストまで mount option を有効にしない |
 
 \`Statfs\` の total / free / available capacity は Orchestration が I/O / Distribution から取得・集約した値を基にする。値の意味（物理合計、冗長化後の論理容量、利用可能容量など）と更新タイミングは容量 API の契約に明示し、FUSE adapter が独自に推定しない。
@@ -440,6 +442,14 @@ The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing 
 - Each successful independent Open creates an independent FileHandle and virtual cursor. A duplicated descriptor (dup) shares the same open-file description and therefore the same FUSE handle; do not create another Orchestration handle for dup.
 - The offset supplied to Read / Write is authoritative. The per-handle virtual cursor is only a write-buffer locality hint; it is not a replacement for the kernel-provided offset and must not impose sequential-only I/O.
 
+### 10.1.1 Mknod
+
+- The initial FlexRAID implementation supports `Mknod` only when `mode & S_IFMT` is `S_IFREG`. The callback creates a normal File through the same Orchestration `Create` operation used by `NodeCreater.Create`; do not add a separate persisted Object kind or Distribution path for Mknod.
+- A successful regular-file Mknod returns the created inode and attributes but does not open the file and does not return a FileHandle. Later Read / Write operations still require a successful Open and its Orchestration FileHandle.
+- Preserve only permission/special permission bits (`mode & 07777`) as the regular file's mode. The `dev` argument is ignored for regular files.
+- FIFO, character device, block device, and socket node creation are unsupported and return `EOPNOTSUPP`. Do not publish a Namespace entry or persist data for rejected special files. `mkfifo(2)` reaches the FIFO branch of this callback and follows the same behavior.
+- A mode without an explicit file type is invalid and returns `EINVAL`; do not silently reinterpret it as a regular file.
+- Keep `Mknod` distinct from `Create`: `Create` creates and opens a file, while `Mknod` creates a regular-file directory entry without opening it. Share the Orchestration create operation rather than calling one public FUSE callback from another.
 ### 10.2 Flush, Fsync, and Release
 
 - go-fuse `NodeFlusher.Flush` / `fs.FileFlusher.Flush` may be called more than once for the same FileHandle, including when a descriptor was duplicated. Flush must therefore be safe to call repeatedly and must not release the handle.
