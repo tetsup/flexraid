@@ -1,0 +1,55 @@
+# pjdfstest cases intentionally skipped by the FlexRAID v1 compatibility run.
+# Format: repository-relative test path<TAB>reason. Keep EFAULT syscall-boundary tests enabled.
+tests/mknod/00.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mknod/01.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mknod/02.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mknod/03.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mknod/04.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mknod/05.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mknod/06.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mknod/07.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mknod/08.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mknod/09.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mknod/11.t	Requires character/block device creation; device nodes are unsupported in FlexRAID v1.
+tests/mkfifo/00.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mkfifo/01.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mkfifo/02.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mkfifo/03.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mkfifo/04.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mkfifo/05.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mkfifo/06.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mkfifo/07.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mkfifo/08.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mkfifo/09.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mkfifo/10.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mkfifo/11.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/mkdir/10.t	Exercises FIFO/device/socket entries in the file-type matrix; these special file types are unsupported in FlexRAID v1.
+tests/rename/00.t	Exercises FIFO/device/socket entries in the file-type matrix; these special file types are unsupported in FlexRAID v1.
+tests/unlink/11.t	Exercises FIFO/device/socket entries in the file-type matrix; these special file types are unsupported in FlexRAID v1.
+tests/chown/01.t	Exercises FIFO/device/socket entries in the file-type matrix; these special file types are unsupported in FlexRAID v1.
+tests/link/00.t	Exercises FIFO/device/socket entries in the file-type matrix; these special file types are unsupported in FlexRAID v1.
+tests/open/24.t	Requires creation of a UNIX domain socket; sockets are unsupported in FlexRAID v1.
+tests/rename/12.t	Exercises FIFO/device/socket entries in the file-type matrix; these special file types are unsupported in FlexRAID v1.
+tests/rename/20.t	Exercises FIFO/device/socket entries in the file-type matrix; these special file types are unsupported in FlexRAID v1.
+tests/utimensat/00.t	Exercises FIFO/device/socket entries in the file-type matrix; these special file types are unsupported in FlexRAID v1.
+tests/chmod/11.t	Exercises FIFO/device/socket entries in the file-type matrix; these special file types are unsupported in FlexRAID v1.
+tests/rename/09.t	Exercises FIFO/device/socket entries in the file-type matrix; these special file types are unsupported in FlexRAID v1.
+tests/rmdir/06.t	Exercises FIFO/device/socket entries in the file-type matrix; these special file types are unsupported in FlexRAID v1.
+tests/symlink/08.t	Exercises FIFO/device/socket entries in the file-type matrix; these special file types are unsupported in FlexRAID v1.
+tests/chown/00.t	Exercises FIFO/device/socket entries in the file-type matrix; these special file types are unsupported in FlexRAID v1.
+tests/rmdir/01.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/chmod/01.t	Exercises FIFO/device/socket entries in the file-type matrix; these special file types are unsupported in FlexRAID v1.
+tests/mkdir/01.t	Exercises FIFO/device/socket entries in the file-type matrix; these special file types are unsupported in FlexRAID v1.
+tests/rename/23.t	Exercises FIFO/device/socket entries in the file-type matrix; these special file types are unsupported in FlexRAID v1.
+tests/open/06.t	Contains FIFO-specific open and permission tests; FIFO is unsupported in FlexRAID v1.
+tests/open/22.t	Exercises FIFO/device/socket entries in the file-type matrix; these special file types are unsupported in FlexRAID v1.
+tests/rename/10.t	Exercises FIFO/device/socket entries in the file-type matrix; these special file types are unsupported in FlexRAID v1.
+tests/chown/07.t	Exercises FIFO/device/socket entries in the file-type matrix; these special file types are unsupported in FlexRAID v1.
+tests/chmod/00.t	Exercises FIFO/device/socket entries in the file-type matrix; these special file types are unsupported in FlexRAID v1.
+tests/link/10.t	Exercises FIFO/device/socket entries in the file-type matrix; these special file types are unsupported in FlexRAID v1.
+tests/rename/14.t	Exercises FIFO/device/socket entries in the file-type matrix; these special file types are unsupported in FlexRAID v1.
+tests/link/01.t	Exercises FIFO/device/socket entries in the file-type matrix; these special file types are unsupported in FlexRAID v1.
+tests/open/01.t	Exercises FIFO/device/socket entries in the file-type matrix; these special file types are unsupported in FlexRAID v1.
+tests/open/17.t	Requires FIFO creation; FIFO is unsupported in FlexRAID v1.
+tests/rename/13.t	Exercises FIFO/device/socket entries in the file-type matrix; these special file types are unsupported in FlexRAID v1.
+tests/unlink/00.t	Requires FIFO, device-node, and UNIX-domain-socket creation; these special file types are unsupported in FlexRAID v1.

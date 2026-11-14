@@ -327,7 +327,8 @@ Distribution の公開 API は論理ストライプ単位の読み書き操作�
 | Access 専用 API | 不要 | \`Access\`。GetAttr 属性と request credentials で FUSE 側判定 |
 | Directory handle API | 未整理 | regular-file FileHandle と分離 |
 | advisory lock API | 未対応 | \`Getlk\` / \`Setlk\` / \`Setlkw\`。実装・テスト前に mount option を有効化しない |
-| \`Mknod\` / \`Tmpfile\` | 方針未確定 | callback を有効化する前に Object kind / handle 契約を定義 |
+| \`Mknod\` | FUSE callback 対応 | 通常ファイル (\`S_IFREG\`) のみ \`Create\` と同じ Orchestration 作成経路で作成。特殊ファイルは \`EOPNOTSUPP\` |
+| \`Tmpfile\` | 未対応 | unnamed temporary file の Namespace / lifetime 契約が必要 |
 
 \`Access\` は属性取得 API とは別の判定だが、Orchestration の新規公開 API は不要とする。FUSE は GetAttr の mode / UID / GID 等と request credentials を用いる。\`StatFs\` は filesystem 全体の容量情報を必要とするため、Orchestration に容量情報取得 API を追加する。
 
@@ -373,7 +374,8 @@ FUSE callback は OS ABI / go-fuse の契約に従う。FUSE 層に Namespace / 
 | \`Statfs\` | Orchestration の容量スナップショット取得 API（追加が必要） |
 | \`Fallocate\` / \`Lseek\` | \`Allocate\` / \`Lseek\`（未実装） |
 | \`Opendir\` / \`Readdir\` / \`Releasedir\` | regular-file handle と分離した Directory handle 契約が必要 |
-| \`Mknod\` / \`Tmpfile\` | サポート方針と Orchestration Object / handle 契約が未確定 |
+| \`Mknod\` | \`S_IFREG\` は \`Create\` を利用し、inode を返す。FIFO / character device / block device / socket は \`EOPNOTSUPP\` |
+| \`Tmpfile\` | unnamed temporary file の Namespace / lifetime 契約が必要なため未対応 |
 | \`Getlk\` / \`Setlk\` / \`Setlkw\` | advisory lock の仕様・実装・テストまで mount option を有効にしない |
 
 \`Statfs\` の total / free / available capacity は Orchestration が I/O / Distribution から取得・集約した値を基にする。値の意味（物理合計、冗長化後の論理容量、利用可能容量など）と更新タイミングは容量 API の契約に明示し、FUSE adapter が独自に推定しない。
@@ -440,6 +442,14 @@ The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing 
 - Each successful independent Open creates an independent FileHandle and virtual cursor. A duplicated descriptor (dup) shares the same open-file description and therefore the same FUSE handle; do not create another Orchestration handle for dup.
 - The offset supplied to Read / Write is authoritative. The per-handle virtual cursor is only a write-buffer locality hint; it is not a replacement for the kernel-provided offset and must not impose sequential-only I/O.
 
+### 10.1.1 Mknod
+
+- The initial FlexRAID implementation supports `Mknod` only when `mode & S_IFMT` is `S_IFREG`. The callback creates a normal File through the same Orchestration `Create` operation used by `NodeCreater.Create`; do not add a separate persisted Object kind or Distribution path for Mknod.
+- A successful regular-file Mknod returns the created inode and attributes but does not open the file and does not return a FileHandle. Later Read / Write operations still require a successful Open and its Orchestration FileHandle.
+- Preserve only permission/special permission bits (`mode & 07777`) as the regular file's mode. The `dev` argument is ignored for regular files.
+- FIFO, character device, block device, and socket node creation are unsupported and return `EOPNOTSUPP`. Do not publish a Namespace entry or persist data for rejected special files. `mkfifo(2)` reaches the FIFO branch of this callback and follows the same behavior.
+- A mode without an explicit file type is invalid and returns `EINVAL`; do not silently reinterpret it as a regular file.
+- Keep `Mknod` distinct from `Create`: `Create` creates and opens a file, while `Mknod` creates a regular-file directory entry without opening it. Share the Orchestration create operation rather than calling one public FUSE callback from another.
 ### 10.2 Flush, Fsync, and Release
 
 - go-fuse `NodeFlusher.Flush` / `fs.FileFlusher.Flush` may be called more than once for the same FileHandle, including when a descriptor was duplicated. Flush must therefore be safe to call repeatedly and must not release the handle.
@@ -723,3 +733,13 @@ The FUSE adapter uses `github.com/hanwen/go-fuse/v2 v2.12.0`. When implementing 
 - ある操作が別の操作と同じ処理を必要とする場合も、公開操作関数同士を呼び出して処理を再利用しない。例えば `Rename` が `Link` と共通の処理を必要とする場合、`Link` と `Rename` はそれぞれ必要なロックを取得し、共通の非公開 `linkLocked` を直接呼び出す。
 - ロック対象を特定するためにロック取得前に Namespace や参照関係を調べた場合、その情報がロック取得までに変化し得ることを前提とする。ロック取得後に対象・前提条件を再検証し、取得したロック集合が不足または不適切と判明した場合は、安全に解放して取得し直す。未保護の事前確認だけを根拠に処理を続行しない。
 - この規約はロックの種類や保護対象が十分であることを保証するものではない。Object / Stripe など各ロックの保護範囲、複数ロックの取得順序、ロック対象の寿命、および全公開操作からのアクセス経路は別途整理し、データ競合と論理的な競合の両方がないことを検証する。
+
+## pjdfstest の SKIP 方針
+
+- FlexRAID v1 でサポートしない FIFO・デバイスファイルの作成を前提とする pjdfstest ケースは、失敗扱いにせず TAP の SKIP として記録する。
+- FlexRAID 用の除外対象と理由は `tools/pjdfstest-flexraid-skiplist.tsv` を唯一の正とする。テストディレクトリ全体を一括除外せず、ケース単位で明示する。
+- SKIP は仕様としてサポートしない機能に限る。実装済み機能の不具合や、将来実装予定の未対応機能を SKIP で隠してはならない。
+- システムコール境界だけで完結する引数検証（例: 不正ポインタに対する `EFAULT`）は、特殊ファイル機能を必要としない限り実行対象に残す。
+- SKIP 対象は実行時に `1..0 # SKIP <reason>` を出力する TAP テストとして扱い、CIログに元のテストパスと理由を記録する。単にテストファイルを選択対象から除外してはならない。
+- go-fuse baseline の pjdfstest は全ケースを実行し、FlexRAID 側の SKIP ポリシーを適用しない。比較時に baseline と FlexRAID の実行対象の違いを明示する。
+- pjdfstest のリビジョンを更新するときは、SKIP 対象のテスト内容を再確認し、通常ファイルやシステムコール境界の検証まで除外していないことを確認する。

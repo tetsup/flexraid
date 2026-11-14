@@ -59,6 +59,7 @@ var (
 	_ fs.NodeFsyncer    = (*node)(nil)
 	_ fs.NodeReleaser   = (*node)(nil)
 	_ fs.NodeCreater    = (*node)(nil)
+	_ fs.NodeMknoder    = (*node)(nil)
 	_ fs.NodeMkdirer    = (*node)(nil)
 	_ fs.NodeUnlinker   = (*node)(nil)
 	_ fs.NodeRmdirer    = (*node)(nil)
@@ -213,6 +214,37 @@ func (n *node) Create(ctx context.Context, name string, flags, mode uint32, out 
 		return nil, nil, 0, fs.ToErrno(err)
 	}
 	return inode, &fileHandle{layer: n.layer, objectID: result.ObjectID, handle: opened.Handle}, 0, 0
+}
+
+// Mknod creates regular files through the same Orchestration path as Create.
+// Special files are intentionally unsupported by the initial FlexRAID format.
+func (n *node) Mknod(ctx context.Context, name string, mode, _ uint32, out *gofuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	defer traceFUSECallback("Mknod", "parent_id", n.objectID.String(), "name", name, "mode", mode)()
+	fileType := mode & syscall.S_IFMT
+	if fileType == 0 {
+		return nil, syscall.EINVAL
+	}
+	if fileType != syscall.S_IFREG {
+		return nil, syscall.EOPNOTSUPP
+	}
+
+	credentials := caller(ctx)
+	result, err := n.layer.Create(orchestration.CreateRequest{
+		Context: ctx, ParentID: n.objectID, Name: name,
+		Mode: mode & 07777, UID: credentials.Uid, GID: credentials.Gid,
+	})
+	if err != nil {
+		return nil, fs.ToErrno(err)
+	}
+	attributes, err := n.layer.GetAttr(orchestration.GetAttrRequest{Context: ctx, ObjectID: result.ObjectID})
+	if err != nil {
+		_, _ = n.layer.Unlink(orchestration.UnlinkRequest{Context: ctx, ParentID: n.objectID, Name: name})
+		return nil, fs.ToErrno(err)
+	}
+	child := &node{layer: n.layer, objectID: result.ObjectID}
+	inode := n.NewInode(ctx, child, stableAttr(attributes.Attributes))
+	fillEntry(out, attributes.Attributes)
+	return inode, 0
 }
 
 func (n *node) Mkdir(ctx context.Context, name string, mode uint32, out *gofuse.EntryOut) (*fs.Inode, syscall.Errno) {
