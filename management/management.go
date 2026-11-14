@@ -8,7 +8,7 @@ import (
 )
 
 type Management struct {
-	mu           sync.Mutex
+	mu            sync.Mutex
 	orchestration *orchestration.Orchestration
 }
 
