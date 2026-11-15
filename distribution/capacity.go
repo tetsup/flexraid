@@ -48,9 +48,6 @@ func (d *Distribution) GetCapacity(request CapacityRequest) (CapacityResponse, e
 		return CapacityResponse{}, fmt.Errorf("invalid capacity layout configuration")
 	}
 
-	if len(d.capacityRoots) != len(d.ios) {
-		return CapacityResponse{}, fmt.Errorf("filesystem capacity roots are not configured")
-	}
 	ctx := request.Context
 	if ctx == nil {
 		ctx = context.Background()
@@ -61,7 +58,7 @@ func (d *Distribution) GetCapacity(request CapacityRequest) (CapacityResponse, e
 		if err := ctx.Err(); err != nil {
 			return CapacityResponse{}, err
 		}
-		capacity, err := platform.GetCapacity(platform.CapacityRequest{Context: ctx, Root: d.capacityRoots[index]})
+		capacity, err := platform.GetCapacity(platform.CapacityRequest{Context: ctx, Root: d.ios[index].RootPath()})
 		if err != nil {
 			return CapacityResponse{}, fmt.Errorf("get capacity for I/O %d: %w", index, err)
 		}
