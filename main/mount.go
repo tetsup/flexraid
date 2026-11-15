@@ -34,7 +34,7 @@ func mountFilesystem(config mountConfig) (*gofuse.Server, error) {
 		ioLayers = append(ioLayers, physicalio.New(physicalio.NewRequest{Root: root}).Layer)
 	}
 	ctx := context.Background()
-	distributed, err := distribution.New(distribution.NewRequest{Context: ctx, IOs: ioLayers})
+	distributed, err := distribution.New(distribution.NewRequest{Context: ctx, IOs: ioLayers, CapacityRoots: config.DiskRoots})
 	if err != nil {
 		return nil, fmt.Errorf("initialize Distribution: %w", err)
 	}

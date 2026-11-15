@@ -27,13 +27,12 @@ type writeFixture struct {
 func newWriteFixture(t *testing.T) writeFixture {
 	t.Helper()
 	ctx := context.Background()
-	ios := []*physicalio.IO{
-		physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer,
-		physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer,
-		physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer,
-		physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer,
+	roots := []string{t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()}
+	ios := make([]*physicalio.IO, len(roots))
+	for index, root := range roots {
+		ios[index] = physicalio.New(physicalio.NewRequest{Root: root}).Layer
 	}
-	distributed, err := distribution.New(distribution.NewRequest{IOs: ios})
+	distributed, err := distribution.New(distribution.NewRequest{IOs: ios, CapacityRoots: roots})
 	if err != nil {
 		t.Fatal(err)
 	}
