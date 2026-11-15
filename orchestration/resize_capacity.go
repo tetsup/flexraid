@@ -23,7 +23,7 @@ func (layer *Orchestration) validateResizeCapacity(ctx context.Context, old head
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	capacity, err := layer.distribution.GetCapacity(distribution.CapacityRequest{})
+	capacity, err := layer.distribution.GetCapacity(distribution.CapacityRequest{Context: ctx})
 	if err != nil {
 		return fmt.Errorf("get capacity for resize: %w", err)
 	}
