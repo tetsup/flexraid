@@ -35,7 +35,7 @@ func TestCreateRootCreatesAndRestoresEmptyFilesystem(t *testing.T) {
 	if _, err := created.RootID.MarshalBinary(); err != nil {
 		t.Fatalf("root ObjectID is invalid: %v", err)
 	}
-	root, err := created.Layer.GetAttr(GetAttrRequest{ObjectID: created.RootID})
+	root, err := created.Layer.GetAttrLocked(GetAttrRequest{ObjectID: created.RootID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestCreateRootCreatesAndRestoresEmptyFilesystem(t *testing.T) {
 		attributes.UID != 123 || attributes.GID != 456 || attributes.Nlink != 2 || attributes.Size != 0 {
 		t.Fatalf("root attributes = %+v", attributes)
 	}
-	entries, err := created.Layer.ReadDir(ReadDirRequest{ObjectID: created.RootID})
+	entries, err := created.Layer.ReadDirLocked(ReadDirRequest{ObjectID: created.RootID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestCreateRootCreatesAndRestoresEmptyFilesystem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	restored, err := restarted.Layer.GetAttr(GetAttrRequest{ObjectID: created.RootID})
+	restored, err := restarted.Layer.GetAttrLocked(GetAttrRequest{ObjectID: created.RootID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestCreateRootCreatesAndRestoresEmptyFilesystem(t *testing.T) {
 		restored.Attributes.UID != 123 || restored.Attributes.GID != 456 || restored.Attributes.Nlink != 2 {
 		t.Fatalf("restored root attributes = %+v", restored.Attributes)
 	}
-	restoredEntries, err := restarted.Layer.ReadDir(ReadDirRequest{ObjectID: created.RootID})
+	restoredEntries, err := restarted.Layer.ReadDirLocked(ReadDirRequest{ObjectID: created.RootID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestCreateRootMasksFileTypeBitsFromMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	attributes, err := created.Layer.GetAttr(GetAttrRequest{ObjectID: created.RootID})
+	attributes, err := created.Layer.GetAttrLocked(GetAttrRequest{ObjectID: created.RootID})
 	if err != nil {
 		t.Fatal(err)
 	}
