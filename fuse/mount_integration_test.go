@@ -10,6 +10,7 @@ import (
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/tetsup/flexraid/distribution"
 	"github.com/tetsup/flexraid/fuse"
+	"github.com/tetsup/flexraid/management"
 	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/orchestration"
 )
@@ -36,7 +37,7 @@ func TestMountedEmptyFilesystem(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create empty filesystem root: %v", err)
 	}
-	adapter, err := fuse.New(created.Layer, created.RootID)
+	adapter, err := fuse.New(management.New(created.Layer), created.RootID)
 	if err != nil {
 		t.Fatalf("create FUSE adapter: %v", err)
 	}
