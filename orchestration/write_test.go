@@ -76,7 +76,7 @@ func openWriteHandle(t *testing.T, layer *Orchestration, id shared.ObjectID, fla
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.CleanupLocked(func() { _, _ = layer.ReleaseLocked(ReleaseRequest{Handle: opened.Handle}) })
+	t.Cleanup(func() { _, _ = layer.ReleaseLocked(ReleaseRequest{Handle: opened.Handle}) })
 	return opened.Handle
 }
 
