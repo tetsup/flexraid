@@ -1,6 +1,12 @@
 package distribution
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"testing"
+
+	physicalio "github.com/tetsup/flexraid/io"
+)
 
 func TestMaxStripeCount(t *testing.T) {
 	tests := []struct {
@@ -21,5 +27,54 @@ func TestMaxStripeCount(t *testing.T) {
 				t.Fatalf("maxStripeCount(%v, %d) = %d, want %d", tt.available, tt.devices, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestGetCapacityUsesPlatformRoots(t *testing.T) {
+	roots := []string{t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()}
+	ios := make([]*physicalio.IO, len(roots))
+	for index, root := range roots {
+		ios[index] = physicalio.New(physicalio.NewRequest{Root: root}).Layer
+	}
+	created, err := New(NewRequest{IOs: ios, CapacityRoots: roots})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := created.Layer.GetCapacity(CapacityRequest{Context: context.Background()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Capacities) != len(roots) {
+		t.Fatalf("got %d capacities, want %d", len(got.Capacities), len(roots))
+	}
+	for index, capacity := range got.Capacities {
+		if capacity.TotalBytes == 0 || capacity.AvailableBytes == 0 {
+			t.Errorf("capacity %d is empty: %+v", index, capacity)
+		}
+	}
+}
+
+func TestGetCapacityRequiresConfiguredRoots(t *testing.T) {
+	ios := []*physicalio.IO{physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer}
+	created, err := New(NewRequest{IOs: ios})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := created.Layer.GetCapacity(CapacityRequest{}); err == nil {
+		t.Fatal("GetCapacity succeeded without capacity roots")
+	}
+}
+
+func TestGetCapacityHonorsCancellation(t *testing.T) {
+	roots := []string{t.TempDir()}
+	ios := []*physicalio.IO{physicalio.New(physicalio.NewRequest{Root: roots[0]}).Layer}
+	created, err := New(NewRequest{IOs: ios, CapacityRoots: roots})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := created.Layer.GetCapacity(CapacityRequest{Context: ctx}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("GetCapacity error = %v, want context.Canceled", err)
 	}
 }
