@@ -11,7 +11,7 @@ func TestNamespaceEntryMutationsUpdateParentTimestamps(t *testing.T) {
 	fixture := newNamespaceFixture(t)
 	parentTimes := func() (time.Time, time.Time) {
 		t.Helper()
-		attr, err := fixture.layer.GetAttr(GetAttrRequest{ObjectID: fixture.rootID})
+		attr, err := fixture.layer.GetAttrLocked(GetAttrRequest{ObjectID: fixture.rootID})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -30,44 +30,44 @@ func TestNamespaceEntryMutationsUpdateParentTimestamps(t *testing.T) {
 	}
 
 	mtime, ctime := parentTimes()
-	file, err := fixture.layer.Create(CreateRequest{ParentID: fixture.rootID, Name: "file"})
+	file, err := fixture.layer.CreateLocked(CreateRequest{ParentID: fixture.rootID, Name: "file"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	mtime, ctime = assertUpdated(mtime, ctime)
 
-	_, err = fixture.layer.Link(LinkRequest{SourceID: file.ObjectID, ParentID: fixture.rootID, Name: "alias"})
+	_, err = fixture.layer.LinkLocked(LinkRequest{SourceID: file.ObjectID, ParentID: fixture.rootID, Name: "alias"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	mtime, ctime = assertUpdated(mtime, ctime)
 
-	_, err = fixture.layer.Symlink(SymlinkRequest{ParentID: fixture.rootID, Name: "link", Target: "target"})
+	_, err = fixture.layer.SymlinkLocked(SymlinkRequest{ParentID: fixture.rootID, Name: "link", Target: "target"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	mtime, ctime = assertUpdated(mtime, ctime)
 
-	_, err = fixture.layer.Mkdir(MkdirRequest{ParentID: fixture.rootID, Name: "directory"})
+	_, err = fixture.layer.MkdirLocked(MkdirRequest{ParentID: fixture.rootID, Name: "directory"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	mtime, ctime = assertUpdated(mtime, ctime)
 
-	if _, err = fixture.layer.Unlink(UnlinkRequest{ParentID: fixture.rootID, Name: "link"}); err != nil {
+	if _, err = fixture.layer.UnlinkLocked(UnlinkRequest{ParentID: fixture.rootID, Name: "link"}); err != nil {
 		t.Fatal(err)
 	}
 	mtime, ctime = assertUpdated(mtime, ctime)
-	if _, err = fixture.layer.Unlink(UnlinkRequest{ParentID: fixture.rootID, Name: "alias"}); err != nil {
+	if _, err = fixture.layer.UnlinkLocked(UnlinkRequest{ParentID: fixture.rootID, Name: "alias"}); err != nil {
 		t.Fatal(err)
 	}
 	mtime, ctime = assertUpdated(mtime, ctime)
-	if _, err = fixture.layer.Rmdir(RmdirRequest{ParentID: fixture.rootID, Name: "directory"}); err != nil {
+	if _, err = fixture.layer.RmdirLocked(RmdirRequest{ParentID: fixture.rootID, Name: "directory"}); err != nil {
 		t.Fatal(err)
 	}
 	mtime, ctime = assertUpdated(mtime, ctime)
 
-	if _, err = fixture.layer.Rename(RenameRequest{
+	if _, err = fixture.layer.RenameLocked(RenameRequest{
 		SourceParentID: fixture.rootID, SourceName: "file",
 		DestinationParentID: fixture.rootID, DestinationName: "renamed",
 	}); err != nil {
@@ -75,16 +75,16 @@ func TestNamespaceEntryMutationsUpdateParentTimestamps(t *testing.T) {
 	}
 	mtime, ctime = assertUpdated(mtime, ctime)
 
-	dest, err := fixture.layer.Mkdir(MkdirRequest{ParentID: fixture.rootID, Name: "destination"})
+	dest, err := fixture.layer.MkdirLocked(MkdirRequest{ParentID: fixture.rootID, Name: "destination"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	mtime, ctime = assertUpdated(mtime, ctime)
-	destinationBefore, err := fixture.layer.GetAttr(GetAttrRequest{ObjectID: dest.ObjectID})
+	destinationBefore, err := fixture.layer.GetAttrLocked(GetAttrRequest{ObjectID: dest.ObjectID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = fixture.layer.Rename(RenameRequest{
+	if _, err = fixture.layer.RenameLocked(RenameRequest{
 		SourceParentID: fixture.rootID, SourceName: "renamed",
 		DestinationParentID: dest.ObjectID, DestinationName: "moved",
 	}); err != nil {
@@ -93,7 +93,7 @@ func TestNamespaceEntryMutationsUpdateParentTimestamps(t *testing.T) {
 	assertUpdated(mtime, ctime)
 
 	// A cross-parent move updates both affected directories.
-	attr, err := fixture.layer.GetAttr(GetAttrRequest{ObjectID: dest.ObjectID})
+	attr, err := fixture.layer.GetAttrLocked(GetAttrRequest{ObjectID: dest.ObjectID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,30 +109,30 @@ func TestNamespaceEntryMutationsUpdateParentTimestamps(t *testing.T) {
 
 func TestOpenFileRemainsReadableAfterUnlink(t *testing.T) {
 	fixture := newNamespaceFixture(t)
-	created, err := fixture.layer.Create(CreateRequest{ParentID: fixture.rootID, Name: "open-unlinked"})
+	created, err := fixture.layer.CreateLocked(CreateRequest{ParentID: fixture.rootID, Name: "open-unlinked"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	opened, err := fixture.layer.Open(OpenRequest{ObjectID: created.ObjectID, Flags: uint32(syscall.O_RDWR)})
+	opened, err := fixture.layer.OpenLocked(OpenRequest{ObjectID: created.ObjectID, Flags: uint32(syscall.O_RDWR)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	payload := []byte("Hello,_World!")
-	if _, err := fixture.layer.Write(WriteRequest{Handle: opened.Handle, ObjectID: created.ObjectID, Offset: 0, Data: payload}); err != nil {
+	if _, err := fixture.layer.WriteLocked(WriteRequest{Handle: opened.Handle, ObjectID: created.ObjectID, Offset: 0, Data: payload}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fixture.layer.Unlink(UnlinkRequest{ParentID: fixture.rootID, Name: "open-unlinked"}); err != nil {
+	if _, err := fixture.layer.UnlinkLocked(UnlinkRequest{ParentID: fixture.rootID, Name: "open-unlinked"}); err != nil {
 		t.Fatal(err)
 	}
 
-	read, err := fixture.layer.Read(ReadRequest{Handle: opened.Handle, ObjectID: created.ObjectID, Offset: 0, Size: uint32(len(payload))})
+	read, err := fixture.layer.ReadLocked(ReadRequest{Handle: opened.Handle, ObjectID: created.ObjectID, Offset: 0, Size: uint32(len(payload))})
 	if err != nil {
 		t.Fatalf("Read after Unlink: %v", err)
 	}
 	if !bytes.Equal(read.Data, payload) {
 		t.Fatalf("Read after Unlink = %q, want %q", read.Data, payload)
 	}
-	if _, err := fixture.layer.Release(ReleaseRequest{Handle: opened.Handle}); err != nil {
+	if _, err := fixture.layer.ReleaseLocked(ReleaseRequest{Handle: opened.Handle}); err != nil {
 		t.Fatal(err)
 	}
 	if opened.Handle.runtimeFile.openCount != 0 {
