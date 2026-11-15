@@ -32,7 +32,7 @@ func newWriteFixture(t *testing.T) writeFixture {
 	for index, root := range roots {
 		ios[index] = physicalio.New(physicalio.NewRequest{Root: root}).Layer
 	}
-	distributed, err := distribution.New(distribution.NewRequest{IOs: ios, CapacityRoots: roots})
+	distributed, err := distribution.New(distribution.NewRequest{IOs: ios})
 	if err != nil {
 		t.Fatal(err)
 	}
