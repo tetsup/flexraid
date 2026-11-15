@@ -31,52 +31,52 @@ func initializedReadLayer(t *testing.T) (*Orchestration, shared.ObjectID, shared
 
 func TestLookup(t *testing.T) {
 	layer, rootID, dirID, fileID := initializedReadLayer(t)
-	got, err := layer.Lookup(LookupRequest{ParentID: rootID, Name: "docs"})
+	got, err := layer.LookupLocked(LookupRequest{ParentID: rootID, Name: "docs"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.ObjectID != dirID || got.Kind != objectKindDirectory {
 		t.Fatalf("unexpected lookup result: %#v", got)
 	}
-	got, err = layer.Lookup(LookupRequest{ParentID: dirID, Name: "readme"})
+	got, err = layer.LookupLocked(LookupRequest{ParentID: dirID, Name: "readme"})
 	if err != nil || got.ObjectID != fileID {
 		t.Fatalf("lookup file: result=%#v err=%v", got, err)
 	}
-	if _, err := layer.Lookup(LookupRequest{ParentID: rootID, Name: "missing"}); !errors.Is(err, os.ErrNotExist) {
+	if _, err := layer.LookupLocked(LookupRequest{ParentID: rootID, Name: "missing"}); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("got %v, want os.ErrNotExist", err)
 	}
-	if _, err := layer.Lookup(LookupRequest{ParentID: fileID, Name: "child"}); !errors.Is(err, errNotDirectory) {
+	if _, err := layer.LookupLocked(LookupRequest{ParentID: fileID, Name: "child"}); !errors.Is(err, errNotDirectory) {
 		t.Fatalf("got %v, want errNotDirectory", err)
 	}
-	if _, err := layer.Lookup(LookupRequest{ParentID: rootID, Name: "../docs"}); err == nil {
+	if _, err := layer.LookupLocked(LookupRequest{ParentID: rootID, Name: "../docs"}); err == nil {
 		t.Fatal("invalid child name accepted")
 	}
-	if _, err := layer.Lookup(LookupRequest{ParentID: rootID, Name: strings.Repeat("a", int(cfg.MaxNameLength))}); !errors.Is(err, os.ErrNotExist) {
+	if _, err := layer.LookupLocked(LookupRequest{ParentID: rootID, Name: strings.Repeat("a", int(cfg.MaxNameLength))}); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("255-byte name: got %v, want os.ErrNotExist", err)
 	}
-	if _, err := layer.Lookup(LookupRequest{ParentID: rootID, Name: strings.Repeat("a", int(cfg.MaxNameLength)+1)}); !errors.Is(err, syscall.ENAMETOOLONG) {
+	if _, err := layer.LookupLocked(LookupRequest{ParentID: rootID, Name: strings.Repeat("a", int(cfg.MaxNameLength)+1)}); !errors.Is(err, syscall.ENAMETOOLONG) {
 		t.Fatalf("256-byte name: got %v, want syscall.ENAMETOOLONG", err)
 	}
-	if _, err := layer.Lookup(LookupRequest{ParentID: rootID, Name: strings.Repeat("あ", int(cfg.MaxNameLength)/3)}); !errors.Is(err, os.ErrNotExist) {
+	if _, err := layer.LookupLocked(LookupRequest{ParentID: rootID, Name: strings.Repeat("あ", int(cfg.MaxNameLength)/3)}); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("255-byte multibyte name: got %v, want os.ErrNotExist", err)
 	}
-	if _, err := layer.Lookup(LookupRequest{ParentID: rootID, Name: strings.Repeat("あ", int(cfg.MaxNameLength)/3+1)}); !errors.Is(err, syscall.ENAMETOOLONG) {
+	if _, err := layer.LookupLocked(LookupRequest{ParentID: rootID, Name: strings.Repeat("あ", int(cfg.MaxNameLength)/3+1)}); !errors.Is(err, syscall.ENAMETOOLONG) {
 		t.Fatalf("258-byte multibyte name: got %v, want syscall.ENAMETOOLONG", err)
 	}
 	missingParent := testID("42345678-9abc-4def-8abc-1234567890ab")
-	if _, err := layer.Lookup(LookupRequest{ParentID: missingParent, Name: strings.Repeat("a", int(cfg.MaxNameLength)+1)}); !errors.Is(err, syscall.ENAMETOOLONG) {
+	if _, err := layer.LookupLocked(LookupRequest{ParentID: missingParent, Name: strings.Repeat("a", int(cfg.MaxNameLength)+1)}); !errors.Is(err, syscall.ENAMETOOLONG) {
 		t.Fatalf("long name with missing parent: got %v, want syscall.ENAMETOOLONG", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := layer.Lookup(LookupRequest{Context: ctx, ParentID: rootID, Name: "docs"}); !errors.Is(err, context.Canceled) {
+	if _, err := layer.LookupLocked(LookupRequest{Context: ctx, ParentID: rootID, Name: "docs"}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("got %v, want context.Canceled", err)
 	}
 }
 
 func TestReadDir(t *testing.T) {
 	layer, rootID, dirID, fileID := initializedReadLayer(t)
-	got, err := layer.ReadDir(ReadDirRequest{ObjectID: rootID})
+	got, err := layer.ReadDirLocked(ReadDirRequest{ObjectID: rootID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestReadDir(t *testing.T) {
 	if !reflect.DeepEqual(got.Entries, want) {
 		t.Fatalf("got %#v, want %#v", got.Entries, want)
 	}
-	got, err = layer.ReadDir(ReadDirRequest{ObjectID: dirID})
+	got, err = layer.ReadDirLocked(ReadDirRequest{ObjectID: dirID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,14 +92,14 @@ func TestReadDir(t *testing.T) {
 	if !reflect.DeepEqual(got.Entries, want) {
 		t.Fatalf("got %#v, want %#v", got.Entries, want)
 	}
-	if _, err := layer.ReadDir(ReadDirRequest{ObjectID: fileID}); !errors.Is(err, errNotDirectory) {
+	if _, err := layer.ReadDirLocked(ReadDirRequest{ObjectID: fileID}); !errors.Is(err, errNotDirectory) {
 		t.Fatalf("got %v, want errNotDirectory", err)
 	}
 }
 
 func TestGetAttr(t *testing.T) {
 	layer, _, _, fileID := initializedReadLayer(t)
-	got, err := layer.GetAttr(GetAttrRequest{ObjectID: fileID})
+	got, err := layer.GetAttrLocked(GetAttrRequest{ObjectID: fileID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestGetAttr(t *testing.T) {
 		t.Fatalf("unexpected attributes: %#v", attr)
 	}
 	missing := testID("42345678-9abc-4def-8abc-1234567890ab")
-	if _, err := layer.GetAttr(GetAttrRequest{ObjectID: missing}); !errors.Is(err, os.ErrNotExist) {
+	if _, err := layer.GetAttrLocked(GetAttrRequest{ObjectID: missing}); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("got %v, want os.ErrNotExist", err)
 	}
 }
@@ -155,23 +155,23 @@ func TestReadLinkReturnsCachedTargetAndSymlinkAttributes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := layer.ReadLink(ReadLinkRequest{ObjectID: linkID})
+	got, err := layer.ReadLinkLocked(ReadLinkRequest{ObjectID: linkID})
 	if err != nil || got.Target != target {
 		t.Fatalf("ReadLink = %#v, %v; want target %q", got, err, target)
 	}
-	attr, err := layer.GetAttr(GetAttrRequest{ObjectID: linkID})
+	attr, err := layer.GetAttrLocked(GetAttrRequest{ObjectID: linkID})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if attr.Attributes.Kind != objectKindSymlink || attr.Attributes.Size != uint64(len(target)) {
 		t.Fatalf("GetAttr did not return symlink attributes: %#v", attr.Attributes)
 	}
-	if _, err := layer.ReadLink(ReadLinkRequest{ObjectID: rootID}); err == nil {
+	if _, err := layer.ReadLinkLocked(ReadLinkRequest{ObjectID: rootID}); err == nil {
 		t.Fatal("ReadLink accepted a non-symlink")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := layer.ReadLink(ReadLinkRequest{Context: ctx, ObjectID: linkID}); !errors.Is(err, context.Canceled) {
+	if _, err := layer.ReadLinkLocked(ReadLinkRequest{Context: ctx, ObjectID: linkID}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("ReadLink canceled context: got %v, want context.Canceled", err)
 	}
 }
@@ -194,7 +194,7 @@ func TestInitializeSkipsSymlinkWithUnavailableTarget(t *testing.T) {
 	if _, exists := layer.root.children["broken"]; exists {
 		t.Fatal("symlink with unavailable target was exposed in namespace")
 	}
-	if _, err := layer.ReadLink(ReadLinkRequest{ObjectID: linkID}); err == nil {
+	if _, err := layer.ReadLinkLocked(ReadLinkRequest{ObjectID: linkID}); err == nil {
 		t.Fatal("ReadLink returned an unavailable target")
 	}
 	if _, protected := layer.protectedObjects[linkID]; !protected {
@@ -237,7 +237,7 @@ func TestGetAttrDerivesDirectoryAndHardLinkCounts(t *testing.T) {
 	for id, want := range map[shared.ObjectID]uint32{
 		rootID: 3, childDirID: 3, nestedDirID: 2, linkAID: 2, linkBID: 2,
 	} {
-		got, err := layer.GetAttr(GetAttrRequest{ObjectID: id})
+		got, err := layer.GetAttrLocked(GetAttrRequest{ObjectID: id})
 		if err != nil {
 			t.Fatalf("GetAttr(%s): %v", id, err)
 		}
