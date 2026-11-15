@@ -41,8 +41,8 @@ func GetCapacity(request CapacityRequest) (CapacityResponse, error) {
 	}
 	blockSize := uint64(stat.Bsize)
 	return CapacityResponse{Capacity: shared.Capacity{
-		TotalBytes: uint64(stat.Blocks) * blockSize,
-		FreeBytes: uint64(stat.Bfree) * blockSize,
+		TotalBytes:     uint64(stat.Blocks) * blockSize,
+		FreeBytes:      uint64(stat.Bfree) * blockSize,
 		AvailableBytes: uint64(stat.Bavail) * blockSize,
 	}}, nil
 }

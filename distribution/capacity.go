@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/tetsup/flexraid/platform"
 	"github.com/tetsup/flexraid/pkg/shared"
 	"github.com/tetsup/flexraid/pkg/shared/config"
+	"github.com/tetsup/flexraid/platform"
 )
 
 type CapacityRequest struct {

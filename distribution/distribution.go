@@ -13,24 +13,24 @@ import (
 )
 
 type NewRequest struct {
-	Context  context.Context
+	Context       context.Context
 	IOs           []*physicalio.IO
 	CapacityRoots []string
-	LogLevel slog.Level
-	Logger   *slog.Logger
+	LogLevel      slog.Level
+	Logger        *slog.Logger
 }
 type NewResponse struct{ Layer *Distribution }
 
 type Distribution struct {
 	ios           []*physicalio.IO
 	capacityRoots []string
-	logger      *slog.Logger
-	objects     map[shared.ObjectID]map[storage.StripeID]*stripeInfo
-	versions    map[stripeIDKey]map[storage.StripeVersion]*versionInfo
-	ioErrors    []uint64
-	totalErrors uint64
-	ioFailures  []error
-	orphans     map[shared.ObjectID][]chunkLocation
+	logger        *slog.Logger
+	objects       map[shared.ObjectID]map[storage.StripeID]*stripeInfo
+	versions      map[stripeIDKey]map[storage.StripeVersion]*versionInfo
+	ioErrors      []uint64
+	totalErrors   uint64
+	ioFailures    []error
+	orphans       map[shared.ObjectID][]chunkLocation
 }
 type stripeIDKey struct {
 	objectID shared.ObjectID
