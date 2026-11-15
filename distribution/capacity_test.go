@@ -36,7 +36,7 @@ func TestGetCapacityUsesPlatformRoots(t *testing.T) {
 	for index, root := range roots {
 		ios[index] = physicalio.New(physicalio.NewRequest{Root: root}).Layer
 	}
-	created, err := New(NewRequest{IOs: ios, CapacityRoots: roots})
+	created, err := New(NewRequest{IOs: ios})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,21 +54,10 @@ func TestGetCapacityUsesPlatformRoots(t *testing.T) {
 	}
 }
 
-func TestGetCapacityRequiresConfiguredRoots(t *testing.T) {
-	ios := []*physicalio.IO{physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer}
-	created, err := New(NewRequest{IOs: ios})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := created.Layer.GetCapacity(CapacityRequest{}); err == nil {
-		t.Fatal("GetCapacity succeeded without capacity roots")
-	}
-}
-
 func TestGetCapacityHonorsCancellation(t *testing.T) {
 	roots := []string{t.TempDir()}
 	ios := []*physicalio.IO{physicalio.New(physicalio.NewRequest{Root: roots[0]}).Layer}
-	created, err := New(NewRequest{IOs: ios, CapacityRoots: roots})
+	created, err := New(NewRequest{IOs: ios})
 	if err != nil {
 		t.Fatal(err)
 	}
