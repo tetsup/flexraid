@@ -15,7 +15,6 @@ import (
 type NewRequest struct {
 	Context       context.Context
 	IOs           []*physicalio.IO
-	CapacityRoots []string
 	LogLevel      slog.Level
 	Logger        *slog.Logger
 }
@@ -23,7 +22,6 @@ type NewResponse struct{ Layer *Distribution }
 
 type Distribution struct {
 	ios           []*physicalio.IO
-	capacityRoots []string
 	logger        *slog.Logger
 	objects       map[shared.ObjectID]map[storage.StripeID]*stripeInfo
 	versions      map[stripeIDKey]map[storage.StripeVersion]*versionInfo
@@ -69,9 +67,6 @@ func New(request NewRequest) (NewResponse, error) {
 	if len(request.IOs) == 0 {
 		return NewResponse{}, errNoUsableIO
 	}
-	if len(request.CapacityRoots) != 0 && len(request.CapacityRoots) != len(request.IOs) {
-		return NewResponse{}, fmt.Errorf("got %d capacity roots for %d I/O layers", len(request.CapacityRoots), len(request.IOs))
-	}
 	seen := make(map[*physicalio.IO]struct{}, len(request.IOs))
 	for _, layer := range request.IOs {
 		if layer == nil {
@@ -82,7 +77,7 @@ func New(request NewRequest) (NewResponse, error) {
 		}
 		seen[layer] = struct{}{}
 	}
-	d := &Distribution{ios: append([]*physicalio.IO(nil), request.IOs...), capacityRoots: append([]string(nil), request.CapacityRoots...), logger: logger,
+	d := &Distribution{ios: append([]*physicalio.IO(nil), request.IOs...), logger: logger,
 		objects:  make(map[shared.ObjectID]map[storage.StripeID]*stripeInfo),
 		versions: make(map[stripeIDKey]map[storage.StripeVersion]*versionInfo),
 		ioErrors: make([]uint64, len(request.IOs)), ioFailures: make([]error, len(request.IOs)), orphans: make(map[shared.ObjectID][]chunkLocation)}
