@@ -58,11 +58,11 @@ func TestReadReturnsLogicalRangeAcrossStripesAndHardLinks(t *testing.T) {
 		file:   layer.objects[fileID].file,
 	}
 
-	openResponse, err := layer.Open(OpenRequest{ObjectID: fileID})
+	openResponse, err := layer.OpenLocked(OpenRequest{ObjectID: fileID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer layer.Release(ReleaseRequest{Handle: openResponse.Handle})
+	defer layer.ReleaseLocked(ReleaseRequest{Handle: openResponse.Handle})
 
 	for _, tc := range []struct {
 		offset uint64
@@ -73,7 +73,7 @@ func TestReadReturnsLogicalRangeAcrossStripesAndHardLinks(t *testing.T) {
 		{offset: uint64(len(payload) - 11), size: 40},
 		{offset: uint64(len(payload)), size: 10},
 	} {
-		got, err := layer.Read(ReadRequest{Context: ctx, Handle: openResponse.Handle, ObjectID: fileID, Offset: tc.offset, Size: tc.size})
+		got, err := layer.ReadLocked(ReadRequest{Context: ctx, Handle: openResponse.Handle, ObjectID: fileID, Offset: tc.offset, Size: tc.size})
 		if err != nil {
 			t.Fatalf("Read offset=%d size=%d: %v", tc.offset, tc.size, err)
 		}
@@ -88,12 +88,12 @@ func TestReadReturnsLogicalRangeAcrossStripesAndHardLinks(t *testing.T) {
 	if len(layer.objects[fileID].file.stripeCache) == 0 {
 		t.Fatal("Read did not populate the shared stripe cache")
 	}
-	linkOpen, err := layer.Open(OpenRequest{ObjectID: linkID})
+	linkOpen, err := layer.OpenLocked(OpenRequest{ObjectID: linkID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer layer.Release(ReleaseRequest{Handle: linkOpen.Handle})
-	got, err := layer.Read(ReadRequest{Context: ctx, Handle: linkOpen.Handle, ObjectID: linkID, Offset: 9, Size: 100})
+	defer layer.ReleaseLocked(ReleaseRequest{Handle: linkOpen.Handle})
+	got, err := layer.ReadLocked(ReadRequest{Context: ctx, Handle: linkOpen.Handle, ObjectID: linkID, Offset: 9, Size: 100})
 	if err != nil || !bytes.Equal(got.Data, payload[9:109]) {
 		t.Fatalf("HardLink Read = %d bytes, %v", len(got.Data), err)
 	}
@@ -104,14 +104,14 @@ func TestReadValidatesObjectAndContext(t *testing.T) {
 	cancel()
 	layer := &Orchestration{objects: make(map[shared.ObjectID]*runtimeObject)}
 	id := testID("32345678-9abc-4def-8abc-1234567890ab")
-	if _, err := layer.Read(ReadRequest{Context: ctx, ObjectID: id, Size: 1}); !errors.Is(err, context.Canceled) {
+	if _, err := layer.ReadLocked(ReadRequest{Context: ctx, ObjectID: id, Size: 1}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("got %v, want context.Canceled", err)
 	}
-	if _, err := layer.Read(ReadRequest{ObjectID: id, Size: 1}); err == nil {
+	if _, err := layer.ReadLocked(ReadRequest{ObjectID: id, Size: 1}); err == nil {
 		t.Fatal("missing object unexpectedly read")
 	}
 	layer.objects[id] = &runtimeObject{header: testHeader(objectKindDirectory, id, nil, nil, "")}
-	if _, err := layer.Read(ReadRequest{ObjectID: id, Size: 1}); err == nil {
+	if _, err := layer.ReadLocked(ReadRequest{ObjectID: id, Size: 1}); err == nil {
 		t.Fatal("directory unexpectedly readable")
 	}
 }
@@ -124,17 +124,17 @@ func TestReadRequiresValidHandle(t *testing.T) {
 	file.header = objectHeader
 	layer := &Orchestration{objects: map[shared.ObjectID]*runtimeObject{id: {header: objectHeader, file: file}}}
 
-	if _, err := layer.Read(ReadRequest{ObjectID: id, Size: 1}); !errors.Is(err, os.ErrInvalid) {
+	if _, err := layer.ReadLocked(ReadRequest{ObjectID: id, Size: 1}); !errors.Is(err, os.ErrInvalid) {
 		t.Fatalf("Read without handle = %v, want os.ErrInvalid", err)
 	}
-	opened, err := layer.Open(OpenRequest{ObjectID: id})
+	opened, err := layer.OpenLocked(OpenRequest{ObjectID: id})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := layer.Release(ReleaseRequest{Handle: opened.Handle}); err != nil {
+	if _, err := layer.ReleaseLocked(ReleaseRequest{Handle: opened.Handle}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := layer.Read(ReadRequest{Handle: opened.Handle, ObjectID: id, Size: 1}); !errors.Is(err, os.ErrInvalid) {
+	if _, err := layer.ReadLocked(ReadRequest{Handle: opened.Handle, ObjectID: id, Size: 1}); !errors.Is(err, os.ErrInvalid) {
 		t.Fatalf("Read after Release = %v, want os.ErrInvalid", err)
 	}
 }
@@ -146,11 +146,11 @@ func TestOpenCreatesIndependentHandlesForSharedRuntimeFile(t *testing.T) {
 	file := &runtimeFile{objectID: id, header: h, stripeCache: make(map[uint64]*stripeCacheEntry)}
 	layer := &Orchestration{objects: map[shared.ObjectID]*runtimeObject{id: {header: h, file: file}}}
 
-	first, err := layer.Open(OpenRequest{ObjectID: id})
+	first, err := layer.OpenLocked(OpenRequest{ObjectID: id})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := layer.Open(OpenRequest{ObjectID: id})
+	second, err := layer.OpenLocked(OpenRequest{ObjectID: id})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,25 +160,19 @@ func TestOpenCreatesIndependentHandlesForSharedRuntimeFile(t *testing.T) {
 	if first.Handle.runtimeFile != second.Handle.runtimeFile {
 		t.Fatal("handles do not share the same runtime file")
 	}
-	layer.mu.Lock()
 	if file.openCount != 2 {
-		layer.mu.Unlock()
 		t.Fatalf("tracked %d open handles, want 2", file.openCount)
 	}
-	layer.mu.Unlock()
-	if _, err := layer.Release(ReleaseRequest{Handle: first.Handle}); err != nil {
+	if _, err := layer.ReleaseLocked(ReleaseRequest{Handle: first.Handle}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := layer.Release(ReleaseRequest{Handle: first.Handle}); err != nil {
+	if _, err := layer.ReleaseLocked(ReleaseRequest{Handle: first.Handle}); err != nil {
 		t.Fatalf("repeated Release failed: %v", err)
 	}
-	layer.mu.Lock()
 	if file.openCount != 1 {
-		layer.mu.Unlock()
 		t.Fatalf("tracked %d open handles after Release, want 1", file.openCount)
 	}
-	layer.mu.Unlock()
-	if _, err := layer.Release(ReleaseRequest{Handle: second.Handle}); err != nil {
+	if _, err := layer.ReleaseLocked(ReleaseRequest{Handle: second.Handle}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -187,19 +181,19 @@ func TestOpenDirectoryReadOnlyAndRejectsWrites(t *testing.T) {
 	id := testID("32345678-9abc-4def-8abc-1234567890ab")
 	h := testHeader(objectKindDirectory, id, nil, nil, "")
 	layer := &Orchestration{objects: map[shared.ObjectID]*runtimeObject{id: {header: h}}}
-	opened, err := layer.Open(OpenRequest{ObjectID: id, Flags: uint32(syscall.O_RDONLY)})
+	opened, err := layer.OpenLocked(OpenRequest{ObjectID: id, Flags: uint32(syscall.O_RDONLY)})
 	if err != nil {
 		t.Fatalf("Open directory O_RDONLY = %v, want success", err)
 	}
-	if _, err := layer.Release(ReleaseRequest{Handle: opened.Handle}); err != nil {
+	if _, err := layer.ReleaseLocked(ReleaseRequest{Handle: opened.Handle}); err != nil {
 		t.Fatalf("Release directory handle: %v", err)
 	}
 	for _, flags := range []uint32{uint32(syscall.O_WRONLY), uint32(syscall.O_RDWR), uint32(syscall.O_RDONLY | syscall.O_TRUNC)} {
-		if _, err := layer.Open(OpenRequest{ObjectID: id, Flags: flags}); !errors.Is(err, syscall.EISDIR) {
+		if _, err := layer.OpenLocked(OpenRequest{ObjectID: id, Flags: flags}); !errors.Is(err, syscall.EISDIR) {
 			t.Errorf("Open directory flags %#x = %v, want EISDIR", flags, err)
 		}
 	}
-	if _, err := layer.Open(OpenRequest{ObjectID: id, Flags: uint32(syscall.O_ACCMODE)}); !errors.Is(err, syscall.EINVAL) {
+	if _, err := layer.OpenLocked(OpenRequest{ObjectID: id, Flags: uint32(syscall.O_ACCMODE)}); !errors.Is(err, syscall.EINVAL) {
 		t.Errorf("Open directory with invalid access mode = %v, want EINVAL", err)
 	}
 }

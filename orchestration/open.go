@@ -50,9 +50,7 @@ type OpenResponse struct {
 	Handle *FileHandle
 }
 
-func (layer *Orchestration) Open(request OpenRequest) (response OpenResponse, err error) {
-	layer.mu.Lock()
-	defer layer.mu.Unlock()
+func (layer *Orchestration) OpenLocked(request OpenRequest) (response OpenResponse, err error) {
 	return layer.openLocked(request)
 }
 
@@ -134,9 +132,7 @@ type ReleaseRequest struct {
 
 type ReleaseResponse struct{}
 
-func (layer *Orchestration) Release(request ReleaseRequest) (response ReleaseResponse, err error) {
-	layer.mu.Lock()
-	defer layer.mu.Unlock()
+func (layer *Orchestration) ReleaseLocked(request ReleaseRequest) (response ReleaseResponse, err error) {
 	return layer.releaseLocked(request)
 }
 

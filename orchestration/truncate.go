@@ -18,9 +18,7 @@ type TruncateRequest struct {
 }
 type TruncateResponse struct{}
 
-func (layer *Orchestration) Truncate(request TruncateRequest) (TruncateResponse, error) {
-	layer.mu.Lock()
-	defer layer.mu.Unlock()
+func (layer *Orchestration) TruncateLocked(request TruncateRequest) (TruncateResponse, error) {
 	return layer.truncateLocked(request)
 }
 

@@ -12,7 +12,7 @@ import (
 
 func TestRmdirRemovesEmptyDirectoryAndDerivesParentNlink(t *testing.T) {
 	fixture := newNamespaceFixture(t)
-	directory, err := fixture.layer.Mkdir(MkdirRequest{ParentID: fixture.rootID, Name: "empty"})
+	directory, err := fixture.layer.MkdirLocked(MkdirRequest{ParentID: fixture.rootID, Name: "empty"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -20,10 +20,10 @@ func TestRmdirRemovesEmptyDirectoryAndDerivesParentNlink(t *testing.T) {
 		t.Fatalf("parent Nlink before Rmdir = %d, want 3", got)
 	}
 
-	if _, err := fixture.layer.Rmdir(RmdirRequest{ParentID: fixture.rootID, Name: "empty"}); err != nil {
+	if _, err := fixture.layer.RmdirLocked(RmdirRequest{ParentID: fixture.rootID, Name: "empty"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fixture.layer.Lookup(LookupRequest{ParentID: fixture.rootID, Name: "empty"}); !errors.Is(err, os.ErrNotExist) {
+	if _, err := fixture.layer.LookupLocked(LookupRequest{ParentID: fixture.rootID, Name: "empty"}); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("Lookup after Rmdir = %v, want not-exist", err)
 	}
 	if !fixture.layer.objects[directory.ObjectID].header.Deleted {
@@ -39,18 +39,18 @@ func TestRmdirRemovesEmptyDirectoryAndDerivesParentNlink(t *testing.T) {
 
 func TestRmdirRejectsNonEmptyDirectory(t *testing.T) {
 	fixture := newNamespaceFixture(t)
-	directory, err := fixture.layer.Mkdir(MkdirRequest{ParentID: fixture.rootID, Name: "not-empty"})
+	directory, err := fixture.layer.MkdirLocked(MkdirRequest{ParentID: fixture.rootID, Name: "not-empty"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fixture.layer.Create(CreateRequest{ParentID: directory.ObjectID, Name: "child"}); err != nil {
+	if _, err := fixture.layer.CreateLocked(CreateRequest{ParentID: directory.ObjectID, Name: "child"}); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := fixture.layer.Rmdir(RmdirRequest{ParentID: fixture.rootID, Name: "not-empty"}); !errors.Is(err, syscall.ENOTEMPTY) {
+	if _, err := fixture.layer.RmdirLocked(RmdirRequest{ParentID: fixture.rootID, Name: "not-empty"}); !errors.Is(err, syscall.ENOTEMPTY) {
 		t.Fatalf("Rmdir non-empty directory = %v, want ENOTEMPTY", err)
 	}
-	if _, err := fixture.layer.Lookup(LookupRequest{ParentID: fixture.rootID, Name: "not-empty"}); err != nil {
+	if _, err := fixture.layer.LookupLocked(LookupRequest{ParentID: fixture.rootID, Name: "not-empty"}); err != nil {
 		t.Fatalf("directory should remain after rejected Rmdir: %v", err)
 	}
 	if fixture.layer.objects[directory.ObjectID].header.Deleted {
@@ -60,33 +60,33 @@ func TestRmdirRejectsNonEmptyDirectory(t *testing.T) {
 
 func TestRmdirRejectsNonDirectoryAndMissingEntries(t *testing.T) {
 	fixture := newNamespaceFixture(t)
-	file, err := fixture.layer.Create(CreateRequest{ParentID: fixture.rootID, Name: "file"})
+	file, err := fixture.layer.CreateLocked(CreateRequest{ParentID: fixture.rootID, Name: "file"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fixture.layer.Rmdir(RmdirRequest{ParentID: fixture.rootID, Name: "file"}); !errors.Is(err, errNotDirectory) {
+	if _, err := fixture.layer.RmdirLocked(RmdirRequest{ParentID: fixture.rootID, Name: "file"}); !errors.Is(err, errNotDirectory) {
 		t.Fatalf("Rmdir regular file = %v, want not-directory", err)
 	}
-	if _, err := fixture.layer.Rmdir(RmdirRequest{ParentID: fixture.rootID, Name: "missing"}); !errors.Is(err, os.ErrNotExist) {
+	if _, err := fixture.layer.RmdirLocked(RmdirRequest{ParentID: fixture.rootID, Name: "missing"}); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("Rmdir missing entry = %v, want not-exist", err)
 	}
-	if _, err := fixture.layer.Rmdir(RmdirRequest{ParentID: file.ObjectID, Name: "child"}); !errors.Is(err, errNotDirectory) {
+	if _, err := fixture.layer.RmdirLocked(RmdirRequest{ParentID: file.ObjectID, Name: "child"}); !errors.Is(err, errNotDirectory) {
 		t.Fatalf("Rmdir with non-directory parent = %v, want not-directory", err)
 	}
 }
 
 func TestRmdirCancellationDoesNotChangeNamespace(t *testing.T) {
 	fixture := newNamespaceFixture(t)
-	directory, err := fixture.layer.Mkdir(MkdirRequest{ParentID: fixture.rootID, Name: "cancelled"})
+	directory, err := fixture.layer.MkdirLocked(MkdirRequest{ParentID: fixture.rootID, Name: "cancelled"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := fixture.layer.Rmdir(RmdirRequest{Context: ctx, ParentID: fixture.rootID, Name: "cancelled"}); !errors.Is(err, context.Canceled) {
+	if _, err := fixture.layer.RmdirLocked(RmdirRequest{Context: ctx, ParentID: fixture.rootID, Name: "cancelled"}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled Rmdir = %v, want context canceled", err)
 	}
-	if _, err := fixture.layer.Lookup(LookupRequest{ParentID: fixture.rootID, Name: "cancelled"}); err != nil {
+	if _, err := fixture.layer.LookupLocked(LookupRequest{ParentID: fixture.rootID, Name: "cancelled"}); err != nil {
 		t.Fatalf("directory disappeared after canceled Rmdir: %v", err)
 	}
 	if fixture.layer.objects[directory.ObjectID].header.Deleted {
@@ -96,7 +96,7 @@ func TestRmdirCancellationDoesNotChangeNamespace(t *testing.T) {
 
 func deriveTestNlink(t *testing.T, layer *Orchestration, objectID shared.ObjectID) uint32 {
 	t.Helper()
-	attributes, err := layer.GetAttr(GetAttrRequest{ObjectID: objectID})
+	attributes, err := layer.GetAttrLocked(GetAttrRequest{ObjectID: objectID})
 	if err != nil {
 		t.Fatal(err)
 	}

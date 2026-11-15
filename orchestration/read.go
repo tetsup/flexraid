@@ -25,9 +25,7 @@ type ReadResponse struct {
 // Read returns a byte range from a regular file or hard link.
 // Header bytes are hidden from callers; Offset is relative to file content.
 // A valid handle from Open is mandatory.
-func (layer *Orchestration) Read(request ReadRequest) (response ReadResponse, err error) {
-	layer.mu.Lock()
-	defer layer.mu.Unlock()
+func (layer *Orchestration) ReadLocked(request ReadRequest) (response ReadResponse, err error) {
 	return layer.readLocked(request)
 }
 

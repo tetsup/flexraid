@@ -28,9 +28,7 @@ type RenameResponse struct {
 // supported only when source and destination have compatible kinds; replacing
 // a directory requires it to be empty. Header updates are persisted in order
 // and are not crash-atomic across multiple objects.
-func (layer *Orchestration) Rename(request RenameRequest) (response RenameResponse, err error) {
-	layer.mu.Lock()
-	defer layer.mu.Unlock()
+func (layer *Orchestration) RenameLocked(request RenameRequest) (response RenameResponse, err error) {
 	response, err = layer.renameLocked(request)
 	if err != nil || !response.Changed {
 		return response, err

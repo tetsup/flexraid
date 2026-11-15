@@ -34,9 +34,7 @@ type ObjectAttributes struct {
 type GetAttrResponse struct{ Attributes ObjectAttributes }
 
 // GetAttr returns the in-memory logical attributes of an object.
-func (layer *Orchestration) GetAttr(request GetAttrRequest) (GetAttrResponse, error) {
-	layer.mu.Lock()
-	defer layer.mu.Unlock()
+func (layer *Orchestration) GetAttrLocked(request GetAttrRequest) (GetAttrResponse, error) {
 	return layer.getAttrLocked(request)
 }
 

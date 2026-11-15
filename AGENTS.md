@@ -17,10 +17,12 @@
 
 主要なパッケージは次のとおり。
 
-- `io/`: 物理ファイル操作
-- `distribution/`: ストライプ、チャンク、冗長化、復旧、物理配置
+- `management/`: 外部 API、レイヤー横断の操作調整・排他制御、管理タスク、監視
 - `orchestration/`: Header、論理 Object、Namespace、ファイル offset、配置方針
-- `fuse/`: go-fuse と Orchestration のアダプター
+- `distribution/`: ストライプ、チャンク、冗長化、復旧、物理配置
+- `io/`: Go の標準 API を中心とした基本的な物理ファイル操作
+- `platform/`: OS・実行環境に依存するファイルシステム情報、デバイス情報の取得およびデバイス制御
+- `fuse/`: go-fuse と Management のアダプター
 - `pkg/shared/`: レイヤー間で共有する型・定数
 - `storage/`: 物理保存形式の共通型
 - `main/`: 設定読み込みとマウント起動
@@ -98,32 +100,29 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 
 ## 5. レイヤーの責務
 
-### I/O
+### Management
 
-- 指定された物理 root 上で物理ファイルの読み書き・同期・削除・列挙を行う。
-- Header の解析、チャンクやストライプの意味解釈、配置方針、パリティ計算、復旧判断を行わない。
-- `ScanHeaders` は StripeID 0 の物理ファイル列挙、`ListChunks` は全ストライプの物理ファイル列挙を行う。どちらも Header / Chunk の意味を解析しない。
-
-### Distribution
-
-- 論理ストライプ単位で読み書きする。論理ファイル offset、ファイルサイズ、Namespace、Header の形式を扱わない。
-- `WriteStripe` は指定された Layout / ChunkSize / IO 配置方針に従ってストライプをチャンクへ分割し、必要な冗長データを生成して永続化する。ファイル内 offset の分割や既存ストライプとのマージは行わない。
-- ストライプのバージョン・チャンク・物理配置情報を管理し、起動時に I/O の全件列挙結果からメモリ上へ再構築する。永続インデックスを別途持たない。
-- ストライプ書き込みは、ストライプごとに単調増加する Version を割り当て、新しい Version のチャンクを個別の物理ファイルとして順次書き込む。全チャンクの書き込みが完了した場合に限り、その Version を実行中の最新有効 Version として公開し、成功を返す。
-- 書き込み途中で失敗した場合、その Version の書き込み済みチャンクは物理的に残り得るが、実行中の Distribution では recoverable ではない候補として扱い、現在選択中の有効 Version を切り替えない。失敗した部分書き込みを成功として返したり、既存 Version を削除したりしない。
-- Version はストライプ単位で管理する。ファイル全体や複数ストライプをまたぐ Version 切り替え・トランザクションは行わず、異なるストライプで最新 Version が異なることを許容する。
-- 起動時は物理チャンクを ObjectID / StripeID / Version ごとに集約し、形式・識別子・重複チャンクなどを検証する。不正な候補 Version は復旧候補から除外する。各候補を実際に復元可能か検証し、復元可能な候補のうち最も大きい Version をそのストライプの最新有効 Version として選ぶ。
-- 起動時の復旧判定では、以前の実行で書き込み途中に失敗した Version であっても、残存チャンクだけで復元可能なら選択対象になり得る。逆に、より新しい Version が復元不能なら、それを選択せず、復元可能な最も古い候補ではなく「最も新しい復元可能 Version」へフォールバックする。復元可能な Version が一つもなければ、そのストライプは利用できない。
-- Mirror は有効な複製チャンクが1つ以上あれば復元可能とする。XOR 1 パリティは、全データチャンクがあればパリティチャンクが欠落していても復元可能とし、データチャンクが1つだけ欠落している場合はパリティチャンクを使って復元する。データチャンクが2つ以上欠落している場合は復元不能とする。
-- 読み込み時は選択済み Version の各チャンクを再読込し、物理読み取りエラーや不正なチャンクを欠落として扱って復元を試みる。復元できなければデータ破損エラーを返す。欠落チャンクを復元できた場合は、呼び出し元から修復配置が与えられていれば同じ Version の欠落チャンクを修復する。修復は新しい Version のコミットではない。
-- 復旧はチャンクの欠落または物理読み取りエラーにより取得できない場合を対象とする。読み取れたデータ同士の内容比較や、全データチャンクが読めた場合のパリティ不一致だけを理由にデータを訂正しない。チェックサム等によるサイレント破損・改ざん検出は保証しない。
-- Cleanup は指定された条件に従って旧 Version、不正・復元不能 Version、未完了チャンクを削除する。Cleanup を実行するまでは、失敗した書き込みの残存チャンクや旧 Version が物理領域を使用し続けることがある。
-- 初期パリティ方式は XOR 1 パリティであり、1 データチャンクの欠損まで復元できる。内容改ざん・サイレント破損の検出を保証しない。
-- 配置ポリシーは決定せず、Orchestration から渡された配置方針を実際のチャンク配置に反映する。
+- FUSE および将来の管理 API に対する、ファイルシステム全体の公開窓口となる。FUSE からの通常操作は Management を経由し、FUSE から Orchestration / Distribution を直接呼び出さない。
+- ファイルシステム操作 API、管理操作 API、監視 API、制御 API を提供する。ファイルシステム操作は同期的な結果・エラーを返し、長時間の Cleanup / Recovery 等はタスクの開始・進捗確認・キャンセルを扱える形にする。
+- **システム全体の実行状態を所有する唯一のレイヤー**となる。Initializing / Ready / Maintenance / Stopping / Stopped / Failed 等の状態区分や遷移条件は別途定義し、Orchestration / Distribution の内部状態と混同しない。
+- 各操作について、現在のシステム状態で受付可能かを判断する。状態と操作種別に応じた受付ポリシーを適用し、拒否する場合は下位レイヤーを呼び出す前に明確なエラーを返す。状態の具体的な一覧・遷移表・各操作の許可範囲は設計時に定義し、未確定の状態名や許可規則を実装で先に固定しない。
+- 操作受付判断はロック取得の前後で行う。ロック取得前に状態を確認して不要な待機を避け、必要な Object / メンテナンスロック取得後にも状態と操作前提を再確認する。待機中の状態変更との競合を防ぐため、受付中操作の admission と状態遷移の排他・drain 契約を設け、最終確認後から操作開始まで状態遷移が割り込まないようにする。
+- Orchestration と Distribution の双方を統括する。通常のファイル操作では Orchestration を呼び出し、Orchestration が Distribution を呼び出す親子関係を維持する。
+- Cleanup、Recovery、Scrub 等のレイヤー横断の管理ワークフローでは、必要な論理判断を Orchestration に依頼し、物理ストライプ処理を Distribution に依頼する。意味上 Orchestration を通すべき通常データ操作を、Management から Distribution へ迂回させない。
+- Orchestration / Distribution の内部状態を直接変更しない。各レイヤーが公開する API を通じて操作し、状態の所有者と排他制御の所有者を分離する。
+- 通常操作と管理タスクの調整、Object 単位のロック、複数 Object にまたがるロック取得、メンテナンス排他を所有する。全 FUSE 操作を単一の全体 mutex で直列化せず、操作対象に応じたロック範囲で並行性を保つ。
+- 操作回数・所要時間・結果などの上位操作メトリクスを集計し、Distribution が提供するドライブ別 I/O 統計などを統合して監視 API から返す。物理 I/O のエラー検出・計数は実際に I/O を実行する下位レイヤーで行い、Management はそれを集約・公開する。
+- Cleanup の実行タイミング、実行量、継続・一時停止を制御する。バックグラウンド Cleanup は通常操作と協調し、キャンセル可能かつ小さな単位で進められるようにする。スケジューリング判断と物理削除の実行責務を混同しない。
+- 起動・初期化・停止のライフサイクルを統括する。下位レイヤーの初期化を適切な順序で実行し、Orchestration に Header の読み込み・検証、Namespace 構築・整合性検査を行わせる。Orchestration が返す論理削除済みかつ保護対象外の ObjectID を受け取り、Management 自身の一時的な削除待ちキューを再構築する。全レイヤーの初期化と整合性確認が成功するまで外部操作を Ready として受け付けず、途中失敗時は部分初期化状態を公開しない。
+- Object の論理削除状態は Orchestration が Header に永続化するが、削除待ちキューと Cleanup の実行スケジュールは Management が所有する。キューは永続状態の複製を正とせず、起動時に Orchestration から再構築する。物理削除は Distribution に依頼し、完了後に Orchestration へ論理 Object のメモリ状態の確定を依頼する。
 
 ### Orchestration
 
 - Header の定義・生成・解析・シリアライズ・更新、論理 Object と Namespace、ファイル offset と StripeID / stripe 内 offset の変換、配置方針を担当する。
+- 通常のファイルシステム操作における論理状態の所有者である。Namespace、Header、Object の論理削除状態、open handle 等を管理する。Object の論理削除状態は Header の Deleted を正とし、Management の削除待ちキューを Orchestration 内に重複保持しない。
+- Management が提供する排他制御契約の下で呼び出される。Management が必要な Object ロック等を取得していることを前提とし、Orchestration 自身はレイヤー横断のロック管理・ロック取得を行わない。Namespace の内部 map や Runtime 状態を外部へ直接公開しない。
+- 初期化では Header の読み込み・解析・検証、Namespace 構築、HardLink 解決、整合性検査を行う。論理削除済みであり、かつ不整合保護対象ではない ObjectID を Management が削除待ちキューへ登録できるよう、初期化結果として読み取り専用の候補一覧を返す。候補一覧は Orchestration 内部のキュー状態ではなく、永続 Header と初期化時の検査結果から導出する。
+- 論理削除操作では Header の Deleted 状態と Namespace の変更を担当する。物理削除完了後に Management から通知を受け、対応する Object のメモリ上の論理状態を確定する。Management の Cleanup キューやスケジューリングには関与しない。
 - Distribution の API は論理ストライプ単位で利用する。チャンク番号、StripeVersion、物理配置の内部表現を持ち込まない。
 - 通常の書き込みは変更対象ストライプだけを読み取り・変更・書き戻す。通常書き込みのためにファイル全体を RAM に読み込んで再構築しない。
 - ファイルサイズ変更などで配置計画が変わる場合は、必要な既存データを新しいストライプ境界・チャンクサイズへ移行する。サイズを変えない上書きでは配置計画を再計算しない。
@@ -132,16 +131,80 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - Namespace 初期化では Header を読み込み・検証し、ParentID / Name からツリーを構築し、HardLink を解決してから全体を検査する。root を一意に復元できない不整合は初期化エラー。一部 Object の不整合は Namespace から除外して warning を記録し、関連データを誤って Cleanup しないよう保護する。
 - 配置先の選択は容量・利用可能状態・ファイルの配置計画に基づき Orchestration が行う。既存ストライプは Distribution が保持する配置情報を再利用する。
 
+### Distribution
+
+- 論理ストライプ単位で読み書きする。論理ファイル offset、ファイルサイズ、Namespace、Header の形式を扱わない。
+- `WriteStripe` は指定された Layout / ChunkSize / I/O 配置方針に従ってストライプをチャンクへ分割し、必要な冗長データを生成して永続化する。ファイル内 offset の分割や既存ストライプとのマージは行わない。
+- ストライプのバージョン・チャンク・物理配置情報を管理し、起動時に I/O の全件列挙結果からメモリ上へ再構築する。永続インデックスを別途持たない。
+- ストライプ書き込みは、ストライプごとに単調増加する Version を割り当て、新しい Version のチャンクを個別の物理ファイルとして順次書き込む。全チャンクの書き込みが完了した場合に限り、その Version を実行中の最新有効 Version として公開し、成功を返す。
+- 書き込み途中で失敗した場合、その Version の書き込み済みチャンクは物理的に残り得るが、実行中の Distribution では recoverable ではない候補として扱い、現在選択中の有効 Version を切り替えない。失敗した部分書き込みを成功として返したり、既存 Version を削除したりしない。
+- Version はストライプ単位で管理する。ファイル全体や複数ストライプをまたぐ Version 切り替え・トランザクションは行わず、異なるストライプで最新 Version が異なることを許容する。
+- 起動時は物理チャンクを ObjectID / StripeID / Version ごとに集約し、形式・識別子・重複チャンクなどを検証する。不正な候補 Version は復旧候補から除外する。各候補を実際に復元可能か検証し、復元可能な候補のうち最も大きい Version をそのストライプの最新有効 Version として選ぶ。
+- 起動時の復旧判定では、以前の実行で書き込み途中に失敗した Version であっても、残存チャンクだけで復元可能なら選択対象になり得る。逆に、より新しい Version が復元不能なら、それを選択せず、復元可能な最も古い Version ではなく「最も新しい復元可能 Version」へフォールバックする。復元可能な Version が一つもなければ、そのストライプは利用できない。
+- Mirror は有効な複製チャンクが1つ以上あれば復元可能とする。XOR 1 パリティは、全データチャンクがあればパリティチャンクが欠落していても復元可能とし、データチャンクが1つだけ欠落している場合はパリティチャンクを使って復元する。データチャンクが2つ以上欠落している場合は復元不能とする。
+- 読み込み時は選択済み Version の各チャンクを再読込し、物理読み取りエラーや不正なチャンクを欠落として扱って復元を試みる。復元できなければデータ破損エラーを返す。欠落チャンクを復元できた場合は、呼び出し元から修復配置が与えられていれば同じ Version の欠落チャンクを修復する。修復は新しい Version のコミットではない。
+- 復旧はチャンクの欠落または物理読み取りエラーにより取得できない場合を対象とする。読み取れたデータ同士の内容比較や、全データチャンクが読めた場合のパリティ不一致だけを理由にデータを訂正しない。チェックサム等によるサイレント破損・改ざん検出は保証しない。
+- Distribution は StripeID ごとの状態・物理チャンク候補を所有し、同一 ObjectID + StripeID を最小単位とする Stripe ロックで Read / Write / Recovery / Cleanup の競合を防ぐ。ロック取得後に削除対象 Version・Chunk がまだ不要であることを再検証し、物理削除と Distribution 内部状態の更新を一貫して行う。
+- Cleanup は旧 Version、不正・復元不能 Version、未完了チャンク、孤立チャンク、および論理削除 Object の物理チャンクを対象にする。Object 全体の削除では Stripe 単位で処理し、Header を含む Stripe 0 は他の Stripe の削除完了後に最後に処理する。Management は ObjectID 単位の論理削除済み Object の処理待ちを管理し、Distribution は Stripe / Chunk 単位の物理削除候補と処理結果を管理する。全 Stripe の削除完了を確認してから Management 経由で Object の削除完了を Orchestration に反映する。
+- Cleanup の候補追跡・物理削除の整合性は Distribution が担い、いつ・どれだけ実行するかというスケジューリングは Management が担う。長時間の全件削除を通常操作の呼び出し内で無制限に実行せず、Stripe などの有限単位で進められる API を提供する。
+- 初期パリティ方式は XOR 1 パリティであり、1 データチャンクの欠損まで復元できる。内容改ざん・サイレント破損の検出を保証しない。
+- 配置ポリシーは決定せず、Orchestration から渡された配置方針を実際のチャンク配置に反映する。
+- ドライブ別 I/O エラー統計など Distribution が取得できる物理層の観測値を、Management が問い合わせ・集約できる公開 API として提供する。統計値は内部 map を共有せず snapshot として返す。
+
+### I/O
+
+- 指定された物理 root 上で物理ファイルの読み書き・同期・削除・列挙を行う。
+- Header の解析、チャンクやストライプの意味解釈、配置方針、パリティ計算、復旧判断を行わない。
+- `ScanHeaders` は StripeID 0 の物理ファイル列挙、`ListChunks` は全ストライプの物理ファイル列挙を行う。どちらも Header / Chunk の意味を解析しない。
+- ディスクの電源状態やスピンダウン・スピンアップを判断するポリシー、Cleanup のスケジューリングを持たない。必要な物理操作を実行し、その結果を上位層へ返す。
+
+### Platform
+
+- OS・実行環境ごとの差異を吸収し、FlexRAID が必要とする環境情報の取得およびデバイス制御 API を提供する。
+- ファイルシステム容量など OS 固有 API を必要とする情報、物理ドライブの識別・対応付け、ドライブの電源状態取得、スピンアップ / スピンダウン要求などを担当する。
+- Go の標準 API で実現できる基本的な物理ファイルの読み書き・同期・削除・列挙は担当せず、I/O パッケージの代替やラッパーにはならない。
+- I/O と Platform は独立した兄弟コンポーネントとし、相互に依存しない。Platform から I/O を呼び出さず、I/O から Platform を呼び出さない。
+- Platform は状態取得・デバイス制御の機構を提供する。スピンダウンの判断、電源状態の運用管理、処理スケジューリングは Management が担当する。
+- Platform は OS 固有実装を隔離する境界とする。OS ごとの差異は Platform 内の実装で吸収し、上位層には共通 API と共通の結果型を提供する。
+
 ### FUSE
 
-- go-fuse v2.12.0 の callback 契約に従い、OS からの操作を Orchestration API へ変換する。Namespace や論理属性の独自キャッシュを持たない。
+- go-fuse v2.12.0 の callback 契約に従い、OS からの操作を Management API へ変換する。Namespace や論理属性の独自キャッシュを持たない。
 - FUSE は物理ファイル・チャンク・パリティ・配置方針を直接扱わない。
-- regular file の Read / Write は有効な Orchestration FileHandle を必須とする。独立した Open ごとに handle を作り、dup は同じ open-file description / handle を共有する。
+- regular file の Read / Write は有効な Management 経由の FileHandle を必須とする。独立した Open ごとに handle を作り、dup は同じ open-file description / handle を共有する。
 - Read / Write の offset は kernel から渡された値を正とし、handle 内の cursor を位置の正として扱わない。
-- Dirty stripe cache は FileHandle ごとではなく Runtime file 実体ごとに共有し、HardLink 間でも同じ cache を参照する。
+- Dirty stripe cache は FileHandle ごとではなく Runtime file 実体ごとに共有し、HardLink 間でも同じ cache を参照する。キャッシュの所有者は論理ファイル状態を管理する Orchestration とし、Management / FUSE が独自の複製を持たない。
 - Flush は複数回呼ばれ得るため反復可能とし、handle を解放しない。Fsync は pending dirty data の永続化を保証する。Release は最終的な handle cleanup とし、失敗し得る永続化を Release だけに依存させない。
 - FUSE の `default_permissions` に OS の権限判定を委ねる。FlexRAID 独自の permission 判定を重複実装しない。
 - Advisory lock forwarding、Direct I/O、KEEP_CACHE、ExplicitDataCacheControl、parallel direct writes は、対応する整合性契約とテストが揃うまで有効化しない。
+
+### レイヤー間の依存関係
+
+レイヤーの呼び出し・依存方向は次の DAG とする。矢印は呼び出し元から呼び出し先への依存を表す。
+
+```text
+FUSE -> Management
+Management -> Orchestration
+Management -> Distribution
+Management -> Platform
+Orchestration -> Distribution
+Distribution -> I/O
+Distribution -> Platform
+```
+
+- Management は Orchestration と Distribution の双方を統括するが、Orchestration と Distribution の親子関係は維持する。通常のファイルシステム操作は Management -> Orchestration -> Distribution -> I/O の経路を通る。
+- Platform は I/O と同列の独立コンポーネントであり、Management と Distribution など必要な上位コンポーネントから利用する。I/O と Platform の間に依存関係を設けない。
+- Distribution は Platform から OS 固有のファイルシステム容量・デバイス情報を取得できる。Management は Platform を通じてドライブ状態の観測・制御を行う。Platform はそれらの判断ポリシーを持たない。
+- 現行の `io.GetCapacity` は `unix.Statfs` で容量を取得している。目標構成では、このような OS 固有の環境情報取得を Platform に分離し、I/O は Go の標準 API を中心とした基本ファイル操作に専念させる。
+- Management から Distribution への直接呼び出しは、管理タスク・監視など、論理ファイル操作を必要としない責務に限る。通常のファイルデータ操作を Orchestration 経由から迂回させない。
+- 下位層は上位層の型・状態・実装を参照しない。下位層から上位層への callback で依存グラフに逆向きの辺を作らない。結果・統計は下位層の公開 API を通じて上位層が取得する。
+- 依存関係は DAG とし、循環依存を作らない。
+
+### 現行実装からの移行
+
+- Management は今後導入するレイヤーであり、現時点の実装は FUSE が Orchestration を直接呼び出し、Orchestration が自身の mutex で操作を排他している。この状態は移行前の実装であり、目標アーキテクチャを変更する理由にはしない。
+- Management 導入時は FUSE の接続先を Management に変更し、Orchestration のグローバル mutex に依存する契約を Management 所有の操作スコープ別ロックへ移行する。移行中に Orchestration のロックを単に削除して競合保護を失わせてはならない。
+- Distribution の Stripe ロックは Distribution 自身が所有する。Management / Orchestration が Distribution の内部ロックを直接操作しない。
 
 ## 6. 制約値とファイルシステム属性
 
@@ -152,21 +215,21 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 
 ## 7. 排他制御
 
-- 公開 Orchestration 操作が必要な排他制御を取得し、非公開の `*Locked` 処理は呼び出し元が必要なロックを保持していることを前提とする。
-- ロック取得・解放を内部関数へ分散させない。ロック取得済みの公開操作から別の公開操作を呼ばず、共有処理は非公開関数へ切り出す。
-- ロック取得前に対象を調査した場合は、ロック取得後に対象と前提条件を再検証する。
-- go-fuse の SyncRead などの mount option を内部同期の代替にしない。異なる handle、HardLink、read/write、metadata 操作間の整合性は Orchestration が保証する。
-
-### 公開 API と非公開処理のロック境界
-
-- 排他制御を所有するレイヤーでは、外部から呼び出される公開操作関数が必要なロックを取得し、処理終了時に解放する。ロック取得・解放の責務を複数の内部関数へ分散させない。
-- Orchestration の公開操作は、原則としてロック取得後に非公開の `*Locked` 関数へ処理を委譲する。非公開の `*Locked` 関数は、呼び出し元が必要なロックを保持していることを前提とし、自身ではロックを取得・解放しない。
-- 公開操作関数から別の公開操作関数を呼び出してはならない。複数操作で共有する処理は非公開関数へ切り出し、各公開操作関数が必要なロックを取得したうえで、その非公開関数を呼び出す。
-- ロックを必要とする非公開関数には、保護対象と必要なロックをコメント等で明記する。`*Locked` という名前だけを前提条件の説明の代わりにしない。
-- ロック取得前に Namespace や参照関係を調べてロック対象を決めた場合、取得後に対象と前提条件を再検証する。ロック集合が不足または不適切なら、安全に解放して取得し直す。
-- FUSE callback は go-fuse から呼ばれるアダプターであり、Namespace やファイル状態を保護する Orchestration のロックを独自に取得しない。状態変更・整合性制御は Orchestration の公開 API に集約する。
-- FUSE callback 内で複数の Orchestration 公開 API を呼び出しても、それらをまたぐ原子性は得られない。複数 API を一つの不可分な操作として扱う必要がある場合は、FUSE 側でロックしてつなぎ合わせず、必要なロックを管理する Orchestration の公開操作として実装する。
-- go-fuse の mount option や callback の呼び出し順序を、Orchestration 内部の排他制御の代替にしない。異なる handle、HardLink、read/write、metadata 操作間の整合性は Orchestration が保証する。
+- レイヤー横断の操作調整、Object 単位の排他制御、システム状態と操作受付制御は Management が所有する。Orchestration は Namespace / Header / Runtime の状態を所有するが、システム状態・ロック管理・操作受付可否の判断は所有しない。
+- Management の各公開操作は、まず状態に基づく受付判断を行い、必要なロックを取得した後に状態と操作前提を再確認する。ロック待機中に状態が変化した場合は、再確認で拒否してロックを解放する。
+- 状態遷移と操作受付の競合を防ぐため、Management は受付済み操作の実行区間を追跡し、状態遷移時には新規受付を止めたうえで、遷移先の契約に必要な進行中操作の完了またはキャンセルを待つ。状態の最終確認から下位層呼び出しまでに状態遷移が割り込まないよう、Object ロックとは別の admission / lifecycle 同期契約を定義する。これは全 FUSE 操作を一つの mutex で直列化することを意味しない。
+- Distribution はストライプの状態と物理配置情報を所有し、同一 ObjectID + StripeID に対する Stripe ロックを所有する。Stripe ロックは Read / Write / Recovery / Cleanup の競合を防ぐ。
+- I/O は物理ファイル操作を実行する。上位層の Object / Stripe の意味に基づくロックを持たず、必要性が実証された物理ファイル単位の排他だけを内部実装として持つ。
+- Management の Object ロックは、同一 Object に対する操作を保護する。Directory entry の変更では親 Directory、変更対象 Object、Rename の移動元・移動先など、操作の整合性に必要な Object をロック対象に含める。複数 Object をロックする場合は一貫した順序で取得し、デッドロックを防ぐ。
+- Object ロックは無関係な Object の操作を不必要に直列化しない。ファイルシステム全体の整合性を必要とする管理処理のみ、Management のメンテナンス排他を利用する。Recovery 等で通常操作を停止する範囲は、処理の整合性要件に応じて明示する。
+- Management が状態受付判断を通過し、必要な Object / メンテナンスロックを取得してから Orchestration の公開 API を呼び出す。Orchestration の API は呼び出し元がロック契約を満たしていることを前提とし、ロック取得・解放やシステム状態による受付判断を行わない。Orchestration の内部関数もロックの取得状態を暗黙に推測しない。
+- ロック取得前の状態確認は早期拒否のための判定であり、実行許可の確定ではない。ロック取得後の状態再確認と admission / lifecycle 同期が成立して初めて下位層の処理を開始できる。
+- Orchestration の公開操作から別の公開操作を呼び出す場合、呼び出し元と呼び出し先でロックを二重取得する構造にしない。共有処理は非公開関数へ切り出すか、Management が一つの操作として必要なロック集合を確保できる API 境界にする。
+- Distribution の公開 Stripe 操作は対象 Stripe のロックを取得し、終了時に解放する。Stripe ロック取得前に削除候補を調査した場合は、ロック取得後に対象 Version / Chunk と削除可能条件を再検証する。
+- Object 全体の削除では、Management が対象 Object の操作を調整し、Distribution が Stripe 単位の排他を取得して物理削除する。Stripe ロックの解放後に別操作が削除済み状態を誤って再公開しないよう、Distribution の内部状態更新は Stripe ロックの保護下で完了させる。
+- ロック順序は上位から下位へ統一する。Management の Object / メンテナンス排他を保持した状態で Distribution API を呼び、Distribution が内部で Stripe ロックを取得する。Distribution から Management / Orchestration のロックを要求する逆方向の呼び出しを行わない。
+- FUSE callback はアダプターであり、Management のロックや Distribution の Stripe ロックを直接取得しない。複数の Management API を FUSE 側でつなぎ合わせても、それらをまたぐ原子性は得られない。不可分な操作は Management の単一 API として実装する。
+- go-fuse の SyncRead などの mount option を内部同期の代替にしない。異なる handle、HardLink、read/write、metadata 操作間の整合性は Management と各データ所有レイヤーのロック契約で保証する。
 
 ## 8. ログ
 

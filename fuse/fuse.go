@@ -8,6 +8,7 @@ import (
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	gofuse "github.com/hanwen/go-fuse/v2/fuse"
+	"github.com/tetsup/flexraid/management"
 	"github.com/tetsup/flexraid/orchestration"
 	"github.com/tetsup/flexraid/pkg/shared"
 )
@@ -15,14 +16,14 @@ import (
 // FileSystem is the go-fuse adapter for Orchestration. It deliberately keeps
 // no namespace or file metadata cache of its own.
 type FileSystem struct {
-	layer  *orchestration.Orchestration
+	layer  *management.Management
 	rootID shared.ObjectID
 	root   *node
 }
 
 // New constructs the FUSE node tree around an initialized Orchestration layer.
 // rootID must identify its root Directory.
-func New(layer *orchestration.Orchestration, rootID shared.ObjectID) (*FileSystem, error) {
+func New(layer *management.Management, rootID shared.ObjectID) (*FileSystem, error) {
 	if layer == nil {
 		return nil, fmt.Errorf("orchestration layer is nil")
 	}
@@ -44,7 +45,7 @@ func (filesystem *FileSystem) Root() fs.InodeEmbedder { return filesystem.root }
 // Node is a namespace inode whose logical state is owned by Orchestration.
 type node struct {
 	fs.Inode
-	layer    *orchestration.Orchestration
+	layer    *management.Management
 	objectID shared.ObjectID
 }
 
@@ -400,7 +401,7 @@ func (n *node) Statfs(ctx context.Context, out *gofuse.StatfsOut) syscall.Errno 
 }
 
 type fileHandle struct {
-	layer    *orchestration.Orchestration
+	layer    *management.Management
 	objectID shared.ObjectID
 	handle   *orchestration.FileHandle
 }

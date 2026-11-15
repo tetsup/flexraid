@@ -57,7 +57,7 @@ func TestStartupRebuildsDeletionQueueAndCleanupDeletesObject(t *testing.T) {
 	if len(started.Layer.deletionQueue) != 1 {
 		t.Fatalf("deletion queue has %d entries", len(started.Layer.deletionQueue))
 	}
-	cleaned, err := started.Layer.Cleanup(CleanupRequest{Context: ctx})
+	cleaned, err := started.Layer.CleanupLocked(CleanupRequest{Context: ctx})
 	if err != nil {
 		t.Fatal(err)
 	}

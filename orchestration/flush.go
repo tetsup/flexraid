@@ -15,9 +15,7 @@ type FlushRequest struct {
 }
 type FlushResponse struct{ PersistedStripes uint32 }
 
-func (o *Orchestration) Flush(r FlushRequest) (FlushResponse, error) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
+func (o *Orchestration) FlushLocked(r FlushRequest) (FlushResponse, error) {
 	return o.flushLocked(r)
 }
 
@@ -57,9 +55,7 @@ type FsyncRequest struct {
 }
 type FsyncResponse struct{ PersistedStripes uint32 }
 
-func (o *Orchestration) Fsync(r FsyncRequest) (FsyncResponse, error) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
+func (o *Orchestration) FsyncLocked(r FsyncRequest) (FsyncResponse, error) {
 	return o.fsyncLocked(r)
 }
 

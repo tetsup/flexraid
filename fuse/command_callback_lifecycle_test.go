@@ -12,6 +12,7 @@ import (
 	gofuse "github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/tetsup/flexraid/distribution"
 	physicalio "github.com/tetsup/flexraid/io"
+	"github.com/tetsup/flexraid/management"
 	"github.com/tetsup/flexraid/orchestration"
 )
 
@@ -445,18 +446,19 @@ func TestOpenSyncModesPersistWrites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reinitialize Orchestration: %v", err)
 	}
-	opened, err := reopened.Layer.Open(orchestration.OpenRequest{Context: ctx, ObjectID: n.objectID, Flags: uint32(syscall.O_RDONLY)})
+	reopenedManagement := management.New(reopened.Layer)
+	opened, err := reopenedManagement.Open(orchestration.OpenRequest{Context: ctx, ObjectID: n.objectID, Flags: uint32(syscall.O_RDONLY)})
 	if err != nil {
 		t.Fatalf("Open persisted synchronous writes: %v", err)
 	}
-	result, err := reopened.Layer.Read(orchestration.ReadRequest{Context: ctx, Handle: opened.Handle, ObjectID: n.objectID, Offset: 0, Size: 2})
+	result, err := reopenedManagement.Read(orchestration.ReadRequest{Context: ctx, Handle: opened.Handle, ObjectID: n.objectID, Offset: 0, Size: 2})
 	if err != nil {
 		t.Fatalf("Read persisted synchronous writes: %v", err)
 	}
 	if !bytes.Equal(result.Data, []byte("AB")) {
 		t.Errorf("persisted content after O_SYNC/O_DSYNC writes = %q; want AB", result.Data)
 	}
-	if _, err := reopened.Layer.Release(orchestration.ReleaseRequest{Context: ctx, Handle: opened.Handle}); err != nil {
+	if _, err := reopenedManagement.Release(orchestration.ReleaseRequest{Context: ctx, Handle: opened.Handle}); err != nil {
 		t.Errorf("Release reinitialized handle: %v", err)
 	}
 }

@@ -72,11 +72,11 @@ func newWriteFixture(t *testing.T) writeFixture {
 
 func openWriteHandle(t *testing.T, layer *Orchestration, id shared.ObjectID, flags uint32) *FileHandle {
 	t.Helper()
-	opened, err := layer.Open(OpenRequest{ObjectID: id, Flags: flags})
+	opened, err := layer.OpenLocked(OpenRequest{ObjectID: id, Flags: flags})
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _, _ = layer.Release(ReleaseRequest{Handle: opened.Handle}) })
+	t.Cleanup(func() { _, _ = layer.ReleaseLocked(ReleaseRequest{Handle: opened.Handle}) })
 	return opened.Handle
 }
 
@@ -85,10 +85,10 @@ func TestWriteUpdatesSharedCacheVisibleToOtherHandle(t *testing.T) {
 	writer := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDWR))
 	reader := openWriteHandle(t, fixture.layer, fixture.linkID, uint32(syscall.O_RDONLY))
 	patch := []byte("modified-across-stripes")
-	if got, err := fixture.layer.Write(WriteRequest{Handle: writer, ObjectID: fixture.fileID, Offset: 53, Data: patch}); err != nil || got.Written != uint32(len(patch)) {
+	if got, err := fixture.layer.WriteLocked(WriteRequest{Handle: writer, ObjectID: fixture.fileID, Offset: 53, Data: patch}); err != nil || got.Written != uint32(len(patch)) {
 		t.Fatalf("Write = %+v, %v", got, err)
 	}
-	read, err := fixture.layer.Read(ReadRequest{Handle: reader, ObjectID: fixture.linkID, Offset: 45, Size: 45})
+	read, err := fixture.layer.ReadLocked(ReadRequest{Handle: reader, ObjectID: fixture.linkID, Offset: 45, Size: 45})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,8 +98,6 @@ func TestWriteUpdatesSharedCacheVisibleToOtherHandle(t *testing.T) {
 		t.Fatalf("Read after Write = %q, want %q", read.Data, want)
 	}
 	file := fixture.layer.objects[fixture.fileID].file
-	fixture.layer.mu.Lock()
-	defer fixture.layer.mu.Unlock()
 	if file.header.Size != uint64(len(fixture.payload)) {
 		t.Fatalf("logical size = %d, want %d", file.header.Size, len(fixture.payload))
 	}
@@ -129,11 +127,11 @@ func TestWriteExtendsFileAndZeroFillsGap(t *testing.T) {
 	writer := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDWR))
 	offset := uint64(len(fixture.payload) + 7)
 	patch := []byte("tail")
-	if _, err := fixture.layer.Write(WriteRequest{Handle: writer, ObjectID: fixture.fileID, Offset: offset, Data: patch}); err != nil {
+	if _, err := fixture.layer.WriteLocked(WriteRequest{Handle: writer, ObjectID: fixture.fileID, Offset: offset, Data: patch}); err != nil {
 		t.Fatal(err)
 	}
 	reader := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDONLY))
-	read, err := fixture.layer.Read(ReadRequest{Handle: reader, ObjectID: fixture.fileID, Offset: uint64(len(fixture.payload)), Size: 11})
+	read, err := fixture.layer.ReadLocked(ReadRequest{Handle: reader, ObjectID: fixture.fileID, Offset: uint64(len(fixture.payload)), Size: 11})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +139,7 @@ func TestWriteExtendsFileAndZeroFillsGap(t *testing.T) {
 	if !bytes.Equal(read.Data, want) {
 		t.Fatalf("extended range = %v, want %v", read.Data, want)
 	}
-	attrs, err := fixture.layer.GetAttr(GetAttrRequest{ObjectID: fixture.fileID})
+	attrs, err := fixture.layer.GetAttrLocked(GetAttrRequest{ObjectID: fixture.fileID})
 	if err != nil || attrs.Attributes.Size != offset+uint64(len(patch)) {
 		t.Fatalf("GetAttr = %+v, %v", attrs, err)
 	}
@@ -155,12 +153,12 @@ func TestWriteAppendUsesSharedCurrentSize(t *testing.T) {
 		handle *FileHandle
 		data   []byte
 	}{{first, []byte("one")}, {second, []byte("two")}} {
-		if _, err := fixture.layer.Write(WriteRequest{Handle: item.handle, ObjectID: fixture.fileID, Data: item.data}); err != nil {
+		if _, err := fixture.layer.WriteLocked(WriteRequest{Handle: item.handle, ObjectID: fixture.fileID, Data: item.data}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	reader := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDONLY))
-	read, err := fixture.layer.Read(ReadRequest{Handle: reader, ObjectID: fixture.fileID, Offset: uint64(len(fixture.payload)), Size: 6})
+	read, err := fixture.layer.ReadLocked(ReadRequest{Handle: reader, ObjectID: fixture.fileID, Offset: uint64(len(fixture.payload)), Size: 6})
 	if err != nil || !bytes.Equal(read.Data, []byte("onetwo")) {
 		t.Fatalf("append Read = %q, %v", read.Data, err)
 	}
@@ -168,15 +166,15 @@ func TestWriteAppendUsesSharedCurrentSize(t *testing.T) {
 
 func TestWriteRejectsInvalidHandleAndAccessMode(t *testing.T) {
 	fixture := newWriteFixture(t)
-	if _, err := fixture.layer.Write(WriteRequest{ObjectID: fixture.fileID, Data: []byte("x")}); !errors.Is(err, os.ErrInvalid) {
+	if _, err := fixture.layer.WriteLocked(WriteRequest{ObjectID: fixture.fileID, Data: []byte("x")}); !errors.Is(err, os.ErrInvalid) {
 		t.Fatalf("Write without handle = %v", err)
 	}
 	reader := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDONLY))
-	if _, err := fixture.layer.Write(WriteRequest{Handle: reader, ObjectID: fixture.fileID, Data: []byte("x")}); !errors.Is(err, os.ErrPermission) {
+	if _, err := fixture.layer.WriteLocked(WriteRequest{Handle: reader, ObjectID: fixture.fileID, Data: []byte("x")}); !errors.Is(err, os.ErrPermission) {
 		t.Fatalf("Write through read-only handle = %v", err)
 	}
 	writer := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_WRONLY))
-	if _, err := fixture.layer.Write(WriteRequest{Handle: writer, ObjectID: fixture.linkID, Data: []byte("x")}); err != nil {
+	if _, err := fixture.layer.WriteLocked(WriteRequest{Handle: writer, ObjectID: fixture.linkID, Data: []byte("x")}); err != nil {
 		t.Fatalf("Write through HardLink = %v", err)
 	}
 }
@@ -192,7 +190,7 @@ func TestWriteSyncModesPersistBeforeReturning(t *testing.T) {
 		t.Run(mode.name, func(t *testing.T) {
 			fixture := newWriteFixture(t)
 			writer := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_WRONLY)|mode.flag)
-			if got, err := fixture.layer.Write(WriteRequest{Handle: writer, ObjectID: fixture.fileID, Data: []byte("x")}); err != nil || got.Written != 1 {
+			if got, err := fixture.layer.WriteLocked(WriteRequest{Handle: writer, ObjectID: fixture.fileID, Data: []byte("x")}); err != nil || got.Written != 1 {
 				t.Fatalf("synchronous Write = %+v, %v; want one byte, success", got, err)
 			}
 			persisted, err := fixture.layer.distribution.ReadStripe(distribution.ReadStripeRequest{
@@ -213,12 +211,10 @@ func TestWriteCancellationDoesNotChangeCache(t *testing.T) {
 	writer := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDWR))
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := fixture.layer.Write(WriteRequest{Context: ctx, Handle: writer, ObjectID: fixture.fileID, Data: []byte("x")}); !errors.Is(err, context.Canceled) {
+	if _, err := fixture.layer.WriteLocked(WriteRequest{Context: ctx, Handle: writer, ObjectID: fixture.fileID, Data: []byte("x")}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled Write = %v", err)
 	}
 	file := fixture.layer.objects[fixture.fileID].file
-	fixture.layer.mu.Lock()
-	defer fixture.layer.mu.Unlock()
 	if len(file.stripeCache) != 0 || file.header.Size != uint64(len(fixture.payload)) {
 		t.Fatal("canceled Write changed runtime file state")
 	}
@@ -227,25 +223,20 @@ func TestWriteCancellationDoesNotChangeCache(t *testing.T) {
 func TestWriteReplansAndFlushesAcrossMirrorParityBoundary(t *testing.T) {
 	fixture := newWriteFixture(t)
 	writer := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDWR))
-	if _, err := fixture.layer.Write(WriteRequest{Handle: writer, ObjectID: fixture.fileID, Offset: 3072, Data: []byte("x")}); err != nil {
+	if _, err := fixture.layer.WriteLocked(WriteRequest{Handle: writer, ObjectID: fixture.fileID, Offset: 3072, Data: []byte("x")}); err != nil {
 		t.Fatal(err)
 	}
 	file := fixture.layer.objects[fixture.fileID].file
-	fixture.layer.mu.Lock()
 	if file.header.Size != 3073 || file.header.Layout.Mode != layoutModeStripe {
-		fixture.layer.mu.Unlock()
 		t.Fatalf("updated header = %+v", file.header)
 	}
-	fixture.layer.mu.Unlock()
-	flushed, err := fixture.layer.Flush(FlushRequest{Handle: writer})
+	flushed, err := fixture.layer.FlushLocked(FlushRequest{Handle: writer})
 	if err != nil || flushed.PersistedStripes != 1 {
 		t.Fatalf("Flush = %+v, %v", flushed, err)
 	}
-	fixture.layer.mu.Lock()
 	file.stripeCache = make(map[uint64]*stripeCacheEntry)
-	fixture.layer.mu.Unlock()
 	reader := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDONLY))
-	got, err := fixture.layer.Read(ReadRequest{Handle: reader, ObjectID: fixture.fileID, Offset: 3072, Size: 1})
+	got, err := fixture.layer.ReadLocked(ReadRequest{Handle: reader, ObjectID: fixture.fileID, Offset: 3072, Size: 1})
 	if err != nil || !bytes.Equal(got.Data, []byte("x")) {
 		t.Fatalf("Read after replan+Flush = %q, %v", got.Data, err)
 	}
@@ -254,14 +245,14 @@ func TestWriteReplansAndFlushesAcrossMirrorParityBoundary(t *testing.T) {
 func TestTruncateReplansAndZeroFillsGrowth(t *testing.T) {
 	fixture := newWriteFixture(t)
 	writer := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDWR))
-	if _, err := fixture.layer.Truncate(TruncateRequest{Handle: writer, ObjectID: fixture.fileID, Size: 100}); err != nil {
+	if _, err := fixture.layer.TruncateLocked(TruncateRequest{Handle: writer, ObjectID: fixture.fileID, Size: 100}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fixture.layer.Truncate(TruncateRequest{Handle: writer, ObjectID: fixture.fileID, Size: 120}); err != nil {
+	if _, err := fixture.layer.TruncateLocked(TruncateRequest{Handle: writer, ObjectID: fixture.fileID, Size: 120}); err != nil {
 		t.Fatal(err)
 	}
 	reader := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDONLY))
-	got, err := fixture.layer.Read(ReadRequest{Handle: reader, ObjectID: fixture.fileID, Offset: 100, Size: 20})
+	got, err := fixture.layer.ReadLocked(ReadRequest{Handle: reader, ObjectID: fixture.fileID, Offset: 100, Size: 20})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,13 +264,13 @@ func TestTruncateReplansAndZeroFillsGrowth(t *testing.T) {
 func TestFsyncSynchronizesAlreadyCleanStripes(t *testing.T) {
 	fixture := newWriteFixture(t)
 	writer := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDWR))
-	if _, err := fixture.layer.Write(WriteRequest{Handle: writer, ObjectID: fixture.fileID, Data: []byte("sync")}); err != nil {
+	if _, err := fixture.layer.WriteLocked(WriteRequest{Handle: writer, ObjectID: fixture.fileID, Data: []byte("sync")}); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	if result, err := fixture.layer.Flush(FlushRequest{Handle: writer}); err != nil || result.PersistedStripes == 0 {
+	if result, err := fixture.layer.FlushLocked(FlushRequest{Handle: writer}); err != nil || result.PersistedStripes == 0 {
 		t.Fatalf("Flush before Fsync = %+v, %v; want persisted stripe", result, err)
 	}
-	if result, err := fixture.layer.Fsync(FsyncRequest{Handle: writer}); err != nil || result.PersistedStripes != 0 {
+	if result, err := fixture.layer.FsyncLocked(FsyncRequest{Handle: writer}); err != nil || result.PersistedStripes != 0 {
 		t.Fatalf("Fsync clean cache = %+v, %v; want no pending stripe writes", result, err)
 	}
 
@@ -309,7 +300,7 @@ func TestFsyncSynchronizesAlreadyCleanStripes(t *testing.T) {
 	if _, err := ioLayer.Delete(physicalio.DeleteRequest{Context: context.Background(), Key: chunkKey}); err != nil {
 		t.Fatalf("delete chunk to make Fsync fail: %v", err)
 	}
-	if _, err := fixture.layer.Fsync(FsyncRequest{Handle: writer}); err == nil {
+	if _, err := fixture.layer.FsyncLocked(FsyncRequest{Handle: writer}); err == nil {
 		t.Error("Fsync succeeded after a latest physical chunk was removed; want synchronization error")
 	}
 }

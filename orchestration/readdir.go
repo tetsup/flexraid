@@ -24,9 +24,7 @@ type DirectoryEntry struct {
 type ReadDirResponse struct{ Entries []DirectoryEntry }
 
 // ReadDir returns the immediate children of a directory in name order.
-func (layer *Orchestration) ReadDir(request ReadDirRequest) (ReadDirResponse, error) {
-	layer.mu.Lock()
-	defer layer.mu.Unlock()
+func (layer *Orchestration) ReadDirLocked(request ReadDirRequest) (ReadDirResponse, error) {
 	return layer.readDirLocked(request)
 }
 

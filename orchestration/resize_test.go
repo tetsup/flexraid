@@ -66,7 +66,7 @@ func TestWriteGrowthPreservesExistingMultiStripeLayoutAndData(t *testing.T) {
 	writer := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDWR))
 	offset := uint64(len(payload) + 19)
 	patch := []byte("new-data")
-	if _, err := fixture.layer.Write(WriteRequest{
+	if _, err := fixture.layer.WriteLocked(WriteRequest{
 		Handle: writer, ObjectID: fixture.fileID, Offset: offset, Data: patch,
 	}); err != nil {
 		t.Fatal(err)
@@ -85,7 +85,7 @@ func TestWriteGrowthPreservesExistingMultiStripeLayoutAndData(t *testing.T) {
 		}
 	}
 	reader := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDONLY))
-	got, err := fixture.layer.Read(ReadRequest{
+	got, err := fixture.layer.ReadLocked(ReadRequest{
 		Handle: reader, ObjectID: fixture.fileID, Offset: 0, Size: uint32(len(payload)),
 	})
 	if err != nil {
@@ -94,7 +94,7 @@ func TestWriteGrowthPreservesExistingMultiStripeLayoutAndData(t *testing.T) {
 	if !bytes.Equal(got.Data, payload) {
 		t.Fatal("growth changed existing file data")
 	}
-	gap, err := fixture.layer.Read(ReadRequest{
+	gap, err := fixture.layer.ReadLocked(ReadRequest{
 		Handle: reader, ObjectID: fixture.fileID, Offset: uint64(len(payload)), Size: uint32(len(patch) + 19),
 	})
 	if err != nil {
@@ -112,7 +112,7 @@ func TestSparseWriteSharesSingleZeroStripeBuffer(t *testing.T) {
 	firstCapacity := uint64(cfg.MinimumChunkSize)*3 - cfg.HeaderReservedSize
 	regularCapacity := uint64(16*1024) * 3
 	offset := uint64(len(payload)) + 4*regularCapacity + 11
-	if _, err := fixture.layer.Write(WriteRequest{
+	if _, err := fixture.layer.WriteLocked(WriteRequest{
 		Handle: writer, ObjectID: fixture.fileID, Offset: offset, Data: []byte("x"),
 	}); err != nil {
 		t.Fatal(err)
@@ -133,7 +133,7 @@ func TestSparseWriteSharesSingleZeroStripeBuffer(t *testing.T) {
 	if len(file.stripeCache) > 5 {
 		t.Fatalf("sparse write materialized too many stripes: %d", len(file.stripeCache))
 	}
-	if _, err := fixture.layer.Flush(FlushRequest{Handle: writer}); err != nil {
+	if _, err := fixture.layer.FlushLocked(FlushRequest{Handle: writer}); err != nil {
 		t.Fatal(err)
 	}
 	fixture.layer.objects[fixture.fileID].file.stripeCache = make(map[uint64]*stripeCacheEntry)
@@ -141,7 +141,7 @@ func TestSparseWriteSharesSingleZeroStripeBuffer(t *testing.T) {
 	gapStart := uint64(len(payload))
 	gapSize := offset - gapStart
 	for _, sample := range []uint64{0, firstCapacity, firstCapacity + regularCapacity, gapSize - 1} {
-		got, err := fixture.layer.Read(ReadRequest{
+		got, err := fixture.layer.ReadLocked(ReadRequest{
 			Handle: reader, ObjectID: fixture.fileID, Offset: gapStart + sample, Size: 1,
 		})
 		if err != nil {
@@ -157,13 +157,13 @@ func TestTruncateToOneStripeDropsTailCacheAndPreservesPrefix(t *testing.T) {
 	fixture, payload := newMultiStripeWriteFixture(t, 16*1024, 3, 777)
 	handle := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDWR))
 	reader := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDONLY))
-	if _, err := fixture.layer.Read(ReadRequest{
+	if _, err := fixture.layer.ReadLocked(ReadRequest{
 		Handle: reader, ObjectID: fixture.fileID, Offset: 0, Size: uint32(len(payload)),
 	}); err != nil {
 		t.Fatal(err)
 	}
 	size := uint64(1024)
-	if _, err := fixture.layer.SetAttr(SetAttrRequest{ObjectID: fixture.fileID, Handle: handle, Size: &size}); err != nil {
+	if _, err := fixture.layer.SetAttrLocked(SetAttrRequest{ObjectID: fixture.fileID, Handle: handle, Size: &size}); err != nil {
 		t.Fatal(err)
 	}
 	file := fixture.layer.objects[fixture.fileID].file
@@ -173,11 +173,11 @@ func TestTruncateToOneStripeDropsTailCacheAndPreservesPrefix(t *testing.T) {
 	if file.header.Size != size {
 		t.Fatalf("truncated size = %d, want %d", file.header.Size, size)
 	}
-	if _, err := fixture.layer.Flush(FlushRequest{Handle: handle}); err != nil {
+	if _, err := fixture.layer.FlushLocked(FlushRequest{Handle: handle}); err != nil {
 		t.Fatal(err)
 	}
 	file.stripeCache = make(map[uint64]*stripeCacheEntry)
-	got, err := fixture.layer.Read(ReadRequest{Handle: reader, ObjectID: fixture.fileID, Offset: 0, Size: uint32(size)})
+	got, err := fixture.layer.ReadLocked(ReadRequest{Handle: reader, ObjectID: fixture.fileID, Offset: 0, Size: uint32(size)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func TestHugeResizeIsRejectedBeforePlacementExpansion(t *testing.T) {
 	t.Run("SetAttr", func(t *testing.T) {
 		fixture := newWriteFixture(t)
 		before := fixture.layer.objects[fixture.fileID].file.header
-		if _, err := fixture.layer.SetAttr(SetAttrRequest{ObjectID: fixture.fileID, Size: ptrUint64(hugeSize)}); err != syscall.EFBIG {
+		if _, err := fixture.layer.SetAttrLocked(SetAttrRequest{ObjectID: fixture.fileID, Size: ptrUint64(hugeSize)}); err != syscall.EFBIG {
 			t.Fatalf("SetAttr huge size = %v, want EFBIG", err)
 		}
 		if got := fixture.layer.objects[fixture.fileID].file.header; got != before {
@@ -216,7 +216,7 @@ func TestHugeResizeIsRejectedBeforePlacementExpansion(t *testing.T) {
 		fixture := newWriteFixture(t)
 		handle := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDWR))
 		before := fixture.layer.objects[fixture.fileID].file.header
-		if _, err := fixture.layer.Truncate(TruncateRequest{Handle: handle, ObjectID: fixture.fileID, Size: hugeSize}); err != syscall.EFBIG {
+		if _, err := fixture.layer.TruncateLocked(TruncateRequest{Handle: handle, ObjectID: fixture.fileID, Size: hugeSize}); err != syscall.EFBIG {
 			t.Fatalf("Truncate huge size = %v, want EFBIG", err)
 		}
 		if got := fixture.layer.objects[fixture.fileID].file.header; got != before {
@@ -228,7 +228,7 @@ func TestHugeResizeIsRejectedBeforePlacementExpansion(t *testing.T) {
 		fixture := newWriteFixture(t)
 		handle := openWriteHandle(t, fixture.layer, fixture.fileID, uint32(syscall.O_RDWR))
 		before := fixture.layer.objects[fixture.fileID].file.header
-		if _, err := fixture.layer.Write(WriteRequest{Handle: handle, ObjectID: fixture.fileID, Offset: hugeSize, Data: []byte("x")}); err != syscall.EFBIG {
+		if _, err := fixture.layer.WriteLocked(WriteRequest{Handle: handle, ObjectID: fixture.fileID, Offset: hugeSize, Data: []byte("x")}); err != syscall.EFBIG {
 			t.Fatalf("Write huge offset = %v, want EFBIG", err)
 		}
 		if got := fixture.layer.objects[fixture.fileID].file.header; got != before {
