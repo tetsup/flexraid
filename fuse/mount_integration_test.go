@@ -339,7 +339,7 @@ func mountTestFilesystem(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("create filesystem root: %v", err)
 	}
-	adapter, err := fuse.New(created.Layer, created.RootID)
+	adapter, err := fuse.New(management.New(created.Layer), created.RootID)
 	if err != nil {
 		t.Fatalf("create FUSE adapter: %v", err)
 	}
