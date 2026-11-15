@@ -41,6 +41,7 @@ func (layer *Orchestration) statFsLocked(request StatFsRequest) (StatFsResponse,
 	}
 
 	capacity, err := layer.distribution.GetCapacity(distribution.CapacityRequest{
+		Context:   ctx,
 		BlockSize: config.BlockSize, MirrorCopies: 2,
 		DataChunks: config.DefaultDataChunks, ParityChunks: config.DefaultParityChunks,
 	})

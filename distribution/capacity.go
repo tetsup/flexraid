@@ -1,15 +1,17 @@
 package distribution
 
 import (
+	"context"
 	"fmt"
 	"math"
 
-	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/pkg/shared"
 	"github.com/tetsup/flexraid/pkg/shared/config"
+	"github.com/tetsup/flexraid/platform"
 )
 
 type CapacityRequest struct {
+	Context      context.Context
 	BlockSize    uint64
 	MirrorCopies int
 	DataChunks   int
@@ -46,10 +48,17 @@ func (d *Distribution) GetCapacity(request CapacityRequest) (CapacityResponse, e
 		return CapacityResponse{}, fmt.Errorf("invalid capacity layout configuration")
 	}
 
+	ctx := request.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	result := CapacityResponse{Capacities: make([]shared.Capacity, len(d.ios))}
 	availableBlocks := make([]uint64, 0, len(d.ios))
-	for index, layer := range d.ios {
-		capacity, err := layer.GetCapacity(physicalio.CapacityRequest{})
+	for index := range d.ios {
+		if err := ctx.Err(); err != nil {
+			return CapacityResponse{}, err
+		}
+		capacity, err := platform.GetCapacity(platform.CapacityRequest{Context: ctx, Root: d.ios[index].RootPath()})
 		if err != nil {
 			return CapacityResponse{}, fmt.Errorf("get capacity for I/O %d: %w", index, err)
 		}
