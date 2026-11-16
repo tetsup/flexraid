@@ -324,6 +324,9 @@ func (n *node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 	if flags != 0 {
 		return syscall.EINVAL
 	}
+	if newParent == nil || newParent.EmbeddedInode() == nil {
+		return syscall.EXDEV
+	}
 	destination, ok := newParent.EmbeddedInode().Operations().(*node)
 	if !ok || destination.layer != n.layer {
 		return syscall.EXDEV
@@ -340,6 +343,9 @@ func (n *node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 
 func (n *node) Link(ctx context.Context, existing fs.InodeEmbedder, name string, out *gofuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	defer traceFUSECallback("Link", "parent_id", n.objectID.String(), "name", name)()
+	if existing == nil || existing.EmbeddedInode() == nil {
+		return nil, syscall.EXDEV
+	}
 	source, ok := existing.EmbeddedInode().Operations().(*node)
 	if !ok || source.layer != n.layer {
 		return nil, syscall.EXDEV
@@ -397,13 +403,11 @@ func (n *node) Readlink(ctx context.Context) ([]byte, syscall.Errno) {
 }
 
 func (n *node) Setattr(ctx context.Context, fh fs.FileHandle, in *gofuse.SetAttrIn, out *gofuse.AttrOut) syscall.Errno {
-	defer func() {
-		if in == nil {
-			traceFUSECallback("Setattr", "object_id", n.objectID.String(), "valid", uint32(0))()
-			return
-		}
-		traceFUSECallback("Setattr", "object_id", n.objectID.String(), "valid", in.Valid)()
-	}()
+	var valid uint32
+	if in != nil {
+		valid = in.Valid
+	}
+	defer traceFUSECallback("Setattr", "object_id", n.objectID.String(), "valid", valid)()
 	if in == nil {
 		return syscall.EINVAL
 	}
