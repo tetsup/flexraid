@@ -17,6 +17,15 @@ func waitSignal(t *testing.T, signal <-chan struct{}, description string) {
 	}
 }
 
+func stopScheduler(t *testing.T, scheduler *Scheduler) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := scheduler.Stop(ctx); err != nil {
+		t.Fatalf("scheduler did not stop: %v", err)
+	}
+}
+
 func TestSchedulerForegroundWaitsForBackgroundSafeBoundary(t *testing.T) {
 	backgroundStarted := make(chan struct{})
 	releaseBackground := make(chan struct{})
@@ -71,52 +80,103 @@ func TestSchedulerForegroundWaitsForBackgroundSafeBoundary(t *testing.T) {
 		t.Fatalf("foreground operation failed: %v", err)
 	}
 	waitSignal(t, secondBackgroundStarted, "second background unit")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := scheduler.Stop(ctx); err != nil {
-		t.Fatalf("scheduler did not stop: %v", err)
-	}
+	stopScheduler(t, scheduler)
 }
 
-func TestSchedulerRunsForegroundOperationsConcurrently(t *testing.T) {
+func TestSchedulerSerializesForegroundOperations(t *testing.T) {
 	scheduler := NewScheduler(nil)
 	if err := scheduler.Start(); err != nil {
 		t.Fatal(err)
 	}
 
-	started := make(chan struct{}, 2)
-	release := make(chan struct{})
-	run := func(context.Context) error {
-		started <- struct{}{}
-		<-release
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	secondStarted := make(chan struct{})
+	first, err := scheduler.SubmitForeground(context.Background(), "first", func(context.Context) error {
+		close(firstStarted)
+		<-releaseFirst
 		return nil
-	}
-	first, err := scheduler.SubmitForeground(context.Background(), "first", run)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := scheduler.SubmitForeground(context.Background(), "second", run)
+	waitSignal(t, firstStarted, "first foreground operation")
+
+	second, err := scheduler.SubmitForeground(context.Background(), "second", func(context.Context) error {
+		close(secondStarted)
+		return nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	select {
+	case <-secondStarted:
+		t.Fatal("second foreground operation overlapped the first")
+	case <-time.After(30 * time.Millisecond):
+	}
 
-	waitSignal(t, started, "first foreground operation")
-	waitSignal(t, started, "second foreground operation")
-	close(release)
-
+	close(releaseFirst)
 	if err := first.Wait(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	waitSignal(t, secondStarted, "second foreground operation")
 	if err := second.Wait(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	stopScheduler(t, scheduler)
+}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := scheduler.Stop(ctx); err != nil {
+func TestSchedulerExclusiveDrainsForegroundAndBlocksNewRequests(t *testing.T) {
+	scheduler := NewScheduler(nil)
+	if err := scheduler.Start(); err != nil {
 		t.Fatal(err)
 	}
+
+	foregroundStarted := make(chan struct{})
+	releaseForeground := make(chan struct{})
+	foreground, err := scheduler.SubmitForeground(context.Background(), "foreground", func(context.Context) error {
+		close(foregroundStarted)
+		<-releaseForeground
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitSignal(t, foregroundStarted, "foreground operation")
+
+	var units atomic.Int32
+	exclusiveStarted := make(chan struct{})
+	exclusive, err := scheduler.SubmitExclusive(context.Background(), "maintenance", ExclusiveTaskFunc(func(context.Context) (bool, error) {
+		if units.Add(1) == 1 {
+			close(exclusiveStarted)
+			return true, nil
+		}
+		return true, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := scheduler.SubmitForeground(context.Background(), "during-maintenance", func(context.Context) error { return nil }); !errors.Is(err, syscall.EBUSY) {
+		t.Fatalf("expected EBUSY while draining, got %v", err)
+	}
+	select {
+	case <-exclusiveStarted:
+		t.Fatal("exclusive task started before foreground drained")
+	default:
+	}
+	close(releaseForeground)
+	if err := foreground.Wait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	waitSignal(t, exclusiveStarted, "exclusive task")
+	if err := exclusive.Wait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := scheduler.SubmitForeground(context.Background(), "after-maintenance", func(context.Context) error { return nil }); err != nil {
+		t.Fatalf("foreground admission did not reopen: %v", err)
+	}
+	stopScheduler(t, scheduler)
 }
 
 func TestSchedulerStopWaitsForBackgroundAndAcceptedForeground(t *testing.T) {
@@ -198,12 +258,7 @@ func TestSchedulerBackgroundFailureDoesNotBlockForeground(t *testing.T) {
 	if err := handle.Wait(context.Background()); err != nil {
 		t.Fatalf("foreground operation failed: %v", err)
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := scheduler.Stop(ctx); err != nil {
-		t.Fatal(err)
-	}
+	stopScheduler(t, scheduler)
 }
 
 func TestSchedulerRejectsRequestsBeforeStartAndAfterStop(t *testing.T) {
@@ -215,81 +270,46 @@ func TestSchedulerRejectsRequestsBeforeStartAndAfterStop(t *testing.T) {
 	if err := scheduler.Start(); err != nil {
 		t.Fatal(err)
 	}
-	if err := scheduler.Stop(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	stopScheduler(t, scheduler)
 	if _, err := scheduler.SubmitForeground(context.Background(), "after-stop", operation); !errors.Is(err, ErrSchedulerStopping) {
 		t.Fatalf("expected stopping error, got %v", err)
 	}
 }
 
-func TestSchedulerAcquiresObjectLocksBeforeForegroundCallback(t *testing.T) {
+func TestSchedulerExclusiveTasksRunInQueueOrder(t *testing.T) {
 	scheduler := NewScheduler(nil)
 	if err := scheduler.Start(); err != nil {
 		t.Fatal(err)
 	}
-	held, err := scheduler.locks.AcquireOperation(context.Background(), []ObjectLockRequest{
-		{ObjectID: "object-1", Mode: ObjectLockExclusive},
-	})
+	var order atomic.Int32
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	first, err := scheduler.SubmitExclusive(context.Background(), "first", ExclusiveTaskFunc(func(context.Context) (bool, error) {
+		if order.Add(1) == 1 {
+			close(firstStarted)
+			<-releaseFirst
+		}
+		return true, nil
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	started := make(chan struct{})
-	handle, err := scheduler.SubmitForegroundWithLocks(
-		context.Background(),
-		"write-object-1",
-		[]ObjectLockRequest{{ObjectID: "object-1", Mode: ObjectLockExclusive}},
-		func(context.Context) error {
-			close(started)
-			return nil
-		},
-	)
+	waitSignal(t, firstStarted, "first exclusive task")
+	secondStarted := make(chan struct{})
+	second, err := scheduler.SubmitExclusive(context.Background(), "second", ExclusiveTaskFunc(func(context.Context) (bool, error) {
+		close(secondStarted)
+		return true, nil
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case <-started:
-		t.Fatal("foreground callback ran before its Object lock was acquired")
-	case <-time.After(30 * time.Millisecond):
-	}
-	held()
-	waitSignal(t, started, "foreground callback after Object lock release")
-	if err := handle.Wait(context.Background()); err != nil {
+	close(releaseFirst)
+	if err := first.Wait(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if err := scheduler.Stop(context.Background()); err != nil {
+	waitSignal(t, secondStarted, "second exclusive task")
+	if err := second.Wait(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-}
-
-type lockAwareBackgroundTask struct {
-	called chan struct{}
-}
-
-func (task *lockAwareBackgroundTask) Next(context.Context) (bool, error) {
-	return true, nil
-}
-
-func (task *lockAwareBackgroundTask) NextWithLocks(ctx context.Context, locks *ObjectLockManager) (bool, error) {
-	release, err := locks.AcquireOperation(ctx, []ObjectLockRequest{
-		{ObjectID: "background-object", Mode: ObjectLockExclusive},
-	})
-	if err != nil {
-		return true, err
-	}
-	defer release()
-	close(task.called)
-	return true, nil
-}
-
-func TestSchedulerBackgroundUsesSharedObjectLockManager(t *testing.T) {
-	task := &lockAwareBackgroundTask{called: make(chan struct{})}
-	scheduler := NewScheduler(task)
-	if err := scheduler.Start(); err != nil {
-		t.Fatal(err)
-	}
-	waitSignal(t, task.called, "background unit using ObjectLockManager")
-	if err := scheduler.Stop(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	stopScheduler(t, scheduler)
 }
