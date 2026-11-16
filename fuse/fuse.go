@@ -74,6 +74,9 @@ var (
 
 func (n *node) Lookup(ctx context.Context, name string, out *gofuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	defer traceFUSECallback("Lookup", "parent_id", n.objectID.String(), "name", name)()
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return nil, errno
+	}
 	result, err := n.layer.Lookup(orchestration.LookupRequest{Context: ctx, ParentID: n.objectID, Name: name})
 	if err != nil {
 		return nil, fs.ToErrno(err)
@@ -89,6 +92,9 @@ func (n *node) Lookup(ctx context.Context, name string, out *gofuse.EntryOut) (*
 
 func (n *node) Getattr(ctx context.Context, _ fs.FileHandle, out *gofuse.AttrOut) syscall.Errno {
 	defer traceFUSECallback("Getattr", "object_id", n.objectID.String())()
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return errno
+	}
 	attributes, err := n.layer.GetAttr(orchestration.GetAttrRequest{Context: ctx, ObjectID: n.objectID})
 	if err != nil {
 		return fs.ToErrno(err)
@@ -99,6 +105,9 @@ func (n *node) Getattr(ctx context.Context, _ fs.FileHandle, out *gofuse.AttrOut
 
 func (n *node) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 	defer traceFUSECallback("Readdir", "object_id", n.objectID.String())()
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return nil, errno
+	}
 	result, err := n.layer.ReadDir(orchestration.ReadDirRequest{Context: ctx, ObjectID: n.objectID})
 	if err != nil {
 		return nil, fs.ToErrno(err)
@@ -119,6 +128,9 @@ func (n *node) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 
 func (n *node) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
 	defer traceFUSECallback("Open", "object_id", n.objectID.String(), "flags", flags)()
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return nil, 0, errno
+	}
 	result, err := n.layer.Open(orchestration.OpenRequest{Context: ctx, ObjectID: n.objectID, Flags: flags})
 	if err != nil {
 		return nil, 0, fs.ToErrno(err)
@@ -128,6 +140,9 @@ func (n *node) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, s
 
 func (n *node) Read(ctx context.Context, fh fs.FileHandle, dest []byte, offset int64) (gofuse.ReadResult, syscall.Errno) {
 	defer traceFUSECallback("Read", "object_id", n.objectID.String(), "offset", offset, "size", len(dest))()
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return nil, errno
+	}
 	handle, ok := fh.(*fileHandle)
 	if !ok || handle == nil || handle.layer != n.layer || offset < 0 {
 		return nil, syscall.EBADF
@@ -144,6 +159,9 @@ func (n *node) Read(ctx context.Context, fh fs.FileHandle, dest []byte, offset i
 
 func (n *node) Write(ctx context.Context, fh fs.FileHandle, data []byte, offset int64) (uint32, syscall.Errno) {
 	defer traceFUSECallback("Write", "object_id", n.objectID.String(), "offset", offset, "size", len(data))()
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return 0, errno
+	}
 	handle, ok := fh.(*fileHandle)
 	if !ok || handle == nil || handle.layer != n.layer || offset < 0 {
 		return 0, syscall.EBADF
@@ -160,6 +178,9 @@ func (n *node) Write(ctx context.Context, fh fs.FileHandle, data []byte, offset 
 
 func (n *node) Flush(ctx context.Context, fh fs.FileHandle) syscall.Errno {
 	defer traceFUSECallback("Flush", "object_id", n.objectID.String())()
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return errno
+	}
 	handle, ok := fh.(*fileHandle)
 	if !ok || handle == nil {
 		return syscall.EBADF
@@ -170,6 +191,9 @@ func (n *node) Flush(ctx context.Context, fh fs.FileHandle) syscall.Errno {
 
 func (n *node) Fsync(ctx context.Context, fh fs.FileHandle, _ uint32) syscall.Errno {
 	defer traceFUSECallback("Fsync", "object_id", n.objectID.String())()
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return errno
+	}
 	handle, ok := fh.(*fileHandle)
 	if !ok || handle == nil {
 		return syscall.EBADF
@@ -190,6 +214,9 @@ func (n *node) Release(ctx context.Context, fh fs.FileHandle) syscall.Errno {
 
 func (n *node) Create(ctx context.Context, name string, flags, mode uint32, out *gofuse.EntryOut) (*fs.Inode, fs.FileHandle, uint32, syscall.Errno) {
 	defer traceFUSECallback("Create", "parent_id", n.objectID.String(), "name", name, "mode", mode, "flags", flags)()
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return nil, nil, 0, errno
+	}
 	if flags&uint32(syscall.O_ACCMODE) == uint32(syscall.O_ACCMODE) {
 		return nil, nil, 0, syscall.EINVAL
 	}
@@ -221,6 +248,9 @@ func (n *node) Create(ctx context.Context, name string, flags, mode uint32, out 
 // Special files are intentionally unsupported by the initial FlexRAID format.
 func (n *node) Mknod(ctx context.Context, name string, mode, _ uint32, out *gofuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	defer traceFUSECallback("Mknod", "parent_id", n.objectID.String(), "name", name, "mode", mode)()
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return nil, errno
+	}
 	fileType := mode & syscall.S_IFMT
 	if fileType == 0 {
 		return nil, syscall.EINVAL
@@ -250,6 +280,9 @@ func (n *node) Mknod(ctx context.Context, name string, mode, _ uint32, out *gofu
 
 func (n *node) Mkdir(ctx context.Context, name string, mode uint32, out *gofuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	defer traceFUSECallback("Mkdir", "parent_id", n.objectID.String(), "name", name, "mode", mode)()
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return nil, errno
+	}
 	credentials := caller(ctx)
 	result, err := n.layer.Mkdir(orchestration.MkdirRequest{
 		Context: ctx, ParentID: n.objectID, Name: name,
@@ -270,18 +303,27 @@ func (n *node) Mkdir(ctx context.Context, name string, mode uint32, out *gofuse.
 
 func (n *node) Unlink(ctx context.Context, name string) syscall.Errno {
 	defer traceFUSECallback("Unlink", "parent_id", n.objectID.String(), "name", name)()
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return errno
+	}
 	_, err := n.layer.Unlink(orchestration.UnlinkRequest{Context: ctx, ParentID: n.objectID, Name: name})
 	return fs.ToErrno(err)
 }
 
 func (n *node) Rmdir(ctx context.Context, name string) syscall.Errno {
 	defer traceFUSECallback("Rmdir", "parent_id", n.objectID.String(), "name", name)()
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return errno
+	}
 	_, err := n.layer.Rmdir(orchestration.RmdirRequest{Context: ctx, ParentID: n.objectID, Name: name})
 	return fs.ToErrno(err)
 }
 
 func (n *node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedder, newName string, flags uint32) syscall.Errno {
 	defer traceFUSECallback("Rename", "parent_id", n.objectID.String(), "name", name, "new_name", newName, "flags", flags)()
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return errno
+	}
 	if flags != 0 {
 		return syscall.EINVAL
 	}
@@ -298,6 +340,9 @@ func (n *node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 
 func (n *node) Link(ctx context.Context, existing fs.InodeEmbedder, name string, out *gofuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	defer traceFUSECallback("Link", "parent_id", n.objectID.String(), "name", name)()
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return nil, errno
+	}
 	source, ok := existing.EmbeddedInode().Operations().(*node)
 	if !ok || source.layer != n.layer {
 		return nil, syscall.EXDEV
@@ -318,6 +363,9 @@ func (n *node) Link(ctx context.Context, existing fs.InodeEmbedder, name string,
 
 func (n *node) Symlink(ctx context.Context, target, name string, out *gofuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	defer traceFUSECallback("Symlink", "parent_id", n.objectID.String(), "name", name, "target_len", len(target))()
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return nil, errno
+	}
 	credentials := caller(ctx)
 	result, err := n.layer.Symlink(orchestration.SymlinkRequest{
 		Context: ctx, ParentID: n.objectID, Name: name, Target: target,
@@ -338,6 +386,9 @@ func (n *node) Symlink(ctx context.Context, target, name string, out *gofuse.Ent
 
 func (n *node) Readlink(ctx context.Context) ([]byte, syscall.Errno) {
 	defer traceFUSECallback("Readlink", "object_id", n.objectID.String())()
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return nil, errno
+	}
 	result, err := n.layer.ReadLink(orchestration.ReadLinkRequest{Context: ctx, ObjectID: n.objectID})
 	if err != nil {
 		return nil, fs.ToErrno(err)
@@ -347,6 +398,9 @@ func (n *node) Readlink(ctx context.Context) ([]byte, syscall.Errno) {
 
 func (n *node) Setattr(ctx context.Context, fh fs.FileHandle, in *gofuse.SetAttrIn, out *gofuse.AttrOut) syscall.Errno {
 	defer traceFUSECallback("Setattr", "object_id", n.objectID.String(), "valid", in.Valid)()
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return errno
+	}
 	request := orchestration.SetAttrRequest{Context: ctx, ObjectID: n.objectID}
 	if fh != nil {
 		handle, ok := fh.(*fileHandle)
@@ -389,6 +443,9 @@ func (n *node) Setattr(ctx context.Context, fh fs.FileHandle, in *gofuse.SetAttr
 
 func (n *node) Statfs(ctx context.Context, out *gofuse.StatfsOut) syscall.Errno {
 	defer traceFUSECallback("Statfs")()
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return errno
+	}
 	result, err := n.layer.StatFs(orchestration.StatFsRequest{Context: ctx})
 	if err != nil {
 		return fs.ToErrno(err)
