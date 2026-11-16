@@ -351,8 +351,9 @@ func TestSchedulerStopPreemptsAndCancelsQueuedExclusiveTasks(t *testing.T) {
 	}
 	waitSignal(t, firstStarted, "running exclusive unit")
 
+	var secondRan atomic.Bool
 	second, err := scheduler.SubmitExclusive(context.Background(), "queued", ExclusiveTaskFunc(func(context.Context) (bool, error) {
-		t.Fatal("queued exclusive task ran after Stop was requested")
+		secondRan.Store(true)
 		return true, nil
 	}))
 	if err != nil {
@@ -377,6 +378,9 @@ func TestSchedulerStopPreemptsAndCancelsQueuedExclusiveTasks(t *testing.T) {
 	}
 	if err := second.Wait(context.Background()); !errors.Is(err, ErrSchedulerStopping) {
 		t.Fatalf("queued exclusive task should be cancelled by Stop, got %v", err)
+	}
+	if secondRan.Load() {
+		t.Fatal("queued exclusive task ran after Stop was requested")
 	}
 }
 
