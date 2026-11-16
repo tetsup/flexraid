@@ -214,11 +214,11 @@ func (n *node) Release(ctx context.Context, fh fs.FileHandle) syscall.Errno {
 
 func (n *node) Create(ctx context.Context, name string, flags, mode uint32, out *gofuse.EntryOut) (*fs.Inode, fs.FileHandle, uint32, syscall.Errno) {
 	defer traceFUSECallback("Create", "parent_id", n.objectID.String(), "name", name, "mode", mode, "flags", flags)()
-	if errno := n.layer.LifecycleErrno(); errno != 0 {
-		return nil, nil, 0, errno
-	}
 	if flags&uint32(syscall.O_ACCMODE) == uint32(syscall.O_ACCMODE) {
 		return nil, nil, 0, syscall.EINVAL
+	}
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return nil, nil, 0, errno
 	}
 	credentials := caller(ctx)
 	result, err := n.layer.Create(orchestration.CreateRequest{
@@ -248,15 +248,15 @@ func (n *node) Create(ctx context.Context, name string, flags, mode uint32, out 
 // Special files are intentionally unsupported by the initial FlexRAID format.
 func (n *node) Mknod(ctx context.Context, name string, mode, _ uint32, out *gofuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	defer traceFUSECallback("Mknod", "parent_id", n.objectID.String(), "name", name, "mode", mode)()
-	if errno := n.layer.LifecycleErrno(); errno != 0 {
-		return nil, errno
-	}
 	fileType := mode & syscall.S_IFMT
 	if fileType == 0 {
 		return nil, syscall.EINVAL
 	}
 	if fileType != syscall.S_IFREG {
 		return nil, syscall.EOPNOTSUPP
+	}
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return nil, errno
 	}
 
 	credentials := caller(ctx)
@@ -324,12 +324,12 @@ func (n *node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 	if flags != 0 {
 		return syscall.EINVAL
 	}
-	if errno := n.layer.LifecycleErrno(); errno != 0 {
-		return errno
-	}
 	destination, ok := newParent.EmbeddedInode().Operations().(*node)
 	if !ok || destination.layer != n.layer {
 		return syscall.EXDEV
+	}
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return errno
 	}
 	_, err := n.layer.Rename(orchestration.RenameRequest{
 		Context: ctx, SourceParentID: n.objectID, SourceName: name,
@@ -340,12 +340,12 @@ func (n *node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 
 func (n *node) Link(ctx context.Context, existing fs.InodeEmbedder, name string, out *gofuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	defer traceFUSECallback("Link", "parent_id", n.objectID.String(), "name", name)()
-	if errno := n.layer.LifecycleErrno(); errno != 0 {
-		return nil, errno
-	}
 	source, ok := existing.EmbeddedInode().Operations().(*node)
 	if !ok || source.layer != n.layer {
 		return nil, syscall.EXDEV
+	}
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return nil, errno
 	}
 	result, err := n.layer.Link(orchestration.LinkRequest{Context: ctx, SourceID: source.objectID, ParentID: n.objectID, Name: name})
 	if err != nil {
@@ -397,9 +397,15 @@ func (n *node) Readlink(ctx context.Context) ([]byte, syscall.Errno) {
 }
 
 func (n *node) Setattr(ctx context.Context, fh fs.FileHandle, in *gofuse.SetAttrIn, out *gofuse.AttrOut) syscall.Errno {
-	defer traceFUSECallback("Setattr", "object_id", n.objectID.String(), "valid", in.Valid)()
-	if errno := n.layer.LifecycleErrno(); errno != 0 {
-		return errno
+	defer func() {
+		if in == nil {
+			traceFUSECallback("Setattr", "object_id", n.objectID.String(), "valid", uint32(0))()
+			return
+		}
+		traceFUSECallback("Setattr", "object_id", n.objectID.String(), "valid", in.Valid)()
+	}()
+	if in == nil {
+		return syscall.EINVAL
 	}
 	request := orchestration.SetAttrRequest{Context: ctx, ObjectID: n.objectID}
 	if fh != nil {
@@ -408,6 +414,9 @@ func (n *node) Setattr(ctx context.Context, fh fs.FileHandle, in *gofuse.SetAttr
 			return syscall.EBADF
 		}
 		request.Handle = handle.handle
+	}
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return errno
 	}
 	if mode, ok := in.GetMode(); ok {
 		request.Mode = &mode
