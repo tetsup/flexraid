@@ -490,6 +490,17 @@ func (scheduler *Scheduler) run() {
 				continue
 			}
 			stopping = true
+			// Stop has priority over queued Exclusive requests. Requests that
+			// have not started cannot be completed after the process exits.
+			runningID := ""
+			if state.RunningExclusive != nil {
+				runningID = state.RunningExclusive.ID
+			}
+			for id, request := range exclusiveTasks {
+				if id != runningID {
+					finishExclusive(request, ErrSchedulerStopping)
+				}
+			}
 			_, err := transition(ExclusiveRequested{Request: ExclusiveRequest{ID: "scheduler-stop", Kind: ExclusiveStop}})
 			event.accepted <- err
 
