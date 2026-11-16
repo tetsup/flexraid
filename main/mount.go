@@ -16,14 +16,14 @@ import (
 )
 
 type filesystemInitialization struct {
-	config   mountConfig
-	managed  *management.Management
-	rootID   *shared.ObjectID
-	ioLayers    []*physicalio.IO
+	config       mountConfig
+	managed      *management.Management
+	rootID       *shared.ObjectID
+	ioLayers     []*physicalio.IO
 	distributed  *distribution.Distribution
 	pendingLayer *orchestration.Orchestration
-	stage       int
-	disk     int
+	stage        int
+	disk         int
 }
 
 func (task *filesystemInitialization) Next(ctx context.Context) (bool, error) {
@@ -81,11 +81,11 @@ func (task *filesystemInitialization) Next(ctx context.Context) (bool, error) {
 
 	case 4:
 		created, err := orchestration.CreateRoot(orchestration.CreateRootRequest{
-			Context: ctx,
+			Context:      ctx,
 			Distribution: task.distributed,
-			Mode: 0755,
-			UID: uint32(os.Getuid()),
-			GID: uint32(os.Getgid()),
+			Mode:         0755,
+			UID:          uint32(os.Getuid()),
+			GID:          uint32(os.Getgid()),
 		})
 		if err != nil {
 			return false, fmt.Errorf("initialize filesystem root: %w", err)
@@ -99,7 +99,7 @@ func (task *filesystemInitialization) Next(ctx context.Context) (bool, error) {
 
 	case 5:
 		initialized, err := orchestration.New(orchestration.NewRequest{
-			Context: ctx,
+			Context:      ctx,
 			Distribution: task.distributed,
 		})
 		if err != nil {
