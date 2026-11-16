@@ -149,7 +149,7 @@ func (RunExclusiveUnit) isLifecycleOutput()             {}
 func (InterruptExclusiveAtBoundary) isLifecycleOutput() {}
 func (CompleteExclusive) isLifecycleOutput()            {}
 func (LifecycleChanged) isLifecycleOutput()             {}
-func (LifecycleFailureReported) isLifecycleOutput()              {}
+func (LifecycleFailureReported) isLifecycleOutput()     {}
 func (ExitProcess) isLifecycleOutput()                  {}
 
 var _ StateMachine[LifecycleState, LifecycleInput, LifecycleOutput] = LifecycleMachine{}
