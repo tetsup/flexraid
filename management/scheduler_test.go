@@ -57,6 +57,14 @@ func TestSchedulerRunsInitializationUnitsBeforeReady(t *testing.T) {
 	}
 
 	close(releaseInitialization)
+	readyCtx, readyCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer readyCancel()
+	if err := scheduler.WaitReady(readyCtx); err != nil {
+		t.Fatalf("scheduler did not reach Ready: %v", err)
+	}
+	if scheduler.Phase() != LifecycleReady {
+		t.Fatalf("phase = %v, want Ready", scheduler.Phase())
+	}
 	deadline := time.After(2 * time.Second)
 	for {
 		handle, err := scheduler.SubmitForeground(context.Background(), "after-init", func(context.Context) error {
@@ -105,6 +113,14 @@ func TestSchedulerInitializationFailureEntersFailedAndAllowsStop(t *testing.T) {
 	}
 	if !errors.Is(scheduler.InitializationError(), expected) {
 		t.Fatalf("unexpected initialization error: %v", scheduler.InitializationError())
+	}
+	readyCtx, readyCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer readyCancel()
+	if err := scheduler.WaitReady(readyCtx); !errors.Is(err, expected) {
+		t.Fatalf("WaitReady error = %v, want initialization error", err)
+	}
+	if scheduler.Phase() != LifecycleFailed {
+		t.Fatalf("phase = %v, want Failed", scheduler.Phase())
 	}
 	if _, err := scheduler.SubmitForeground(context.Background(), "after-init-failure", func(context.Context) error {
 		return nil
