@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"sync/atomic"
-	"testing"
 	"syscall"
+	"testing"
 	"time"
 )
 
