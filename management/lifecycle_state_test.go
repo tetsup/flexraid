@@ -91,7 +91,7 @@ func TestBackgroundYieldsToForegroundAndExclusive(t *testing.T) {
 		t.Fatalf("background unit did not start: state=%+v outputs=%#v", state, outputs)
 	}
 	state, outputs = transition(t, state, NormalOperationRequested{ID: "foreground"})
-	if len(outputs) != 0 || len(state.ActiveOperations) != 1 {
+	if len(state.ActiveOperations) != 1 || !hasOutput[AdmitNormalOperation](outputs) {
 		t.Fatalf("foreground operation was not admitted while background unit runs: state=%+v outputs=%#v", state, outputs)
 	}
 	state, _ = transition(t, state, ExclusiveRequested{Request: ExclusiveRequest{ID: "maintenance", Kind: ExclusiveMaintenance}})
