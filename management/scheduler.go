@@ -472,7 +472,6 @@ func (scheduler *Scheduler) run() {
 
 		if stopping && state.RunningExclusive == nil &&
 			len(state.ActiveOperations) == 0 && state.BackgroundUnit == "" {
-			event.release()
 			finished = true
 			close(scheduler.done)
 		}
