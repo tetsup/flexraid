@@ -43,3 +43,17 @@ func TestValidateDriveConfigRejectsDuplicateFields(t *testing.T) {
 		})
 	}
 }
+
+func TestSpinUpRejectsUnconfiguredWWN(t *testing.T) {
+	layer := &Management{drives: map[string]DriveConfig{"configured": {WWN: "configured"}}}
+	if _, err := layer.SpinUp(SpinUpRequest{WWN: "unknown"}); err == nil {
+		t.Fatal("SpinUp succeeded for an unconfigured WWN")
+	}
+}
+
+func TestSpinDownRejectsUnconfiguredWWN(t *testing.T) {
+	layer := &Management{drives: map[string]DriveConfig{"configured": {WWN: "configured"}}}
+	if _, err := layer.SpinDown(SpinDownRequest{WWN: "unknown"}); err == nil {
+		t.Fatal("SpinDown succeeded for an unconfigured WWN")
+	}
+}
