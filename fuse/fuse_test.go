@@ -155,6 +155,26 @@ func TestRenameRejectsUnsupportedFlagsBeforeBackendCall(t *testing.T) {
 	}
 }
 
+
+func TestCallbackArgumentValidationPrecedesLifecycleGate(t *testing.T) {
+	n := &node{}
+	if _, _, _, errno := n.Create(nil, "invalid", uint32(syscall.O_ACCMODE), 0600, &gofuse.EntryOut{}); errno != syscall.EINVAL {
+		t.Errorf("Create invalid access mode errno=%v, want EINVAL", errno)
+	}
+	if _, errno := n.Mknod(nil, "fifo", syscall.S_IFIFO|0600, 0, &gofuse.EntryOut{}); errno != syscall.EOPNOTSUPP {
+		t.Errorf("Mknod FIFO errno=%v, want EOPNOTSUPP", errno)
+	}
+	if errno := n.Setattr(nil, nil, nil, &gofuse.AttrOut{}); errno != syscall.EINVAL {
+		t.Errorf("Setattr nil attributes errno=%v, want EINVAL", errno)
+	}
+	if errno := n.Rename(nil, "old", nil, "new", 0); errno != syscall.EXDEV {
+		t.Errorf("Rename nil destination errno=%v, want EXDEV", errno)
+	}
+	if _, errno := n.Link(nil, nil, "link", &gofuse.EntryOut{}); errno != syscall.EXDEV {
+		t.Errorf("Link nil source errno=%v, want EXDEV", errno)
+	}
+}
+
 func TestParseObjectID(t *testing.T) {
 	if _, err := ParseObjectID("not-a-uuid"); err == nil {
 		t.Fatal("invalid UUID accepted")
