@@ -128,20 +128,20 @@ type LifecycleFailed struct {
 type ExitProcess struct{}
 
 func (InitializationStarted) isLifecycleInput()       {}
-func (InitializationUnitCompleted) isLifecycleInput()  {}
-func (InitializationFailed) isLifecycleInput()         {}
-func (NormalOperationRequested) isLifecycleInput()     {}
-func (NormalOperationCompleted) isLifecycleInput()     {}
-func (BackgroundUnitRequested) isLifecycleInput()      {}
-func (BackgroundUnitCompleted) isLifecycleInput()      {}
-func (ExclusiveRequested) isLifecycleInput()           {}
-func (ExclusiveUnitCompleted) isLifecycleInput()       {}
-func (ExclusiveFailed) isLifecycleInput()              {}
-func (FatalError) isLifecycleInput()                   {}
+func (InitializationUnitCompleted) isLifecycleInput() {}
+func (InitializationFailed) isLifecycleInput()        {}
+func (NormalOperationRequested) isLifecycleInput()    {}
+func (NormalOperationCompleted) isLifecycleInput()    {}
+func (BackgroundUnitRequested) isLifecycleInput()     {}
+func (BackgroundUnitCompleted) isLifecycleInput()     {}
+func (ExclusiveRequested) isLifecycleInput()          {}
+func (ExclusiveUnitCompleted) isLifecycleInput()      {}
+func (ExclusiveFailed) isLifecycleInput()             {}
+func (FatalError) isLifecycleInput()                  {}
 
-func (AdmitNormalOperation) isLifecycleOutput()        {}
-func (RejectNormalOperation) isLifecycleOutput()       {}
-func (RunInitializationUnit) isLifecycleOutput()       {}
+func (AdmitNormalOperation) isLifecycleOutput()         {}
+func (RejectNormalOperation) isLifecycleOutput()        {}
+func (RunInitializationUnit) isLifecycleOutput()        {}
 func (RunBackgroundUnit) isLifecycleOutput()            {}
 func (PauseBackground) isLifecycleOutput()              {}
 func (StartExclusive) isLifecycleOutput()               {}
