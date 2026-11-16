@@ -167,14 +167,14 @@ func (LifecycleMachine) Transition(state LifecycleState, input LifecycleInput) (
 	switch event := input.(type) {
 	case InitializationStarted:
 		if state.Phase != LifecycleInitializing || state.InitializationStarted {
-			return state, nil, fmt.Errorf("initialization cannot start in phase %d", state.Phase)
+			return cloneLifecycleState(state), nil, fmt.Errorf("initialization cannot start in phase %d", state.Phase)
 		}
 		next.InitializationStarted = true
 		outputs = append(outputs, RunInitializationUnit{})
 
 	case InitializationUnitCompleted:
 		if state.Phase != LifecycleInitializing || !state.InitializationStarted {
-			return state, nil, fmt.Errorf("initialization unit completed while initialization is not running")
+			return cloneLifecycleState(state), nil, fmt.Errorf("initialization unit completed while initialization is not running")
 		}
 		if state.StopRequested {
 			next.InitializationStarted = false
@@ -200,7 +200,7 @@ func (LifecycleMachine) Transition(state LifecycleState, input LifecycleInput) (
 
 	case InitializationFailed:
 		if state.Phase != LifecycleInitializing {
-			return state, nil, fmt.Errorf("initialization failed in phase %d", state.Phase)
+			return cloneLifecycleState(state), nil, fmt.Errorf("initialization failed in phase %d", state.Phase)
 		}
 		next.Phase = LifecycleFailed
 		next.InitializationStarted = false
@@ -209,7 +209,7 @@ func (LifecycleMachine) Transition(state LifecycleState, input LifecycleInput) (
 
 	case NormalOperationRequested:
 		if event.ID == "" {
-			return state, nil, fmt.Errorf("normal operation ID is required")
+			return cloneLifecycleState(state), nil, fmt.Errorf("normal operation ID is required")
 		}
 		if state.Phase != LifecycleReady {
 			errno := syscall.EBUSY
@@ -220,7 +220,7 @@ func (LifecycleMachine) Transition(state LifecycleState, input LifecycleInput) (
 			break
 		}
 		if containsString(state.ActiveOperations, event.ID) {
-			return state, nil, fmt.Errorf("normal operation %q is already active", event.ID)
+			return cloneLifecycleState(state), nil, fmt.Errorf("normal operation %q is already active", event.ID)
 		}
 		next.ActiveOperations = append(next.ActiveOperations, event.ID)
 		outputs = append(outputs, AdmitNormalOperation{ID: event.ID})
@@ -229,13 +229,13 @@ func (LifecycleMachine) Transition(state LifecycleState, input LifecycleInput) (
 		var found bool
 		next.ActiveOperations, found = removeString(next.ActiveOperations, event.ID)
 		if !found {
-			return state, nil, fmt.Errorf("normal operation %q is not active", event.ID)
+			return cloneLifecycleState(state), nil, fmt.Errorf("normal operation %q is not active", event.ID)
 		}
 		outputs = append(outputs, startNextExclusive(&next)...)
 
 	case BackgroundUnitRequested:
 		if event.TaskID == "" {
-			return state, nil, fmt.Errorf("background task ID is required")
+			return cloneLifecycleState(state), nil, fmt.Errorf("background task ID is required")
 		}
 		if state.Phase != LifecycleReady || len(state.ActiveOperations) != 0 || state.BackgroundUnit != "" {
 			break
@@ -245,7 +245,7 @@ func (LifecycleMachine) Transition(state LifecycleState, input LifecycleInput) (
 
 	case BackgroundUnitCompleted:
 		if state.BackgroundUnit == "" || state.BackgroundUnit != event.TaskID {
-			return state, nil, fmt.Errorf("background task %q is not running", event.TaskID)
+			return cloneLifecycleState(state), nil, fmt.Errorf("background task %q is not running", event.TaskID)
 		}
 		next.BackgroundUnit = ""
 		outputs = append(outputs, startNextExclusive(&next)...)
@@ -253,17 +253,17 @@ func (LifecycleMachine) Transition(state LifecycleState, input LifecycleInput) (
 	case ExclusiveRequested:
 		request := event.Request
 		if request.ID == "" {
-			return state, nil, fmt.Errorf("exclusive request ID is required")
+			return cloneLifecycleState(state), nil, fmt.Errorf("exclusive request ID is required")
 		}
 		if request.Kind != ExclusiveMaintenance && request.Kind != ExclusiveStop {
-			return state, nil, fmt.Errorf("unsupported exclusive kind %d", request.Kind)
+			return cloneLifecycleState(state), nil, fmt.Errorf("unsupported exclusive kind %d", request.Kind)
 		}
 		if state.Phase == LifecycleFailed && request.Kind != ExclusiveStop {
-			return state, nil, fmt.Errorf("only stop is accepted in failed lifecycle")
+			return cloneLifecycleState(state), nil, fmt.Errorf("only stop is accepted in failed lifecycle")
 		}
 		if containsRequest(next.ExclusiveQueue, request.ID) ||
 			(next.RunningExclusive != nil && next.RunningExclusive.ID == request.ID) {
-			return state, nil, fmt.Errorf("exclusive request %q already exists", request.ID)
+			return cloneLifecycleState(state), nil, fmt.Errorf("exclusive request %q already exists", request.ID)
 		}
 		if request.Kind == ExclusiveStop {
 			next.StopRequested = true
@@ -287,7 +287,7 @@ func (LifecycleMachine) Transition(state LifecycleState, input LifecycleInput) (
 
 	case ExclusiveUnitCompleted:
 		if state.RunningExclusive == nil || state.RunningExclusive.ID != event.RequestID {
-			return state, nil, fmt.Errorf("exclusive request %q is not running", event.RequestID)
+			return cloneLifecycleState(state), nil, fmt.Errorf("exclusive request %q is not running", event.RequestID)
 		}
 		request := *state.RunningExclusive
 		if (state.StopRequested || state.Phase == LifecycleFailed) && request.Kind != ExclusiveStop {
@@ -316,7 +316,7 @@ func (LifecycleMachine) Transition(state LifecycleState, input LifecycleInput) (
 
 	case ExclusiveFailed:
 		if state.RunningExclusive == nil || state.RunningExclusive.ID != event.RequestID {
-			return state, nil, fmt.Errorf("exclusive request %q is not running", event.RequestID)
+			return cloneLifecycleState(state), nil, fmt.Errorf("exclusive request %q is not running", event.RequestID)
 		}
 		request := *state.RunningExclusive
 		next.RunningExclusive = nil
@@ -331,7 +331,7 @@ func (LifecycleMachine) Transition(state LifecycleState, input LifecycleInput) (
 
 	case FatalError:
 		if state.Phase == LifecycleFailed {
-			return state, nil, fmt.Errorf("lifecycle is already failed")
+			return cloneLifecycleState(state), nil, fmt.Errorf("lifecycle is already failed")
 		}
 		next.Phase = LifecycleFailed
 		outputs = append(outputs, LifecycleChanged{From: state.Phase, To: next.Phase}, LifecycleFailureReported{Reason: event.Reason}, PauseBackground{})
@@ -341,7 +341,7 @@ func (LifecycleMachine) Transition(state LifecycleState, input LifecycleInput) (
 		outputs = append(outputs, startNextExclusive(&next)...)
 
 	default:
-		return state, nil, fmt.Errorf("unsupported lifecycle input %T", input)
+		return cloneLifecycleState(state), nil, fmt.Errorf("unsupported lifecycle input %T", input)
 	}
 
 	return next, outputs, nil
