@@ -27,6 +27,63 @@ func stopScheduler(t *testing.T, scheduler *Scheduler) {
 	}
 }
 
+func TestSchedulerRunsInitializationUnitsBeforeReady(t *testing.T) {
+	initializationStarted := make(chan struct{})
+	releaseInitialization := make(chan struct{})
+	var units atomic.Int32
+	scheduler := NewSchedulerWithInitialization(
+		InitializationTaskFunc(func(context.Context) (bool, error) {
+			switch units.Add(1) {
+			case 1:
+				close(initializationStarted)
+				<-releaseInitialization
+				return false, nil
+			case 2:
+				return true, nil
+			default:
+				t.Fatal("initialization ran more than two units")
+				return true, nil
+			}
+		}),
+		nil,
+	)
+	if err := scheduler.Start(); err != nil {
+		t.Fatal(err)
+	}
+	waitSignal(t, initializationStarted, "first initialization unit")
+	if _, err := scheduler.SubmitForeground(context.Background(), "too-early", func(context.Context) error {
+		return nil
+	}); !errors.Is(err, syscall.EBUSY) {
+		t.Fatalf("expected EBUSY during initialization, got %v", err)
+	}
+
+	close(releaseInitialization)
+	deadline := time.After(2 * time.Second)
+	for {
+		handle, err := scheduler.SubmitForeground(context.Background(), "after-init", func(context.Context) error {
+			return nil
+		})
+		if err == nil {
+			if err := handle.Wait(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			break
+		}
+		if !errors.Is(err, syscall.EBUSY) {
+			t.Fatalf("unexpected admission error after initialization: %v", err)
+		}
+		select {
+		case <-deadline:
+			t.Fatal("initialization did not complete")
+		case <-time.After(time.Millisecond):
+		}
+	}
+	if got := units.Load(); got != 2 {
+		t.Fatalf("expected two initialization units, got %d", got)
+	}
+	stopScheduler(t, scheduler)
+}
+
 func TestSchedulerForegroundWaitsForBackgroundSafeBoundary(t *testing.T) {
 	backgroundStarted := make(chan struct{})
 	releaseBackground := make(chan struct{})
