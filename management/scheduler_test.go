@@ -41,8 +41,7 @@ func TestSchedulerRunsInitializationUnitsBeforeReady(t *testing.T) {
 			case 2:
 				return true, nil
 			default:
-				t.Fatal("initialization ran more than two units")
-				return true, nil
+				return true, errors.New("initialization ran more than two units")
 			}
 		}),
 		nil,
