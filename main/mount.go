@@ -19,9 +19,10 @@ type filesystemInitialization struct {
 	config   mountConfig
 	managed  *management.Management
 	rootID   *shared.ObjectID
-	ioLayers []*physicalio.IO
-	distributed *distribution.Distribution
-	stage    int
+	ioLayers    []*physicalio.IO
+	distributed  *distribution.Distribution
+	pendingLayer *orchestration.Orchestration
+	stage       int
 	disk     int
 }
 
@@ -134,7 +135,7 @@ func mountFilesystem(config mountConfig) (*gofuse.Server, error) {
 		return nil, fmt.Errorf("start Management lifecycle: %w", err)
 	}
 	if err := managed.WaitReady(context.Background()); err != nil {
-		stopCtx, cancel := context.WithTimeout(context.Background(), 5_000_000_000)
+		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = managed.Stop(stopCtx)
 		return nil, fmt.Errorf("initialize FlexRAID: %w", err)
