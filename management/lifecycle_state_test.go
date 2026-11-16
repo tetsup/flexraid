@@ -96,8 +96,8 @@ func TestBackgroundYieldsToForegroundAndExclusive(t *testing.T) {
 	}
 	state, _ = transition(t, state, ExclusiveRequested{Request: ExclusiveRequest{ID: "maintenance", Kind: ExclusiveMaintenance}})
 	state, outputs = transition(t, state, BackgroundUnitCompleted{TaskID: "cleanup"})
-	if state.RunningExclusive != nil || !hasOutput[StartExclusive](outputs) {
-		t.Fatalf("exclusive did not wait for foreground operation: state=%+v outputs=%#v", state, outputs)
+	if state.RunningExclusive != nil || hasOutput[StartExclusive](outputs) {
+		t.Fatalf("exclusive started before foreground operation completed: state=%+v outputs=%#v", state, outputs)
 	}
 	state, outputs = transition(t, state, NormalOperationCompleted{ID: "foreground"})
 	if state.RunningExclusive == nil || !hasOutput[StartExclusive](outputs) {
@@ -160,7 +160,12 @@ func TestInvalidEventsDoNotMutateInputState(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected unknown completion to fail")
 	}
-	if len(state.ActiveOperations) != 1 || len(next.ActiveOperations) != 0 {
-		t.Fatalf("expected input to remain unchanged and next state to be independent: input=%+v next=%+v", state, next)
+	if len(state.ActiveOperations) != 1 || state.ActiveOperations[0] != "active" ||
+		len(next.ActiveOperations) != 1 || next.ActiveOperations[0] != "active" {
+		t.Fatalf("expected rejected transition to preserve both independent states: input=%+v next=%+v", state, next)
+	}
+	next.ActiveOperations[0] = "changed"
+	if state.ActiveOperations[0] != "active" {
+		t.Fatalf("returned state aliases input state: input=%+v next=%+v", state, next)
 	}
 }
