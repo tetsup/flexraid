@@ -53,7 +53,7 @@ func TestLoadConfigRejectsDuplicateWWN(t *testing.T) {
 		"  - root: /data/disk2\n    mountpoint: /mnt/disk2\n    wwn: same\n" +
 		"  - root: /data/disk3\n    mountpoint: /mnt/disk3\n    wwn: w3\n" +
 		"  - root: /data/disk4\n    mountpoint: /mnt/disk4\n    wwn: w4\n")
-	if _, err := loadConfig(writeConfig(t, yaml)); err == nil || !strings.Contains(err.Error(), "duplicated") {
+	if _, err := loadConfig(writeConfig(t, yaml)); err == nil || !strings.Contains(err.Error(), "duplicate WWN") {
 		t.Fatalf("loadConfig error = %v, want duplicate WWN error", err)
 	}
 }

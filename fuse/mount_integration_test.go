@@ -11,7 +11,6 @@ import (
 	"github.com/tetsup/flexraid/distribution"
 	"github.com/tetsup/flexraid/fuse"
 	physicalio "github.com/tetsup/flexraid/io"
-	"github.com/tetsup/flexraid/management"
 	"github.com/tetsup/flexraid/orchestration"
 )
 
@@ -37,7 +36,7 @@ func TestMountedEmptyFilesystem(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create empty filesystem root: %v", err)
 	}
-	adapter, err := fuse.New(management.New(created.Layer), created.RootID)
+	adapter, err := fuse.New(newManagementForTest(t, created.Layer), created.RootID)
 	if err != nil {
 		t.Fatalf("create FUSE adapter: %v", err)
 	}
@@ -339,7 +338,7 @@ func mountTestFilesystem(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("create filesystem root: %v", err)
 	}
-	adapter, err := fuse.New(management.New(created.Layer), created.RootID)
+	adapter, err := fuse.New(newManagementForTest(t, created.Layer), created.RootID)
 	if err != nil {
 		t.Fatalf("create FUSE adapter: %v", err)
 	}
