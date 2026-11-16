@@ -41,7 +41,7 @@ func ResolveDrive(request DriveRequest) (DriveResponse, error) {
 		return DriveResponse{}, err
 	}
 	wwn := strings.TrimSpace(request.WWN)
-	if wwn == "" || strings.ContainsAny(wwn, "/\\*?[]") {
+	if wwn == "" || wwn != request.WWN || strings.ContainsAny(wwn, "/\\*?[]") {
 		return DriveResponse{}, fmt.Errorf("invalid WWN %q", request.WWN)
 	}
 
@@ -93,7 +93,7 @@ func SpinDown(request SpinDownRequest) (SpinDownResponse, error) {
 	if err != nil {
 		return SpinDownResponse{}, err
 	}
-	file, err := os.OpenFile(drive.Path, os.O_RDONLY|unix.O_NONBLOCK, 0)
+	file, err := os.OpenFile(drive.Path, os.O_RDWR|unix.O_NONBLOCK, 0)
 	if err != nil {
 		return SpinDownResponse{}, fmt.Errorf("open drive %q for standby: %w", drive.WWN, err)
 	}
@@ -138,7 +138,7 @@ func SpinUp(request SpinUpRequest) (SpinUpResponse, error) {
 	}
 	defer file.Close()
 
-	buffer := make([]byte, 512)
+	buffer := make([]byte, 4096)
 	if _, err := file.ReadAt(buffer, 0); err != nil {
 		return SpinUpResponse{}, fmt.Errorf("read drive %q to wake: %w", drive.WWN, err)
 	}

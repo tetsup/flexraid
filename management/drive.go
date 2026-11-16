@@ -3,6 +3,7 @@ package management
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/tetsup/flexraid/orchestration"
 	"github.com/tetsup/flexraid/platform"
@@ -53,6 +54,9 @@ func validateDriveConfig(drives []DriveConfig) (map[string]DriveConfig, error) {
 	for index, drive := range drives {
 		if drive.Root == "" || drive.Mountpoint == "" || drive.WWN == "" {
 			return nil, fmt.Errorf("drive mapping %d requires root, mountpoint, and WWN", index+1)
+		}
+		if strings.TrimSpace(drive.WWN) != drive.WWN {
+			return nil, fmt.Errorf("drive mapping %d has whitespace around WWN", index+1)
 		}
 		if _, exists := byRoot[drive.Root]; exists {
 			return nil, fmt.Errorf("duplicate storage root %q", drive.Root)

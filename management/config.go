@@ -95,6 +95,11 @@ func LoadConfig(path string) (Config, error) {
 	if _, err := validateDriveConfig(result.Disks); err != nil {
 		return Config{}, err
 	}
+	for index, disk := range result.Disks {
+		if disk.Root == result.Mountpoint || disk.Mountpoint == result.Mountpoint {
+			return Config{}, fmt.Errorf("filesystem mountpoint must not equal disk %d root or physical mountpoint", index+1)
+		}
+	}
 	return result, nil
 }
 
