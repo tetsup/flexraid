@@ -125,6 +125,7 @@ type LifecycleChanged struct {
 type LifecycleFailed struct {
 	Reason string
 }
+type ExitProcess struct{}
 
 func (InitializationStarted) isLifecycleInput()       {}
 func (InitializationUnitCompleted) isLifecycleInput()  {}
@@ -149,6 +150,7 @@ func (InterruptExclusiveAtBoundary) isLifecycleOutput() {}
 func (CompleteExclusive) isLifecycleOutput()            {}
 func (LifecycleChanged) isLifecycleOutput()             {}
 func (LifecycleFailed) isLifecycleOutput()              {}
+func (ExitProcess) isLifecycleOutput()                  {}
 
 var _ StateMachine[LifecycleState, LifecycleInput, LifecycleOutput] = LifecycleMachine{}
 
@@ -175,9 +177,9 @@ func (LifecycleMachine) Transition(state LifecycleState, input LifecycleInput) (
 			return state, nil, fmt.Errorf("initialization unit completed while initialization is not running")
 		}
 		if state.StopRequested {
+			next.InitializationStarted = false
 			next.Phase = LifecycleMaintenance
 			outputs = append(outputs, LifecycleChanged{From: state.Phase, To: next.Phase})
-			outputs = append(outputs, CompleteExclusive{RequestID: stopRequestID(next), Interrupted: true, Reason: "initialization interrupted for stop"})
 			outputs = append(outputs, startNextExclusive(&next)...)
 			break
 		}
@@ -202,8 +204,8 @@ func (LifecycleMachine) Transition(state LifecycleState, input LifecycleInput) (
 		}
 		next.Phase = LifecycleFailed
 		next.InitializationStarted = false
-		next.ExclusiveQueue = nil
 		outputs = append(outputs, LifecycleChanged{From: state.Phase, To: next.Phase}, LifecycleFailed{Reason: event.Reason})
+		outputs = append(outputs, startNextExclusive(&next)...)
 
 	case NormalOperationRequested:
 		if event.ID == "" {
@@ -256,8 +258,8 @@ func (LifecycleMachine) Transition(state LifecycleState, input LifecycleInput) (
 		if request.Kind != ExclusiveMaintenance && request.Kind != ExclusiveStop {
 			return state, nil, fmt.Errorf("unsupported exclusive kind %d", request.Kind)
 		}
-		if state.Phase == LifecycleFailed {
-			return state, nil, fmt.Errorf("exclusive request rejected in failed lifecycle")
+		if state.Phase == LifecycleFailed && request.Kind != ExclusiveStop {
+			return state, nil, fmt.Errorf("only stop is accepted in failed lifecycle")
 		}
 		if containsRequest(next.ExclusiveQueue, request.ID) ||
 			(next.RunningExclusive != nil && next.RunningExclusive.ID == request.ID) {
@@ -299,8 +301,14 @@ func (LifecycleMachine) Transition(state LifecycleState, input LifecycleInput) (
 			break
 		}
 		next.RunningExclusive = nil
+		if request.Kind == ExclusiveStop {
+			next.StopRequested = false
+			outputs = append(outputs, CompleteExclusive{RequestID: request.ID}, ExitProcess{})
+			break
+		}
 		outputs = append(outputs, CompleteExclusive{RequestID: request.ID})
 		outputs = append(outputs, startNextExclusive(&next)...)
+		outputs = append(outputs, settleLifecycle(&next)...)
 
 	case ExclusiveFailed:
 		if state.RunningExclusive == nil || state.RunningExclusive.ID != event.RequestID {
@@ -309,19 +317,24 @@ func (LifecycleMachine) Transition(state LifecycleState, input LifecycleInput) (
 		request := *state.RunningExclusive
 		next.RunningExclusive = nil
 		outputs = append(outputs, CompleteExclusive{RequestID: request.ID, Reason: event.Reason})
+		if request.Kind == ExclusiveStop {
+			next.StopRequested = false
+			outputs = append(outputs, ExitProcess{})
+			break
+		}
 		outputs = append(outputs, startNextExclusive(&next)...)
+		outputs = append(outputs, settleLifecycle(&next)...)
 
 	case FatalError:
 		if state.Phase == LifecycleFailed {
 			return state, nil, fmt.Errorf("lifecycle is already failed")
 		}
 		next.Phase = LifecycleFailed
-		next.ActiveOperations = nil
-		next.ExclusiveQueue = nil
-		next.RunningExclusive = nil
-		next.BackgroundUnit = ""
-		next.StopRequested = false
-		outputs = append(outputs, LifecycleChanged{From: state.Phase, To: next.Phase}, LifecycleFailed{Reason: event.Reason})
+		outputs = append(outputs, LifecycleChanged{From: state.Phase, To: next.Phase}, LifecycleFailed{Reason: event.Reason}, PauseBackground{})
+		if state.RunningExclusive != nil {
+			outputs = append(outputs, InterruptExclusiveAtBoundary{RequestID: state.RunningExclusive.ID})
+		}
+		outputs = append(outputs, startNextExclusive(&next)...)
 
 	default:
 		return state, nil, fmt.Errorf("unsupported lifecycle input %T", input)
@@ -331,15 +344,18 @@ func (LifecycleMachine) Transition(state LifecycleState, input LifecycleInput) (
 }
 
 func startNextExclusive(state *LifecycleState) []LifecycleOutput {
-	if state.Phase == LifecycleInitializing || state.Phase == LifecycleFailed ||
+	if state.Phase == LifecycleInitializing ||
 		state.RunningExclusive != nil || len(state.ActiveOperations) != 0 ||
 		state.BackgroundUnit != "" || len(state.ExclusiveQueue) == 0 {
+		return nil
+	}
+	if state.Phase == LifecycleFailed && state.ExclusiveQueue[0].Kind != ExclusiveStop {
 		return nil
 	}
 	request := state.ExclusiveQueue[0]
 	state.ExclusiveQueue = state.ExclusiveQueue[1:]
 	state.RunningExclusive = &request
-	if state.Phase != LifecycleMaintenance {
+	if state.Phase != LifecycleMaintenance && state.Phase != LifecycleFailed {
 		from := state.Phase
 		state.Phase = LifecycleMaintenance
 		return []LifecycleOutput{
@@ -350,13 +366,13 @@ func startNextExclusive(state *LifecycleState) []LifecycleOutput {
 	return []LifecycleOutput{StartExclusive{Request: request}}
 }
 
-func stopRequestID(state LifecycleState) string {
-	for _, request := range state.ExclusiveQueue {
-		if request.Kind == ExclusiveStop {
-			return request.ID
-		}
+func settleLifecycle(state *LifecycleState) []LifecycleOutput {
+	if state.Phase != LifecycleMaintenance || state.RunningExclusive != nil ||
+		len(state.ExclusiveQueue) != 0 || state.StopRequested {
+		return nil
 	}
-	return ""
+	state.Phase = LifecycleReady
+	return []LifecycleOutput{LifecycleChanged{From: LifecycleMaintenance, To: LifecycleReady}}
 }
 
 func cloneLifecycleState(state LifecycleState) LifecycleState {
