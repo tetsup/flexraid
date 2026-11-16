@@ -176,8 +176,10 @@ func NewSchedulerWithInitialization(initialization InitializationTask, backgroun
 	return &Scheduler{
 		initialization: initialization,
 		background:     background,
-		commands:       make(chan any, 128),
-		done:           make(chan struct{}),
+		commands:           make(chan any, 128),
+		done:               make(chan struct{}),
+		ready:              make(chan struct{}),
+		initializationDone: make(chan struct{}),
 	}
 }
 
