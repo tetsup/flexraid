@@ -206,6 +206,11 @@ func (scheduler *Scheduler) WaitReady(ctx context.Context) error {
 	case <-scheduler.ready:
 		return nil
 	case <-scheduler.initializationDone:
+		select {
+		case <-scheduler.ready:
+			return nil
+		default:
+		}
 		if err := scheduler.InitializationError(); err != nil {
 			return err
 		}
