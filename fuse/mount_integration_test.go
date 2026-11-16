@@ -37,7 +37,7 @@ func TestMountedEmptyFilesystem(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create empty filesystem root: %v", err)
 	}
-	adapter, err := fuse.New(management.New(created.Layer), created.RootID)
+	adapter, err := fuse.New(newManagementForTest(t, created.Layer), created.RootID)
 	if err != nil {
 		t.Fatalf("create FUSE adapter: %v", err)
 	}
@@ -339,7 +339,7 @@ func mountTestFilesystem(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("create filesystem root: %v", err)
 	}
-	adapter, err := fuse.New(management.New(created.Layer), created.RootID)
+	adapter, err := fuse.New(newManagementForTest(t, created.Layer), created.RootID)
 	if err != nil {
 		t.Fatalf("create FUSE adapter: %v", err)
 	}
@@ -364,4 +364,21 @@ func mountTestFilesystem(t *testing.T) string {
 		t.Fatalf("wait for FUSE mount: %v", err)
 	}
 	return mountpoint
+}
+
+func newManagementForTest(t *testing.T, layer *orchestration.Orchestration) *management.Management {
+	t.Helper()
+	managed, err := management.New(management.NewRequest{
+		Orchestration: layer,
+		Config: management.Config{Disks: []management.DriveConfig{
+			{Root: "/test/disk1/data", Mountpoint: "/test/disk1", WWN: "test-wwn-1"},
+			{Root: "/test/disk2/data", Mountpoint: "/test/disk2", WWN: "test-wwn-2"},
+			{Root: "/test/disk3/data", Mountpoint: "/test/disk3", WWN: "test-wwn-3"},
+			{Root: "/test/disk4/data", Mountpoint: "/test/disk4", WWN: "test-wwn-4"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("initialize Management: %v", err)
+	}
+	return managed
 }

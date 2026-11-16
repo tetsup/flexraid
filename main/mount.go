@@ -16,22 +16,22 @@ import (
 )
 
 func mountFilesystem(config mountConfig) (*gofuse.Server, error) {
-	if len(config.DiskRoots) < minimumDiskCount {
-		return nil, fmt.Errorf("got %d disk roots; want at least %d", len(config.DiskRoots), minimumDiskCount)
+	if len(config.Disks) < minimumDiskCount {
+		return nil, fmt.Errorf("got %d disks; want at least %d", len(config.Disks), minimumDiskCount)
 	}
 	if config.Mountpoint == "" {
 		return nil, fmt.Errorf("mountpoint is required")
 	}
+	if err := management.ValidateDriveMappings(config.Disks); err != nil {
+		return nil, fmt.Errorf("validate configured physical drives: %w", err)
+	}
 
-	ioLayers := make([]*physicalio.IO, 0, len(config.DiskRoots))
-	for index, root := range config.DiskRoots {
-		if root == "" {
-			return nil, fmt.Errorf("disk root %d is empty", index+1)
-		}
-		if err := os.MkdirAll(root, 0700); err != nil {
+	ioLayers := make([]*physicalio.IO, 0, len(config.Disks))
+	for index, disk := range config.Disks {
+		if err := os.MkdirAll(disk.Root, 0700); err != nil {
 			return nil, fmt.Errorf("create disk root %d: %w", index+1, err)
 		}
-		ioLayers = append(ioLayers, physicalio.New(physicalio.NewRequest{Root: root}).Layer)
+		ioLayers = append(ioLayers, physicalio.New(physicalio.NewRequest{Root: disk.Root}).Layer)
 	}
 	ctx := context.Background()
 	distributed, err := distribution.New(distribution.NewRequest{Context: ctx, IOs: ioLayers})
@@ -67,7 +67,10 @@ func mountFilesystem(config mountConfig) (*gofuse.Server, error) {
 		rootID = initialized.RootID
 	}
 
-	managed := management.New(layer)
+	managed, err := management.New(management.NewRequest{Orchestration: layer, Config: config})
+	if err != nil {
+		return nil, fmt.Errorf("initialize Management: %w", err)
+	}
 	adapter, err := flexfuse.New(managed, rootID)
 	if err != nil {
 		return nil, fmt.Errorf("create FUSE adapter: %w", err)
