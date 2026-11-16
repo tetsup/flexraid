@@ -1,7 +1,6 @@
 package management
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -20,28 +19,6 @@ type DriveConfig struct {
 type NewRequest struct {
 	Orchestration *orchestration.Orchestration
 	Config        Config
-}
-
-// SpinUpRequest identifies a configured drive by WWN.
-type SpinUpRequest struct {
-	Context context.Context
-	WWN     string
-}
-
-// SpinUpResponse reports the physical drive that was woken.
-type SpinUpResponse struct {
-	WWN string
-}
-
-// SpinDownRequest identifies a configured drive by WWN.
-type SpinDownRequest struct {
-	Context context.Context
-	WWN     string
-}
-
-// SpinDownResponse reports the physical drive that received the standby request.
-type SpinDownResponse struct {
-	WWN string
 }
 
 func validateDriveConfig(drives []DriveConfig) (map[string]DriveConfig, error) {
@@ -91,32 +68,4 @@ func resolveDriveMappings(drives []DriveConfig) (map[string]DriveConfig, error) 
 func ValidateDriveMappings(drives []DriveConfig) error {
 	_, err := resolveDriveMappings(drives)
 	return err
-}
-
-// SpinUp requests spin-up only for a drive registered during initialization.
-func (layer *Management) SpinUp(request SpinUpRequest) (SpinUpResponse, error) {
-	layer.mu.Lock()
-	defer layer.mu.Unlock()
-	if _, exists := layer.drives[request.WWN]; !exists {
-		return SpinUpResponse{}, fmt.Errorf("WWN %q is not configured", request.WWN)
-	}
-	result, err := platform.SpinUp(platform.SpinUpRequest{Context: request.Context, WWN: request.WWN})
-	if err != nil {
-		return SpinUpResponse{}, err
-	}
-	return SpinUpResponse{WWN: result.WWN}, nil
-}
-
-// SpinDown requests standby only for a drive registered during initialization.
-func (layer *Management) SpinDown(request SpinDownRequest) (SpinDownResponse, error) {
-	layer.mu.Lock()
-	defer layer.mu.Unlock()
-	if _, exists := layer.drives[request.WWN]; !exists {
-		return SpinDownResponse{}, fmt.Errorf("WWN %q is not configured", request.WWN)
-	}
-	result, err := platform.SpinDown(platform.SpinDownRequest{Context: request.Context, WWN: request.WWN})
-	if err != nil {
-		return SpinDownResponse{}, err
-	}
-	return SpinDownResponse{WWN: result.WWN}, nil
 }

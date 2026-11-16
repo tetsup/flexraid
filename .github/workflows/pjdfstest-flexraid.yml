@@ -57,13 +57,31 @@ jobs:
         run: |
           set -eu
           root="$RUNNER_TEMP/pjdfstest-flexraid"
-          mkdir -p "$root/disk1" "$root/disk2" "$root/disk3" "$root/disk4" "$root/mount" "$root/logs" "$root/results"
+          mkdir -p "$root/disk1" "$root/disk2" "$root/disk3" "$root/disk4" \
+            "$root/physical1" "$root/physical2" "$root/physical3" "$root/physical4" \
+            "$root/mount" "$root/logs" "$root/results"
+          sudo mkdir -p /dev/disk/by-id
+          : > "$root/loop-devices"
+          for index in 1 2 3 4; do
+            truncate -s 32M "$root/loop$index.img"
+            device=$(sudo losetup --find --show "$root/loop$index.img")
+            echo "$device" >> "$root/loop-devices"
+            sudo ln -sfn "$device" "/dev/disk/by-id/wwn-flexraid-ci-$index"
+          done
           cat > "$root/flexraid.yaml" <<EOF
           disks:
-            - "$root/disk1"
-            - "$root/disk2"
-            - "$root/disk3"
-            - "$root/disk4"
+            - root: "$root/disk1"
+              mountpoint: "$root/physical1"
+              wwn: flexraid-ci-1
+            - root: "$root/disk2"
+              mountpoint: "$root/physical2"
+              wwn: flexraid-ci-2
+            - root: "$root/disk3"
+              mountpoint: "$root/physical3"
+              wwn: flexraid-ci-3
+            - root: "$root/disk4"
+              mountpoint: "$root/physical4"
+              wwn: flexraid-ci-4
           mountpoint: "$root/mount"
           EOF
           sudo chmod 0777 "$root" "$root/mount" "$root/logs" "$root/results"
@@ -206,6 +224,12 @@ jobs:
               done
               sudo kill -KILL "$pid" 2>/dev/null || true
             fi
+          fi
+          for index in 1 2 3 4; do
+            sudo rm -f "/dev/disk/by-id/wwn-flexraid-ci-$index"
+          done
+          if [ -f "$root/loop-devices" ]; then
+            while read -r device; do sudo losetup -d "$device" 2>/dev/null || true; done < "$root/loop-devices"
           fi
           echo "FlexRAID logs:"
           find "$root/logs" "$root/results" -maxdepth 1 -type f -printf '%p (%s bytes)\n' 2>/dev/null | sort || true

@@ -14,16 +14,43 @@ PID_FILE="$DATA_DIR/flexraid.pid"
 LOG_FILE="$DATA_DIR/flexraid-mount.log"
 RC_FILE="$REPO_DIR/.github/xfstests/flexraid.rc"
 
+cleanup_loop_devices() {
+  if [ -f "$DATA_DIR/loop-devices" ]; then
+    while read -r device; do losetup -d "$device" 2>/dev/null || true; done < "$DATA_DIR/loop-devices"
+  fi
+  for index in 1 2 3 4; do
+    rm -f "/dev/disk/by-id/wwn-flexraid-ci-$index"
+  done
+}
+
 prepare() {
+  cleanup_loop_devices
   mkdir -p "$DATA_DIR/disk1" "$DATA_DIR/disk2" "$DATA_DIR/disk3" "$DATA_DIR/disk4"
-  mkdir -p "$MOUNT_DIR" "$SCRATCH_DIR" "$RESULTS_DIR"
+  mkdir -p "$DATA_DIR/physical1" "$DATA_DIR/physical2" "$DATA_DIR/physical3" "$DATA_DIR/physical4"
+  mkdir -p "$MOUNT_DIR" "$SCRATCH_DIR" "$RESULTS_DIR" /dev/disk/by-id
+  : > "$DATA_DIR/loop-devices"
+  for index in 1 2 3 4; do
+    truncate -s 32M "$DATA_DIR/loop$index.img"
+    device=$(losetup --find --show "$DATA_DIR/loop$index.img")
+    echo "$device" >> "$DATA_DIR/loop-devices"
+    ln -sfn "$device" "/dev/disk/by-id/wwn-flexraid-ci-$index"
+  done
+  trap cleanup_loop_devices EXIT
 
   cat >"$CONFIG_FILE" <<EOF
 disks:
-  - "$DATA_DIR/disk1"
-  - "$DATA_DIR/disk2"
-  - "$DATA_DIR/disk3"
-  - "$DATA_DIR/disk4"
+  - root: "$DATA_DIR/disk1"
+    mountpoint: "$DATA_DIR/physical1"
+    wwn: flexraid-ci-1
+  - root: "$DATA_DIR/disk2"
+    mountpoint: "$DATA_DIR/physical2"
+    wwn: flexraid-ci-2
+  - root: "$DATA_DIR/disk3"
+    mountpoint: "$DATA_DIR/physical3"
+    wwn: flexraid-ci-3
+  - root: "$DATA_DIR/disk4"
+    mountpoint: "$DATA_DIR/physical4"
+    wwn: flexraid-ci-4
 mountpoint: "$MOUNT_DIR"
 EOF
 
@@ -103,7 +130,7 @@ EOF
     ;;
   shell)
     prepare
-    exec bash -i
+    bash -i
     ;;
   list)
     list_generic
