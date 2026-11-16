@@ -19,6 +19,12 @@ type BackgroundTask interface {
 	Next(context.Context) (done bool, err error)
 }
 
+// LockedBackgroundTask is implemented when a background unit needs Object
+// locks. The task acquires only the locks for the unit it is about to execute.
+type LockedBackgroundTask interface {
+	NextWithLocks(context.Context, *ObjectLockManager) (done bool, err error)
+}
+
 // BackgroundTaskFunc adapts a function to BackgroundTask.
 type BackgroundTaskFunc func(context.Context) (done bool, err error)
 
@@ -54,6 +60,7 @@ func (handle *ForegroundHandle) Wait(ctx context.Context) error {
 type foregroundRequest struct {
 	id       string
 	ctx      context.Context
+	locks    []ObjectLockRequest
 	run      ForegroundOperation
 	handle   *ForegroundHandle
 	accepted chan error
@@ -77,6 +84,7 @@ type stopScheduler struct{}
 // but are not started until that unit reaches its safe boundary.
 type Scheduler struct {
 	background BackgroundTask
+	locks      *ObjectLockManager
 	commands   chan any
 	done       chan struct{}
 
@@ -89,6 +97,7 @@ type Scheduler struct {
 func NewScheduler(background BackgroundTask) *Scheduler {
 	return &Scheduler{
 		background: background,
+		locks:      NewObjectLockManager(),
 		commands:   make(chan any, 128),
 		done:       make(chan struct{}),
 	}
@@ -116,6 +125,17 @@ func (scheduler *Scheduler) SubmitForeground(
 	id string,
 	run ForegroundOperation,
 ) (*ForegroundHandle, error) {
+	return scheduler.SubmitForegroundWithLocks(ctx, id, nil, run)
+}
+
+// SubmitForegroundWithLocks submits a foreground operation with its complete
+// Object lock set. The lock set is acquired atomically before the callback.
+func (scheduler *Scheduler) SubmitForegroundWithLocks(
+	ctx context.Context,
+	id string,
+	locks []ObjectLockRequest,
+	run ForegroundOperation,
+) (*ForegroundHandle, error) {
 	if ctx == nil {
 		return nil, errors.New("operation context is required")
 	}
@@ -141,6 +161,7 @@ func (scheduler *Scheduler) SubmitForeground(
 	request := &foregroundRequest{
 		id:       id,
 		ctx:      ctx,
+		locks:    append([]ObjectLockRequest(nil), locks...),
 		run:      run,
 		handle:   handle,
 		accepted: make(chan error, 1),
@@ -224,7 +245,7 @@ func (scheduler *Scheduler) run() {
 				foregroundQueue = foregroundQueue[1:]
 				activeForeground++
 				go func(request *foregroundRequest) {
-					err := runForegroundOperation(request.ctx, request.run)
+					err := runForegroundOperation(request.ctx, scheduler.locks, request.locks, request.run)
 					scheduler.commands <- foregroundCompleted{
 						id:     request.id,
 						handle: request.handle,
@@ -242,7 +263,7 @@ func (scheduler *Scheduler) run() {
 			} else {
 				backgroundRunning = true
 				go func() {
-					done, err := runBackgroundUnit(scheduler.background)
+					done, err := runBackgroundUnit(scheduler.background, scheduler.locks)
 					scheduler.commands <- backgroundCompleted{more: !done, err: err}
 				}()
 			}
@@ -310,7 +331,12 @@ func (scheduler *Scheduler) setBackgroundError(err error) {
 	scheduler.mu.Unlock()
 }
 
-func runForegroundOperation(ctx context.Context, run ForegroundOperation) (err error) {
+func runForegroundOperation(ctx context.Context, locks *ObjectLockManager, requests []ObjectLockRequest, run ForegroundOperation) (err error) {
+	release, err := locks.AcquireOperation(ctx, requests)
+	if err != nil {
+		return err
+	}
+	defer release()
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("foreground operation panicked: %v", recovered)
@@ -319,12 +345,15 @@ func runForegroundOperation(ctx context.Context, run ForegroundOperation) (err e
 	return run(ctx)
 }
 
-func runBackgroundUnit(task BackgroundTask) (done bool, err error) {
+func runBackgroundUnit(task BackgroundTask, locks *ObjectLockManager) (done bool, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			done = true
 			err = fmt.Errorf("background unit panicked: %v", recovered)
 		}
 	}()
+	if locked, ok := task.(LockedBackgroundTask); ok {
+		return locked.NextWithLocks(context.Background(), locks)
+	}
 	return task.Next(context.Background())
 }
