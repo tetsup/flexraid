@@ -140,12 +140,12 @@ func (n *node) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, s
 
 func (n *node) Read(ctx context.Context, fh fs.FileHandle, dest []byte, offset int64) (gofuse.ReadResult, syscall.Errno) {
 	defer traceFUSECallback("Read", "object_id", n.objectID.String(), "offset", offset, "size", len(dest))()
-	if errno := n.layer.LifecycleErrno(); errno != 0 {
-		return nil, errno
-	}
 	handle, ok := fh.(*fileHandle)
 	if !ok || handle == nil || handle.layer != n.layer || offset < 0 {
 		return nil, syscall.EBADF
+	}
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return nil, errno
 	}
 	result, err := n.layer.Read(orchestration.ReadRequest{
 		Context: ctx, Handle: handle.handle, ObjectID: n.objectID,
@@ -159,12 +159,12 @@ func (n *node) Read(ctx context.Context, fh fs.FileHandle, dest []byte, offset i
 
 func (n *node) Write(ctx context.Context, fh fs.FileHandle, data []byte, offset int64) (uint32, syscall.Errno) {
 	defer traceFUSECallback("Write", "object_id", n.objectID.String(), "offset", offset, "size", len(data))()
-	if errno := n.layer.LifecycleErrno(); errno != 0 {
-		return 0, errno
-	}
 	handle, ok := fh.(*fileHandle)
 	if !ok || handle == nil || handle.layer != n.layer || offset < 0 {
 		return 0, syscall.EBADF
+	}
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return 0, errno
 	}
 	result, err := n.layer.Write(orchestration.WriteRequest{
 		Context: ctx, Handle: handle.handle, ObjectID: n.objectID,
@@ -178,12 +178,12 @@ func (n *node) Write(ctx context.Context, fh fs.FileHandle, data []byte, offset 
 
 func (n *node) Flush(ctx context.Context, fh fs.FileHandle) syscall.Errno {
 	defer traceFUSECallback("Flush", "object_id", n.objectID.String())()
-	if errno := n.layer.LifecycleErrno(); errno != 0 {
-		return errno
-	}
 	handle, ok := fh.(*fileHandle)
 	if !ok || handle == nil {
 		return syscall.EBADF
+	}
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return errno
 	}
 	_, err := n.layer.Flush(orchestration.FlushRequest{Context: ctx, Handle: handle.handle})
 	return fs.ToErrno(err)
@@ -191,12 +191,12 @@ func (n *node) Flush(ctx context.Context, fh fs.FileHandle) syscall.Errno {
 
 func (n *node) Fsync(ctx context.Context, fh fs.FileHandle, _ uint32) syscall.Errno {
 	defer traceFUSECallback("Fsync", "object_id", n.objectID.String())()
-	if errno := n.layer.LifecycleErrno(); errno != 0 {
-		return errno
-	}
 	handle, ok := fh.(*fileHandle)
 	if !ok || handle == nil {
 		return syscall.EBADF
+	}
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return errno
 	}
 	_, err := n.layer.Fsync(orchestration.FsyncRequest{Context: ctx, Handle: handle.handle})
 	return fs.ToErrno(err)
