@@ -474,7 +474,7 @@ func (scheduler *Scheduler) run() {
 			event.release()
 			finished = true
 			close(scheduler.done)
-	}
+		}
 	}
 
 	dispatch()
