@@ -333,6 +333,53 @@ func TestSchedulerRejectsRequestsBeforeStartAndAfterStop(t *testing.T) {
 	}
 }
 
+func TestSchedulerStopPreemptsAndCancelsQueuedExclusiveTasks(t *testing.T) {
+	scheduler := NewScheduler(nil)
+	if err := scheduler.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	first, err := scheduler.SubmitExclusive(context.Background(), "running", ExclusiveTaskFunc(func(context.Context) (bool, error) {
+		close(firstStarted)
+		<-releaseFirst
+		return false, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitSignal(t, firstStarted, "running exclusive unit")
+
+	second, err := scheduler.SubmitExclusive(context.Background(), "queued", ExclusiveTaskFunc(func(context.Context) (bool, error) {
+		t.Fatal("queued exclusive task ran after Stop was requested")
+		return true, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stopped := make(chan error, 1)
+	go func() {
+		stopped <- scheduler.Stop(context.Background())
+	}()
+	select {
+	case err := <-stopped:
+		t.Fatalf("Stop returned before the active safe unit completed: %v", err)
+	case <-time.After(30 * time.Millisecond):
+	}
+	close(releaseFirst)
+	if err := <-stopped; err != nil {
+		t.Fatalf("Stop failed: %v", err)
+	}
+	if err := first.Wait(context.Background()); !errors.Is(err, ErrSchedulerStopping) {
+		t.Fatalf("running exclusive task should be interrupted by Stop, got %v", err)
+	}
+	if err := second.Wait(context.Background()); !errors.Is(err, ErrSchedulerStopping) {
+		t.Fatalf("queued exclusive task should be cancelled by Stop, got %v", err)
+	}
+}
+
 func TestSchedulerExclusiveTasksRunInQueueOrder(t *testing.T) {
 	scheduler := NewScheduler(nil)
 	if err := scheduler.Start(); err != nil {
