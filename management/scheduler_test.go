@@ -25,17 +25,17 @@ func TestSchedulerForegroundWaitsForBackgroundSafeBoundary(t *testing.T) {
 	secondBackgroundStarted := make(chan struct{})
 	var units atomic.Int32
 
-	task := BackgroundTaskFunc(func() (bool, error) {
+	task := BackgroundTaskFunc(func(context.Context) (bool, error) {
 		switch units.Add(1) {
 		case 1:
 			close(backgroundStarted)
 			<-releaseBackground
-			return true, nil
+			return false, nil
 		case 2:
 			close(secondBackgroundStarted)
-			return false, nil
+			return true, nil
 		default:
-			return false, nil
+			return true, nil
 		}
 	})
 	scheduler := NewScheduler(task)
@@ -123,7 +123,7 @@ func TestSchedulerStopWaitsForBackgroundAndAcceptedForeground(t *testing.T) {
 	backgroundStarted := make(chan struct{})
 	releaseBackground := make(chan struct{})
 	foregroundRan := make(chan struct{})
-	task := BackgroundTaskFunc(func() (bool, error) {
+	task := BackgroundTaskFunc(func(context.Context) (bool, error) {
 		close(backgroundStarted)
 		<-releaseBackground
 		return true, nil
@@ -169,8 +169,8 @@ func TestSchedulerStopWaitsForBackgroundAndAcceptedForeground(t *testing.T) {
 
 func TestSchedulerBackgroundFailureDoesNotBlockForeground(t *testing.T) {
 	expected := errors.New("background failure")
-	scheduler := NewScheduler(BackgroundTaskFunc(func() (bool, error) {
-		return false, expected
+	scheduler := NewScheduler(BackgroundTaskFunc(func(context.Context) (bool, error) {
+		return true, expected
 	}))
 	if err := scheduler.Start(); err != nil {
 		t.Fatal(err)

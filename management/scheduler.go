@@ -13,19 +13,17 @@ var (
 	ErrSchedulerStopping       = errors.New("scheduler is stopping")
 )
 
-// BackgroundTask executes one crash-safe unit at a time. RunUnit must return
-// only after reaching a point from which the task can safely resume after an
-// abrupt process termination. The returned bool reports whether more work
-// remains. The scheduler never interrupts a running unit.
+// BackgroundTask advances one reconstructible unit. Progress is memory-only;
+// after restart the task must rescan current state and safely reconsider work.
 type BackgroundTask interface {
-	RunUnit() (more bool, err error)
+	Next(context.Context) (done bool, err error)
 }
 
 // BackgroundTaskFunc adapts a function to BackgroundTask.
-type BackgroundTaskFunc func() (more bool, err error)
+type BackgroundTaskFunc func(context.Context) (done bool, err error)
 
-func (run BackgroundTaskFunc) RunUnit() (bool, error) {
-	return run()
+func (run BackgroundTaskFunc) Next(ctx context.Context) (bool, error) {
+	return run(ctx)
 }
 
 // ForegroundOperation is one accepted foreground request.
@@ -244,8 +242,8 @@ func (scheduler *Scheduler) run() {
 			} else {
 				backgroundRunning = true
 				go func() {
-					more, err := runBackgroundUnit(scheduler.background)
-					scheduler.commands <- backgroundCompleted{more: more, err: err}
+					done, err := runBackgroundUnit(scheduler.background)
+					scheduler.commands <- backgroundCompleted{more: !done, err: err}
 				}()
 			}
 		}
@@ -321,12 +319,12 @@ func runForegroundOperation(ctx context.Context, run ForegroundOperation) (err e
 	return run(ctx)
 }
 
-func runBackgroundUnit(task BackgroundTask) (more bool, err error) {
+func runBackgroundUnit(task BackgroundTask) (done bool, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			more = false
+			done = true
 			err = fmt.Errorf("background unit panicked: %v", recovered)
 		}
 	}()
-	return task.RunUnit()
+	return task.Next(context.Background())
 }
