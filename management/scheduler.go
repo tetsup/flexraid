@@ -146,10 +146,10 @@ type Scheduler struct {
 	commands       chan any
 	done           chan struct{}
 
-	mu              sync.Mutex
-	started         bool
-	stopRequested   bool
-	backgroundError    error
+	mu                  sync.Mutex
+	started             bool
+	stopRequested       bool
+	backgroundError     error
 	initializationError error
 }
 
