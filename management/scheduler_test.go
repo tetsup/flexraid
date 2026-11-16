@@ -18,7 +18,7 @@ func waitSignal(t *testing.T, signal <-chan struct{}, description string) {
 	}
 }
 
-func stopScheduler(t *testing.T, scheduler *Scheduler) {
+func stopAndWaitScheduler(t *testing.T, scheduler *Scheduler) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -80,7 +80,7 @@ func TestSchedulerRunsInitializationUnitsBeforeReady(t *testing.T) {
 	if got := units.Load(); got != 2 {
 		t.Fatalf("expected two initialization units, got %d", got)
 	}
-	stopScheduler(t, scheduler)
+	stopAndWaitScheduler(t, scheduler)
 }
 
 func TestSchedulerInitializationFailureEntersFailedAndAllowsStop(t *testing.T) {
@@ -111,7 +111,7 @@ func TestSchedulerInitializationFailureEntersFailedAndAllowsStop(t *testing.T) {
 	}); !errors.Is(err, syscall.EIO) {
 		t.Fatalf("expected EIO after initialization failure, got %v", err)
 	}
-	stopScheduler(t, scheduler)
+	stopAndWaitScheduler(t, scheduler)
 }
 
 func TestSchedulerForegroundWaitsForBackgroundSafeBoundary(t *testing.T) {
@@ -168,7 +168,7 @@ func TestSchedulerForegroundWaitsForBackgroundSafeBoundary(t *testing.T) {
 		t.Fatalf("foreground operation failed: %v", err)
 	}
 	waitSignal(t, secondBackgroundStarted, "second background unit")
-	stopScheduler(t, scheduler)
+	stopAndWaitScheduler(t, scheduler)
 }
 
 func TestSchedulerSerializesForegroundOperations(t *testing.T) {
@@ -211,7 +211,7 @@ func TestSchedulerSerializesForegroundOperations(t *testing.T) {
 	if err := second.Wait(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	stopScheduler(t, scheduler)
+	stopAndWaitScheduler(t, scheduler)
 }
 
 func TestSchedulerExclusiveDrainsForegroundAndBlocksNewRequests(t *testing.T) {
@@ -264,7 +264,7 @@ func TestSchedulerExclusiveDrainsForegroundAndBlocksNewRequests(t *testing.T) {
 	if _, err := scheduler.SubmitForeground(context.Background(), "after-maintenance", func(context.Context) error { return nil }); err != nil {
 		t.Fatalf("foreground admission did not reopen: %v", err)
 	}
-	stopScheduler(t, scheduler)
+	stopAndWaitScheduler(t, scheduler)
 }
 
 func TestSchedulerStopWaitsForBackgroundAndAcceptedForeground(t *testing.T) {
@@ -346,7 +346,7 @@ func TestSchedulerBackgroundFailureDoesNotBlockForeground(t *testing.T) {
 	if err := handle.Wait(context.Background()); err != nil {
 		t.Fatalf("foreground operation failed: %v", err)
 	}
-	stopScheduler(t, scheduler)
+	stopAndWaitScheduler(t, scheduler)
 }
 
 func TestSchedulerRejectsRequestsBeforeStartAndAfterStop(t *testing.T) {
@@ -358,7 +358,7 @@ func TestSchedulerRejectsRequestsBeforeStartAndAfterStop(t *testing.T) {
 	if err := scheduler.Start(); err != nil {
 		t.Fatal(err)
 	}
-	stopScheduler(t, scheduler)
+	stopAndWaitScheduler(t, scheduler)
 	if _, err := scheduler.SubmitForeground(context.Background(), "after-stop", operation); !errors.Is(err, ErrSchedulerStopping) {
 		t.Fatalf("expected stopping error, got %v", err)
 	}
@@ -450,5 +450,5 @@ func TestSchedulerExclusiveTasksRunInQueueOrder(t *testing.T) {
 	if err := second.Wait(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	stopScheduler(t, scheduler)
+	stopAndWaitScheduler(t, scheduler)
 }
