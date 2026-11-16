@@ -146,9 +146,9 @@ type stopCompleted struct {
 // execution lock. Foreground operations, Background units, Exclusive units,
 // and Stop never execute concurrently.
 type Scheduler struct {
-	initialization InitializationTask
-	background     BackgroundTask
-	execution      sync.Mutex
+	initialization     InitializationTask
+	background         BackgroundTask
+	execution          sync.Mutex
 	commands           chan any
 	done               chan struct{}
 	ready              chan struct{}
