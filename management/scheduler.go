@@ -149,8 +149,15 @@ type Scheduler struct {
 	initialization InitializationTask
 	background     BackgroundTask
 	execution      sync.Mutex
-	commands       chan any
-	done           chan struct{}
+	commands           chan any
+	done               chan struct{}
+	ready              chan struct{}
+	initializationDone chan struct{}
+	readyOnce          sync.Once
+	initializationOnce sync.Once
+
+	phaseMu sync.RWMutex
+	phase   LifecyclePhase
 
 	mu                  sync.Mutex
 	started             bool
@@ -186,6 +193,31 @@ func (scheduler *Scheduler) Start() error {
 
 	go scheduler.run()
 	return nil
+}
+
+// WaitReady waits until initialization has completed successfully or failed.
+func (scheduler *Scheduler) WaitReady(ctx context.Context) error {
+	if ctx == nil {
+		return errors.New("wait context is required")
+	}
+	select {
+	case <-scheduler.ready:
+		return nil
+	case <-scheduler.initializationDone:
+		if err := scheduler.InitializationError(); err != nil {
+			return err
+		}
+		return errors.New("initialization completed without entering Ready")
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// Phase returns the latest lifecycle phase published by the scheduler.
+func (scheduler *Scheduler) Phase() LifecyclePhase {
+	scheduler.phaseMu.RLock()
+	defer scheduler.phaseMu.RUnlock()
+	return scheduler.phase
 }
 
 // SubmitForeground queues a foreground operation. Accepted requests execute
@@ -366,14 +398,27 @@ func (scheduler *Scheduler) run() {
 	stopping := false
 	finished := false
 
+	publishPhase := func() {
+		scheduler.phaseMu.Lock()
+		scheduler.phase = state.Phase
+		scheduler.phaseMu.Unlock()
+	}
+	completeInitialization := func() {
+		scheduler.initializationOnce.Do(func() { close(scheduler.initializationDone) })
+		if state.Phase == LifecycleReady {
+			scheduler.readyOnce.Do(func() { close(scheduler.ready) })
+		}
+	}
 	transition := func(input LifecycleInput) ([]LifecycleOutput, error) {
 		next, outputs, err := machine.Transition(state, input)
 		if err != nil {
 			return nil, err
 		}
 		state = next
+		publishPhase()
 		return outputs, nil
 	}
+	publishPhase()
 	finishForeground := func(request *ForegroundHandle, err error) {
 		request.err = err
 		close(request.done)
@@ -402,7 +447,11 @@ func (scheduler *Scheduler) run() {
 				initializationStarted = true
 			}
 			if scheduler.initialization == nil {
-				_, _ = transition(InitializationUnitCompleted{})
+				_, err := transition(InitializationUnitCompleted{})
+				if err != nil {
+					scheduler.setInitializationError(err)
+				}
+				completeInitialization()
 				dispatch()
 				return
 			}
@@ -526,6 +575,9 @@ func (scheduler *Scheduler) run() {
 				}
 			}
 			event.release()
+			if state.Phase != LifecycleInitializing {
+				completeInitialization()
+			}
 
 		case foregroundCompleted:
 			active = false
