@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"syscall"
 )
 
 var (
@@ -568,4 +567,3 @@ func runExclusiveUnit(lock *sync.Mutex, ctx context.Context, task ExclusiveTask)
 	return task.Next(ctx)
 }
 
-var _ = syscall.EBUSY
