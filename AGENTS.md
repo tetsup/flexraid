@@ -239,7 +239,7 @@ Distribution -> Platform
 - Distribution は Management とは独立して、Distribution 内部の同時実行制約を管理する。Management の実行単位・共通ロックとは概念も粒度も異なり、相互に統合・共有しない。
 - Distribution は同一 ObjectID + StripeID を最小単位とする Stripe ロックを所有し、Read / Write / Recovery / Cleanup の競合を防ぐ。
 - 削除候補を事前調査した場合は、Stripe ロック取得後に対象 Version / Chunk と削除可能条件を再検証する。
-- Object 全体の削除では Management が Object 単位の実行ワークフローを調整し、Distribution が Stripe 単位の排他を取得して物理削除する。Stripe 0 は他 Stripe の削除完了後に最後に処理する。全 Stripe の削除完了後に Orchestration の論理 Object メモリ状態を確定する。
+- Object 全体の削除では Management が対象 Object の削除ワークフローを調整し、Distribution が Stripe 単位の排他を取得して物理削除する。Stripe 0 は他 Stripe の削除完了後に最後に処理する。全 Stripe の削除完了後に Orchestration の論理 Object メモリ状態を確定する。
 - Distribution の Stripe ロック取得中に Management の実行ロックを要求する逆方向の依存を作らない。Management は Distribution の内部ロックを直接操作しない。
 - I/O は物理ファイル操作を実行する。上位層の Object / Stripe の意味に基づくロックを持たず、必要性が実証された物理ファイル単位の排他だけを内部実装として持つ。
 
