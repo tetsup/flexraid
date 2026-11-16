@@ -222,3 +222,74 @@ func TestSchedulerRejectsRequestsBeforeStartAndAfterStop(t *testing.T) {
 		t.Fatalf("expected stopping error, got %v", err)
 	}
 }
+
+func TestSchedulerAcquiresObjectLocksBeforeForegroundCallback(t *testing.T) {
+	scheduler := NewScheduler(nil)
+	if err := scheduler.Start(); err != nil {
+		t.Fatal(err)
+	}
+	held, err := scheduler.locks.AcquireOperation(context.Background(), []ObjectLockRequest{
+		{ObjectID: "object-1", Mode: ObjectLockExclusive},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	handle, err := scheduler.SubmitForegroundWithLocks(
+		context.Background(),
+		"write-object-1",
+		[]ObjectLockRequest{{ObjectID: "object-1", Mode: ObjectLockExclusive}},
+		func(context.Context) error {
+			close(started)
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-started:
+		t.Fatal("foreground callback ran before its Object lock was acquired")
+	case <-time.After(30 * time.Millisecond):
+	}
+	held()
+	waitSignal(t, started, "foreground callback after Object lock release")
+	if err := handle.Wait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := scheduler.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type lockAwareBackgroundTask struct {
+	called chan struct{}
+}
+
+func (task *lockAwareBackgroundTask) Next(context.Context) (bool, error) {
+	return true, nil
+}
+
+func (task *lockAwareBackgroundTask) NextWithLocks(ctx context.Context, locks *ObjectLockManager) (bool, error) {
+	release, err := locks.AcquireOperation(ctx, []ObjectLockRequest{
+		{ObjectID: "background-object", Mode: ObjectLockExclusive},
+	})
+	if err != nil {
+		return true, err
+	}
+	defer release()
+	close(task.called)
+	return true, nil
+}
+
+func TestSchedulerBackgroundUsesSharedObjectLockManager(t *testing.T) {
+	task := &lockAwareBackgroundTask{called: make(chan struct{})}
+	scheduler := NewScheduler(task)
+	if err := scheduler.Start(); err != nil {
+		t.Fatal(err)
+	}
+	waitSignal(t, task.called, "background unit using ObjectLockManager")
+	if err := scheduler.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
