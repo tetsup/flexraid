@@ -321,11 +321,11 @@ func (n *node) Rmdir(ctx context.Context, name string) syscall.Errno {
 
 func (n *node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedder, newName string, flags uint32) syscall.Errno {
 	defer traceFUSECallback("Rename", "parent_id", n.objectID.String(), "name", name, "new_name", newName, "flags", flags)()
-	if errno := n.layer.LifecycleErrno(); errno != 0 {
-		return errno
-	}
 	if flags != 0 {
 		return syscall.EINVAL
+	}
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		return errno
 	}
 	destination, ok := newParent.EmbeddedInode().Operations().(*node)
 	if !ok || destination.layer != n.layer {
