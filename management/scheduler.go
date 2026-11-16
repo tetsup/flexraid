@@ -141,10 +141,10 @@ type stopCompleted struct{}
 // and Stop never execute concurrently.
 type Scheduler struct {
 	initialization InitializationTask
-	background    BackgroundTask
-	execution     sync.Mutex
-	commands   chan any
-	done       chan struct{}
+	background     BackgroundTask
+	execution      sync.Mutex
+	commands       chan any
+	done           chan struct{}
 
 	mu              sync.Mutex
 	started         bool
