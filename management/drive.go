@@ -15,10 +15,10 @@ type DriveConfig struct {
 	WWN        string
 }
 
-// NewRequest initializes Management with Orchestration and the configured drives.
+// NewRequest initializes Management with Orchestration and its startup configuration.
 type NewRequest struct {
 	Orchestration *orchestration.Orchestration
-	Drives        []DriveConfig
+	Config        Config
 }
 
 // SpinUpRequest identifies a configured drive by WWN.

@@ -22,14 +22,7 @@ func mountFilesystem(config mountConfig) (*gofuse.Server, error) {
 	if config.Mountpoint == "" {
 		return nil, fmt.Errorf("mountpoint is required")
 	}
-
-	managementDrives := make([]management.DriveConfig, 0, len(config.Disks))
-	for _, disk := range config.Disks {
-		managementDrives = append(managementDrives, management.DriveConfig{
-			Root: disk.Root, Mountpoint: disk.Mountpoint, WWN: disk.WWN,
-		})
-	}
-	if err := management.ValidateDriveMappings(managementDrives); err != nil {
+	if err := management.ValidateDriveMappings(config.Disks); err != nil {
 		return nil, fmt.Errorf("validate configured physical drives: %w", err)
 	}
 
@@ -74,7 +67,7 @@ func mountFilesystem(config mountConfig) (*gofuse.Server, error) {
 		rootID = initialized.RootID
 	}
 
-	managed, err := management.New(management.NewRequest{Orchestration: layer, Drives: managementDrives})
+	managed, err := management.New(management.NewRequest{Orchestration: layer, Config: config})
 	if err != nil {
 		return nil, fmt.Errorf("initialize Management: %w", err)
 	}
