@@ -109,32 +109,38 @@ type exclusiveRequest struct {
 }
 
 type foregroundCompleted struct {
-	id     string
-	handle *ForegroundHandle
-	err    error
+	id      string
+	handle  *ForegroundHandle
+	err     error
+	release func()
 }
 
 type initializationCompleted struct {
-	done bool
-	err  error
+	done    bool
+	err     error
+	release func()
 }
 
 type backgroundCompleted struct {
-	done bool
-	err  error
+	done    bool
+	err     error
+	release func()
 }
 
 type exclusiveCompleted struct {
-	id   string
-	done bool
-	err  error
+	id      string
+	done    bool
+	err     error
+	release func()
 }
 
 type stopScheduler struct {
 	accepted chan error
 }
 
-type stopCompleted struct{}
+type stopCompleted struct {
+	release func()
+}
 
 // Scheduler serializes all Management execution units through one shared
 // execution lock. Foreground operations, Background units, Exclusive units,
@@ -402,8 +408,8 @@ func (scheduler *Scheduler) run() {
 			}
 			active = true
 			go func() {
-				done, err := runInitializationUnit(&scheduler.execution, scheduler.initialization)
-				scheduler.commands <- initializationCompleted{done: done, err: err}
+				done, err, release := runInitializationUnit(&scheduler.execution, scheduler.initialization)
+				scheduler.commands <- initializationCompleted{done: done, err: err, release: release}
 			}()
 			return
 		}
@@ -414,8 +420,7 @@ func (scheduler *Scheduler) run() {
 				active = true
 				go func() {
 					scheduler.execution.Lock()
-					scheduler.execution.Unlock()
-					scheduler.commands <- stopCompleted{}
+					scheduler.commands <- stopCompleted{release: scheduler.execution.Unlock}
 				}()
 				return
 			}
@@ -432,8 +437,8 @@ func (scheduler *Scheduler) run() {
 			}
 			active = true
 			go func() {
-				done, err := runExclusiveUnit(&scheduler.execution, request.ctx, request.task)
-				scheduler.commands <- exclusiveCompleted{id: running.ID, done: done, err: err}
+				done, err, release := runExclusiveUnit(&scheduler.execution, request.ctx, request.task)
+				scheduler.commands <- exclusiveCompleted{id: running.ID, done: done, err: err, release: release}
 			}()
 			return
 		}
@@ -443,8 +448,8 @@ func (scheduler *Scheduler) run() {
 			foregroundQueue = foregroundQueue[1:]
 			active = true
 			go func() {
-				err := runForegroundOperation(&scheduler.execution, request.ctx, request.run)
-				scheduler.commands <- foregroundCompleted{id: request.id, handle: request.handle, err: err}
+				err, release := runForegroundOperation(&scheduler.execution, request.ctx, request.run)
+				scheduler.commands <- foregroundCompleted{id: request.id, handle: request.handle, err: err, release: release}
 			}()
 			return
 		}
@@ -458,17 +463,18 @@ func (scheduler *Scheduler) run() {
 			}
 			active = true
 			go func() {
-				done, err := runBackgroundUnit(&scheduler.execution, scheduler.background)
-				scheduler.commands <- backgroundCompleted{done: done, err: err}
+				done, err, release := runBackgroundUnit(&scheduler.execution, scheduler.background)
+				scheduler.commands <- backgroundCompleted{done: done, err: err, release: release}
 			}()
 			return
 		}
 
 		if stopping && state.RunningExclusive == nil &&
 			len(state.ActiveOperations) == 0 && state.BackgroundUnit == "" {
+			event.release()
 			finished = true
 			close(scheduler.done)
-		}
+	}
 	}
 
 	dispatch()
@@ -519,6 +525,7 @@ func (scheduler *Scheduler) run() {
 					scheduler.setInitializationError(err)
 				}
 			}
+			event.release()
 
 		case foregroundCompleted:
 			active = false
@@ -527,6 +534,7 @@ func (scheduler *Scheduler) run() {
 				event.err = errors.Join(event.err, err)
 			}
 			finishForeground(event.handle, event.err)
+			event.release()
 
 		case backgroundCompleted:
 			active = false
@@ -538,6 +546,7 @@ func (scheduler *Scheduler) run() {
 			if event.err != nil {
 				scheduler.setBackgroundError(event.err)
 			}
+			event.release()
 
 		case exclusiveCompleted:
 			active = false
@@ -560,6 +569,7 @@ func (scheduler *Scheduler) run() {
 					finishExclusive(request, result)
 				}
 			}
+			event.release()
 
 		case stopScheduler:
 			if stopping {
@@ -614,47 +624,49 @@ func containsCompleteExclusive(outputs []LifecycleOutput, id string) bool {
 	return false
 }
 
-func runForegroundOperation(lock *sync.Mutex, ctx context.Context, run ForegroundOperation) (err error) {
+func runForegroundOperation(lock *sync.Mutex, ctx context.Context, run ForegroundOperation) (err error, release func()) {
 	lock.Lock()
-	defer lock.Unlock()
+	release = lock.Unlock
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("foreground operation panicked: %v", recovered)
 		}
 	}()
 	if err := ctx.Err(); err != nil {
-		return err
+		return err, release
 	}
-	return run(ctx)
+	return run(ctx), release
 }
 
-func runInitializationUnit(lock *sync.Mutex, task InitializationTask) (done bool, err error) {
+func runInitializationUnit(lock *sync.Mutex, task InitializationTask) (done bool, err error, release func()) {
 	lock.Lock()
-	defer lock.Unlock()
+	release = lock.Unlock
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			done = true
 			err = fmt.Errorf("initialization unit panicked: %v", recovered)
 		}
 	}()
-	return task.Next(context.Background())
+	done, err = task.Next(context.Background())
+	return done, err, release
 }
 
-func runBackgroundUnit(lock *sync.Mutex, task BackgroundTask) (done bool, err error) {
+func runBackgroundUnit(lock *sync.Mutex, task BackgroundTask) (done bool, err error, release func()) {
 	lock.Lock()
-	defer lock.Unlock()
+	release = lock.Unlock
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			done = true
 			err = fmt.Errorf("background unit panicked: %v", recovered)
 		}
 	}()
-	return task.Next(context.Background())
+	done, err = task.Next(context.Background())
+	return done, err, release
 }
 
-func runExclusiveUnit(lock *sync.Mutex, ctx context.Context, task ExclusiveTask) (done bool, err error) {
+func runExclusiveUnit(lock *sync.Mutex, ctx context.Context, task ExclusiveTask) (done bool, err error, release func()) {
 	lock.Lock()
-	defer lock.Unlock()
+	release = lock.Unlock
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			done = true
@@ -662,7 +674,8 @@ func runExclusiveUnit(lock *sync.Mutex, ctx context.Context, task ExclusiveTask)
 		}
 	}()
 	if err := ctx.Err(); err != nil {
-		return true, err
+		return true, err, release
 	}
-	return task.Next(ctx)
+	done, err = task.Next(ctx)
+	return done, err, release
 }
