@@ -3,6 +3,7 @@ package management
 import (
 	"context"
 	"fmt"
+	"syscall"
 
 	"github.com/tetsup/flexraid/orchestration"
 )
@@ -56,4 +57,19 @@ func (layer *Management) SetOrchestration(orchestrationLayer *orchestration.Orch
 	}
 	layer.orchestration = orchestrationLayer
 	return nil
+}
+
+
+// LifecycleErrno returns the errno used to reject ordinary filesystem
+// requests in the current lifecycle phase. Kernel bookkeeping such as
+// Release is intentionally handled by the FUSE adapter without this check.
+func (layer *Management) LifecycleErrno() syscall.Errno {
+	switch layer.Phase() {
+	case LifecycleReady:
+		return 0
+	case LifecycleFailed:
+		return syscall.EIO
+	default:
+		return syscall.EBUSY
+	}
 }
