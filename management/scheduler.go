@@ -533,8 +533,8 @@ func (scheduler *Scheduler) run() {
 			if err != nil {
 				event.err = errors.Join(event.err, err)
 			}
-			finishForeground(event.handle, event.err)
 			event.release()
+			finishForeground(event.handle, event.err)
 
 		case backgroundCompleted:
 			active = false
@@ -551,25 +551,31 @@ func (scheduler *Scheduler) run() {
 		case exclusiveCompleted:
 			active = false
 			request := exclusiveTasks[event.id]
+			var completionErr error
+			complete := false
 			if event.err != nil {
 				_, err := transition(ExclusiveFailed{RequestID: event.id, Reason: event.err.Error()})
 				if err != nil {
 					event.err = errors.Join(event.err, err)
 				}
-				finishExclusive(request, event.err)
+				completionErr = event.err
+				complete = true
 			} else {
 				outputs, err := transition(ExclusiveUnitCompleted{RequestID: event.id, More: !event.done})
 				if err != nil {
-					finishExclusive(request, err)
+					completionErr = err
+					complete = true
 				} else if containsCompleteExclusive(outputs, event.id) {
-					result := error(nil)
 					if stopping {
-						result = ErrSchedulerStopping
+						completionErr = ErrSchedulerStopping
 					}
-					finishExclusive(request, result)
+					complete = true
 				}
 			}
 			event.release()
+			if complete {
+				finishExclusive(request, completionErr)
+			}
 
 		case stopScheduler:
 			if stopping {
@@ -599,6 +605,7 @@ func (scheduler *Scheduler) run() {
 				// inconsistent state; do not leave the process half-stopped.
 				scheduler.setBackgroundError(fmt.Errorf("stop lifecycle transition: %w", err))
 			}
+			event.release()
 			finished = true
 			close(scheduler.done)
 		}
