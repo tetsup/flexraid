@@ -11,7 +11,6 @@ import (
 	gofuse "github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/tetsup/flexraid/distribution"
 	physicalio "github.com/tetsup/flexraid/io"
-	"github.com/tetsup/flexraid/management"
 	"github.com/tetsup/flexraid/orchestration"
 )
 
@@ -37,7 +36,7 @@ func TestHardLinkCallbacksKeepBackingFileIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create root: %v", err)
 	}
-	adapter, err := New(management.New(createdRoot.Layer), createdRoot.RootID)
+	adapter, err := New(newManagementForTest(t, createdRoot.Layer), createdRoot.RootID)
 	if err != nil {
 		t.Fatalf("create FUSE adapter: %v", err)
 	}

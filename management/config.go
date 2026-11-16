@@ -73,8 +73,11 @@ func LoadConfig(path string) (Config, error) {
 			if result.Mountpoint != "" {
 				return Config{}, fmt.Errorf("line %d: duplicate mountpoint key", lineNo)
 			}
+			if current != nil {
+				result.Disks = append(result.Disks, *current)
+				current = nil
+			}
 			inDisks = false
-			current = nil
 			result.Mountpoint = unquoteConfig(strings.TrimSpace(strings.TrimPrefix(line, "mountpoint:")))
 			continue
 		}

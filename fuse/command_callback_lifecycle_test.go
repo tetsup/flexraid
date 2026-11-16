@@ -12,7 +12,6 @@ import (
 	gofuse "github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/tetsup/flexraid/distribution"
 	physicalio "github.com/tetsup/flexraid/io"
-	"github.com/tetsup/flexraid/management"
 	"github.com/tetsup/flexraid/orchestration"
 )
 
@@ -446,7 +445,7 @@ func TestOpenSyncModesPersistWrites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reinitialize Orchestration: %v", err)
 	}
-	reopenedManagement := management.New(reopened.Layer)
+	reopenedManagement := newManagementForTest(t, reopened.Layer)
 	opened, err := reopenedManagement.Open(orchestration.OpenRequest{Context: ctx, ObjectID: n.objectID, Flags: uint32(syscall.O_RDONLY)})
 	if err != nil {
 		t.Fatalf("Open persisted synchronous writes: %v", err)

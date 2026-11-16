@@ -10,7 +10,6 @@ import (
 	gofuse "github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/tetsup/flexraid/distribution"
 	physicalio "github.com/tetsup/flexraid/io"
-	"github.com/tetsup/flexraid/management"
 	"github.com/tetsup/flexraid/orchestration"
 )
 
@@ -42,7 +41,7 @@ func newCallbackTestFilesystemWithIORoots(t *testing.T) (*FileSystem, context.Co
 	if err != nil {
 		t.Fatalf("create root: %v", err)
 	}
-	adapter, err := New(management.New(root.Layer), root.RootID)
+	adapter, err := New(newManagementForTest(t, root.Layer), root.RootID)
 	if err != nil {
 		t.Fatalf("create adapter: %v", err)
 	}
