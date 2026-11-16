@@ -12,17 +12,22 @@ type Management struct {
 	mu            sync.Mutex
 	orchestration *orchestration.Orchestration
 	drives        map[string]DriveConfig
+	scheduler     *Scheduler
 }
 
 func New(request NewRequest) (*Management, error) {
-	if request.Orchestration == nil {
-		return nil, fmt.Errorf("Orchestration layer is required")
+	if request.Orchestration == nil && request.Initialization == nil {
+		return nil, fmt.Errorf("Orchestration layer or initialization task is required")
 	}
 	drives, err := validateDriveConfig(request.Config.Disks)
 	if err != nil {
 		return nil, err
 	}
-	return &Management{orchestration: request.Orchestration, drives: drives}, nil
+	layer := &Management{orchestration: request.Orchestration, drives: drives}
+	if request.Initialization != nil {
+		layer.scheduler = NewSchedulerWithInitialization(request.Initialization, nil)
+	}
+	return layer, nil
 }
 
 func (layer *Management) Cleanup(request orchestration.CleanupRequest) (orchestration.CleanupResponse, error) {
