@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	gofuse "github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/tetsup/flexraid/distribution"
@@ -15,62 +16,132 @@ import (
 	"github.com/tetsup/flexraid/pkg/shared"
 )
 
+type filesystemInitialization struct {
+	config       mountConfig
+	managed      *management.Management
+	rootID       *shared.ObjectID
+	ioLayers     []*physicalio.IO
+	distributed  *distribution.Distribution
+	pendingLayer *orchestration.Orchestration
+	stage        int
+	disk         int
+}
+
+func (task *filesystemInitialization) Next(ctx context.Context) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	switch task.stage {
+	case 0:
+		if len(task.config.Disks) < minimumDiskCount {
+			return false, fmt.Errorf("got %d disks; want at least %d", len(task.config.Disks), minimumDiskCount)
+		}
+		if task.config.Mountpoint == "" {
+			return false, fmt.Errorf("mountpoint is required")
+		}
+		if err := management.ValidateDriveMappings(task.config.Disks); err != nil {
+			return false, fmt.Errorf("validate configured physical drives: %w", err)
+		}
+		task.ioLayers = make([]*physicalio.IO, 0, len(task.config.Disks))
+		task.stage++
+		return false, nil
+
+	case 1:
+		if task.disk < len(task.config.Disks) {
+			disk := task.config.Disks[task.disk]
+			if err := os.MkdirAll(disk.Root, 0700); err != nil {
+				return false, fmt.Errorf("create disk root %d: %w", task.disk+1, err)
+			}
+			task.ioLayers = append(task.ioLayers, physicalio.New(physicalio.NewRequest{Root: disk.Root}).Layer)
+			task.disk++
+			return false, nil
+		}
+		task.stage++
+		return false, nil
+
+	case 2:
+		result, err := distribution.New(distribution.NewRequest{Context: ctx, IOs: task.ioLayers})
+		if err != nil {
+			return false, fmt.Errorf("initialize Distribution: %w", err)
+		}
+		task.distributed = result.Layer
+		task.stage++
+		return false, nil
+
+	case 3:
+		objects, err := task.distributed.ListObjects(distribution.ListObjectsRequest{Context: ctx})
+		if err != nil {
+			return false, fmt.Errorf("list filesystem objects: %w", err)
+		}
+		if len(objects.ObjectIDs) == 0 {
+			task.stage = 4
+		} else {
+			task.stage = 5
+		}
+		return false, nil
+
+	case 4:
+		created, err := orchestration.CreateRoot(orchestration.CreateRootRequest{
+			Context:      ctx,
+			Distribution: task.distributed,
+			Mode:         0755,
+			UID:          uint32(os.Getuid()),
+			GID:          uint32(os.Getgid()),
+		})
+		if err != nil {
+			return false, fmt.Errorf("initialize filesystem root: %w", err)
+		}
+		*task.rootID = created.RootID
+		task.stage = 6
+		// Root creation is a durable initialization unit. Publish the layer in
+		// the following unit so Stop can take effect at this boundary.
+		task.pendingLayer = created.Layer
+		return false, nil
+
+	case 5:
+		initialized, err := orchestration.New(orchestration.NewRequest{
+			Context:      ctx,
+			Distribution: task.distributed,
+		})
+		if err != nil {
+			return false, fmt.Errorf("restore filesystem namespace: %w", err)
+		}
+		*task.rootID = initialized.RootID
+		task.pendingLayer = initialized.Layer
+		task.stage = 6
+		return false, nil
+
+	case 6:
+		if err := task.managed.SetOrchestration(task.pendingLayer); err != nil {
+			return false, fmt.Errorf("publish initialized Orchestration: %w", err)
+		}
+		task.stage++
+		return true, nil
+
+	default:
+		return true, nil
+	}
+}
+
 func mountFilesystem(config mountConfig) (*gofuse.Server, error) {
-	if len(config.Disks) < minimumDiskCount {
-		return nil, fmt.Errorf("got %d disks; want at least %d", len(config.Disks), minimumDiskCount)
-	}
-	if config.Mountpoint == "" {
-		return nil, fmt.Errorf("mountpoint is required")
-	}
-	if err := management.ValidateDriveMappings(config.Disks); err != nil {
-		return nil, fmt.Errorf("validate configured physical drives: %w", err)
-	}
-
-	ioLayers := make([]*physicalio.IO, 0, len(config.Disks))
-	for index, disk := range config.Disks {
-		if err := os.MkdirAll(disk.Root, 0700); err != nil {
-			return nil, fmt.Errorf("create disk root %d: %w", index+1, err)
-		}
-		ioLayers = append(ioLayers, physicalio.New(physicalio.NewRequest{Root: disk.Root}).Layer)
-	}
-	ctx := context.Background()
-	distributed, err := distribution.New(distribution.NewRequest{Context: ctx, IOs: ioLayers})
+	rootID := shared.ObjectID{}
+	initialization := &filesystemInitialization{config: config, rootID: &rootID}
+	managed, err := management.New(management.NewRequest{Config: config, Initialization: initialization})
 	if err != nil {
-		return nil, fmt.Errorf("initialize Distribution: %w", err)
+		return nil, fmt.Errorf("create Management: %w", err)
+	}
+	initialization.managed = managed
+
+	if err := managed.Start(); err != nil {
+		return nil, fmt.Errorf("start Management lifecycle: %w", err)
+	}
+	if err := managed.WaitReady(context.Background()); err != nil {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = managed.Stop(stopCtx)
+		return nil, fmt.Errorf("initialize FlexRAID: %w", err)
 	}
 
-	objects, err := distributed.Layer.ListObjects(distribution.ListObjectsRequest{Context: ctx})
-	if err != nil {
-		return nil, fmt.Errorf("list filesystem objects: %w", err)
-	}
-
-	var layer *orchestration.Orchestration
-	var rootID shared.ObjectID
-	if len(objects.ObjectIDs) == 0 {
-		created, createErr := orchestration.CreateRoot(orchestration.CreateRootRequest{
-			Context: ctx, Distribution: distributed.Layer,
-			Mode: 0755, UID: uint32(os.Getuid()), GID: uint32(os.Getgid()),
-		})
-		if createErr != nil {
-			return nil, fmt.Errorf("initialize filesystem root: %w", createErr)
-		}
-		layer = created.Layer
-		rootID = created.RootID
-	} else {
-		initialized, initErr := orchestration.New(orchestration.NewRequest{
-			Context: ctx, Distribution: distributed.Layer,
-		})
-		if initErr != nil {
-			return nil, fmt.Errorf("restore filesystem namespace: %w", initErr)
-		}
-		layer = initialized.Layer
-		rootID = initialized.RootID
-	}
-
-	managed, err := management.New(management.NewRequest{Orchestration: layer, Config: config})
-	if err != nil {
-		return nil, fmt.Errorf("initialize Management: %w", err)
-	}
 	adapter, err := flexfuse.New(managed, rootID)
 	if err != nil {
 		return nil, fmt.Errorf("create FUSE adapter: %w", err)

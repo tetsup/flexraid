@@ -17,8 +17,9 @@ type DriveConfig struct {
 
 // NewRequest initializes Management with Orchestration and its startup configuration.
 type NewRequest struct {
-	Orchestration *orchestration.Orchestration
-	Config        Config
+	Orchestration  *orchestration.Orchestration
+	Initialization InitializationTask
+	Config         Config
 }
 
 func validateDriveConfig(drives []DriveConfig) (map[string]DriveConfig, error) {

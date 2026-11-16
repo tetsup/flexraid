@@ -104,15 +104,15 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 
 - FUSE および将来の管理 API に対する、ファイルシステム全体の公開窓口となる。FUSE からの通常操作は Management を経由し、FUSE から Orchestration / Distribution を直接呼び出さない。
 - ファイルシステム操作 API、管理操作 API、監視 API、制御 API を提供する。ファイルシステム操作は同期的な結果・エラーを返し、長時間の Cleanup / Recovery 等はタスクの開始・進捗確認・キャンセルを扱える形にする。
-- **システム全体の実行状態を所有する唯一のレイヤー**となる。Initializing / Ready / Maintenance / Stopping / Stopped / Failed 等の状態区分や遷移条件は別途定義し、Orchestration / Distribution の内部状態と混同しない。
-- 各操作について、現在のシステム状態で受付可能かを判断する。状態と操作種別に応じた受付ポリシーを適用し、拒否する場合は下位レイヤーを呼び出す前に明確なエラーを返す。状態の具体的な一覧・遷移表・各操作の許可範囲は設計時に定義し、未確定の状態名や許可規則を実装で先に固定しない。
-- 操作受付判断はロック取得の前後で行う。ロック取得前に状態を確認して不要な待機を避け、必要な Object / メンテナンスロック取得後にも状態と操作前提を再確認する。待機中の状態変更との競合を防ぐため、受付中操作の admission と状態遷移の排他・drain 契約を設け、最終確認後から操作開始まで状態遷移が割り込まないようにする。
+- **システム全体の実行状態を所有する唯一のレイヤー**となる。Lifecycle は Initializing / Ready / Draining / Maintenance / Failed の5状態とする。停止専用の状態は設けず、Stop は最優先の Exclusive 要求として安全単位の境界で実行する。
+- 通常の FUSE / POSIX 操作は Ready でのみ受け付ける。Initializing / Draining / Maintenance では EBUSY、Failed では EIO で拒否する。状態照会は全状態で受け付ける。Release / Releasedir / Forget / Interrupt など、kernel bookkeeping と handle teardown に必要な処理は状態にかかわらず受け付ける。Flush は Release と同一視せず、通常操作として扱う。
+- 操作受付と状態遷移の競合を防ぐため、admission 登録と Lifecycle 遷移を原子的に調停する。実行権の取得待ちを含め、受付済み操作の開始・完了を追跡し、drain 時には新規受付を止めて必要な実行単位の完了を待つ。
 - Orchestration と Distribution の双方を統括する。通常のファイル操作では Orchestration を呼び出し、Orchestration が Distribution を呼び出す親子関係を維持する。
 - Cleanup、Recovery、Scrub 等のレイヤー横断の管理ワークフローでは、必要な論理判断を Orchestration に依頼し、物理ストライプ処理を Distribution に依頼する。意味上 Orchestration を通すべき通常データ操作を、Management から Distribution へ迂回させない。
 - Orchestration / Distribution の内部状態を直接変更しない。各レイヤーが公開する API を通じて操作し、状態の所有者と排他制御の所有者を分離する。
-- 通常操作と管理タスクの調整、Object 単位のロック、複数 Object にまたがるロック取得、メンテナンス排他を所有する。全 FUSE 操作を単一の全体 mutex で直列化せず、操作対象に応じたロック範囲で並行性を保つ。
+- Foreground / Background / Exclusive / Initialization / Stop のすべてに共通する、Management 唯一の実行ロック機構を所有する。Management の実行単位は同時に一つだけ実行し、各単位が共通ロックを取得して直列実行する。ObjectID などの対象別ロック、複数対象ロック、別系統のメンテナンスロックは設けない。ロックは復旧可能な最小実行単位の開始時に取得し、その単位の完了・状態確定後に必ず解放する。次の単位へ進む前に実行権を譲り、Lifecycle と Scheduler が実行種別ごとの受付・優先順位・drain を調停する。これはロック粒度を Object や Stripe に広げることを意味しない。
 - 操作回数・所要時間・結果などの上位操作メトリクスを集計し、Distribution が提供するドライブ別 I/O 統計などを統合して監視 API から返す。物理 I/O のエラー検出・計数は実際に I/O を実行する下位レイヤーで行い、Management はそれを集約・公開する。
-- Cleanup の実行タイミング、実行量、継続・一時停止を制御する。バックグラウンド Cleanup は通常操作と協調し、キャンセル可能かつ小さな単位で進められるようにする。スケジューリング判断と物理削除の実行責務を混同しない。
+- Background は整合性維持を伴う最適化処理とし、Foreground が存在しないときに安全な有限単位を1つ実行して譲る。Foreground 要求は Background 単位の実行中でも受け付けるが、単位の完了境界まで実行を待たせる。Background の次の単位は待機中・実行中の Foreground より優先しない。Cleanup 等の再構築可能な処理は進捗を永続化せず、起動時に現状を再走査して再構築する。各単位は中断・再実行に安全でなければならない。
 - 起動・初期化・停止のライフサイクルを統括する。下位レイヤーの初期化を適切な順序で実行し、Orchestration に Header の読み込み・検証、Namespace 構築・整合性検査を行わせる。Orchestration が返す論理削除済みかつ保護対象外の ObjectID を受け取り、Management 自身の一時的な削除待ちキューを再構築する。全レイヤーの初期化と整合性確認が成功するまで外部操作を Ready として受け付けず、途中失敗時は部分初期化状態を公開しない。
 - 起動時に Management が設定を読み込み、各ストレージのマウントポイントと物理ドライブ WWN を一組として保持する。マウントポイントごとに対応する WWN を明示し、自動推測で補完しない。設定内でマウントポイントまたは WWN が重複する場合、WWN を Platform 経由で一意に解決できない場合、対応デバイスを確認できない場合は Ready にせず初期化を失敗させる。Management はこの対応付けを WWN をキーとするドライブ状態管理・電源制御の基礎情報として所有する。
 - 各ストレージ設定は FlexRAID の I/O root、物理ファイルシステムの mountpoint、WWN の3項目を必須とする。設定読み込み後、物理ストレージディレクトリの作成や Distribution の初期化など副作用を伴う処理より前に、重複・欠落を検証し Platform の公開 API で WWN を解決する。
@@ -124,7 +124,7 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 
 - Header の定義・生成・解析・シリアライズ・更新、論理 Object と Namespace、ファイル offset と StripeID / stripe 内 offset の変換、配置方針を担当する。
 - 通常のファイルシステム操作における論理状態の所有者である。Namespace、Header、Object の論理削除状態、open handle 等を管理する。Object の論理削除状態は Header の Deleted を正とし、Management の削除待ちキューを Orchestration 内に重複保持しない。
-- Management が提供する排他制御契約の下で呼び出される。Management が必要な Object ロック等を取得していることを前提とし、Orchestration 自身はレイヤー横断のロック管理・ロック取得を行わない。Namespace の内部 map や Runtime 状態を外部へ直接公開しない。
+- Management が提供する共通実行ロック機構の制御下で呼び出される。Orchestration 自身はレイヤー横断のロック管理・ロック取得を行わない。Namespace の内部 map や Runtime 状態を外部へ直接公開しない。
 - 初期化では Header の読み込み・解析・検証、Namespace 構築、HardLink 解決、整合性検査を行う。論理削除済みであり、かつ不整合保護対象ではない ObjectID を Management が削除待ちキューへ登録できるよう、初期化結果として読み取り専用の候補一覧を返す。候補一覧は Orchestration 内部のキュー状態ではなく、永続 Header と初期化時の検査結果から導出する。
 - 論理削除操作では Header の Deleted 状態と Namespace の変更を担当する。物理削除完了後に Management から通知を受け、対応する Object のメモリ上の論理状態を確定する。Management の Cleanup キューやスケジューリングには関与しない。
 - Distribution の API は論理ストライプ単位で利用する。チャンク番号、StripeVersion、物理配置の内部表現を持ち込まない。
@@ -207,7 +207,7 @@ Distribution -> Platform
 ### 現行実装からの移行
 
 - Management は今後導入するレイヤーであり、現時点の実装は FUSE が Orchestration を直接呼び出し、Orchestration が自身の mutex で操作を排他している。この状態は移行前の実装であり、目標アーキテクチャを変更する理由にはしない。
-- Management 導入時は FUSE の接続先を Management に変更し、Orchestration のグローバル mutex に依存する契約を Management 所有の操作スコープ別ロックへ移行する。移行中に Orchestration のロックを単に削除して競合保護を失わせてはならない。
+- Management 導入時は FUSE の接続先を Management に変更し、Orchestration のグローバル mutex に依存する契約を Management 所有の共通実行ロック機構へ移行する。Object 単位などの対象別ロックへ分割しない。移行中に Orchestration のロックを単に削除して競合保護を失わせてはならない。
 - Distribution の Stripe ロックは Distribution 自身が所有する。Management / Orchestration が Distribution の内部ロックを直接操作しない。
 
 ## 6. 制約値とファイルシステム属性
@@ -219,21 +219,29 @@ Distribution -> Platform
 
 ## 7. 排他制御
 
-- レイヤー横断の操作調整、Object 単位の排他制御、システム状態と操作受付制御は Management が所有する。Orchestration は Namespace / Header / Runtime の状態を所有するが、システム状態・ロック管理・操作受付可否の判断は所有しない。
-- Management の各公開操作は、まず状態に基づく受付判断を行い、必要なロックを取得した後に状態と操作前提を再確認する。ロック待機中に状態が変化した場合は、再確認で拒否してロックを解放する。
-- 状態遷移と操作受付の競合を防ぐため、Management は受付済み操作の実行区間を追跡し、状態遷移時には新規受付を止めたうえで、遷移先の契約に必要な進行中操作の完了またはキャンセルを待つ。状態の最終確認から下位層呼び出しまでに状態遷移が割り込まないよう、Object ロックとは別の admission / lifecycle 同期契約を定義する。これは全 FUSE 操作を一つの mutex で直列化することを意味しない。
-- Distribution はストライプの状態と物理配置情報を所有し、同一 ObjectID + StripeID に対する Stripe ロックを所有する。Stripe ロックは Read / Write / Recovery / Cleanup の競合を防ぐ。
+### Management の共通実行ロック
+
+- Management の実行ロックは単一の共通機構とする。Foreground / Background / Exclusive / Initialization / Stop のすべてが同じ機構を使用し、Management の実行単位を複数同時に実行しない。各単位は共通ロックを取得して直列実行し、完了後に解放する。
+- Management では ObjectID、StripeID、Directory、File などの対象をキーにしたロックを設けない。複数 Object のロック集合や、Object ロックとは別の Maintenance ロックも設けない。
+- ロックの取得・解放の粒度は、処理を中断しても整合性を保ち、再実行または再構築できる最小の実行単位とする。実行単位の開始前に共通ロックを取得し、その単位の処理結果と状態を確定してから解放する。
+- ロックを保持したまま次の実行単位へ進まない。単位の境界で実行権を Scheduler に返し、待機中の Foreground / Exclusive / Stop 等を優先順位に従って調停する。
+- ここでいう共通ロックは Management の実行単位を調停するための一つのロック機構であり、Object や Stripe のデータ構造をロック対象として列挙する仕組みではない。並行実行の可否・優先順位は Lifecycle / Scheduler の実行権ルールで決め、別のロック体系を追加して実現しない。
+- Admission 登録と Lifecycle 遷移は原子的に調停する。状態確認だけを先に行ってから後で受付登録する構造にせず、drain 開始後に新規 Foreground が紛れ込まないようにする。
+- ロック取得を待っている間に Lifecycle が変化した場合は、実行開始前に受付可否を再確認する。拒否された要求は下位レイヤーを呼び出さず、取得済みの実行権を解放する。
+- Exclusive / Stop は新規 Foreground と Background unit の開始を止め、実行中の安全な単位が完了して共通ロックが解放されるのを待つ。複数 Exclusive はキュー順に実行し、Stop は最優先とする。
+- Initialization も同じ共通ロック機構と安全単位を使用する。初期化中の Stop は現在の単位の完了境界で反映し、通常の Exclusive は初期化完了後に実行する。
+- Release / Releasedir / Forget / Interrupt 等の kernel bookkeeping と handle teardown は通常操作の Lifecycle admission から除外し、停止・Failed 状態でも実行可能にする。Flush は通常操作であり、Release の代替として扱わない。
+- Orchestration は Management の共通実行ロック機構の制御下で呼び出される。Orchestration 自身は Management のロック取得・解放や Lifecycle admission を行わない。
+- FUSE callback はアダプターであり、Management の実行ロックを直接取得しない。複数の Management API を FUSE 側で組み合わせても原子性は得られない。不可分な操作は Management の単一 API とする。
+
+### Distribution の内部 Stripe ロック
+
+- Distribution は Management とは独立して、Distribution 内部の同時実行制約を管理する。Management の実行単位・共通ロックとは概念も粒度も異なり、相互に統合・共有しない。
+- Distribution は同一 ObjectID + StripeID を最小単位とする Stripe ロックを所有し、Read / Write / Recovery / Cleanup の競合を防ぐ。
+- 削除候補を事前調査した場合は、Stripe ロック取得後に対象 Version / Chunk と削除可能条件を再検証する。
+- Object 全体の削除では Management が対象 Object の削除ワークフローを調整し、Distribution が Stripe 単位の排他を取得して物理削除する。Stripe 0 は他 Stripe の削除完了後に最後に処理する。全 Stripe の削除完了後に Orchestration の論理 Object メモリ状態を確定する。
+- Distribution の Stripe ロック取得中に Management の実行ロックを要求する逆方向の依存を作らない。Management は Distribution の内部ロックを直接操作しない。
 - I/O は物理ファイル操作を実行する。上位層の Object / Stripe の意味に基づくロックを持たず、必要性が実証された物理ファイル単位の排他だけを内部実装として持つ。
-- Management の Object ロックは、同一 Object に対する操作を保護する。Directory entry の変更では親 Directory、変更対象 Object、Rename の移動元・移動先など、操作の整合性に必要な Object をロック対象に含める。複数 Object をロックする場合は一貫した順序で取得し、デッドロックを防ぐ。
-- Object ロックは無関係な Object の操作を不必要に直列化しない。ファイルシステム全体の整合性を必要とする管理処理のみ、Management のメンテナンス排他を利用する。Recovery 等で通常操作を停止する範囲は、処理の整合性要件に応じて明示する。
-- Management が状態受付判断を通過し、必要な Object / メンテナンスロックを取得してから Orchestration の公開 API を呼び出す。Orchestration の API は呼び出し元がロック契約を満たしていることを前提とし、ロック取得・解放やシステム状態による受付判断を行わない。Orchestration の内部関数もロックの取得状態を暗黙に推測しない。
-- ロック取得前の状態確認は早期拒否のための判定であり、実行許可の確定ではない。ロック取得後の状態再確認と admission / lifecycle 同期が成立して初めて下位層の処理を開始できる。
-- Orchestration の公開操作から別の公開操作を呼び出す場合、呼び出し元と呼び出し先でロックを二重取得する構造にしない。共有処理は非公開関数へ切り出すか、Management が一つの操作として必要なロック集合を確保できる API 境界にする。
-- Distribution の公開 Stripe 操作は対象 Stripe のロックを取得し、終了時に解放する。Stripe ロック取得前に削除候補を調査した場合は、ロック取得後に対象 Version / Chunk と削除可能条件を再検証する。
-- Object 全体の削除では、Management が対象 Object の操作を調整し、Distribution が Stripe 単位の排他を取得して物理削除する。Stripe ロックの解放後に別操作が削除済み状態を誤って再公開しないよう、Distribution の内部状態更新は Stripe ロックの保護下で完了させる。
-- ロック順序は上位から下位へ統一する。Management の Object / メンテナンス排他を保持した状態で Distribution API を呼び、Distribution が内部で Stripe ロックを取得する。Distribution から Management / Orchestration のロックを要求する逆方向の呼び出しを行わない。
-- FUSE callback はアダプターであり、Management のロックや Distribution の Stripe ロックを直接取得しない。複数の Management API を FUSE 側でつなぎ合わせても、それらをまたぐ原子性は得られない。不可分な操作は Management の単一 API として実装する。
-- go-fuse の SyncRead などの mount option を内部同期の代替にしない。異なる handle、HardLink、read/write、metadata 操作間の整合性は Management と各データ所有レイヤーのロック契約で保証する。
 
 ## 8. ログ
 
