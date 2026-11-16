@@ -149,7 +149,8 @@ type Scheduler struct {
 	mu              sync.Mutex
 	started         bool
 	stopRequested   bool
-	backgroundError error
+	backgroundError    error
+	initializationError error
 }
 
 func NewScheduler(background BackgroundTask) *Scheduler {
@@ -328,6 +329,20 @@ func (scheduler *Scheduler) BackgroundError() error {
 	return scheduler.backgroundError
 }
 
+// InitializationError returns the error that prevented the scheduler from
+// entering Ready.
+func (scheduler *Scheduler) InitializationError() error {
+	scheduler.mu.Lock()
+	defer scheduler.mu.Unlock()
+	return scheduler.initializationError
+}
+
+func (scheduler *Scheduler) setInitializationError(err error) {
+	scheduler.mu.Lock()
+	scheduler.initializationError = err
+	scheduler.mu.Unlock()
+}
+
 func (scheduler *Scheduler) setBackgroundError(err error) {
 	scheduler.mu.Lock()
 	scheduler.backgroundError = err
@@ -495,12 +510,13 @@ func (scheduler *Scheduler) run() {
 			if event.err != nil {
 				_, err := transition(InitializationFailed{Reason: event.err.Error()})
 				if err != nil {
-					scheduler.setBackgroundError(errors.Join(event.err, err))
+					event.err = errors.Join(event.err, err)
 				}
+				scheduler.setInitializationError(event.err)
 			} else {
 				_, err := transition(InitializationUnitCompleted{More: !event.done})
 				if err != nil {
-					scheduler.setBackgroundError(err)
+					scheduler.setInitializationError(err)
 				}
 			}
 
