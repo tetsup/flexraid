@@ -455,7 +455,8 @@ func (scheduler *Scheduler) run() {
 		}
 
 		if !stopping && backgroundMore && state.Phase == LifecycleReady &&
-			len(state.ActiveOperations) == 0 && state.BackgroundUnit == "" {
+			len(state.ActiveOperations) == 0 && state.BackgroundUnit == "" &&
+			len(scheduler.commands) == 0 {
 			if _, err := transition(BackgroundUnitRequested{TaskID: "background"}); err != nil {
 				scheduler.setBackgroundError(err)
 				backgroundMore = false
