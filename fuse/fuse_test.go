@@ -155,7 +155,6 @@ func TestRenameRejectsUnsupportedFlagsBeforeBackendCall(t *testing.T) {
 	}
 }
 
-
 func TestCallbackArgumentValidationPrecedesLifecycleGate(t *testing.T) {
 	n := &node{}
 	if _, _, _, errno := n.Create(nil, "invalid", uint32(syscall.O_ACCMODE), 0600, &gofuse.EntryOut{}); errno != syscall.EINVAL {
