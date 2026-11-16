@@ -17,6 +17,7 @@ type Config struct {
 
 // LoadConfig reads and validates the structural contents of the Management configuration.
 // The caller must resolve every configured WWN with ValidateDriveMappings before initializing storage.
+// LoadConfig deliberately performs no device I/O so callers can validate before creating storage roots.
 func LoadConfig(path string) (Config, error) {
 	file, err := os.Open(path)
 	if err != nil {
