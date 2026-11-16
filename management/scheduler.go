@@ -174,8 +174,8 @@ func NewScheduler(background BackgroundTask) *Scheduler {
 // tasks. Initialization runs in safe units before the scheduler enters Ready.
 func NewSchedulerWithInitialization(initialization InitializationTask, background BackgroundTask) *Scheduler {
 	return &Scheduler{
-		initialization: initialization,
-		background:     background,
+		initialization:     initialization,
+		background:         background,
 		commands:           make(chan any, 128),
 		done:               make(chan struct{}),
 		ready:              make(chan struct{}),
