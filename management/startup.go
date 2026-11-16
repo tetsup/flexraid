@@ -59,7 +59,6 @@ func (layer *Management) SetOrchestration(orchestrationLayer *orchestration.Orch
 	return nil
 }
 
-
 // LifecycleErrno returns the errno used to reject ordinary filesystem
 // requests in the current lifecycle phase. Kernel bookkeeping such as
 // Release is intentionally handled by the FUSE adapter without this check.
