@@ -83,6 +83,37 @@ func TestSchedulerRunsInitializationUnitsBeforeReady(t *testing.T) {
 	stopScheduler(t, scheduler)
 }
 
+func TestSchedulerInitializationFailureEntersFailedAndAllowsStop(t *testing.T) {
+	expected := errors.New("initialization failure")
+	scheduler := NewSchedulerWithInitialization(
+		InitializationTaskFunc(func(context.Context) (bool, error) {
+			return true, expected
+		}),
+		nil,
+	)
+	if err := scheduler.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.After(2 * time.Second)
+	for scheduler.InitializationError() == nil {
+		select {
+		case <-deadline:
+			t.Fatal("initialization failure was not recorded")
+		case <-time.After(time.Millisecond):
+		}
+	}
+	if !errors.Is(scheduler.InitializationError(), expected) {
+		t.Fatalf("unexpected initialization error: %v", scheduler.InitializationError())
+	}
+	if _, err := scheduler.SubmitForeground(context.Background(), "after-init-failure", func(context.Context) error {
+		return nil
+	}); !errors.Is(err, syscall.EIO) {
+		t.Fatalf("expected EIO after initialization failure, got %v", err)
+	}
+	stopScheduler(t, scheduler)
+}
+
 func TestSchedulerForegroundWaitsForBackgroundSafeBoundary(t *testing.T) {
 	backgroundStarted := make(chan struct{})
 	releaseBackground := make(chan struct{})
