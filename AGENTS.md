@@ -115,6 +115,9 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - Cleanup の実行タイミング、実行量、継続・一時停止を制御する。バックグラウンド Cleanup は通常操作と協調し、キャンセル可能かつ小さな単位で進められるようにする。スケジューリング判断と物理削除の実行責務を混同しない。
 - 起動・初期化・停止のライフサイクルを統括する。下位レイヤーの初期化を適切な順序で実行し、Orchestration に Header の読み込み・検証、Namespace 構築・整合性検査を行わせる。Orchestration が返す論理削除済みかつ保護対象外の ObjectID を受け取り、Management 自身の一時的な削除待ちキューを再構築する。全レイヤーの初期化と整合性確認が成功するまで外部操作を Ready として受け付けず、途中失敗時は部分初期化状態を公開しない。
 - 起動時に Management が設定を読み込み、各ストレージのマウントポイントと物理ドライブ WWN を一組として保持する。マウントポイントごとに対応する WWN を明示し、自動推測で補完しない。設定内でマウントポイントまたは WWN が重複する場合、WWN を Platform 経由で一意に解決できない場合、対応デバイスを確認できない場合は Ready にせず初期化を失敗させる。Management はこの対応付けを WWN をキーとするドライブ状態管理・電源制御の基礎情報として所有する。
+- 各ストレージ設定は FlexRAID の I/O root、物理ファイルシステムの mountpoint、WWN の3項目を必須とする。設定読み込み後、物理ストレージディレクトリの作成や Distribution の初期化など副作用を伴う処理より前に、重複・欠落を検証し Platform の公開 API で WWN を解決する。
+- Platform の WWN 解決は Linux の `/dev/disk/by-id/wwn-*` を基準とし、パーティションではなく物理ブロックデバイスを対象とする。別識別子へのフォールバックは禁止する。
+- Management は設定済み WWN のみを指定できる `SpinUp` / `SpinDown` API を提供し、実際の OS 固有デバイス操作は Platform の公開 API に委譲する。電源制御の判断・スケジューリングは Management に属し、今回の API 実装自体は自動制御を開始しない。
 - Object の論理削除状態は Orchestration が Header に永続化するが、削除待ちキューと Cleanup の実行スケジュールは Management が所有する。キューは永続状態の複製を正とせず、起動時に Orchestration から再構築する。物理削除は Distribution に依頼し、完了後に Orchestration へ論理 Object のメモリ状態の確定を依頼する。
 
 ### Orchestration

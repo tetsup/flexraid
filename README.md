@@ -134,13 +134,22 @@ go build -o flexraid ./main
 
 ```yaml
 disks:
-  - /srv/flexraid/disk1
-  - /srv/flexraid/disk2
-  - /srv/flexraid/disk3
-  - /srv/flexraid/disk4
-  - /srv/flexraid/disk5 # optional additional storage
+  - root: /srv/flexraid/disk1/data
+    mountpoint: /srv/flexraid/disk1
+    wwn: 0x5000000000000001
+  - root: /srv/flexraid/disk2/data
+    mountpoint: /srv/flexraid/disk2
+    wwn: 0x5000000000000002
+  - root: /srv/flexraid/disk3/data
+    mountpoint: /srv/flexraid/disk3
+    wwn: 0x5000000000000003
+  - root: /srv/flexraid/disk4/data
+    mountpoint: /srv/flexraid/disk4
+    wwn: 0x5000000000000004
 mountpoint: /mnt/flexraid
 ```
+
+各 `disks` エントリーでは FlexRAID の保存ディレクトリ `root`、物理ディスク上のファイルシステム `mountpoint`、物理ドライブの `wwn` を必ず一組で指定します。WWN は Linux の `/dev/disk/by-id/wwn-` に続く値です。起動時に全 WWN を物理ブロックデバイスとして解決できない場合は、ストレージディレクトリを作成する前に起動を失敗させます。
 
 起動時にストレージディレクトリとマウントポイントが存在しない場合、FlexRAID は必要なディレクトリを作成します。既存のストレージディレクトリに FlexRAID のデータがある場合は、その Namespace を読み込んで再マウントします。空の場合は root Directory を初期化します。新しいストライプの配置では、必要なチャンク数の I/O を `AvailableBytes` の多い順に選択します。既定の XOR Parity は4チャンクを必要とするため、5つ以上のディレクトリを指定しても1ストライプに使うのは4つで、残りは空き容量の変化などに応じた後続の配置候補になります。Mirror は2コピーを保存するため、配置時に空き容量の多い2ディレクトリを選択します。
 

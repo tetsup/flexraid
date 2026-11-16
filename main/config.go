@@ -11,12 +11,18 @@ import (
 
 const minimumDiskCount = config.DefaultDiskCount
 
+type diskConfig struct {
+	Root       string
+	Mountpoint string
+	WWN        string
+}
+
 type mountConfig struct {
-	DiskRoots  []string
+	Disks      []diskConfig
 	Mountpoint string
 }
 
-// loadConfig parses the small YAML configuration accepted by the mount CLI.
+// loadConfig parses the FlexRAID YAML configuration.
 func loadConfig(path string) (mountConfig, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -24,41 +30,59 @@ func loadConfig(path string) (mountConfig, error) {
 	}
 	defer file.Close()
 
-	var config mountConfig
+	var result mountConfig
 	inDisks := false
+	var current *diskConfig
 	scanner := bufio.NewScanner(file)
 	for lineNo := 1; scanner.Scan(); lineNo++ {
-		line := strings.TrimSpace(scanner.Text())
+		raw := scanner.Text()
+		line := strings.TrimSpace(raw)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		if line == "disks:" {
-			if inDisks || len(config.DiskRoots) > 0 {
+		indent := len(raw) - len(strings.TrimLeft(raw, " \t"))
+		if indent == 0 && line == "disks:" {
+			if inDisks || len(result.Disks) > 0 {
 				return mountConfig{}, fmt.Errorf("line %d: duplicate disks key", lineNo)
 			}
 			inDisks = true
+			current = nil
 			continue
 		}
-		if strings.HasPrefix(line, "- ") {
-			if !inDisks {
-				return mountConfig{}, fmt.Errorf("line %d: disk entry outside disks sequence", lineNo)
+		if inDisks && indent >= 2 && strings.HasPrefix(line, "- root:") {
+			if current != nil {
+				result.Disks = append(result.Disks, *current)
 			}
-			value := unquote(strings.TrimSpace(strings.TrimPrefix(line, "- ")))
-			if value == "" {
-				return mountConfig{}, fmt.Errorf("line %d: empty disk path", lineNo)
+			current = &diskConfig{Root: unquote(strings.TrimSpace(strings.TrimPrefix(line, "- root:")))}
+			if current.Root == "" {
+				return mountConfig{}, fmt.Errorf("line %d: empty disk root", lineNo)
 			}
-			config.DiskRoots = append(config.DiskRoots, value)
 			continue
 		}
-		if strings.HasPrefix(line, "mountpoint:") {
-			if config.Mountpoint != "" {
+		if inDisks && indent >= 4 && current != nil {
+			switch {
+			case strings.HasPrefix(line, "mountpoint:"):
+				if current.Mountpoint != "" {
+					return mountConfig{}, fmt.Errorf("line %d: duplicate disk mountpoint", lineNo)
+				}
+				current.Mountpoint = unquote(strings.TrimSpace(strings.TrimPrefix(line, "mountpoint:")))
+			case strings.HasPrefix(line, "wwn:"):
+				if current.WWN != "" {
+					return mountConfig{}, fmt.Errorf("line %d: duplicate disk WWN", lineNo)
+				}
+				current.WWN = unquote(strings.TrimSpace(strings.TrimPrefix(line, "wwn:")))
+			default:
+				return mountConfig{}, fmt.Errorf("line %d: unsupported disk entry %q", lineNo, line)
+			}
+			continue
+		}
+		if indent == 0 && strings.HasPrefix(line, "mountpoint:") {
+			if result.Mountpoint != "" {
 				return mountConfig{}, fmt.Errorf("line %d: duplicate mountpoint key", lineNo)
 			}
 			inDisks = false
-			config.Mountpoint = unquote(strings.TrimSpace(strings.TrimPrefix(line, "mountpoint:")))
-			if config.Mountpoint == "" {
-				return mountConfig{}, fmt.Errorf("line %d: empty mountpoint", lineNo)
-			}
+			current = nil
+			result.Mountpoint = unquote(strings.TrimSpace(strings.TrimPrefix(line, "mountpoint:")))
 			continue
 		}
 		return mountConfig{}, fmt.Errorf("line %d: unsupported YAML entry %q", lineNo, line)
@@ -66,23 +90,36 @@ func loadConfig(path string) (mountConfig, error) {
 	if err := scanner.Err(); err != nil {
 		return mountConfig{}, fmt.Errorf("read %q: %w", path, err)
 	}
-	if len(config.DiskRoots) < minimumDiskCount {
-		return mountConfig{}, fmt.Errorf("got %d disk roots; want at least %d", len(config.DiskRoots), minimumDiskCount)
+	if current != nil {
+		result.Disks = append(result.Disks, *current)
 	}
-	if config.Mountpoint == "" {
+	if len(result.Disks) < minimumDiskCount {
+		return mountConfig{}, fmt.Errorf("got %d disks; want at least %d", len(result.Disks), minimumDiskCount)
+	}
+	if result.Mountpoint == "" {
 		return mountConfig{}, fmt.Errorf("mountpoint is required")
 	}
-	for i, root := range config.DiskRoots {
-		for j := 0; j < i; j++ {
-			if root == config.DiskRoots[j] {
-				return mountConfig{}, fmt.Errorf("disk roots %d and %d are duplicated", j+1, i+1)
-			}
+	roots := make(map[string]struct{}, len(result.Disks))
+	mountpoints := make(map[string]struct{}, len(result.Disks))
+	wwns := make(map[string]struct{}, len(result.Disks))
+	for index, disk := range result.Disks {
+		if disk.Root == "" || disk.Mountpoint == "" || disk.WWN == "" {
+			return mountConfig{}, fmt.Errorf("disk %d requires root, mountpoint, and WWN", index+1)
 		}
-		if root == config.Mountpoint {
-			return mountConfig{}, fmt.Errorf("mountpoint must not be a disk root")
+		if _, exists := roots[disk.Root]; exists {
+			return mountConfig{}, fmt.Errorf("disk root %q is duplicated", disk.Root)
 		}
+		if _, exists := mountpoints[disk.Mountpoint]; exists {
+			return mountConfig{}, fmt.Errorf("disk mountpoint %q is duplicated", disk.Mountpoint)
+		}
+		if _, exists := wwns[disk.WWN]; exists {
+			return mountConfig{}, fmt.Errorf("WWN %q is duplicated", disk.WWN)
+		}
+		roots[disk.Root] = struct{}{}
+		mountpoints[disk.Mountpoint] = struct{}{}
+		wwns[disk.WWN] = struct{}{}
 	}
-	return config, nil
+	return result, nil
 }
 
 func unquote(value string) string {

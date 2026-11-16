@@ -2,6 +2,7 @@
 package management
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/tetsup/flexraid/orchestration"
@@ -10,10 +11,21 @@ import (
 type Management struct {
 	mu            sync.Mutex
 	orchestration *orchestration.Orchestration
+	drives        map[string]DriveConfig
 }
 
-func New(layer *orchestration.Orchestration) *Management {
-	return &Management{orchestration: layer}
+func New(request NewRequest) (*Management, error) {
+	if request.Orchestration == nil {
+		return nil, fmt.Errorf("Orchestration layer is required")
+	}
+	if err := ValidateDriveMappings(request.Drives); err != nil {
+		return nil, err
+	}
+	drives, err := validateDriveConfig(request.Drives)
+	if err != nil {
+		return nil, err
+	}
+	return &Management{orchestration: request.Orchestration, drives: drives}, nil
 }
 
 func (layer *Management) Cleanup(request orchestration.CleanupRequest) (orchestration.CleanupResponse, error) {
