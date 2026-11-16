@@ -10,8 +10,8 @@ import (
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/tetsup/flexraid/distribution"
 	"github.com/tetsup/flexraid/fuse"
-	"github.com/tetsup/flexraid/management"
 	physicalio "github.com/tetsup/flexraid/io"
+	"github.com/tetsup/flexraid/management"
 	"github.com/tetsup/flexraid/orchestration"
 )
 
