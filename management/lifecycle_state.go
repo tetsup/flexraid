@@ -290,9 +290,13 @@ func (LifecycleMachine) Transition(state LifecycleState, input LifecycleInput) (
 			return state, nil, fmt.Errorf("exclusive request %q is not running", event.RequestID)
 		}
 		request := *state.RunningExclusive
-		if state.StopRequested && request.Kind != ExclusiveStop {
+		if (state.StopRequested || state.Phase == LifecycleFailed) && request.Kind != ExclusiveStop {
 			next.RunningExclusive = nil
-			outputs = append(outputs, CompleteExclusive{RequestID: request.ID, Interrupted: true, Reason: "preempted by stop"})
+			reason := "preempted by stop"
+			if state.Phase == LifecycleFailed {
+				reason = "interrupted by fatal lifecycle failure"
+			}
+			outputs = append(outputs, CompleteExclusive{RequestID: request.ID, Interrupted: true, Reason: reason})
 			outputs = append(outputs, startNextExclusive(&next)...)
 			break
 		}
