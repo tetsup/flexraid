@@ -13,6 +13,18 @@ var (
 	ErrSchedulerStopping       = errors.New("scheduler is stopping")
 )
 
+// InitializationTask advances one safe initialization unit.
+type InitializationTask interface {
+	Next(context.Context) (done bool, err error)
+}
+
+// InitializationTaskFunc adapts a function to InitializationTask.
+type InitializationTaskFunc func(context.Context) (done bool, err error)
+
+func (run InitializationTaskFunc) Next(ctx context.Context) (bool, error) {
+	return run(ctx)
+}
+
 // BackgroundTask advances one reconstructible unit. Progress is memory-only;
 // after restart the task must rescan current state and safely reconsider work.
 type BackgroundTask interface {
@@ -102,6 +114,11 @@ type foregroundCompleted struct {
 	err    error
 }
 
+type initializationCompleted struct {
+	done bool
+	err  error
+}
+
 type backgroundCompleted struct {
 	done bool
 	err  error
@@ -123,8 +140,9 @@ type stopCompleted struct{}
 // execution lock. Foreground operations, Background units, Exclusive units,
 // and Stop never execute concurrently.
 type Scheduler struct {
-	background BackgroundTask
-	execution  sync.Mutex
+	initialization InitializationTask
+	background    BackgroundTask
+	execution     sync.Mutex
 	commands   chan any
 	done       chan struct{}
 
@@ -135,10 +153,17 @@ type Scheduler struct {
 }
 
 func NewScheduler(background BackgroundTask) *Scheduler {
+	return NewSchedulerWithInitialization(nil, background)
+}
+
+// NewSchedulerWithInitialization configures initialization and background
+// tasks. Initialization runs in safe units before the scheduler enters Ready.
+func NewSchedulerWithInitialization(initialization InitializationTask, background BackgroundTask) *Scheduler {
 	return &Scheduler{
-		background: background,
-		commands:   make(chan any, 128),
-		done:       make(chan struct{}),
+		initialization: initialization,
+		background:     background,
+		commands:       make(chan any, 128),
+		done:           make(chan struct{}),
 	}
 }
 
@@ -311,11 +336,12 @@ func (scheduler *Scheduler) setBackgroundError(err error) {
 
 func (scheduler *Scheduler) run() {
 	machine := LifecycleMachine{}
-	state := LifecycleState{Phase: LifecycleReady}
+	state := LifecycleState{Phase: LifecycleInitializing}
 	foregroundQueue := make([]*foregroundRequest, 0)
 	exclusiveTasks := make(map[string]*exclusiveRequest)
 	active := false
 	backgroundMore := scheduler.background != nil
+	initializationStarted := false
 	stopping := false
 	finished := false
 
@@ -343,6 +369,27 @@ func (scheduler *Scheduler) run() {
 	var dispatch func()
 	dispatch = func() {
 		if active || finished {
+			return
+		}
+
+		if state.Phase == LifecycleInitializing {
+			if !initializationStarted {
+				if _, err := transition(InitializationStarted{}); err != nil {
+					_, _ = transition(InitializationFailed{Reason: err.Error()})
+					return
+				}
+				initializationStarted = true
+			}
+			if scheduler.initialization == nil {
+				_, _ = transition(InitializationUnitCompleted{})
+				dispatch()
+				return
+			}
+			active = true
+			go func() {
+				done, err := runInitializationUnit(&scheduler.execution, scheduler.initialization)
+				scheduler.commands <- initializationCompleted{done: done, err: err}
+			}()
 			return
 		}
 
@@ -442,6 +489,20 @@ func (scheduler *Scheduler) run() {
 			}
 			exclusiveTasks[event.request.ID] = event
 			event.accepted <- nil
+
+		case initializationCompleted:
+			active = false
+			if event.err != nil {
+				_, err := transition(InitializationFailed{Reason: event.err.Error()})
+				if err != nil {
+					scheduler.setBackgroundError(errors.Join(event.err, err))
+				}
+			} else {
+				_, err := transition(InitializationUnitCompleted{More: !event.done})
+				if err != nil {
+					scheduler.setBackgroundError(err)
+				}
+			}
 
 		case foregroundCompleted:
 			active = false
@@ -549,6 +610,18 @@ func runForegroundOperation(lock *sync.Mutex, ctx context.Context, run Foregroun
 		return err
 	}
 	return run(ctx)
+}
+
+func runInitializationUnit(lock *sync.Mutex, task InitializationTask) (done bool, err error) {
+	lock.Lock()
+	defer lock.Unlock()
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			done = true
+			err = fmt.Errorf("initialization unit panicked: %v", recovered)
+		}
+	}()
+	return task.Next(context.Background())
 }
 
 func runBackgroundUnit(lock *sync.Mutex, task BackgroundTask) (done bool, err error) {
