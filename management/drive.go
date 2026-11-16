@@ -70,22 +70,29 @@ func validateDriveConfig(drives []DriveConfig) (map[string]DriveConfig, error) {
 	return byWWN, nil
 }
 
-// ValidateDriveMappings validates configuration and confirms each WWN resolves.
-func ValidateDriveMappings(drives []DriveConfig) error {
+func resolveDriveMappings(drives []DriveConfig) (map[string]DriveConfig, error) {
 	byWWN, err := validateDriveConfig(drives)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for wwn := range byWWN {
 		if _, err := platform.ResolveDrive(platform.DriveRequest{WWN: wwn}); err != nil {
-			return fmt.Errorf("validate configured WWN %q: %w", wwn, err)
+			return nil, fmt.Errorf("validate configured WWN %q: %w", wwn, err)
 		}
 	}
-	return nil
+	return byWWN, nil
+}
+
+// ValidateDriveMappings validates configuration and confirms each WWN resolves.
+func ValidateDriveMappings(drives []DriveConfig) error {
+	_, err := resolveDriveMappings(drives)
+	return err
 }
 
 // SpinUp requests spin-up only for a drive registered during initialization.
 func (layer *Management) SpinUp(request SpinUpRequest) (SpinUpResponse, error) {
+	layer.mu.Lock()
+	defer layer.mu.Unlock()
 	if _, exists := layer.drives[request.WWN]; !exists {
 		return SpinUpResponse{}, fmt.Errorf("WWN %q is not configured", request.WWN)
 	}
@@ -98,6 +105,8 @@ func (layer *Management) SpinUp(request SpinUpRequest) (SpinUpResponse, error) {
 
 // SpinDown requests standby only for a drive registered during initialization.
 func (layer *Management) SpinDown(request SpinDownRequest) (SpinDownResponse, error) {
+	layer.mu.Lock()
+	defer layer.mu.Unlock()
 	if _, exists := layer.drives[request.WWN]; !exists {
 		return SpinDownResponse{}, fmt.Errorf("WWN %q is not configured", request.WWN)
 	}

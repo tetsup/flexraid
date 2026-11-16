@@ -18,10 +18,7 @@ func New(request NewRequest) (*Management, error) {
 	if request.Orchestration == nil {
 		return nil, fmt.Errorf("Orchestration layer is required")
 	}
-	if err := ValidateDriveMappings(request.Drives); err != nil {
-		return nil, err
-	}
-	drives, err := validateDriveConfig(request.Drives)
+	drives, err := resolveDriveMappings(request.Drives)
 	if err != nil {
 		return nil, err
 	}
