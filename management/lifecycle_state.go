@@ -122,7 +122,7 @@ type LifecycleChanged struct {
 	From LifecyclePhase
 	To   LifecyclePhase
 }
-type LifecycleFailed struct {
+type LifecycleFailureReported struct {
 	Reason string
 }
 type ExitProcess struct{}
@@ -149,7 +149,7 @@ func (RunExclusiveUnit) isLifecycleOutput()             {}
 func (InterruptExclusiveAtBoundary) isLifecycleOutput() {}
 func (CompleteExclusive) isLifecycleOutput()            {}
 func (LifecycleChanged) isLifecycleOutput()             {}
-func (LifecycleFailed) isLifecycleOutput()              {}
+func (LifecycleFailureReported) isLifecycleOutput()              {}
 func (ExitProcess) isLifecycleOutput()                  {}
 
 var _ StateMachine[LifecycleState, LifecycleInput, LifecycleOutput] = LifecycleMachine{}
@@ -204,7 +204,7 @@ func (LifecycleMachine) Transition(state LifecycleState, input LifecycleInput) (
 		}
 		next.Phase = LifecycleFailed
 		next.InitializationStarted = false
-		outputs = append(outputs, LifecycleChanged{From: state.Phase, To: next.Phase}, LifecycleFailed{Reason: event.Reason})
+		outputs = append(outputs, LifecycleChanged{From: state.Phase, To: next.Phase}, LifecycleFailureReported{Reason: event.Reason})
 		outputs = append(outputs, startNextExclusive(&next)...)
 
 	case NormalOperationRequested:
@@ -334,7 +334,7 @@ func (LifecycleMachine) Transition(state LifecycleState, input LifecycleInput) (
 			return state, nil, fmt.Errorf("lifecycle is already failed")
 		}
 		next.Phase = LifecycleFailed
-		outputs = append(outputs, LifecycleChanged{From: state.Phase, To: next.Phase}, LifecycleFailed{Reason: event.Reason}, PauseBackground{})
+		outputs = append(outputs, LifecycleChanged{From: state.Phase, To: next.Phase}, LifecycleFailureReported{Reason: event.Reason}, PauseBackground{})
 		if state.RunningExclusive != nil {
 			outputs = append(outputs, InterruptExclusiveAtBoundary{RequestID: state.RunningExclusive.ID})
 		}
