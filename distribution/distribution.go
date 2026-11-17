@@ -182,7 +182,9 @@ func New(request NewRequest) (NewResponse, error) {
 				d.objects[key.objectID] = stripes
 			}
 			stripes[key.stripeID] = &stripeInfo{version: selected, method: selectedInfo.method, chunkSize: selectedInfo.chunkSize, chunks: cloneChunks(selectedInfo.chunks)}
+			d.mapMu.Lock()
 			d.refreshStripeCleanupQueueLocked(key)
+			d.mapMu.Unlock()
 		}
 	}
 	logger.Debug("Distribution initialized", "ios", len(d.ios), "usable_ios", usable, "objects", len(d.objects))
