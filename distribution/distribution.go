@@ -22,7 +22,7 @@ type NewRequest struct {
 type NewResponse struct{ Layer *Distribution }
 
 type Distribution struct {
-	mapMu sync.Mutex
+	mapMu       sync.Mutex
 	stripeLocks map[stripeIDKey]*sync.Mutex
 	ios         []*physicalio.IO
 	logger      *slog.Logger
