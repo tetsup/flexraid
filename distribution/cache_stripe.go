@@ -2,6 +2,7 @@ package distribution
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	physicalio "github.com/tetsup/flexraid/io"
@@ -31,6 +32,7 @@ func (d *Distribution) cacheStripeLocked(ctx context.Context, key stripeIDKey) e
 		if location.data == nil {
 			read, err := d.ios[location.ioIndex].Read(physicalio.ReadRequest{Context: ctx, Key: location.key})
 			if err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) { return err }
 				d.recordIOError(location.ioIndex, err)
 				continue
 			}

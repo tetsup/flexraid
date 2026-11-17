@@ -43,7 +43,9 @@ func (d *Distribution) ListStripeInfos(request ListStripeInfosRequest) (response
 		if err = request.Context.Err(); err != nil {
 			return ListStripeInfosResponse{}, err
 		}
-		unlock := d.lockStripe(stripeIDKey{objectID: request.ObjectID, stripeID: id})
+		key := stripeIDKey{objectID: request.ObjectID, stripeID: id}
+		unlock := d.lockStripe(key)
+		if err = d.cacheStripeLocked(request.Context, key); err != nil { unlock(); return ListStripeInfosResponse{}, err }
 		d.mapMu.Lock()
 		info := d.objects[request.ObjectID][id]
 		if info != nil {
