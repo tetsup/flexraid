@@ -5,7 +5,6 @@ import (
 	"errors"
 	"reflect"
 	"testing"
-	"time"
 )
 
 type maintenanceProviderFunc func(context.Context, MaintenanceWorkID) (MaintenanceWorkResult, error)
