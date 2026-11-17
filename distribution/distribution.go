@@ -32,6 +32,7 @@ type Distribution struct {
 	totalErrors uint64
 	ioFailures  []error
 	orphans     map[shared.ObjectID][]chunkLocation
+	cleanupQueue *cleanupQueue
 }
 type stripeIDKey struct {
 	objectID shared.ObjectID
@@ -83,7 +84,7 @@ func New(request NewRequest) (NewResponse, error) {
 	d := &Distribution{stripeLocks: make(map[stripeIDKey]*sync.Mutex), ios: append([]*physicalio.IO(nil), request.IOs...), logger: logger,
 		objects:  make(map[shared.ObjectID]map[storage.StripeID]*stripeInfo),
 		versions: make(map[stripeIDKey]map[storage.StripeVersion]*versionInfo),
-		ioErrors: make([]uint64, len(request.IOs)), ioFailures: make([]error, len(request.IOs)), orphans: make(map[shared.ObjectID][]chunkLocation)}
+		ioErrors: make([]uint64, len(request.IOs)), ioFailures: make([]error, len(request.IOs)), orphans: make(map[shared.ObjectID][]chunkLocation), cleanupQueue: newCleanupQueue()}
 	usable := 0
 	for index, layer := range d.ios {
 		scanResult, err := layer.ListChunks(physicalio.ListChunksRequest{Context: ctx, Callback: func(entry physicalio.ScanEntry) error {
@@ -181,6 +182,7 @@ func New(request NewRequest) (NewResponse, error) {
 				d.objects[key.objectID] = stripes
 			}
 			stripes[key.stripeID] = &stripeInfo{version: selected, method: selectedInfo.method, chunkSize: selectedInfo.chunkSize, chunks: cloneChunks(selectedInfo.chunks)}
+			d.refreshStripeCleanupQueueLocked(key)
 		}
 	}
 	logger.Debug("Distribution initialized", "ios", len(d.ios), "usable_ios", usable, "objects", len(d.objects))
