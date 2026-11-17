@@ -156,12 +156,13 @@ func TestSyncObjectSynchronizesLatestChunksAcrossStripes(t *testing.T) {
 	}
 }
 
-
 func TestConcurrentStripeWritesSerializeVersions(t *testing.T) {
 	ctx := context.Background()
 	ios := makeIOs(t, 2)
 	created, err := New(NewRequest{IOs: ios})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	const writes = 12
 	var wg sync.WaitGroup
 	errs := make(chan error, writes)
@@ -179,11 +180,23 @@ func TestConcurrentStripeWritesSerializeVersions(t *testing.T) {
 	}
 	wg.Wait()
 	close(errs)
-	for writeErr := range errs { if writeErr != nil { t.Errorf("concurrent WriteStripe: %v", writeErr) } }
-	info, err := created.Layer.GetStripeInfo(GetStripeInfoRequest{ObjectID:testObjectID(), StripeID:9})
-	if err != nil { t.Fatal(err) }
-	if info.Version != writes { t.Fatalf("latest version = %d, want %d", info.Version, writes) }
-	read, err := created.Layer.ReadStripe(ReadStripeRequest{Context:ctx, ObjectID:testObjectID(), StripeID:9, ChunkSize:32})
-	if err != nil { t.Fatal(err) }
-	if len(read.Data) != 1 { t.Fatalf("read data = %v, want one byte", read.Data) }
+	for writeErr := range errs {
+		if writeErr != nil {
+			t.Errorf("concurrent WriteStripe: %v", writeErr)
+		}
+	}
+	info, err := created.Layer.GetStripeInfo(GetStripeInfoRequest{ObjectID: testObjectID(), StripeID: 9})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Version != writes {
+		t.Fatalf("latest version = %d, want %d", info.Version, writes)
+	}
+	read, err := created.Layer.ReadStripe(ReadStripeRequest{Context: ctx, ObjectID: testObjectID(), StripeID: 9, ChunkSize: 32})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(read.Data) != 1 {
+		t.Fatalf("read data = %v, want one byte", read.Data)
+	}
 }
