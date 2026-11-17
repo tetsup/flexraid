@@ -170,6 +170,9 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - Distribution は保護対象を Cleanup 候補から除外する。最新 Version に欠損が確認されている Stripe は、その Stripe の Cleanup 全体を保留し、通常の許可レベルだけでは実行しない。強制的な保護解除は未実装とし、保留対象を誤って削除しない。
 - Cleanup の対象 Stripe について、Foreground が必要とする有効な最新 Version のデータを Distribution のキャッシュへ確保し、以後の Foreground Read が削除対象の物理データへアクセスしない状態へ切り替えてから、無効 Chunk の物理削除を進める。Foreground Read はキャッシュを利用し、Foreground Write は新しい Version を生成する。キャッシュへの切り替えと Foreground / Background の競合は Distribution 自身の Stripe ロックで管理する。キャッシュ確保・切り替えが安全に完了しない場合は削除を開始しない。
 - Cleanup は Stripe ごとに自律的に進める。Stripe 内の無効 Chunk は、それが配置された Drive の許可レベルに従って削除できる。複数 Stripe の同時実行は Distribution 内部の並列化方針であり、Management の指示単位や Atomic の変更を意味しない。
+- 自律 Cleanup の候補キューは Distribution が所有し、Foreground の Stripe 状態更新と Cleanup ワーカーの双方から更新される共有メモリである。候補キュー専用の Mutex で、候補の追加・削除・取得・更新をすべて保護する。キュー Mutex を保持したまま物理 I/O や Stripe の Cleanup 処理を実行しない。候補はキューから値として取り出し、ロック解放後に処理する。処理結果の反映・再登録もキュー Mutex の保護下で行う。
+- 候補キューの Mutex は Stripe のデータ状態を保護するロックとは別物である。キュー Mutex を Stripe Atomic の代替にせず、Stripe の状態や物理データをキュー内の候補情報だけで判断しない。候補を取得した後、実行時点の Distribution 状態に基づいて削除対象を確定する。
+- Queue Mutex の保持中に他の Distribution 状態ロックを取得する設計、または逆順で取得する設計を混在させない。ロック順序を固定し、キュー操作と Stripe 処理の間でデッドロックを発生させない。
 - 自律 Cleanup は旧 Version、不正・復元不能 Version、未完了チャンク、孤立チャンク等の Distribution 所有の物理データを対象とする。最新の復元可能 Version は削除対象にしない。最新 Version の欠損がある Stripe は上記のとおり保留する。Stripe 0 を特別扱いする削除順序制約は設けない。Stripe 0 を最後にする制約は、論理削除 Object の全 Stripe 削除にのみ適用する。
 - 配置ポリシーは決定せず、Orchestration から渡された配置方針を実際のチャンク配置に反映する。
 - ドライブ別 I/O エラー統計など Distribution が取得できる物理層の観測値を、Management が問い合わせ・集約できる公開 API として提供する。統計値は内部 map を共有せず snapshot として返す。
