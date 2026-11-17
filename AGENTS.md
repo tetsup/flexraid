@@ -164,6 +164,9 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - 共通分類処理は Stripe 内の Version 全体から分類結果を導出する。初期化時は既存 Version 全体が初回の対象となり、Write 時は更新後の全体状態から新たに発生した候補を追加する。候補キューへの登録は冪等とし、同一候補の重複登録で処理が重複しないようにする。
 - 分類された Version の物理チャンクは IOIndex（Drive）ごとに分割し、Cleanup 候補キューへ登録する。候補の識別単位は IOIndex + ObjectID + StripeID + Reason とし、キュー項目は物理ファイル一覧を固定的に保持するのではなく、処理時に対象 Stripe の最新状態から対象ファイルを再確定するための識別情報とする。Reason は少なくとも OldVersion と AbnormalVersion を区別する。
 - OldVersion は許可された Drive 上で物理削除する。AbnormalVersion は通常の削除対象にせず、同じ Drive 内の保全領域へ元の物理ファイル名を維持して Rename する。保全領域は通常の Distribution スキャン対象から除外する。
+- Distribution は IOIndex + ObjectID + StripeID + Reason を指定して一件の Cleanup 候補を処理する API を提供する。OldVersion は Delete、AbnormalVersion は Preserve（同一物理ファイルシステム内の Rename）で処理し、対象チャンクのヘッダーや内容を Cleanup のために再解析しない。対象は Stripe の分類情報と物理 FileKey から特定する。
+- 保全領域名は `pkg/shared/config.PreservationDirectory` を唯一の正とし、初期値は `.flexraid-preserved` とする。各 Drive の物理 mountpoint 直下に固定し、元の物理ファイル名を維持する。16進数だけの名前にはしない。通常の `ListChunks` / `ScanHeaders` は保全領域を再帰探索しない。
+- 旧 Version / 異常 Version など、既に無効と確定した Stripe 内の Version 単位 Cleanup では Stripe 0 を最後にする順序制約を設けない。Stripe 0 を最後にする制約は、Header を含む論理削除 Object 全体の物理削除に限る。
 - 分類・候補生成は Stripe ロックの保護下で状態を参照し、候補登録後に物理 I/O を行わずロックを解放する。Cleanup ワーカーは実行時に Drive 単位の許可を確認し、map Mutex → Stripe Mutex の順で最新有効 Version と対象 Version / Chunk を再検証して対象ファイルを値として退避する。その後両ロックを解放して Delete / Rename を実行する。キュー Mutex を保持したまま map / Stripe ロック取得や物理 I/O を行わない。
 - Mirror は有効な複製チャンクが1つ以上あれば復元可能とする。XOR 1 パリティは、全データチャンクがあればパリティチャンクが欠落していても復元可能とし、データチャンクが1つだけ欠落している場合はパリティチャンクを使って復元する。データチャンクが2つ以上欠落している場合は復元不能とする。
 - 読み込み時は選択済み Version の各チャンクを再読込し、物理読み取りエラーや不正なチャンクを欠落として扱って復元を試みる。復元できなければデータ破損エラーを返す。欠落チャンクを復元できた場合は、呼び出し元から修復配置が与えられていれば同じ Version の欠落チャンクを修復する。修復は新しい Version のコミットではない。
