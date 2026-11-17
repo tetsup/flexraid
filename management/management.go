@@ -9,8 +9,8 @@ import (
 )
 
 type Management struct {
-	mu            sync.Mutex
-	orchestration *orchestration.Orchestration
+	mu                 sync.Mutex
+	orchestration      *orchestration.Orchestration
 	drives             map[string]DriveConfig
 	cleanupPermissions map[string]DriveCleanupPermissions
 	scheduler          *Scheduler
