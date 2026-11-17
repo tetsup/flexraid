@@ -35,11 +35,16 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 	if err = request.Context.Err(); err != nil {
 		return response, err
 	}
+	unlock := d.lockStripe(stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID})
+	defer unlock()
+	d.mapMu.Lock()
 	stripes := d.objects[request.ObjectID]
 	if stripes == nil || stripes[request.StripeID] == nil {
+		d.mapMu.Unlock()
 		return response, ErrStripeNotFound
 	}
 	info := stripes[request.StripeID]
+	d.mapMu.Unlock()
 	key := stripeKeyInfo{objectID: request.ObjectID, stripeID: request.StripeID, stripeVersion: info.version}
 	chunks := make([]chunkDataWithInfo, 0, len(info.chunks))
 	missing := make([]chunkNo, 0)
@@ -49,22 +54,33 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 			missing = append(missing, no)
 			continue
 		}
-		read, readErr := d.ios[location.ioIndex].Read(physicalio.ReadRequest{Context: request.Context, Key: location.key})
-		if readErr != nil {
-			if errors.Is(readErr, context.Canceled) || errors.Is(readErr, context.DeadlineExceeded) {
-				return response, readErr
+		if location.data == nil {
+			read, readErr := d.ios[location.ioIndex].Read(physicalio.ReadRequest{Context: request.Context, Key: location.key})
+			if readErr != nil {
+				if errors.Is(readErr, context.Canceled) || errors.Is(readErr, context.DeadlineExceeded) {
+					return response, readErr
+				}
+				d.recordIOError(location.ioIndex, readErr)
+				missing = append(missing, no)
+				continue
 			}
-			d.recordIOError(location.ioIndex, readErr)
-			missing = append(missing, no)
-			continue
+			total, payload, decodeErr := decodeChunk(read.Data)
+			if decodeErr != nil {
+				d.recordIOError(location.ioIndex, decodeErr)
+				missing = append(missing, no)
+				continue
+			}
+			location.data, location.totalLength = payload, total
+			d.mapMu.Lock()
+			info.chunks[no] = location
+			if versions := d.versions[stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}]; versions != nil {
+				if version := versions[info.version]; version != nil {
+					version.chunks[no] = location
+				}
+			}
+			d.mapMu.Unlock()
 		}
-		total, payload, decodeErr := decodeChunk(read.Data)
-		if decodeErr != nil {
-			d.recordIOError(location.ioIndex, decodeErr)
-			missing = append(missing, no)
-			continue
-		}
-		chunks = append(chunks, chunkDataWithInfo{stripeKey: key, distributionMethod: info.method, chunkNo: no, data: payload, totalLength: total})
+		chunks = append(chunks, chunkDataWithInfo{stripeKey: key, distributionMethod: info.method, chunkNo: no, data: location.data, totalLength: location.totalLength})
 	}
 	for _, chunk := range chunks {
 		if info.method.distributionType == distributionParity && len(chunk.data) != int(request.ChunkSize) {
@@ -134,6 +150,7 @@ func (d *Distribution) repairStripe(request ReadStripeRequest, info *stripeInfo,
 			_, err := d.ios[index].Write(physicalio.WriteRequest{Context: request.Context, Key: fileKey, Data: encodeChunk(uint64(len(data)), payload)})
 			if err == nil {
 				location := chunkLocation{ioIndex: index, key: fileKey, data: payload, totalLength: uint64(len(data))}
+				d.mapMu.Lock()
 				info.chunks[no] = location
 				stripeKey := stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}
 				if versions := d.versions[stripeKey]; versions != nil {
@@ -141,6 +158,7 @@ func (d *Distribution) repairStripe(request ReadStripeRequest, info *stripeInfo,
 						version.chunks[no] = location
 					}
 				}
+				d.mapMu.Unlock()
 				written = true
 				break
 			}

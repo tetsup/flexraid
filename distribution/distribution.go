@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 
 	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/pkg/shared"
@@ -21,6 +22,8 @@ type NewRequest struct {
 type NewResponse struct{ Layer *Distribution }
 
 type Distribution struct {
+	mapMu sync.Mutex
+	stripeLocks map[stripeIDKey]*sync.Mutex
 	ios         []*physicalio.IO
 	logger      *slog.Logger
 	objects     map[shared.ObjectID]map[storage.StripeID]*stripeInfo
@@ -77,7 +80,7 @@ func New(request NewRequest) (NewResponse, error) {
 		}
 		seen[layer] = struct{}{}
 	}
-	d := &Distribution{ios: append([]*physicalio.IO(nil), request.IOs...), logger: logger,
+	d := &Distribution{stripeLocks: make(map[stripeIDKey]*sync.Mutex), ios: append([]*physicalio.IO(nil), request.IOs...), logger: logger,
 		objects:  make(map[shared.ObjectID]map[storage.StripeID]*stripeInfo),
 		versions: make(map[stripeIDKey]map[storage.StripeVersion]*versionInfo),
 		ioErrors: make([]uint64, len(request.IOs)), ioFailures: make([]error, len(request.IOs)), orphans: make(map[shared.ObjectID][]chunkLocation)}

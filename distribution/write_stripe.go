@@ -33,6 +33,8 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 	if err = request.Context.Err(); err != nil {
 		return response, err
 	}
+	unlock := d.lockStripe(stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID})
+	defer unlock()
 	method, err := request.Layout.method()
 	if err != nil {
 		return response, err
@@ -58,7 +60,9 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 		return response, errInsufficientChunks
 	}
 	key := stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}
+	d.mapMu.Lock()
 	version := d.nextVersion(key)
+	d.mapMu.Unlock()
 	chunks := make(map[chunkNo][]byte, required)
 	if method.distributionType == distributionMirror {
 		for i := uint8(0); i < method.numChunks; i++ {
@@ -71,6 +75,8 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 	written := make(map[chunkNo]chunkLocation, len(chunks))
 	savePartial := func() {
 		if len(written) > 0 {
+			d.mapMu.Lock()
+			defer d.mapMu.Unlock()
 			versions := d.versions[key]
 			if versions == nil {
 				versions = make(map[storage.StripeVersion]*versionInfo)
@@ -98,6 +104,8 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 		}
 		written[no] = chunkLocation{ioIndex: ioIndex, key: fileKey, data: append([]byte(nil), chunks[no]...), totalLength: uint64(len(request.Data))}
 	}
+	d.mapMu.Lock()
+	defer d.mapMu.Unlock()
 	versions := d.versions[key]
 	if versions == nil {
 		versions = make(map[storage.StripeVersion]*versionInfo)
