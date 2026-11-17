@@ -234,3 +234,32 @@ func TestPreserveMovesFileAndScansIgnorePreservationDirectory(t *testing.T) {
 		t.Fatalf("second Preserve = %+v, %v", result, err)
 	}
 }
+
+func TestPreserveUsesConfiguredMountpointRoot(t *testing.T) {
+	mountpoint := t.TempDir()
+	root := filepath.Join(mountpoint, "flexraid-data")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	layer := New(NewRequest{Root: root, PreservationRoot: mountpoint}).Layer
+	ctx := context.Background()
+	key := testFileKey(5)
+	if _, err := layer.Write(WriteRequest{Context: ctx, Key: key, Data: []byte("mountpoint root")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := layer.Preserve(PreserveRequest{Context: ctx, Key: key}); err != nil {
+		t.Fatal(err)
+	}
+	relative, err := key.Path()
+	if err != nil {
+		t.Fatal(err)
+	}
+	atMountpoint := filepath.Join(mountpoint, config.PreservationDirectory, filepath.Base(relative))
+	if data, err := os.ReadFile(atMountpoint); err != nil || string(data) != "mountpoint root" {
+		t.Fatalf("mountpoint preservation data = %q, %v", data, err)
+	}
+	atStorageRoot := filepath.Join(root, config.PreservationDirectory, filepath.Base(relative))
+	if _, err := os.Stat(atStorageRoot); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("preservation directory was created under storage root: %v", err)
+	}
+}
