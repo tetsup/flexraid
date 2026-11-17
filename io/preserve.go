@@ -46,7 +46,7 @@ func (layer *IO) Preserve(request PreserveRequest) (response PreserveResponse, e
 	if err != nil {
 		return response, err
 	}
-	destinationDir := filepath.Join(layer.root, config.PreservationDirectory)
+	destinationDir := filepath.Join(layer.preservationRoot, config.PreservationDirectory)
 	if err = os.MkdirAll(destinationDir, 0o700); err != nil {
 		return response, err
 	}
