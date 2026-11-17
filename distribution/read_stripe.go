@@ -35,8 +35,12 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 	if err = request.Context.Err(); err != nil {
 		return response, err
 	}
-	unlock := d.lockStripe(stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID})
+	key := stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}
+	unlock := d.lockStripe(key)
 	defer unlock()
+	if cacheErr := d.cacheStripeLocked(request.Context, key); cacheErr != nil && !errors.Is(cacheErr, ErrDataCorrupted) {
+		return response, cacheErr
+	}
 	d.mapMu.Lock()
 	stripes := d.objects[request.ObjectID]
 	if stripes == nil || stripes[request.StripeID] == nil {
