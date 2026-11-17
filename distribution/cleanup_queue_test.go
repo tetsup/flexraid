@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/tetsup/flexraid/pkg/shared"
 	"github.com/tetsup/flexraid/storage"
 )
 
