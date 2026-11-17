@@ -11,8 +11,9 @@ import (
 type Management struct {
 	mu            sync.Mutex
 	orchestration *orchestration.Orchestration
-	drives        map[string]DriveConfig
-	scheduler     *Scheduler
+	drives             map[string]DriveConfig
+	cleanupPermissions map[string]DriveCleanupPermissions
+	scheduler          *Scheduler
 }
 
 func New(request NewRequest) (*Management, error) {
@@ -23,7 +24,18 @@ func New(request NewRequest) (*Management, error) {
 	if err != nil {
 		return nil, err
 	}
-	layer := &Management{orchestration: request.Orchestration, drives: drives}
+	permissions := make(map[string]DriveCleanupPermissions, len(drives))
+	for wwn, drive := range drives {
+		permissions[wwn] = DriveCleanupPermissions{
+			DeleteAllowed:   drive.CleanupDeleteAllowed,
+			PreserveAllowed: drive.CleanupPreserveAllowed,
+		}
+	}
+	layer := &Management{
+		orchestration:      request.Orchestration,
+		drives:             drives,
+		cleanupPermissions: permissions,
+	}
 	if request.Initialization != nil {
 		layer.scheduler = NewSchedulerWithInitialization(request.Initialization, nil)
 	}
