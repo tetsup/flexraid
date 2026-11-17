@@ -94,9 +94,9 @@ func TestNewRebuildsCleanupQueuePerStripe(t *testing.T) {
 
 func TestCleanupQueueClassifiesNewerVersionAsAbnormal(t *testing.T) {
 	layer := &Distribution{
-		objects: make(map[shared.ObjectID]map[storage.StripeID]*stripeInfo),
-		versions: make(map[stripeIDKey]map[storage.StripeVersion]*versionInfo),
-		orphans: make(map[shared.ObjectID][]chunkLocation),
+		objects:      make(map[shared.ObjectID]map[storage.StripeID]*stripeInfo),
+		versions:     make(map[stripeIDKey]map[storage.StripeVersion]*versionInfo),
+		orphans:      make(map[shared.ObjectID][]chunkLocation),
 		cleanupQueue: newCleanupQueue(),
 	}
 	id := testObjectID()

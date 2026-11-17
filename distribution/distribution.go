@@ -22,16 +22,16 @@ type NewRequest struct {
 type NewResponse struct{ Layer *Distribution }
 
 type Distribution struct {
-	mapMu       sync.Mutex
-	stripeLocks map[stripeIDKey]*sync.Mutex
-	ios         []*physicalio.IO
-	logger      *slog.Logger
-	objects     map[shared.ObjectID]map[storage.StripeID]*stripeInfo
-	versions    map[stripeIDKey]map[storage.StripeVersion]*versionInfo
-	ioErrors    []uint64
-	totalErrors uint64
-	ioFailures  []error
-	orphans     map[shared.ObjectID][]chunkLocation
+	mapMu        sync.Mutex
+	stripeLocks  map[stripeIDKey]*sync.Mutex
+	ios          []*physicalio.IO
+	logger       *slog.Logger
+	objects      map[shared.ObjectID]map[storage.StripeID]*stripeInfo
+	versions     map[stripeIDKey]map[storage.StripeVersion]*versionInfo
+	ioErrors     []uint64
+	totalErrors  uint64
+	ioFailures   []error
+	orphans      map[shared.ObjectID][]chunkLocation
 	cleanupQueue *cleanupQueue
 }
 type stripeIDKey struct {
