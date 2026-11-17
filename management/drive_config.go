@@ -10,9 +10,9 @@ import (
 
 // DriveConfig binds one storage root to its physical mountpoint and WWN.
 type DriveConfig struct {
-	Root       string
-	Mountpoint string
-	WWN        string
+	Root                   string
+	Mountpoint             string
+	WWN                    string
 	CleanupDeleteAllowed   bool
 	CleanupPreserveAllowed bool
 }
