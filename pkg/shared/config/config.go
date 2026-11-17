@@ -12,6 +12,7 @@ const (
 	BlockSize           uint64 = 4096
 	HeaderReservedSize  uint64 = 1024
 	HeaderDataCapacity  uint64 = BlockSize - HeaderReservedSize
+	PreservationDirectory       = ".flexraid-preserved"
 )
 
 type Placement struct {
