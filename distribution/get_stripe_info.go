@@ -9,7 +9,7 @@ import (
 )
 
 type GetStripeInfoRequest struct {
-	Context context.Context
+	Context  context.Context
 	ObjectID shared.ObjectID
 	StripeID storage.StripeID
 }
@@ -23,11 +23,15 @@ type GetStripeInfoResponse struct {
 // GetStripeInfo returns the newest recoverable version's persisted layout metadata.
 func (d *Distribution) GetStripeInfo(request GetStripeInfoRequest) (GetStripeInfoResponse, error) {
 	ctx := request.Context
-	if ctx == nil { ctx = context.Background() }
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	key := stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}
 	unlock := d.lockStripe(key)
 	defer unlock()
-	if err := d.cacheStripeLocked(ctx, key); err != nil { return GetStripeInfoResponse{}, err }
+	if err := d.cacheStripeLocked(ctx, key); err != nil {
+		return GetStripeInfoResponse{}, err
+	}
 	d.mapMu.Lock()
 	defer d.mapMu.Unlock()
 	stripes := d.objects[request.ObjectID]
