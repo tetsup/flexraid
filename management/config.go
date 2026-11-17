@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/tetsup/flexraid/pkg/shared/config"
@@ -67,6 +68,18 @@ func LoadConfig(path string) (Config, error) {
 					return Config{}, fmt.Errorf("line %d: duplicate disk WWN", lineNo)
 				}
 				current.WWN = unquoteConfig(strings.TrimSpace(strings.TrimPrefix(line, "wwn:")))
+			case strings.HasPrefix(line, "cleanup_delete_allowed:"):
+				value, err := strconv.ParseBool(unquoteConfig(strings.TrimSpace(strings.TrimPrefix(line, "cleanup_delete_allowed:"))))
+				if err != nil {
+					return Config{}, fmt.Errorf("line %d: invalid cleanup_delete_allowed: %w", lineNo, err)
+				}
+				current.CleanupDeleteAllowed = value
+			case strings.HasPrefix(line, "cleanup_preserve_allowed:"):
+				value, err := strconv.ParseBool(unquoteConfig(strings.TrimSpace(strings.TrimPrefix(line, "cleanup_preserve_allowed:"))))
+				if err != nil {
+					return Config{}, fmt.Errorf("line %d: invalid cleanup_preserve_allowed: %w", lineNo, err)
+				}
+				current.CleanupPreserveAllowed = value
 			default:
 				return Config{}, fmt.Errorf("line %d: unsupported disk entry %q", lineNo, line)
 			}
