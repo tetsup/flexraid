@@ -53,7 +53,9 @@ func TestCleanupStripeDriveDeletesOnlySelectedDriveOldVersion(t *testing.T) {
 	if _, err := ios[0].Read(physicalio.ReadRequest{Context: ctx, Key: oldKey}); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("old version remains on selected drive: %v", err)
 	}
-	if _, err := ios[1].Read(physicalio.ReadRequest{Context: ctx, Key: oldKey}); err != nil {
+	oldKeyOnDrive1 := oldKey
+	oldKeyOnDrive1.LayoutID.Index = 2
+	if _, err := ios[1].Read(physicalio.ReadRequest{Context: ctx, Key: oldKeyOnDrive1}); err != nil {
 		t.Fatalf("old version on unselected drive was changed: %v", err)
 	}
 	if _, err := ios[0].Read(physicalio.ReadRequest{Context: ctx, Key: newKey}); err != nil {
@@ -91,6 +93,10 @@ func TestCleanupStripeDrivePreservesAbnormalUnreadableChunk(t *testing.T) {
 	created, err := New(NewRequest{IOs: ios})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if candidates := created.Layer.cleanupCandidates(); len(candidates) != 1 ||
+		candidates[0].ioIndex != 0 || candidates[0].reason != CleanupAbnormalVersion {
+		t.Fatalf("startup cleanup candidates = %+v; orphans = %+v", candidates, created.Layer.orphans[id])
 	}
 	result, err := created.Layer.CleanupStripeDrive(CleanupStripeDriveRequest{
 		Context: ctx, IOIndex: 0, ObjectID: id, StripeID: 9, Reason: CleanupAbnormalVersion,
