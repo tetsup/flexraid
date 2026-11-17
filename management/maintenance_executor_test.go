@@ -207,14 +207,17 @@ func TestMaintenanceExecutorRunsAsSchedulerBackgroundTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitSignal(t, called, "maintenance provider unit")
-	deadline := time.After(2 * time.Second)
-	for scheduler.BackgroundError() != nil {
-		t.Fatalf("maintenance background task failed: %v", scheduler.BackgroundError())
+	handle, err := scheduler.SubmitForeground(context.Background(), "after-maintenance", func(context.Context) error {
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("foreground request was not accepted: %v", err)
 	}
-	select {
-	case <-time.After(10 * time.Millisecond):
-	case <-deadline:
-		t.Fatal("maintenance scheduler did not settle")
+	if err := handle.Wait(context.Background()); err != nil {
+		t.Fatalf("foreground request failed after maintenance unit: %v", err)
+	}
+	if err := scheduler.BackgroundError(); err != nil {
+		t.Fatalf("maintenance background task failed: %v", err)
 	}
 	stopAndWaitScheduler(t, scheduler)
 }
