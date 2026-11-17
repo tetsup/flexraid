@@ -2,6 +2,7 @@ package fuse
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"syscall"
 	"testing"
@@ -302,4 +303,19 @@ func TestAdapterAndParentTypeErrors(t *testing.T) {
 		t.Errorf("Rename to another filesystem errno = %v, want EXDEV", errno)
 	}
 	_ = foreignCtx
+}
+
+func TestToFUSEErrnoMapsCanceledRequestsToInterrupted(t *testing.T) {
+	if got := toFUSEErrno(context.Canceled); got != syscall.EINTR {
+		t.Errorf("canceled request errno = %v, want EINTR", got)
+	}
+	if got := toFUSEErrno(fmt.Errorf("wrapped: %w", context.Canceled)); got != syscall.EINTR {
+		t.Errorf("wrapped canceled request errno = %v, want EINTR", got)
+	}
+	if got := toFUSEErrno(syscall.ENOSPC); got != syscall.ENOSPC {
+		t.Errorf("errno passthrough = %v, want ENOSPC", got)
+	}
+	if got := toFUSEErrno(nil); got != 0 {
+		t.Errorf("nil error errno = %v, want success", got)
+	}
 }
