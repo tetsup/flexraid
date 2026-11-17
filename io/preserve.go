@@ -3,6 +3,7 @@ package io
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -45,6 +46,13 @@ func (layer *IO) Preserve(request PreserveRequest) (response PreserveResponse, e
 	relative, err := request.Key.Path()
 	if err != nil {
 		return response, err
+	}
+	rootInfo, statErr := os.Stat(layer.preservationRoot)
+	if statErr != nil {
+		return response, fmt.Errorf("stat preservation root %q: %w", layer.preservationRoot, statErr)
+	}
+	if !rootInfo.IsDir() {
+		return response, fmt.Errorf("preservation root %q is not a directory", layer.preservationRoot)
 	}
 	destinationDir := filepath.Join(layer.preservationRoot, config.PreservationDirectory)
 	if err = os.MkdirAll(destinationDir, 0o700); err != nil {
