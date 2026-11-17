@@ -45,7 +45,7 @@ func (d *Distribution) SyncObject(request SyncObjectRequest) (response SyncObjec
 		key := stripeIDKey{objectID: request.ObjectID, stripeID: storage.StripeID(rawID)}
 		unlock := d.lockStripe(key)
 		if err = d.cacheStripeLocked(ctx, key); err != nil {
-			unlock()
+			unlockStripe()
 			return response, err
 		}
 		d.mapMu.Lock()
@@ -59,21 +59,21 @@ func (d *Distribution) SyncObject(request SyncObjectRequest) (response SyncObjec
 		d.mapMu.Unlock()
 		for _, location := range locations {
 			if err = ctx.Err(); err != nil {
-				unlock()
+				unlockStripe()
 				return response, err
 			}
 			if location.ioIndex < 0 || location.ioIndex >= len(d.ios) {
-				unlock()
+				unlockStripe()
 				return response, fmt.Errorf("stripe %d has invalid I/O index %d", rawID, location.ioIndex)
 			}
 			if _, err = d.ios[location.ioIndex].Sync(physicalio.SyncRequest{Context: ctx, Key: location.key}); err != nil {
 				d.recordIOError(location.ioIndex, err)
-				unlock()
+				unlockStripe()
 				return response, fmt.Errorf("sync stripe %d on I/O %d: %w", rawID, location.ioIndex, err)
 			}
 			response.SyncedChunks++
 		}
-		unlock()
+		unlockStripe()
 	}
 	return response, nil
 }

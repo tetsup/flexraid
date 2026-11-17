@@ -41,12 +41,11 @@ func (d *Distribution) GetErrorStats(_ GetErrorStatsRequest) GetErrorStatsRespon
 	}
 	d.mapMu.Unlock()
 	for _, ref := range refs {
-		unlock := d.lockStripe(ref.key)
-		d.mapMu.Lock()
+		unlockStripe, unlockMap := d.lockStripe(ref.key)
 		info := d.objects[ref.key.objectID][ref.key.stripeID]
 		corrupted := info != nil && info.corrupted
-		d.mapMu.Unlock()
-		unlock()
+		unlockMap()
+		unlockStripe()
 		if corrupted {
 			result.CorruptedStripes = append(result.CorruptedStripes, CorruptedStripe{ObjectID: ref.objectID, StripeID: uint64(ref.key.stripeID)})
 		}

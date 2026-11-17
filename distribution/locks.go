@@ -5,10 +5,9 @@ import (
 	"sync"
 )
 
-// lockStripe acquires the map mutex before the per-stripe mutex. TryLock keeps
-// a waiter from holding mapMu while another operation owns the stripe lock.
-// The returned unlock function releases only the stripe lock.
-func (d *Distribution) lockStripe(key stripeIDKey) func() {
+// lockStripe acquires mapMu before the per-stripe mutex and returns with both
+// held. A contended stripe never makes a waiter retain mapMu.
+func (d *Distribution) lockStripe(key stripeIDKey) (unlockStripe func(), unlockMap func()) {
 	d.mapMu.Lock()
 	lock := d.stripeLocks[key]
 	if lock == nil {
@@ -20,6 +19,5 @@ func (d *Distribution) lockStripe(key stripeIDKey) func() {
 		runtime.Gosched()
 		d.mapMu.Lock()
 	}
-	d.mapMu.Unlock()
-	return lock.Unlock
+	return lock.Unlock, d.mapMu.Unlock
 }

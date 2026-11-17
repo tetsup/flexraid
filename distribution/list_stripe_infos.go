@@ -44,18 +44,18 @@ func (d *Distribution) ListStripeInfos(request ListStripeInfosRequest) (response
 			return ListStripeInfosResponse{}, err
 		}
 		key := stripeIDKey{objectID: request.ObjectID, stripeID: id}
-		unlock := d.lockStripe(key)
+		unlockStripe, unlockMap := d.lockStripe(key)
 		if err = d.cacheStripeLocked(request.Context, key); err != nil {
-			unlock()
+			unlockMap()
+			unlockStripe()
 			return ListStripeInfosResponse{}, err
 		}
-		d.mapMu.Lock()
 		info := d.objects[request.ObjectID][id]
 		if info != nil {
 			response.Stripes = append(response.Stripes, StripeInfo{StripeID: id, Version: info.version, Layout: info.method.layout(), ChunkSize: info.chunkSize})
 		}
-		d.mapMu.Unlock()
-		unlock()
+		unlockMap()
+		unlockStripe()
 	}
 	sort.Slice(response.Stripes, func(i, j int) bool {
 		return response.Stripes[i].StripeID < response.Stripes[j].StripeID

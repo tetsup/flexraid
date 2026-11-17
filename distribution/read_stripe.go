@@ -36,11 +36,13 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 		return response, err
 	}
 	key := stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}
-	unlock := d.lockStripe(key)
-	defer unlock()
+	unlockStripe, unlockMap := d.lockStripe(key)
+	defer unlockStripe()
 	if cacheErr := d.cacheStripeLocked(request.Context, key); cacheErr != nil && !errors.Is(cacheErr, ErrDataCorrupted) {
+		unlockMap()
 		return response, cacheErr
 	}
+	unlockMap()
 	d.mapMu.Lock()
 	stripes := d.objects[request.ObjectID]
 	if stripes == nil || stripes[request.StripeID] == nil {

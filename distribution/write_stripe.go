@@ -34,11 +34,13 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 		return response, err
 	}
 	key := stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}
-	unlock := d.lockStripe(key)
-	defer unlock()
+	unlockStripe, unlockMap := d.lockStripe(key)
+	defer unlockStripe()
 	if err = d.cacheStripeLocked(request.Context, key); err != nil {
+		unlockMap()
 		return response, err
 	}
+	unlockMap()
 	method, err := request.Layout.method()
 	if err != nil {
 		return response, err

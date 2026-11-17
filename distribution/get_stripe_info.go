@@ -27,24 +27,27 @@ func (d *Distribution) GetStripeInfo(request GetStripeInfoRequest) (GetStripeInf
 		ctx = context.Background()
 	}
 	key := stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}
-	unlock := d.lockStripe(key)
-	defer unlock()
+	unlockStripe, unlockMap := d.lockStripe(key)
+	defer unlockStripe()
 	if err := d.cacheStripeLocked(ctx, key); err != nil {
+		unlockMap()
 		return GetStripeInfoResponse{}, err
 	}
-	d.mapMu.Lock()
-	defer d.mapMu.Unlock()
 	stripes := d.objects[request.ObjectID]
 	if stripes == nil || stripes[request.StripeID] == nil {
+		unlockMap()
 		return GetStripeInfoResponse{}, ErrStripeNotFound
 	}
 	info := stripes[request.StripeID]
 	if info == nil {
+		unlockMap()
 		return GetStripeInfoResponse{}, fmt.Errorf("stripe %d has no selected version: %w", request.StripeID, ErrStripeNotFound)
 	}
-	return GetStripeInfoResponse{
+	result := GetStripeInfoResponse{
 		Version:   info.version,
 		Layout:    info.method.layout(),
 		ChunkSize: info.chunkSize,
-	}, nil
+	}
+	unlockMap()
+	return result, nil
 }

@@ -64,11 +64,13 @@ func (d *Distribution) DeleteObject(request DeleteObjectRequest) (response Delet
 			return response, err
 		}
 		key := stripeIDKey{objectID: request.ObjectID, stripeID: storage.StripeID(rawID)}
-		unlock := d.lockStripe(key)
+		unlockStripe, unlockMap := d.lockStripe(key)
 		if err = d.cacheStripeLocked(ctx, key); err != nil {
-			unlock()
+			unlockMap()
+			unlockStripe()
 			return response, fmt.Errorf("cache stripe %d before deletion: %w", rawID, err)
 		}
+		unlockMap()
 		d.mapMu.Lock()
 		locations := make([]chunkLocation, 0)
 		seenKeys := make(map[storage.FileKey]struct{})
@@ -92,12 +94,12 @@ func (d *Distribution) DeleteObject(request DeleteObjectRequest) (response Delet
 
 		for _, location := range locations {
 			if location.ioIndex < 0 || location.ioIndex >= len(d.ios) {
-				unlock()
+				unlockStripe()
 				return response, fmt.Errorf("invalid I/O index %d for stripe %d", location.ioIndex, rawID)
 			}
 			_, deleteErr := d.ios[location.ioIndex].Delete(physicalio.DeleteRequest{Context: ctx, Key: location.key})
 			if deleteErr != nil && !errors.Is(deleteErr, os.ErrNotExist) {
-				unlock()
+				unlockStripe()
 				return response, deleteErr
 			}
 			if deleteErr == nil {
@@ -124,7 +126,7 @@ func (d *Distribution) DeleteObject(request DeleteObjectRequest) (response Delet
 			d.orphans[request.ObjectID] = remaining
 		}
 		d.mapMu.Unlock()
-		unlock()
+		unlockStripe()
 	}
 	return response, nil
 }
