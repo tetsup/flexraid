@@ -15,9 +15,14 @@ func (run maintenanceProviderFunc) ExecuteUnit(ctx context.Context, id Maintenan
 
 func TestMaintenanceExecutorRunsPlanInOrderOneUnitAtATime(t *testing.T) {
 	var calls []string
+	multiUnits := 0
 	provider := maintenanceProviderFunc(func(_ context.Context, id MaintenanceWorkID) (MaintenanceWorkResult, error) {
 		calls = append(calls, string(id))
-		return MaintenanceWorkResult{Completed: id != "multi"}, nil
+		if id == "multi" {
+			multiUnits++
+			return MaintenanceWorkResult{Completed: multiUnits == 3}, nil
+		}
+		return MaintenanceWorkResult{Completed: true}, nil
 	})
 	executor, err := NewMaintenanceExecutor(MaintenanceExecutorRequest{
 		Plan: MaintenancePlan{Batches: []MaintenanceBatch{
@@ -94,7 +99,7 @@ func TestMaintenanceExecutorCopiesPlanAndDiskMetadata(t *testing.T) {
 		t.Fatalf("executor plan was not copied: %+v", got.WorkItem)
 	}
 	got.WorkItem.DiskIDs[0] = "response-mutated"
-	if !reflect.DeepEqual(item.DiskIDs, []MaintenanceDiskID{"disk-a"}) {
+	if !reflect.DeepEqual(item.DiskIDs, []MaintenanceDiskID{"mutated"}) {
 		t.Fatalf("response aliases caller data: %+v", item)
 	}
 }
