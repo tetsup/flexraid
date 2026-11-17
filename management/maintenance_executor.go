@@ -12,6 +12,9 @@ type MaintenanceProviderID string
 // MaintenanceWorkID identifies one provider-owned unit of maintenance work.
 type MaintenanceWorkID string
 
+// MaintenanceDiskID identifies a disk referenced by a policy-produced plan.
+type MaintenanceDiskID string
+
 // MaintenancePlan is an ordered execution plan produced by MaintenancePolicy.
 type MaintenancePlan struct {
 	Batches []MaintenanceBatch
@@ -29,7 +32,7 @@ type MaintenanceBatch struct {
 type MaintenanceWorkItem struct {
 	ProviderID MaintenanceProviderID
 	WorkID     MaintenanceWorkID
-	DiskIDs    []string
+	DiskIDs    []MaintenanceDiskID
 }
 
 // MaintenanceWorkResult reports whether the provider-owned work item has
