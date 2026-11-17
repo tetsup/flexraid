@@ -128,5 +128,10 @@ func (d *Distribution) DeleteObject(request DeleteObjectRequest) (response Delet
 		d.mapMu.Unlock()
 		unlockStripe()
 	}
+	d.mapMu.Lock()
+	if stripes := d.objects[request.ObjectID]; len(stripes) == 0 {
+		delete(d.objects, request.ObjectID)
+	}
+	d.mapMu.Unlock()
 	return response, nil
 }
