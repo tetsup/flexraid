@@ -20,6 +20,10 @@ type GetStripeInfoResponse struct {
 
 // GetStripeInfo returns the newest recoverable version's persisted layout metadata.
 func (d *Distribution) GetStripeInfo(request GetStripeInfoRequest) (GetStripeInfoResponse, error) {
+	unlock := d.lockStripe(stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID})
+	defer unlock()
+	d.mapMu.Lock()
+	defer d.mapMu.Unlock()
 	stripes := d.objects[request.ObjectID]
 	if stripes == nil || stripes[request.StripeID] == nil {
 		return GetStripeInfoResponse{}, ErrStripeNotFound

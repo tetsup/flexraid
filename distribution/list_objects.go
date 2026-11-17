@@ -17,6 +17,8 @@ func (d *Distribution) ListObjects(request ListObjectsRequest) (response ListObj
 	if err = request.Context.Err(); err != nil {
 		return response, err
 	}
+	d.mapMu.Lock()
+	defer d.mapMu.Unlock()
 	seen := make(map[shared.ObjectID]struct{})
 	for id := range d.objects {
 		seen[id] = struct{}{}

@@ -252,6 +252,8 @@ func cloneChunks(source map[chunkNo]chunkLocation) map[chunkNo]chunkLocation {
 	return result
 }
 func (d *Distribution) recordIOError(index int, err error) {
+	d.mapMu.Lock()
+	defer d.mapMu.Unlock()
 	if index >= 0 && index < len(d.ioErrors) {
 		d.ioErrors[index]++
 	}

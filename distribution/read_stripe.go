@@ -95,7 +95,9 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 	restored, restoreErr := restoreStripe(chunks)
 	if restoreErr != nil {
 		info.corrupted = true
+		d.mapMu.Lock()
 		d.totalErrors++
+		d.mapMu.Unlock()
 		d.logger.Error("stripe data corrupted", "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "error", restoreErr)
 		return response, ErrDataCorrupted
 	}

@@ -33,8 +33,10 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 	if err = request.Context.Err(); err != nil {
 		return response, err
 	}
-	unlock := d.lockStripe(stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID})
+	key := stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}
+	unlock := d.lockStripe(key)
 	defer unlock()
+	if err = d.cacheStripeLocked(request.Context, key); err != nil { return response, err }
 	method, err := request.Layout.method()
 	if err != nil {
 		return response, err
@@ -59,7 +61,6 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 	if method.distributionType == distributionParity && len(request.IOIndexes) < required {
 		return response, errInsufficientChunks
 	}
-	key := stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}
 	d.mapMu.Lock()
 	version := d.nextVersion(key)
 	d.mapMu.Unlock()
