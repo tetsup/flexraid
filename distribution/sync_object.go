@@ -15,6 +15,7 @@ type SyncObjectRequest struct {
 	Context  context.Context
 	ObjectID shared.ObjectID
 }
+
 type SyncObjectResponse struct{ SyncedChunks uint32 }
 
 // SyncObject synchronizes the cached latest version of every stripe.
@@ -38,25 +39,27 @@ func (d *Distribution) SyncObject(request SyncObjectRequest) (response SyncObjec
 	}
 	d.mapMu.Unlock()
 	sort.Ints(ids)
+
 	for _, rawID := range ids {
 		if err = ctx.Err(); err != nil {
 			return response, err
 		}
 		key := stripeIDKey{objectID: request.ObjectID, stripeID: storage.StripeID(rawID)}
-		unlock := d.lockStripe(key)
+		unlockStripe, unlockMap := d.lockStripe(key)
 		if err = d.cacheStripeLocked(ctx, key); err != nil {
+			unlockMap()
 			unlockStripe()
 			return response, err
 		}
-		d.mapMu.Lock()
 		info := d.objects[request.ObjectID][key.stripeID]
 		locations := make([]chunkLocation, 0)
 		if info != nil {
-			for _, loc := range info.chunks {
-				locations = append(locations, loc)
+			for _, location := range info.chunks {
+				locations = append(locations, location)
 			}
 		}
-		d.mapMu.Unlock()
+		unlockMap()
+
 		for _, location := range locations {
 			if err = ctx.Err(); err != nil {
 				unlockStripe()
