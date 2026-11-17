@@ -6,8 +6,8 @@ import "log/slog"
 type NewRequest struct {
 	Root             string
 	PreservationRoot string
-	LogLevel          slog.Level
-	Logger   *slog.Logger
+	LogLevel         slog.Level
+	Logger           *slog.Logger
 }
 
 // NewResponse contains the initialized I/O layer.
