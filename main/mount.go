@@ -52,7 +52,7 @@ func (task *filesystemInitialization) Next(ctx context.Context) (bool, error) {
 			if err := os.MkdirAll(disk.Root, 0700); err != nil {
 				return false, fmt.Errorf("create disk root %d: %w", task.disk+1, err)
 			}
-			task.ioLayers = append(task.ioLayers, physicalio.New(physicalio.NewRequest{Root: disk.Root}).Layer)
+			task.ioLayers = append(task.ioLayers, physicalio.New(physicalio.NewRequest{Root: disk.Root, PreservationRoot: disk.Mountpoint}).Layer)
 			task.disk++
 			return false, nil
 		}
