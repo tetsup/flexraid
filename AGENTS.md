@@ -112,7 +112,20 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - Orchestration / Distribution の内部状態を直接変更しない。各レイヤーが公開する API を通じて操作し、状態の所有者と排他制御の所有者を分離する。
 - Foreground / Background / Exclusive / Initialization / Stop のすべてに共通する、Management 唯一の実行ロック機構を所有する。Management の実行単位は同時に一つだけ実行し、各単位が共通ロックを取得して直列実行する。ObjectID などの対象別ロック、複数対象ロック、別系統のメンテナンスロックは設けない。ロックは復旧可能な最小実行単位の開始時に取得し、その単位の完了・状態確定後に必ず解放する。次の単位へ進む前に実行権を譲り、Lifecycle と Scheduler が実行種別ごとの受付・優先順位・drain を調停する。これはロック粒度を Object や Stripe に広げることを意味しない。
 - 操作回数・所要時間・結果などの上位操作メトリクスを集計し、Distribution が提供するドライブ別 I/O 統計などを統合して監視 API から返す。物理 I/O のエラー検出・計数は実際に I/O を実行する下位レイヤーで行い、Management はそれを集約・公開する。
-- Background は整合性維持を伴う最適化処理とし、Foreground が存在しないときに安全な有限単位を1つ実行して譲る。Foreground 要求は Background 単位の実行中でも受け付けるが、単位の完了境界まで実行を待たせる。Background の次の単位は待機中・実行中の Foreground より優先しない。Cleanup 等の再構築可能な処理は進捗を永続化せず、起動時に現状を再走査して再構築する。各単位は中断・再実行に安全でなければならない。
+- Background は整合性維持を伴う最適化処理とする。Foreground 要求は Background の安全な実行単位の完了境界で優先し、Background は待機中・実行中の Foreground より優先しない。Background の判断と実行は、以下の Background Policy / Executor の責務分離に従う。Cleanup 等の再構築可能な処理は進捗を永続化せず、起動時に現状から候補を再構築する。各作業単位は中断・再実行に安全でなければならない。
+
+#### Background Policy / Executor
+
+- Management 内の Background 処理は、実行判断を行う **Background Policy** と、判断された作業を実行する **Background Executor** に分離する。どちらも特定の Cleanup 処理に依存させず、複数種類の Background Work に再利用できる構造とする。
+- Background Policy は、各 Work Provider が提示する作業候補、Platform から取得したドライブの現在状態、Foreground の受付・実行状況などの Snapshot を入力とし、実行計画を決定する。Policy は作業の具体的な実行方法を持たず、Executor は省電力・優先度などの判断ロジックを持たない。
+- Work Provider は自レイヤーが所有する状態から作業候補と実行に必要な情報を提供する。候補一覧やレイヤー内部状態を Management に重複保持せず、実行時には所有レイヤーの公開 API を使用する。
+- Background Executor は Policy の Execution Plan に従い、計画内の作業を安全に実行する。計画内の複数作業をまとめる、同じドライブを使う作業を連続処理する、作業単位の境界で中断・再開するなど、実行方法は柔軟に選択できる。ただし、Policy が許可していない作業やドライブを実行してはならない。
+- Management の共通実行ロックは、従来どおり復旧可能な最小作業単位ごとに取得・解放する。複数作業をまとめて実行する場合もロックを保持したまま次の作業へ進まず、各単位の境界で Scheduler に実行権を返し、待機中の Foreground / Exclusive / Stop を調停する。
+- 初期 Policy は単純で決定的なアルゴリズムとする。Background のために停止中のドライブを SpinUp しない。Platform から取得した現在状態を使い、稼働中のドライブに関係する作業を優先し、同じドライブを利用する作業をまとめる。ドライブの稼働を不必要に延長しないよう、Foreground の状況と作業量を考慮して実行・待機・終了および SpinDown のタイミングを判断する。
+- OS は通常の I/O アクセスに伴って必要なドライブを起動する。Background Policy はその暗黙の SpinUp に依存して停止中ドライブへのアクセスを開始してはならず、事前に取得した状態と実行直前の状態確認に基づいて、停止中ドライブを必要とする作業を見送る。状態確認後に状態が変化した場合も安全側に扱う。
+- ドライブ状態の観測と SpinUp / SpinDown の OS 固有操作は Platform が提供し、実施するかどうか・いつ実施するかの判断は Management の Background Policy が行う。Executor は Policy の指示を安全な境界で実行する。Foreground I/O と電源状態変更が競合しないよう、Management の共通実行権・Scheduler で調停する。
+- 初期実装に学習、適応的な効率推定、複雑な最適化アルゴリズムを持ち込まない。効率計算・アルゴリズム比較は外部シミュレータで行う。Policy は差し替え可能にし、判断入力・Execution Plan・実行結果を観測できるようにする。初期段階で最適な待機時間や閾値を固定せず、必要な値は後続のシミュレーション結果に基づいて決定する。
+
 - 起動・初期化・停止のライフサイクルを統括する。下位レイヤーの初期化を適切な順序で実行し、Orchestration に Header の読み込み・検証、Namespace 構築・整合性検査を行わせる。Orchestration が返す論理削除済みかつ保護対象外の ObjectID を受け取り、Management 自身の一時的な削除待ちキューを再構築する。全レイヤーの初期化と整合性確認が成功するまで外部操作を Ready として受け付けず、途中失敗時は部分初期化状態を公開しない。
 - 起動時に Management が設定を読み込み、各ストレージのマウントポイントと物理ドライブ WWN を一組として保持する。マウントポイントごとに対応する WWN を明示し、自動推測で補完しない。設定内でマウントポイントまたは WWN が重複する場合、WWN を Platform 経由で一意に解決できない場合、対応デバイスを確認できない場合は Ready にせず初期化を失敗させる。Management はこの対応付けを WWN をキーとするドライブ状態管理・電源制御の基礎情報として所有する。
 - 各ストレージ設定は FlexRAID の I/O root、物理ファイルシステムの mountpoint、WWN の3項目を必須とする。設定読み込み後、物理ストレージディレクトリの作成や Distribution の初期化など副作用を伴う処理より前に、重複・欠落を検証し Platform の公開 API で WWN を解決する。
