@@ -49,7 +49,7 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 	}
 	info := stripes[request.StripeID]
 	d.mapMu.Unlock()
-	key := stripeKeyInfo{objectID: request.ObjectID, stripeID: request.StripeID, stripeVersion: info.version}
+	stripeKey := stripeKeyInfo{objectID: request.ObjectID, stripeID: request.StripeID, stripeVersion: info.version}
 	chunks := make([]chunkDataWithInfo, 0, len(info.chunks))
 	missing := make([]chunkNo, 0)
 	for _, no := range expectedChunkNos(info.method) {
@@ -84,7 +84,7 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 			}
 			d.mapMu.Unlock()
 		}
-		chunks = append(chunks, chunkDataWithInfo{stripeKey: key, distributionMethod: info.method, chunkNo: no, data: location.data, totalLength: location.totalLength})
+		chunks = append(chunks, chunkDataWithInfo{stripeKey: stripeKey, distributionMethod: info.method, chunkNo: no, data: location.data, totalLength: location.totalLength})
 	}
 	for _, chunk := range chunks {
 		if info.method.distributionType == distributionParity && len(chunk.data) != int(request.ChunkSize) {
