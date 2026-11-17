@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 )
 
 type maintenanceProviderFunc func(context.Context, MaintenanceWorkID) (MaintenanceWorkResult, error)
@@ -182,4 +183,38 @@ func TestMaintenanceExecutorHonorsCanceledContextBeforeUnit(t *testing.T) {
 	if called {
 		t.Fatal("provider ran with canceled context")
 	}
+}
+
+func TestMaintenanceExecutorRunsAsSchedulerBackgroundTask(t *testing.T) {
+	called := make(chan struct{}, 1)
+	executor, err := NewMaintenanceExecutor(MaintenanceExecutorRequest{
+		Plan: MaintenancePlan{Batches: []MaintenanceBatch{{
+			Items: []MaintenanceWorkItem{{ProviderID: "p", WorkID: "w"}},
+		}}},
+		Providers: map[MaintenanceProviderID]MaintenanceWorkProvider{
+			"p": maintenanceProviderFunc(func(context.Context, MaintenanceWorkID) (MaintenanceWorkResult, error) {
+				called <- struct{}{}
+				return MaintenanceWorkResult{Completed: true}, nil
+			}),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	scheduler := NewScheduler(executor)
+	if err := scheduler.Start(); err != nil {
+		t.Fatal(err)
+	}
+	waitSignal(t, called, "maintenance provider unit")
+	deadline := time.After(2 * time.Second)
+	for scheduler.BackgroundError() != nil {
+		t.Fatalf("maintenance background task failed: %v", scheduler.BackgroundError())
+	}
+	select {
+	case <-time.After(10 * time.Millisecond):
+	case <-deadline:
+		t.Fatal("maintenance scheduler did not settle")
+	}
+	stopAndWaitScheduler(t, scheduler)
 }
