@@ -18,7 +18,7 @@ const (
 type cleanupReason = CleanupReason
 
 const (
-	cleanupOldVersion = CleanupOldVersion
+	cleanupOldVersion      = CleanupOldVersion
 	cleanupAbnormalVersion = CleanupAbnormalVersion
 )
 
@@ -33,7 +33,7 @@ type cleanupCandidateKey struct {
 // and their current classification are always re-read from Distribution state
 // when a worker processes a candidate.
 type cleanupQueue struct {
-	mu      sync.Mutex
+	mu       sync.Mutex
 	pending  map[cleanupCandidateKey]struct{}
 	inFlight map[cleanupCandidateKey]struct{}
 }
@@ -151,17 +151,25 @@ func (d *Distribution) cleanupCandidates() []cleanupCandidateKey {
 
 // claimCleanupCandidate serializes workers for the same Drive/Stripe/reason.
 func (d *Distribution) claimCleanupCandidate(key cleanupCandidateKey) bool {
-	if d.cleanupQueue == nil { return false }
+	if d.cleanupQueue == nil {
+		return false
+	}
 	d.cleanupQueue.mu.Lock()
 	defer d.cleanupQueue.mu.Unlock()
-	if _, exists := d.cleanupQueue.pending[key]; !exists { return false }
-	if _, exists := d.cleanupQueue.inFlight[key]; exists { return false }
+	if _, exists := d.cleanupQueue.pending[key]; !exists {
+		return false
+	}
+	if _, exists := d.cleanupQueue.inFlight[key]; exists {
+		return false
+	}
 	d.cleanupQueue.inFlight[key] = struct{}{}
 	return true
 }
 
 func (d *Distribution) releaseCleanupCandidate(key cleanupCandidateKey) {
-	if d.cleanupQueue == nil { return }
+	if d.cleanupQueue == nil {
+		return
+	}
 	d.cleanupQueue.mu.Lock()
 	delete(d.cleanupQueue.inFlight, key)
 	d.cleanupQueue.mu.Unlock()
