@@ -121,6 +121,9 @@ func (executor *MaintenanceExecutor) ExecuteNext(ctx context.Context) (Maintenan
 
 	executor.mu.Lock()
 	defer executor.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return MaintenanceExecutorResponse{}, err
+	}
 
 	executor.advanceCompletedItems()
 	if executor.batch >= len(executor.batches) {
