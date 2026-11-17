@@ -52,7 +52,7 @@ func (d *Distribution) cacheStripeLocked(ctx context.Context, key stripeIDKey) e
 		})
 	}
 	if _, err := restoreStripe(chunks); err != nil {
-		return fmt.Errorf("latest stripe version %d is not recoverable: %w", version, err)
+		return fmt.Errorf("%w: latest stripe version %d is not recoverable: %v", ErrDataCorrupted, version, err)
 	}
 	d.mapMu.Lock()
 	defer d.mapMu.Unlock()
