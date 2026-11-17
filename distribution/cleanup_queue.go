@@ -8,11 +8,18 @@ import (
 	"github.com/tetsup/flexraid/storage"
 )
 
-type cleanupReason uint8
+type CleanupReason uint8
 
 const (
-	cleanupOldVersion cleanupReason = iota + 1
-	cleanupAbnormalVersion
+	CleanupOldVersion CleanupReason = iota + 1
+	CleanupAbnormalVersion
+)
+
+type cleanupReason = CleanupReason
+
+const (
+	cleanupOldVersion = CleanupOldVersion
+	cleanupAbnormalVersion = CleanupAbnormalVersion
 )
 
 type cleanupCandidateKey struct {
@@ -27,11 +34,12 @@ type cleanupCandidateKey struct {
 // when a worker processes a candidate.
 type cleanupQueue struct {
 	mu      sync.Mutex
-	pending map[cleanupCandidateKey]struct{}
+	pending  map[cleanupCandidateKey]struct{}
+	inFlight map[cleanupCandidateKey]struct{}
 }
 
 func newCleanupQueue() *cleanupQueue {
-	return &cleanupQueue{pending: make(map[cleanupCandidateKey]struct{})}
+	return &cleanupQueue{pending: make(map[cleanupCandidateKey]struct{}), inFlight: make(map[cleanupCandidateKey]struct{})}
 }
 
 // refreshStripeCleanupQueueLocked replaces all queued reasons for one Stripe.
@@ -139,4 +147,22 @@ func (d *Distribution) cleanupCandidates() []cleanupCandidateKey {
 		return result[i].reason < result[j].reason
 	})
 	return result
+}
+
+// claimCleanupCandidate serializes workers for the same Drive/Stripe/reason.
+func (d *Distribution) claimCleanupCandidate(key cleanupCandidateKey) bool {
+	if d.cleanupQueue == nil { return false }
+	d.cleanupQueue.mu.Lock()
+	defer d.cleanupQueue.mu.Unlock()
+	if _, exists := d.cleanupQueue.pending[key]; !exists { return false }
+	if _, exists := d.cleanupQueue.inFlight[key]; exists { return false }
+	d.cleanupQueue.inFlight[key] = struct{}{}
+	return true
+}
+
+func (d *Distribution) releaseCleanupCandidate(key cleanupCandidateKey) {
+	if d.cleanupQueue == nil { return }
+	d.cleanupQueue.mu.Lock()
+	delete(d.cleanupQueue.inFlight, key)
+	d.cleanupQueue.mu.Unlock()
 }
