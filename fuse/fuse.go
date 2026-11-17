@@ -2,6 +2,7 @@ package fuse
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"syscall"
@@ -12,6 +13,16 @@ import (
 	"github.com/tetsup/flexraid/orchestration"
 	"github.com/tetsup/flexraid/pkg/shared"
 )
+
+// toFUSEErrno maps canceled FUSE requests to EINTR as required by go-fuse.
+// fs.ToErrno falls back to ENOTSUP for context.Canceled, which misreports an
+// interrupted request as an unsupported filesystem operation.
+func toFUSEErrno(err error) syscall.Errno {
+	if errors.Is(err, context.Canceled) {
+		return syscall.EINTR
+	}
+	return fs.ToErrno(err)
+}
 
 // FileSystem is the go-fuse adapter for Orchestration. It deliberately keeps
 // no namespace or file metadata cache of its own.
@@ -79,11 +90,11 @@ func (n *node) Lookup(ctx context.Context, name string, out *gofuse.EntryOut) (*
 	}
 	result, err := n.layer.Lookup(orchestration.LookupRequest{Context: ctx, ParentID: n.objectID, Name: name})
 	if err != nil {
-		return nil, fs.ToErrno(err)
+		return nil, toFUSEErrno(err)
 	}
 	attributes, err := n.layer.GetAttr(orchestration.GetAttrRequest{Context: ctx, ObjectID: result.ObjectID})
 	if err != nil {
-		return nil, fs.ToErrno(err)
+		return nil, toFUSEErrno(err)
 	}
 	fillEntry(out, attributes.Attributes)
 	child := &node{layer: n.layer, objectID: attributes.Attributes.ObjectID}
@@ -97,7 +108,7 @@ func (n *node) Getattr(ctx context.Context, _ fs.FileHandle, out *gofuse.AttrOut
 	}
 	attributes, err := n.layer.GetAttr(orchestration.GetAttrRequest{Context: ctx, ObjectID: n.objectID})
 	if err != nil {
-		return fs.ToErrno(err)
+		return toFUSEErrno(err)
 	}
 	fillAttr(&out.Attr, attributes.Attributes)
 	return 0
@@ -110,13 +121,13 @@ func (n *node) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 	}
 	result, err := n.layer.ReadDir(orchestration.ReadDirRequest{Context: ctx, ObjectID: n.objectID})
 	if err != nil {
-		return nil, fs.ToErrno(err)
+		return nil, toFUSEErrno(err)
 	}
 	entries := make([]gofuse.DirEntry, 0, len(result.Entries))
 	for _, entry := range result.Entries {
 		attributes, attrErr := n.layer.GetAttr(orchestration.GetAttrRequest{Context: ctx, ObjectID: entry.ObjectID})
 		if attrErr != nil {
-			return nil, fs.ToErrno(attrErr)
+			return nil, toFUSEErrno(attrErr)
 		}
 		entries = append(entries, gofuse.DirEntry{
 			Name: entry.Name, Ino: inodeNumber(attributes.Attributes.ObjectID),
@@ -133,7 +144,7 @@ func (n *node) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, s
 	}
 	result, err := n.layer.Open(orchestration.OpenRequest{Context: ctx, ObjectID: n.objectID, Flags: flags})
 	if err != nil {
-		return nil, 0, fs.ToErrno(err)
+		return nil, 0, toFUSEErrno(err)
 	}
 	return &fileHandle{layer: n.layer, objectID: n.objectID, handle: result.Handle}, 0, 0
 }
@@ -152,7 +163,7 @@ func (n *node) Read(ctx context.Context, fh fs.FileHandle, dest []byte, offset i
 		Offset: uint64(offset), Size: uint32(len(dest)),
 	})
 	if err != nil {
-		return nil, fs.ToErrno(err)
+		return nil, toFUSEErrno(err)
 	}
 	return gofuse.ReadResultData(result.Data), 0
 }
@@ -171,7 +182,7 @@ func (n *node) Write(ctx context.Context, fh fs.FileHandle, data []byte, offset 
 		Offset: uint64(offset), Data: data,
 	})
 	if err != nil {
-		return 0, fs.ToErrno(err)
+		return 0, toFUSEErrno(err)
 	}
 	return result.Written, 0
 }
@@ -186,7 +197,7 @@ func (n *node) Flush(ctx context.Context, fh fs.FileHandle) syscall.Errno {
 		return errno
 	}
 	_, err := n.layer.Flush(orchestration.FlushRequest{Context: ctx, Handle: handle.handle})
-	return fs.ToErrno(err)
+	return toFUSEErrno(err)
 }
 
 func (n *node) Fsync(ctx context.Context, fh fs.FileHandle, _ uint32) syscall.Errno {
@@ -199,7 +210,7 @@ func (n *node) Fsync(ctx context.Context, fh fs.FileHandle, _ uint32) syscall.Er
 		return errno
 	}
 	_, err := n.layer.Fsync(orchestration.FsyncRequest{Context: ctx, Handle: handle.handle})
-	return fs.ToErrno(err)
+	return toFUSEErrno(err)
 }
 
 func (n *node) Release(ctx context.Context, fh fs.FileHandle) syscall.Errno {
@@ -209,7 +220,7 @@ func (n *node) Release(ctx context.Context, fh fs.FileHandle) syscall.Errno {
 		return syscall.EBADF
 	}
 	_, err := n.layer.Release(orchestration.ReleaseRequest{Context: ctx, Handle: handle.handle})
-	return fs.ToErrno(err)
+	return toFUSEErrno(err)
 }
 
 func (n *node) Create(ctx context.Context, name string, flags, mode uint32, out *gofuse.EntryOut) (*fs.Inode, fs.FileHandle, uint32, syscall.Errno) {
@@ -226,12 +237,12 @@ func (n *node) Create(ctx context.Context, name string, flags, mode uint32, out 
 		Mode: mode, UID: credentials.Uid, GID: credentials.Gid,
 	})
 	if err != nil {
-		return nil, nil, 0, fs.ToErrno(err)
+		return nil, nil, 0, toFUSEErrno(err)
 	}
 	attributes, err := n.layer.GetAttr(orchestration.GetAttrRequest{Context: ctx, ObjectID: result.ObjectID})
 	if err != nil {
 		_, _ = n.layer.Unlink(orchestration.UnlinkRequest{Context: ctx, ParentID: n.objectID, Name: name})
-		return nil, nil, 0, fs.ToErrno(err)
+		return nil, nil, 0, toFUSEErrno(err)
 	}
 	child := &node{layer: n.layer, objectID: result.ObjectID}
 	inode := n.NewInode(ctx, child, stableAttr(attributes.Attributes))
@@ -239,7 +250,7 @@ func (n *node) Create(ctx context.Context, name string, flags, mode uint32, out 
 	opened, err := n.layer.Open(orchestration.OpenRequest{Context: ctx, ObjectID: result.ObjectID, Flags: flags})
 	if err != nil {
 		_, _ = n.layer.Unlink(orchestration.UnlinkRequest{Context: ctx, ParentID: n.objectID, Name: name})
-		return nil, nil, 0, fs.ToErrno(err)
+		return nil, nil, 0, toFUSEErrno(err)
 	}
 	return inode, &fileHandle{layer: n.layer, objectID: result.ObjectID, handle: opened.Handle}, 0, 0
 }
@@ -265,12 +276,12 @@ func (n *node) Mknod(ctx context.Context, name string, mode, _ uint32, out *gofu
 		Mode: mode & 07777, UID: credentials.Uid, GID: credentials.Gid,
 	})
 	if err != nil {
-		return nil, fs.ToErrno(err)
+		return nil, toFUSEErrno(err)
 	}
 	attributes, err := n.layer.GetAttr(orchestration.GetAttrRequest{Context: ctx, ObjectID: result.ObjectID})
 	if err != nil {
 		_, _ = n.layer.Unlink(orchestration.UnlinkRequest{Context: ctx, ParentID: n.objectID, Name: name})
-		return nil, fs.ToErrno(err)
+		return nil, toFUSEErrno(err)
 	}
 	child := &node{layer: n.layer, objectID: result.ObjectID}
 	inode := n.NewInode(ctx, child, stableAttr(attributes.Attributes))
@@ -289,11 +300,11 @@ func (n *node) Mkdir(ctx context.Context, name string, mode uint32, out *gofuse.
 		Mode: mode, UID: credentials.Uid, GID: credentials.Gid,
 	})
 	if err != nil {
-		return nil, fs.ToErrno(err)
+		return nil, toFUSEErrno(err)
 	}
 	attributes, err := n.layer.GetAttr(orchestration.GetAttrRequest{Context: ctx, ObjectID: result.ObjectID})
 	if err != nil {
-		return nil, fs.ToErrno(err)
+		return nil, toFUSEErrno(err)
 	}
 	child := &node{layer: n.layer, objectID: result.ObjectID}
 	inode := n.NewInode(ctx, child, stableAttr(attributes.Attributes))
@@ -307,7 +318,7 @@ func (n *node) Unlink(ctx context.Context, name string) syscall.Errno {
 		return errno
 	}
 	_, err := n.layer.Unlink(orchestration.UnlinkRequest{Context: ctx, ParentID: n.objectID, Name: name})
-	return fs.ToErrno(err)
+	return toFUSEErrno(err)
 }
 
 func (n *node) Rmdir(ctx context.Context, name string) syscall.Errno {
@@ -316,7 +327,7 @@ func (n *node) Rmdir(ctx context.Context, name string) syscall.Errno {
 		return errno
 	}
 	_, err := n.layer.Rmdir(orchestration.RmdirRequest{Context: ctx, ParentID: n.objectID, Name: name})
-	return fs.ToErrno(err)
+	return toFUSEErrno(err)
 }
 
 func (n *node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedder, newName string, flags uint32) syscall.Errno {
@@ -338,7 +349,7 @@ func (n *node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 		Context: ctx, SourceParentID: n.objectID, SourceName: name,
 		DestinationParentID: destination.objectID, DestinationName: newName,
 	})
-	return fs.ToErrno(err)
+	return toFUSEErrno(err)
 }
 
 func (n *node) Link(ctx context.Context, existing fs.InodeEmbedder, name string, out *gofuse.EntryOut) (*fs.Inode, syscall.Errno) {
@@ -355,11 +366,11 @@ func (n *node) Link(ctx context.Context, existing fs.InodeEmbedder, name string,
 	}
 	result, err := n.layer.Link(orchestration.LinkRequest{Context: ctx, SourceID: source.objectID, ParentID: n.objectID, Name: name})
 	if err != nil {
-		return nil, fs.ToErrno(err)
+		return nil, toFUSEErrno(err)
 	}
 	attributes, err := n.layer.GetAttr(orchestration.GetAttrRequest{Context: ctx, ObjectID: result.ObjectID})
 	if err != nil {
-		return nil, fs.ToErrno(err)
+		return nil, toFUSEErrno(err)
 	}
 	child := &node{layer: n.layer, objectID: attributes.Attributes.ObjectID}
 	inode := n.NewInode(ctx, child, stableAttr(attributes.Attributes))
@@ -378,11 +389,11 @@ func (n *node) Symlink(ctx context.Context, target, name string, out *gofuse.Ent
 		UID: credentials.Uid, GID: credentials.Gid,
 	})
 	if err != nil {
-		return nil, fs.ToErrno(err)
+		return nil, toFUSEErrno(err)
 	}
 	attributes, err := n.layer.GetAttr(orchestration.GetAttrRequest{Context: ctx, ObjectID: result.ObjectID})
 	if err != nil {
-		return nil, fs.ToErrno(err)
+		return nil, toFUSEErrno(err)
 	}
 	child := &node{layer: n.layer, objectID: result.ObjectID}
 	inode := n.NewInode(ctx, child, stableAttr(attributes.Attributes))
@@ -397,7 +408,7 @@ func (n *node) Readlink(ctx context.Context) ([]byte, syscall.Errno) {
 	}
 	result, err := n.layer.ReadLink(orchestration.ReadLinkRequest{Context: ctx, ObjectID: n.objectID})
 	if err != nil {
-		return nil, fs.ToErrno(err)
+		return nil, toFUSEErrno(err)
 	}
 	return []byte(result.Target), 0
 }
@@ -449,7 +460,7 @@ func (n *node) Setattr(ctx context.Context, fh fs.FileHandle, in *gofuse.SetAttr
 		}
 	}
 	if _, err := n.layer.SetAttr(request); err != nil {
-		return fs.ToErrno(err)
+		return toFUSEErrno(err)
 	}
 	return n.Getattr(ctx, fh, out)
 }
@@ -461,7 +472,7 @@ func (n *node) Statfs(ctx context.Context, out *gofuse.StatfsOut) syscall.Errno 
 	}
 	result, err := n.layer.StatFs(orchestration.StatFsRequest{Context: ctx})
 	if err != nil {
-		return fs.ToErrno(err)
+		return toFUSEErrno(err)
 	}
 	out.Blocks, out.Bfree, out.Bavail = result.Blocks, result.Bfree, result.Bavail
 	out.Bsize, out.Frsize = uint32(result.Bsize), uint32(result.Frsize)
