@@ -123,6 +123,10 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 		d.objects[request.ObjectID] = stripes
 	}
 	stripes[request.StripeID] = &stripeInfo{version: version, method: method, chunkSize: request.ChunkSize, chunks: cloneChunks(written)}
+	// Refresh the Stripe's cleanup hints only after the new Version is fully
+	// written and published as the selected current Version. mapMu is held,
+	// establishing the lock order mapMu -> cleanupQueue.mu.
+	d.refreshStripeCleanupQueueLocked(key)
 	response.Version = version
 	return response, nil
 }
