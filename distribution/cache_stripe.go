@@ -18,11 +18,15 @@ func (d *Distribution) cacheStripeLocked(ctx context.Context, key stripeIDKey) e
 	version, method := info.version, info.method
 	chunks := make([]chunkDataWithInfo, 0, len(info.chunks))
 	for no, location := range info.chunks {
-		if err := ctx.Err(); err != nil { return err }
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if location.data == nil {
 			read, err := d.ios[location.ioIndex].Read(physicalio.ReadRequest{Context: ctx, Key: location.key})
 			if err != nil {
-				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) { return err }
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					return err
+				}
 				d.recordIOErrorLocked(location.ioIndex, err)
 				continue
 			}
@@ -34,12 +38,14 @@ func (d *Distribution) cacheStripeLocked(ctx context.Context, key stripeIDKey) e
 			location.data, location.totalLength = payload, total
 			info.chunks[no] = location
 			if versions := d.versions[key]; versions != nil {
-				if selected := versions[version]; selected != nil { selected.chunks[no] = location }
+				if selected := versions[version]; selected != nil {
+					selected.chunks[no] = location
+				}
 			}
 		}
 		chunks = append(chunks, chunkDataWithInfo{
-			stripeKey: stripeKeyInfo{objectID:key.objectID, stripeID:key.stripeID, stripeVersion:version},
-			distributionMethod:method, chunkNo:no, data:location.data, totalLength:location.totalLength,
+			stripeKey:          stripeKeyInfo{objectID: key.objectID, stripeID: key.stripeID, stripeVersion: version},
+			distributionMethod: method, chunkNo: no, data: location.data, totalLength: location.totalLength,
 		})
 	}
 	if _, err := restoreStripe(chunks); err != nil {
