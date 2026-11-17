@@ -52,11 +52,11 @@ type MaintenanceExecutorRequest struct {
 // MaintenanceExecutorResponse describes one executed unit.
 // WorkItem is a copy of the item selected from the plan.
 type MaintenanceExecutorResponse struct {
-	BatchIndex      int
-	WorkItem        MaintenanceWorkItem
-	WorkItemDone    bool
-	PlanCompleted   bool
-	ExecutedUnits   uint64
+	BatchIndex    int
+	WorkItem      MaintenanceWorkItem
+	WorkItemDone  bool
+	PlanCompleted bool
+	ExecutedUnits uint64
 }
 
 // MaintenanceExecutor executes a policy-produced plan in its exact batch and

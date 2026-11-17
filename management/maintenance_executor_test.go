@@ -101,8 +101,8 @@ func TestMaintenanceExecutorCopiesPlanAndDiskMetadata(t *testing.T) {
 
 func TestMaintenanceExecutorRejectsInvalidPlan(t *testing.T) {
 	tests := []struct {
-		name string
-		plan MaintenancePlan
+		name      string
+		plan      MaintenancePlan
 		providers map[MaintenanceProviderID]MaintenanceWorkProvider
 	}{
 		{
@@ -112,7 +112,9 @@ func TestMaintenanceExecutorRejectsInvalidPlan(t *testing.T) {
 		{
 			name: "missing work ID",
 			plan: MaintenancePlan{Batches: []MaintenanceBatch{{Items: []MaintenanceWorkItem{{ProviderID: "p"}}}}},
-			providers: map[MaintenanceProviderID]MaintenanceWorkProvider{"p": maintenanceProviderFunc(func(context.Context, MaintenanceWorkID) (MaintenanceWorkResult, error) { return MaintenanceWorkResult{}, nil })},
+			providers: map[MaintenanceProviderID]MaintenanceWorkProvider{"p": maintenanceProviderFunc(func(context.Context, MaintenanceWorkID) (MaintenanceWorkResult, error) {
+				return MaintenanceWorkResult{}, nil
+			})},
 		},
 		{
 			name: "unknown provider",
