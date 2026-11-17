@@ -179,6 +179,6 @@ func (executor *MaintenanceExecutor) advanceCompletedItems() {
 }
 
 func cloneMaintenanceWorkItem(item MaintenanceWorkItem) MaintenanceWorkItem {
-	item.DiskIDs = append([]string(nil), item.DiskIDs...)
+	item.DiskIDs = append([]MaintenanceDiskID(nil), item.DiskIDs...)
 	return item
 }
