@@ -23,7 +23,7 @@ func TestMaintenanceExecutorRunsPlanInOrderOneUnitAtATime(t *testing.T) {
 	executor, err := NewMaintenanceExecutor(MaintenanceExecutorRequest{
 		Plan: MaintenancePlan{Batches: []MaintenanceBatch{
 			{Items: []MaintenanceWorkItem{
-				{ProviderID: "p", WorkID: "multi", DiskIDs: []string{"disk-a"}},
+				{ProviderID: "p", WorkID: "multi", DiskIDs: []MaintenanceDiskID{"disk-a"}},
 				{ProviderID: "p", WorkID: "after"},
 			}},
 			{Items: []MaintenanceWorkItem{{ProviderID: "p", WorkID: "last"}}},
@@ -73,7 +73,7 @@ func TestMaintenanceExecutorRunsPlanInOrderOneUnitAtATime(t *testing.T) {
 }
 
 func TestMaintenanceExecutorCopiesPlanAndDiskMetadata(t *testing.T) {
-	item := MaintenanceWorkItem{ProviderID: "p", WorkID: "w", DiskIDs: []string{"disk-a"}}
+	item := MaintenanceWorkItem{ProviderID: "p", WorkID: "w", DiskIDs: []MaintenanceDiskID{"disk-a"}}
 	plan := MaintenancePlan{Batches: []MaintenanceBatch{{Items: []MaintenanceWorkItem{item}}}}
 	executor, err := NewMaintenanceExecutor(MaintenanceExecutorRequest{
 		Plan: plan,
@@ -91,11 +91,11 @@ func TestMaintenanceExecutorCopiesPlanAndDiskMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(got.WorkItem.DiskIDs, []string{"disk-a"}) {
+	if !reflect.DeepEqual(got.WorkItem.DiskIDs, []MaintenanceDiskID{"disk-a"}) {
 		t.Fatalf("executor plan was not copied: %+v", got.WorkItem)
 	}
 	got.WorkItem.DiskIDs[0] = "response-mutated"
-	if !reflect.DeepEqual(item.DiskIDs, []string{"disk-a"}) {
+	if !reflect.DeepEqual(item.DiskIDs, []MaintenanceDiskID{"disk-a"}) {
 		t.Fatalf("response aliases caller data: %+v", item)
 	}
 }
