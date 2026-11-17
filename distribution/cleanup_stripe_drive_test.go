@@ -86,7 +86,7 @@ func TestCleanupStripeDrivePreservesAbnormalUnreadableChunk(t *testing.T) {
 	}
 	abnormalKey := currentKey
 	abnormalKey.StripeVersion = 99
-	if _, err := ios[0].Write(physicalio.WriteRequest{Context: ctx, Key: abnormalKey, Data: []byte("unreadable header and chunk")}); err != nil {
+	if _, err := ios[0].Write(physicalio.WriteRequest{Context: ctx, Key: abnormalKey, Data: []byte("bad")}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -112,7 +112,7 @@ func TestCleanupStripeDrivePreservesAbnormalUnreadableChunk(t *testing.T) {
 		t.Fatal(err)
 	}
 	preserved := filepath.Join(ios[0].RootPath(), config.PreservationDirectory, filepath.Base(relative))
-	if data, err := os.ReadFile(preserved); err != nil || string(data) != "unreadable header and chunk" {
+	if data, err := os.ReadFile(preserved); err != nil || string(data) != "bad" {
 		t.Fatalf("preserved data = %q, %v", data, err)
 	}
 	if _, err := ios[0].Read(physicalio.ReadRequest{Context: ctx, Key: currentKey}); err != nil {
