@@ -22,18 +22,26 @@ func TestClassifyStripePartitionsChunksByVersion(t *testing.T) {
 	}
 	orphans := []chunkLocation{location(1, 3, 2), location(2, 4, 2), location(4, 5, 1)}
 	classified, ok := classifyStripe(versions, orphans, &stripeInfo{version: 2, chunks: versions[2].chunks})
-	if !ok { t.Fatal("expected a classifiable Stripe") }
+	if !ok {
+		t.Fatal("expected a classifiable Stripe")
+	}
 	if len(classified.Current) != 1 || classified.Current[0].ioIndex != 1 {
 		t.Fatalf("Current = %+v", classified.Current)
 	}
-	if len(classified.OldVersions) != 2 { t.Fatalf("OldVersions = %+v", classified.OldVersions) }
-	if len(classified.Abnormal) != 3 { t.Fatalf("Abnormal = %+v", classified.Abnormal) }
+	if len(classified.OldVersions) != 2 {
+		t.Fatalf("OldVersions = %+v", classified.OldVersions)
+	}
+	if len(classified.Abnormal) != 3 {
+		t.Fatalf("Abnormal = %+v", classified.Abnormal)
+	}
 }
 
 func TestClassifyStripeDefersWithoutRecoverableCurrent(t *testing.T) {
 	versions := map[storage.StripeVersion]*versionInfo{1: {recoverable: false, chunks: map[chunkNo]chunkLocation{0: {ioIndex: 0}}}}
 	classified, ok := classifyStripe(versions, []chunkLocation{{ioIndex: 1}}, nil)
-	if ok { t.Fatal("expected classification to be deferred") }
+	if ok {
+		t.Fatal("expected classification to be deferred")
+	}
 	if len(classified.Current)+len(classified.OldVersions)+len(classified.Abnormal) != 0 {
 		t.Fatalf("deferred Stripe returned classified chunks: %+v", classified)
 	}
@@ -48,11 +56,13 @@ func TestRefreshStripeCleanupQueueClearsCandidatesWhenDeferred(t *testing.T) {
 		versions: map[stripeIDKey]map[storage.StripeVersion]*versionInfo{
 			key: {1: {recoverable: false, chunks: map[chunkNo]chunkLocation{0: {ioIndex: 0}}}},
 		},
-		orphans: map[shared.ObjectID][]chunkLocation{},
+		orphans:      map[shared.ObjectID][]chunkLocation{},
 		cleanupQueue: &cleanupQueue{pending: map[cleanupCandidateKey]struct{}{candidate: {}}, inFlight: make(map[cleanupCandidateKey]struct{})},
 	}
 	layer.mapMu.Lock()
 	layer.refreshStripeCleanupQueueLocked(key)
 	layer.mapMu.Unlock()
-	if got := layer.cleanupCandidates(); len(got) != 0 { t.Fatalf("stale candidates remain after deferral: %+v", got) }
+	if got := layer.cleanupCandidates(); len(got) != 0 {
+		t.Fatalf("stale candidates remain after deferral: %+v", got)
+	}
 }
