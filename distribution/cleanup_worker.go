@@ -105,7 +105,7 @@ func (d *Distribution) runCleanupWorker(ctx context.Context, done chan struct{})
 			if !allowed {
 				continue
 			}
-			_, err := d.CleanupStripeDrive(CleanupStripeDriveRequest{
+			result, err := d.CleanupStripeDrive(CleanupStripeDriveRequest{
 				Context: ctx, IOIndex: candidate.ioIndex, ObjectID: candidate.objectID,
 				StripeID: candidate.stripeID, Method: CleanupMethod(candidate.method),
 			})
@@ -114,7 +114,7 @@ func (d *Distribution) runCleanupWorker(ctx context.Context, done chan struct{})
 					"object_id", candidate.objectID.String(), "stripe_id", candidate.stripeID,
 					"method", candidate.method, "error", err)
 			}
-			processed = true
+			processed = processed || result.FilesProcessed > 0
 		}
 		if processed {
 			continue
