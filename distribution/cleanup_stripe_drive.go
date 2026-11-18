@@ -58,21 +58,14 @@ func (d *Distribution) CleanupStripeDrive(request CleanupStripeDriveRequest) (re
 	defer d.releaseCleanupCandidate(candidate)
 
 	stripeKey := stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}
-	unlockStripe, unlockMap := d.lockStripe(stripeKey)
-	if err = d.cacheStripeLocked(ctx, stripeKey); err != nil {
-		unlockMap()
-		unlockStripe()
-		return response, fmt.Errorf("validate current Stripe before cleanup: %w", err)
-	}
+	d.mapMu.Lock()
 	location, found := d.findCleanupLocationLocked(candidate)
 	if !found {
 		d.refreshStripeCleanupQueueLocked(stripeKey)
-		unlockMap()
-		unlockStripe()
+		d.mapMu.Unlock()
 		return response, nil
 	}
-	unlockMap()
-	unlockStripe()
+	d.mapMu.Unlock()
 
 	// The immutable FileKey is a value snapshot. Physical I/O runs without
 	// Distribution locks; only this exact key is removed from inventory.
@@ -89,11 +82,10 @@ func (d *Distribution) CleanupStripeDrive(request CleanupStripeDriveRequest) (re
 		return response, err
 	}
 
-	unlockStripe, unlockMap = d.lockStripe(stripeKey)
+	d.mapMu.Lock()
 	d.removeCleanupLocationLocked(candidate, location)
 	d.refreshStripeCleanupQueueLocked(stripeKey)
-	unlockMap()
-	unlockStripe()
+	d.mapMu.Unlock()
 	response.FilesProcessed = 1
 	response.Key = location.key
 	return response, nil
