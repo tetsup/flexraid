@@ -192,6 +192,22 @@ func TestConcurrentStripeWritesSerializeVersions(t *testing.T) {
 	if info.Version != writes {
 		t.Fatalf("latest version = %d, want %d", info.Version, writes)
 	}
+	candidates := created.Layer.cleanupCandidates()
+	if len(candidates) != 2 {
+		t.Fatalf("write cleanup candidates = %+v, want one old-version candidate per drive", candidates)
+	}
+	for _, candidate := range candidates {
+		if candidate.reason != cleanupOldVersion {
+			t.Fatalf("write candidate reason = %v, want old version", candidate.reason)
+		}
+	}
+	restarted, err := New(NewRequest{IOs: ios})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := restarted.Layer.cleanupCandidates(); len(got) != 2 {
+		t.Fatalf("initial scan cleanup candidates = %+v, want one per drive", got)
+	}
 	read, err := created.Layer.ReadStripe(ReadStripeRequest{Context: ctx, ObjectID: testObjectID(), StripeID: 9, ChunkSize: 32})
 	if err != nil {
 		t.Fatal(err)
