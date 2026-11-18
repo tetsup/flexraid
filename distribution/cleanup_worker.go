@@ -82,7 +82,15 @@ func (d *Distribution) wakeCleanupWorker() {
 }
 
 func (d *Distribution) runCleanupWorker(ctx context.Context, done chan struct{}) {
-	defer close(done)
+	defer func() {
+		close(done)
+		d.cleanupWorkerMu.Lock()
+		if d.cleanupWorkerDone == done {
+			d.cleanupWorkerCancel = nil
+			d.cleanupWorkerDone = nil
+		}
+		d.cleanupWorkerMu.Unlock()
+	}()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
