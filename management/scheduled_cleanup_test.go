@@ -2,6 +2,7 @@ package management
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -14,6 +15,11 @@ import (
 func TestExecuteScheduledCleanupUsesConfiguredDriveAndPermission(t *testing.T) {
 	ctx := context.Background()
 	rootA, rootB := filepath.Join(t.TempDir(), "a"), filepath.Join(t.TempDir(), "b")
+	for _, root := range []string{rootA, rootB} {
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
 	ioA := physicalio.New(physicalio.NewRequest{Root: rootA}).Layer
 	ioB := physicalio.New(physicalio.NewRequest{Root: rootB}).Layer
 	created, err := distribution.New(distribution.NewRequest{Context: ctx, IOs: []*physicalio.IO{ioA, ioB}})
