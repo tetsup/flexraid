@@ -36,19 +36,23 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 		return response, err
 	}
 	key := stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}
-	unlockStripe, unlockMap := d.lockStripe(key)
+\tunlockStripe, unlockMap := d.lockStripe(key)
 	defer unlockStripe()
+	needsClassificationRefresh := false
 	if cacheErr := d.cacheStripeLocked(request.Context, key); cacheErr != nil {
 		if !errors.Is(cacheErr, ErrDataCorrupted) {
 			unlockMap()
 			return response, cacheErr
 		}
-		if versions := d.versions[key]; versions != nil {
-			if version := versions[d.objects[request.ObjectID][request.StripeID].version]; version != nil {
-				version.recoverable = false
+		if stripes := d.objects[request.ObjectID]; stripes != nil && stripes[request.StripeID] != nil {
+			if versions := d.versions[key]; versions != nil {
+				if version := versions[stripes[request.StripeID].version]; version != nil {
+					version.recoverable = false
+				}
 			}
 		}
 		d.refreshStripeCleanupQueueLocked(key)
+		needsClassificationRefresh = true
 	}
 	unlockMap()
 	d.mapMu.Lock()
@@ -124,7 +128,15 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 		info.corrupted = true
 		d.logger.Warn("stripe recovered from missing chunks", "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "missing_chunks", len(missing))
 		d.repairStripe(request, info, missing, restored)
+		needsClassificationRefresh = true
+	}
+	if needsClassificationRefresh {
 		d.mapMu.Lock()
+		if versions := d.versions[key]; versions != nil {
+			if version := versions[info.version]; version != nil {
+				version.recoverable = true
+			}
+		}
 		d.refreshStripeCleanupQueueLocked(key)
 		d.mapMu.Unlock()
 	}
