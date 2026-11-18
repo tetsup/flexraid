@@ -8,30 +8,29 @@ import (
 	"github.com/tetsup/flexraid/storage"
 )
 
-type CleanupReason uint8
+type CleanupMethod uint8
 
 const (
-	CleanupOldVersion CleanupReason = iota + 1
-	CleanupAbnormalVersion
+	CleanupMethodDeleteOldVersion CleanupMethod = iota + 1
+	CleanupMethodPreserveAbnormal
 )
 
-type cleanupReason = CleanupReason
+type cleanupMethod = CleanupMethod
 
 const (
-	cleanupOldVersion      = CleanupOldVersion
-	cleanupAbnormalVersion = CleanupAbnormalVersion
+	cleanupDeleteOldVersion cleanupMethod = CleanupMethodDeleteOldVersion
+	cleanupPreserveAbnormal cleanupMethod = CleanupMethodPreserveAbnormal
 )
 
 type cleanupCandidateKey struct {
 	ioIndex  int
 	objectID shared.ObjectID
 	stripeID storage.StripeID
-	reason   cleanupReason
+	method   cleanupMethod
 }
 
-// cleanupQueue is only a deduplicated set of work hints. The physical files
-// and their current classification are always re-read from Distribution state
-// when a worker processes a candidate.
+// cleanupQueue is only a deduplicated set of work hints. Physical files and
+// their current classification are revalidated from Distribution state.
 type cleanupQueue struct {
 	mu       sync.Mutex
 	pending  map[cleanupCandidateKey]struct{}
@@ -42,16 +41,13 @@ func newCleanupQueue() *cleanupQueue {
 	return &cleanupQueue{pending: make(map[cleanupCandidateKey]struct{}), inFlight: make(map[cleanupCandidateKey]struct{})}
 }
 
-// refreshStripeCleanupQueueLocked replaces all queued reasons for one Stripe.
-// The caller must hold mapMu. Lock order is mapMu -> cleanupQueue.mu; consumers
-// must release cleanupQueue.mu before acquiring mapMu or a Stripe lock.
+// refreshStripeCleanupQueueLocked replaces all queued methods for one Stripe.
+// The caller must hold mapMu. Lock order is mapMu -> cleanupQueue.mu.
 func (d *Distribution) refreshStripeCleanupQueueLocked(key stripeIDKey) {
 	if d.cleanupQueue == nil {
 		d.cleanupQueue = newCleanupQueue()
 	}
 
-	// Replace pending hints even when classification must be deferred. A stale
-	// candidate must never survive a transition to an unclassifiable Stripe.
 	d.cleanupQueue.mu.Lock()
 	for candidate := range d.cleanupQueue.pending {
 		if candidate.objectID == key.objectID && candidate.stripeID == key.stripeID {
@@ -71,42 +67,19 @@ func (d *Distribution) refreshStripeCleanupQueueLocked(key stripeIDKey) {
 		return
 	}
 
-	byReason := map[cleanupReason][]chunkLocation{
-		cleanupOldVersion:      classified.OldVersions,
-		cleanupAbnormalVersion: classified.Abnormal,
+	byMethod := map[cleanupMethod][]chunkLocation{
+		cleanupDeleteOldVersion: classified.OldVersions,
+		cleanupPreserveAbnormal: classified.Abnormal,
 	}
 	d.cleanupQueue.mu.Lock()
 	defer d.cleanupQueue.mu.Unlock()
-	for reason, locations := range byReason {
+	for method, locations := range byMethod {
 		for _, location := range locations {
 			d.cleanupQueue.pending[cleanupCandidateKey{
-				ioIndex: location.ioIndex, objectID: key.objectID, stripeID: key.stripeID, reason: reason,
+				ioIndex: location.ioIndex, objectID: key.objectID, stripeID: key.stripeID, method: method,
 			}] = struct{}{}
 		}
 	}
-}
-
-func versionIOIndexes(chunks map[chunkNo]chunkLocation) map[int]struct{} {
-	indexes := make(map[int]struct{}, len(chunks))
-	for _, location := range chunks {
-		indexes[location.ioIndex] = struct{}{}
-	}
-	return indexes
-}
-
-// popCleanupCandidate removes one hint. It never holds the queue mutex while
-// the caller performs Stripe-state inspection or physical I/O.
-func (d *Distribution) popCleanupCandidate() (cleanupCandidateKey, bool) {
-	if d.cleanupQueue == nil {
-		return cleanupCandidateKey{}, false
-	}
-	d.cleanupQueue.mu.Lock()
-	defer d.cleanupQueue.mu.Unlock()
-	for candidate := range d.cleanupQueue.pending {
-		delete(d.cleanupQueue.pending, candidate)
-		return candidate, true
-	}
-	return cleanupCandidateKey{}, false
 }
 
 func (d *Distribution) cleanupCandidates() []cleanupCandidateKey {
@@ -129,12 +102,13 @@ func (d *Distribution) cleanupCandidates() []cleanupCandidateKey {
 		if result[i].stripeID != result[j].stripeID {
 			return result[i].stripeID < result[j].stripeID
 		}
-		return result[i].reason < result[j].reason
+		return result[i].method < result[j].method
 	})
 	return result
 }
 
-// claimCleanupCandidate serializes workers for the same Drive/Stripe/reason.
+// claimCleanupCandidate reserves a hint without retaining the queue lock
+// during Stripe inspection or physical I/O.
 func (d *Distribution) claimCleanupCandidate(key cleanupCandidateKey) bool {
 	if d.cleanupQueue == nil {
 		return false
