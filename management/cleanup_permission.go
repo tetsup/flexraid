@@ -47,6 +47,9 @@ func (layer *Management) SetDriveCleanupDeletePermission(
 	}
 	permissions.DeleteAllowed = request.Allowed
 	layer.cleanupPermissions[request.WWN] = permissions
+	if err := layer.publishCleanupPermissionsLocked(); err != nil {
+		return SetDriveCleanupDeletePermissionResponse{}, err
+	}
 	return SetDriveCleanupDeletePermissionResponse{WWN: request.WWN, Allowed: permissions.DeleteAllowed}, nil
 }
 
@@ -86,6 +89,9 @@ func (layer *Management) SetDriveCleanupPreservePermission(
 	}
 	permissions.PreserveAllowed = request.Allowed
 	layer.cleanupPermissions[request.WWN] = permissions
+	if err := layer.publishCleanupPermissionsLocked(); err != nil {
+		return SetDriveCleanupPreservePermissionResponse{}, err
+	}
 	return SetDriveCleanupPreservePermissionResponse{WWN: request.WWN, Allowed: permissions.PreserveAllowed}, nil
 }
 
@@ -122,4 +128,39 @@ func (layer *Management) GetDriveCleanupPermissions(
 		return GetDriveCleanupPermissionsResponse{}, fmt.Errorf("cleanup permissions for WWN %q are not initialized", request.WWN)
 	}
 	return GetDriveCleanupPermissionsResponse{WWN: request.WWN, Permissions: permissions}, nil
+}
+
+// StopDistributionCleanupWorker stops the autonomous cleanup loop without
+// stopping foreground filesystem operations.
+func (layer *Management) StopDistributionCleanupWorker(ctx context.Context) error {
+	if ctx == nil {
+		return fmt.Errorf("context is required")
+	}
+	layer.mu.Lock()
+	distributed := layer.distribution
+	layer.mu.Unlock()
+	if distributed == nil {
+		return fmt.Errorf("Distribution layer is not initialized")
+	}
+	return distributed.StopCleanupWorker(ctx)
+}
+
+// StartDistributionCleanupWorker starts the Distribution-owned cleanup loop
+// after publishing the latest drive permission snapshot.
+func (layer *Management) StartDistributionCleanupWorker(ctx context.Context) error {
+	if ctx == nil {
+		return fmt.Errorf("context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	layer.mu.Lock()
+	defer layer.mu.Unlock()
+	if layer.distribution == nil {
+		return fmt.Errorf("Distribution layer is not initialized")
+	}
+	if err := layer.publishCleanupPermissionsLocked(); err != nil {
+		return err
+	}
+	return layer.distribution.StartCleanupWorker(ctx)
 }

@@ -74,3 +74,11 @@ func ValidateDriveMappings(drives []DriveConfig) error {
 	_, err := resolveDriveMappings(drives)
 	return err
 }
+
+func configuredDriveOrder(drives []DriveConfig) []string {
+	result := make([]string, len(drives))
+	for index, drive := range drives {
+		result[index] = drive.WWN
+	}
+	return result
+}

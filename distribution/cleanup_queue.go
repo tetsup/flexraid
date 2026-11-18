@@ -80,6 +80,7 @@ func (d *Distribution) refreshStripeCleanupQueueLocked(key stripeIDKey) {
 			}] = struct{}{}
 		}
 	}
+	d.wakeCleanupWorker()
 }
 
 func (d *Distribution) cleanupCandidates() []cleanupCandidateKey {
