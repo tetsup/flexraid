@@ -144,3 +144,23 @@ func (layer *Management) StopDistributionCleanupWorker(ctx context.Context) erro
 	}
 	return distributed.StopCleanupWorker(ctx)
 }
+
+// StartDistributionCleanupWorker starts the Distribution-owned cleanup loop
+// after publishing the latest drive permission snapshot.
+func (layer *Management) StartDistributionCleanupWorker(ctx context.Context) error {
+	if ctx == nil {
+		return fmt.Errorf("context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	layer.mu.Lock()
+	defer layer.mu.Unlock()
+	if layer.distribution == nil {
+		return fmt.Errorf("Distribution layer is not initialized")
+	}
+	if err := layer.publishCleanupPermissionsLocked(); err != nil {
+		return err
+	}
+	return layer.distribution.StartCleanupWorker(ctx)
+}
