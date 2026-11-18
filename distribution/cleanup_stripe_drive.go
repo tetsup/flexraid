@@ -32,7 +32,9 @@ type CleanupStripeDriveResponse struct {
 func (d *Distribution) CleanupStripeDrive(request CleanupStripeDriveRequest) (response CleanupStripeDriveResponse, err error) {
 	started := time.Now()
 	ctx := request.Context
-	if ctx == nil { ctx = context.Background() }
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	defer func() {
 		logOperation(d.logger, "CleanupStripeDrive", started, err,
 			"io_index", request.IOIndex, "object_id", request.ObjectID.String(),
@@ -45,22 +47,28 @@ func (d *Distribution) CleanupStripeDrive(request CleanupStripeDriveRequest) (re
 	if request.Method != CleanupMethodDeleteOldVersion && request.Method != CleanupMethodPreserveAbnormal {
 		return response, fmt.Errorf("unsupported cleanup method %d", request.Method)
 	}
-	if err = ctx.Err(); err != nil { return response, err }
+	if err = ctx.Err(); err != nil {
+		return response, err
+	}
 
 	candidate := cleanupCandidateKey{ioIndex: request.IOIndex, objectID: request.ObjectID, stripeID: request.StripeID, method: cleanupMethod(request.Method)}
-	if !d.claimCleanupCandidate(candidate) { return response, nil }
+	if !d.claimCleanupCandidate(candidate) {
+		return response, nil
+	}
 	defer d.releaseCleanupCandidate(candidate)
 
 	stripeKey := stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}
 	unlockStripe, unlockMap := d.lockStripe(stripeKey)
 	if err = d.cacheStripeLocked(ctx, stripeKey); err != nil {
-		unlockMap(); unlockStripe()
+		unlockMap()
+		unlockStripe()
 		return response, fmt.Errorf("validate current Stripe before cleanup: %w", err)
 	}
 	location, found := d.findCleanupLocationLocked(candidate)
 	if !found {
 		d.refreshStripeCleanupQueueLocked(stripeKey)
-		unlockMap(); unlockStripe()
+		unlockMap()
+		unlockStripe()
 		return response, nil
 	}
 	unlockMap()
@@ -71,11 +79,15 @@ func (d *Distribution) CleanupStripeDrive(request CleanupStripeDriveRequest) (re
 	switch request.Method {
 	case CleanupMethodDeleteOldVersion:
 		_, err = d.ios[request.IOIndex].Delete(physicalio.DeleteRequest{Context: ctx, Key: location.key})
-		if errors.Is(err, os.ErrNotExist) { err = nil }
+		if errors.Is(err, os.ErrNotExist) {
+			err = nil
+		}
 	case CleanupMethodPreserveAbnormal:
 		_, err = d.ios[request.IOIndex].Preserve(physicalio.PreserveRequest{Context: ctx, Key: location.key})
 	}
-	if err != nil { return response, err }
+	if err != nil {
+		return response, err
+	}
 
 	unlockStripe, unlockMap = d.lockStripe(stripeKey)
 	d.removeCleanupLocationLocked(candidate, location)
@@ -91,24 +103,39 @@ func (d *Distribution) findCleanupLocationLocked(candidate cleanupCandidateKey) 
 	key := stripeIDKey{objectID: candidate.objectID, stripeID: candidate.stripeID}
 	var orphans []chunkLocation
 	for _, location := range d.orphans[candidate.objectID] {
-		if location.key.StripeID == candidate.stripeID { orphans = append(orphans, location) }
+		if location.key.StripeID == candidate.stripeID {
+			orphans = append(orphans, location)
+		}
 	}
 	classified, ok := classifyStripe(d.versions[key], orphans, d.objects[candidate.objectID][candidate.stripeID])
-	if !ok { return chunkLocation{}, false }
+	if !ok {
+		return chunkLocation{}, false
+	}
 	var eligible []chunkLocation
 	switch candidate.method {
-	case cleanupDeleteOldVersion: eligible = classified.OldVersions
-	case cleanupPreserveAbnormal: eligible = classified.Abnormal
-	default: return chunkLocation{}, false
+	case cleanupDeleteOldVersion:
+		eligible = classified.OldVersions
+	case cleanupPreserveAbnormal:
+		eligible = classified.Abnormal
+	default:
+		return chunkLocation{}, false
 	}
 	sort.Slice(eligible, func(i, j int) bool {
-		if eligible[i].key.StripeVersion != eligible[j].key.StripeVersion { return eligible[i].key.StripeVersion < eligible[j].key.StripeVersion }
-		if eligible[i].key.LayoutID.Type != eligible[j].key.LayoutID.Type { return eligible[i].key.LayoutID.Type < eligible[j].key.LayoutID.Type }
-		if eligible[i].key.LayoutID.Index != eligible[j].key.LayoutID.Index { return eligible[i].key.LayoutID.Index < eligible[j].key.LayoutID.Index }
+		if eligible[i].key.StripeVersion != eligible[j].key.StripeVersion {
+			return eligible[i].key.StripeVersion < eligible[j].key.StripeVersion
+		}
+		if eligible[i].key.LayoutID.Type != eligible[j].key.LayoutID.Type {
+			return eligible[i].key.LayoutID.Type < eligible[j].key.LayoutID.Type
+		}
+		if eligible[i].key.LayoutID.Index != eligible[j].key.LayoutID.Index {
+			return eligible[i].key.LayoutID.Index < eligible[j].key.LayoutID.Index
+		}
 		return eligible[i].ioIndex < eligible[j].ioIndex
 	})
 	for _, location := range eligible {
-		if location.ioIndex == candidate.ioIndex { return location, true }
+		if location.ioIndex == candidate.ioIndex {
+			return location, true
+		}
 	}
 	return chunkLocation{}, false
 }
@@ -118,14 +145,26 @@ func (d *Distribution) removeCleanupLocationLocked(candidate cleanupCandidateKey
 	versions := d.versions[key]
 	for versionNo, version := range versions {
 		for no, existing := range version.chunks {
-			if existing.ioIndex == location.ioIndex && existing.key == location.key { delete(version.chunks, no) }
+			if existing.ioIndex == location.ioIndex && existing.key == location.key {
+				delete(version.chunks, no)
+			}
 		}
-		if len(version.chunks) == 0 { delete(versions, versionNo) }
+		if len(version.chunks) == 0 {
+			delete(versions, versionNo)
+		}
 	}
-	if len(versions) == 0 { delete(d.versions, key) }
+	if len(versions) == 0 {
+		delete(d.versions, key)
+	}
 	remaining := d.orphans[candidate.objectID][:0]
 	for _, existing := range d.orphans[candidate.objectID] {
-		if existing.ioIndex != location.ioIndex || existing.key != location.key { remaining = append(remaining, existing) }
+		if existing.ioIndex != location.ioIndex || existing.key != location.key {
+			remaining = append(remaining, existing)
+		}
 	}
-	if len(remaining) == 0 { delete(d.orphans, candidate.objectID) } else { d.orphans[candidate.objectID] = remaining }
+	if len(remaining) == 0 {
+		delete(d.orphans, candidate.objectID)
+	} else {
+		d.orphans[candidate.objectID] = remaining
+	}
 }
