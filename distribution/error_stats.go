@@ -20,6 +20,7 @@ type ErrorStats struct {
 type GetErrorStatsResponse struct{ Stats ErrorStats }
 
 func (d *Distribution) GetErrorStats(_ GetErrorStatsRequest) GetErrorStatsResponse {
+	d.mapMu.Lock()
 	result := ErrorStats{TotalErrors: d.totalErrors, IOs: make([]IOErrorStats, len(d.ioErrors))}
 	for i, count := range d.ioErrors {
 		entry := IOErrorStats{IOIndex: i, Count: count}
@@ -28,11 +29,25 @@ func (d *Distribution) GetErrorStats(_ GetErrorStatsRequest) GetErrorStatsRespon
 		}
 		result.IOs[i] = entry
 	}
+	type stripeRef struct {
+		objectID string
+		key      stripeIDKey
+	}
+	refs := make([]stripeRef, 0)
 	for objectID, stripes := range d.objects {
-		for stripeID, info := range stripes {
-			if info.corrupted {
-				result.CorruptedStripes = append(result.CorruptedStripes, CorruptedStripe{ObjectID: objectID.String(), StripeID: uint64(stripeID)})
-			}
+		for stripeID := range stripes {
+			refs = append(refs, stripeRef{objectID: objectID.String(), key: stripeIDKey{objectID: objectID, stripeID: stripeID}})
+		}
+	}
+	d.mapMu.Unlock()
+	for _, ref := range refs {
+		unlockStripe, unlockMap := d.lockStripe(ref.key)
+		info := d.objects[ref.key.objectID][ref.key.stripeID]
+		corrupted := info != nil && info.corrupted
+		unlockMap()
+		unlockStripe()
+		if corrupted {
+			result.CorruptedStripes = append(result.CorruptedStripes, CorruptedStripe{ObjectID: ref.objectID, StripeID: uint64(ref.key.stripeID)})
 		}
 	}
 	sort.Slice(result.CorruptedStripes, func(i, j int) bool {

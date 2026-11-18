@@ -137,6 +137,8 @@ disks:
   - root: /srv/flexraid/disk1/data
     mountpoint: /srv/flexraid/disk1
     wwn: 0x5000000000000001
+    cleanup_delete_allowed: false
+    cleanup_preserve_allowed: false
   - root: /srv/flexraid/disk2/data
     mountpoint: /srv/flexraid/disk2
     wwn: 0x5000000000000002
@@ -150,6 +152,8 @@ mountpoint: /mnt/flexraid
 ```
 
 各 `disks` エントリーでは FlexRAID の保存ディレクトリ `root`、物理ディスク上のファイルシステム `mountpoint`、物理ドライブの `wwn` を必ず一組で指定します。WWN は Linux の `/dev/disk/by-id/wwn-` に続く値です。起動時に全 WWN を物理ブロックデバイスとして解決できない場合は、ストレージディレクトリを作成する前に起動を失敗させます。
+
+各ドライブでは `cleanup_delete_allowed` と `cleanup_preserve_allowed` を独立して指定できます。どちらも省略時は `false`（禁止）です。前者は旧 Version の物理削除、後者は異常 Version の保全領域への退避を許可します。稼働中の変更は Management の `SetDriveCleanupDeletePermission` / `SetDriveCleanupPreservePermission` API で行います。これらの設定・API は許可状態だけを変更し、それ自体で Cleanup を開始しません。実行タイミングと対象の選択は Management のスケジューリング／手動実行フローが制御します。
 
 起動時に Management が各 WWN を Linux の物理ブロックデバイスへ解決できることを確認します。解決に失敗した場合は、ストレージディレクトリを作成する前に起動を中断します。ストレージ `root` と FlexRAID 全体の mountpoint が存在しない場合は必要なディレクトリを作成します。既存のストレージ `root` に FlexRAID のデータがある場合は、その Namespace を読み込んで再マウントします。空の場合は root Directory を初期化します。新しいストライプの配置では、必要なチャンク数の I/O を `AvailableBytes` の多い順に選択します。既定の XOR Parity は4チャンクを必要とするため、5つ以上のディレクトリを指定しても1ストライプに使うのは4つで、残りは空き容量の変化などに応じた後続の配置候補になります。Mirror は2コピーを保存するため、配置時に空き容量の多い2ディレクトリを選択します。
 

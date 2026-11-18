@@ -5,6 +5,9 @@ import (
 	"github.com/tetsup/flexraid/storage"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"github.com/tetsup/flexraid/pkg/shared/config"
 )
 
 func (layer *IO) walkFiles(ctx context.Context, include func(storage.FileKey) bool, callback func(ScanEntry) error) (int, error) {
@@ -17,6 +20,14 @@ func (layer *IO) walkFiles(ctx context.Context, include func(storage.FileKey) bo
 			return err
 		}
 		if entry.IsDir() {
+			relative, err := filepath.Rel(layer.root, path)
+			if err != nil {
+				return err
+			}
+			first := strings.Split(filepath.ToSlash(relative), "/")[0]
+			if first == config.PreservationDirectory {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		relative, err := filepath.Rel(layer.root, path)

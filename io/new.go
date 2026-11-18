@@ -4,9 +4,10 @@ import "log/slog"
 
 // NewRequest configures a new I/O layer.
 type NewRequest struct {
-	Root     string
-	LogLevel slog.Level
-	Logger   *slog.Logger
+	Root             string
+	PreservationRoot string
+	LogLevel         slog.Level
+	Logger           *slog.Logger
 }
 
 // NewResponse contains the initialized I/O layer.
@@ -20,7 +21,11 @@ func New(request NewRequest) NewResponse {
 	if logger == nil {
 		logger = newLogger(request.LogLevel)
 	}
-	layer := &IO{root: request.Root, logger: logger}
-	logResult(logger, "New", nil, "root", request.Root)
+	preservationRoot := request.PreservationRoot
+	if preservationRoot == "" {
+		preservationRoot = request.Root
+	}
+	layer := &IO{root: request.Root, preservationRoot: preservationRoot, logger: logger}
+	logResult(logger, "New", nil, "root", request.Root, "preservation_root", preservationRoot)
 	return NewResponse{Layer: layer}
 }

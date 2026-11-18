@@ -5,14 +5,18 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/tetsup/flexraid/distribution"
 	"github.com/tetsup/flexraid/orchestration"
 )
 
 type Management struct {
-	mu            sync.Mutex
-	orchestration *orchestration.Orchestration
-	drives        map[string]DriveConfig
-	scheduler     *Scheduler
+	mu                 sync.Mutex
+	orchestration      *orchestration.Orchestration
+	distribution       *distribution.Distribution
+	driveOrder         []string
+	drives             map[string]DriveConfig
+	cleanupPermissions map[string]DriveCleanupPermissions
+	scheduler          *Scheduler
 }
 
 func New(request NewRequest) (*Management, error) {
@@ -23,7 +27,20 @@ func New(request NewRequest) (*Management, error) {
 	if err != nil {
 		return nil, err
 	}
-	layer := &Management{orchestration: request.Orchestration, drives: drives}
+	permissions := make(map[string]DriveCleanupPermissions, len(drives))
+	for wwn, drive := range drives {
+		permissions[wwn] = DriveCleanupPermissions{
+			DeleteAllowed:   drive.CleanupDeleteAllowed,
+			PreserveAllowed: drive.CleanupPreserveAllowed,
+		}
+	}
+	layer := &Management{
+		orchestration:      request.Orchestration,
+		distribution:       request.Distribution,
+		driveOrder:         configuredDriveOrder(request.Config.Disks),
+		drives:             drives,
+		cleanupPermissions: permissions,
+	}
 	if request.Initialization != nil {
 		layer.scheduler = NewSchedulerWithInitialization(request.Initialization, nil)
 	}

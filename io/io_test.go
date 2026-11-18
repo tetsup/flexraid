@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/tetsup/flexraid/pkg/shared"
+	"github.com/tetsup/flexraid/pkg/shared/config"
 	"github.com/tetsup/flexraid/storage"
 )
 
@@ -187,5 +188,78 @@ func TestSyncExistingPhysicalFile(t *testing.T) {
 	}
 	if result, err := layer.Sync(SyncRequest{Context: context.Background(), Key: key}); err != nil || !result.Synced {
 		t.Fatalf("Sync = %+v, %v; want synced", result, err)
+	}
+}
+
+func TestPreserveMovesFileAndScansIgnorePreservationDirectory(t *testing.T) {
+	root := t.TempDir()
+	layer := newTestLayer(t, root)
+	ctx := context.Background()
+	key := testFileKey(4)
+	if _, err := layer.Write(WriteRequest{Context: ctx, Key: key, Data: []byte("preserve me")}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := layer.Preserve(PreserveRequest{Context: ctx, Key: key})
+	if err != nil || !result.Moved {
+		t.Fatalf("Preserve = %+v, %v", result, err)
+	}
+	relative, err := key.Path()
+	if err != nil {
+		t.Fatal(err)
+	}
+	preserved := filepath.Join(root, config.PreservationDirectory, filepath.Base(relative))
+	if data, err := os.ReadFile(preserved); err != nil || string(data) != "preserve me" {
+		t.Fatalf("preserved data = %q, %v", data, err)
+	}
+	if _, err := layer.Read(ReadRequest{Context: ctx, Key: key}); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("source still exists: %v", err)
+	}
+
+	var count int
+	if _, err := layer.ListChunks(ListChunksRequest{
+		Context: ctx,
+		Callback: func(ScanEntry) error {
+			count++
+			return nil
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("normal scan found %d preserved files", count)
+	}
+
+	// Retrying after a completed rename is idempotent.
+	if result, err := layer.Preserve(PreserveRequest{Context: ctx, Key: key}); err != nil || !result.Moved {
+		t.Fatalf("second Preserve = %+v, %v", result, err)
+	}
+}
+
+func TestPreserveUsesConfiguredMountpointRoot(t *testing.T) {
+	mountpoint := t.TempDir()
+	root := filepath.Join(mountpoint, "flexraid-data")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	layer := New(NewRequest{Root: root, PreservationRoot: mountpoint}).Layer
+	ctx := context.Background()
+	key := testFileKey(5)
+	if _, err := layer.Write(WriteRequest{Context: ctx, Key: key, Data: []byte("mountpoint root")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := layer.Preserve(PreserveRequest{Context: ctx, Key: key}); err != nil {
+		t.Fatal(err)
+	}
+	relative, err := key.Path()
+	if err != nil {
+		t.Fatal(err)
+	}
+	atMountpoint := filepath.Join(mountpoint, config.PreservationDirectory, filepath.Base(relative))
+	if data, err := os.ReadFile(atMountpoint); err != nil || string(data) != "mountpoint root" {
+		t.Fatalf("mountpoint preservation data = %q, %v", data, err)
+	}
+	atStorageRoot := filepath.Join(root, config.PreservationDirectory, filepath.Base(relative))
+	if _, err := os.Stat(atStorageRoot); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("preservation directory was created under storage root: %v", err)
 	}
 }

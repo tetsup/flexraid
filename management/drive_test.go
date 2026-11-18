@@ -1,6 +1,7 @@
 package management
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -55,5 +56,73 @@ func TestSpinDownRejectsUnconfiguredWWN(t *testing.T) {
 	layer := &Management{drives: map[string]DriveConfig{"configured": {WWN: "configured"}}}
 	if _, err := layer.SpinDown(SpinDownRequest{WWN: "unknown"}); err == nil {
 		t.Fatal("SpinDown succeeded for an unconfigured WWN")
+	}
+}
+
+func TestDriveCleanupPermissionsAreIndependentAndMutable(t *testing.T) {
+	layer := &Management{
+		drives: map[string]DriveConfig{"wwn-1": {WWN: "wwn-1"}},
+		cleanupPermissions: map[string]DriveCleanupPermissions{
+			"wwn-1": {DeleteAllowed: false, PreserveAllowed: true},
+		},
+	}
+	ctx := context.Background()
+
+	if _, err := layer.SetDriveCleanupDeletePermission(SetDriveCleanupDeletePermissionRequest{
+		Context: ctx, WWN: "wwn-1", Allowed: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := layer.GetDriveCleanupPermissions(GetDriveCleanupPermissionsRequest{Context: ctx, WWN: "wwn-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Permissions.DeleteAllowed || !got.Permissions.PreserveAllowed {
+		t.Fatalf("permissions after delete update = %+v", got.Permissions)
+	}
+
+	if _, err := layer.SetDriveCleanupPreservePermission(SetDriveCleanupPreservePermissionRequest{
+		Context: ctx, WWN: "wwn-1", Allowed: false,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = layer.GetDriveCleanupPermissions(GetDriveCleanupPermissionsRequest{Context: ctx, WWN: "wwn-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Permissions.DeleteAllowed || got.Permissions.PreserveAllowed {
+		t.Fatalf("permissions after preserve update = %+v", got.Permissions)
+	}
+}
+
+func TestDriveCleanupPermissionRejectsUnknownWWN(t *testing.T) {
+	layer := &Management{
+		drives: map[string]DriveConfig{"wwn-1": {WWN: "wwn-1"}},
+		cleanupPermissions: map[string]DriveCleanupPermissions{
+			"wwn-1": {},
+		},
+	}
+	_, err := layer.SetDriveCleanupDeletePermission(SetDriveCleanupDeletePermissionRequest{
+		Context: context.Background(), WWN: "unknown", Allowed: true,
+	})
+	if err == nil {
+		t.Fatal("permission update succeeded for unknown WWN")
+	}
+}
+
+func TestDriveCleanupPermissionRejectsCanceledContext(t *testing.T) {
+	layer := &Management{
+		drives: map[string]DriveConfig{"wwn-1": {WWN: "wwn-1"}},
+		cleanupPermissions: map[string]DriveCleanupPermissions{
+			"wwn-1": {},
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := layer.SetDriveCleanupDeletePermission(SetDriveCleanupDeletePermissionRequest{
+		Context: ctx, WWN: "wwn-1", Allowed: true,
+	})
+	if err == nil {
+		t.Fatal("permission update succeeded with canceled context")
 	}
 }

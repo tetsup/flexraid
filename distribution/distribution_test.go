@@ -3,6 +3,7 @@ package distribution
 import (
 	"bytes"
 	"context"
+	"sync"
 	"testing"
 
 	physicalio "github.com/tetsup/flexraid/io"
@@ -152,5 +153,66 @@ func TestSyncObjectSynchronizesLatestChunksAcrossStripes(t *testing.T) {
 		if err != nil || !bytes.Equal(read.Data, want) {
 			t.Errorf("ReadStripe %d after SyncObject = %q, %v; want %q", stripeID, read.Data, err, want)
 		}
+	}
+}
+
+func TestConcurrentStripeWritesSerializeVersions(t *testing.T) {
+	ctx := context.Background()
+	ios := makeIOs(t, 2)
+	created, err := New(NewRequest{IOs: ios})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const writes = 12
+	var wg sync.WaitGroup
+	errs := make(chan error, writes)
+	for i := 0; i < writes; i++ {
+		wg.Add(1)
+		go func(value byte) {
+			defer wg.Done()
+			_, writeErr := created.Layer.WriteStripe(WriteStripeRequest{
+				Context: ctx, ObjectID: testObjectID(), StripeID: 9, ChunkSize: 32,
+				Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1},
+				Data: []byte{value},
+			})
+			errs <- writeErr
+		}(byte(i))
+	}
+	wg.Wait()
+	close(errs)
+	for writeErr := range errs {
+		if writeErr != nil {
+			t.Errorf("concurrent WriteStripe: %v", writeErr)
+		}
+	}
+	info, err := created.Layer.GetStripeInfo(GetStripeInfoRequest{ObjectID: testObjectID(), StripeID: 9})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Version != writes {
+		t.Fatalf("latest version = %d, want %d", info.Version, writes)
+	}
+	candidates := created.Layer.cleanupCandidates()
+	if len(candidates) != 2 {
+		t.Fatalf("write cleanup candidates = %+v, want one old-version candidate per drive", candidates)
+	}
+	for _, candidate := range candidates {
+		if candidate.method != cleanupDeleteOldVersion {
+			t.Fatalf("write candidate method = %v, want old version", candidate.method)
+		}
+	}
+	restarted, err := New(NewRequest{IOs: ios})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := restarted.Layer.cleanupCandidates(); len(got) != 2 {
+		t.Fatalf("initial scan cleanup candidates = %+v, want one per drive", got)
+	}
+	read, err := created.Layer.ReadStripe(ReadStripeRequest{Context: ctx, ObjectID: testObjectID(), StripeID: 9, ChunkSize: 32})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(read.Data) != 1 {
+		t.Fatalf("read data = %v, want one byte", read.Data)
 	}
 }

@@ -11,17 +11,14 @@ import (
 	"github.com/tetsup/flexraid/storage"
 )
 
-// SyncObjectRequest identifies an object whose latest physical stripes must be
-// synchronized to stable storage.
 type SyncObjectRequest struct {
 	Context  context.Context
 	ObjectID shared.ObjectID
 }
 
-// SyncObjectResponse reports how many physical chunks were synchronized.
 type SyncObjectResponse struct{ SyncedChunks uint32 }
 
-// SyncObject synchronizes every chunk in the latest known version of each stripe.
+// SyncObject synchronizes the cached latest version of every stripe.
 func (d *Distribution) SyncObject(request SyncObjectRequest) (response SyncObjectResponse, err error) {
 	started := time.Now()
 	ctx := request.Context
@@ -29,44 +26,57 @@ func (d *Distribution) SyncObject(request SyncObjectRequest) (response SyncObjec
 		ctx = context.Background()
 	}
 	defer func() {
-		logOperation(d.logger, "SyncObject", started, err,
-			"object_id", request.ObjectID.String(),
-			"synced_chunks", response.SyncedChunks)
+		logOperation(d.logger, "SyncObject", started, err, "object_id", request.ObjectID.String(), "synced_chunks", response.SyncedChunks)
 	}()
-
 	if err = ctx.Err(); err != nil {
 		return response, err
 	}
-	stripes := d.objects[request.ObjectID]
-	stripeIDs := make([]int, 0, len(stripes))
-	for id := range stripes {
-		stripeIDs = append(stripeIDs, int(id))
+
+	d.mapMu.Lock()
+	ids := make([]int, 0, len(d.objects[request.ObjectID]))
+	for id := range d.objects[request.ObjectID] {
+		ids = append(ids, int(id))
 	}
-	sort.Ints(stripeIDs)
-	for _, rawID := range stripeIDs {
+	d.mapMu.Unlock()
+	sort.Ints(ids)
+
+	for _, rawID := range ids {
 		if err = ctx.Err(); err != nil {
 			return response, err
 		}
-		stripe := stripes[storage.StripeID(rawID)]
-		chunkNos := make([]int, 0, len(stripe.chunks))
-		for no := range stripe.chunks {
-			chunkNos = append(chunkNos, int(no))
+		key := stripeIDKey{objectID: request.ObjectID, stripeID: storage.StripeID(rawID)}
+		unlockStripe, unlockMap := d.lockStripe(key)
+		if err = d.cacheStripeLocked(ctx, key); err != nil {
+			unlockMap()
+			unlockStripe()
+			return response, err
 		}
-		sort.Ints(chunkNos)
-		for _, rawNo := range chunkNos {
+		info := d.objects[request.ObjectID][key.stripeID]
+		locations := make([]chunkLocation, 0)
+		if info != nil {
+			for _, location := range info.chunks {
+				locations = append(locations, location)
+			}
+		}
+		unlockMap()
+
+		for _, location := range locations {
 			if err = ctx.Err(); err != nil {
+				unlockStripe()
 				return response, err
 			}
-			location := stripe.chunks[chunkNo(rawNo)]
 			if location.ioIndex < 0 || location.ioIndex >= len(d.ios) {
-				return response, fmt.Errorf("stripe %d chunk %d has invalid I/O index %d", rawID, rawNo, location.ioIndex)
+				unlockStripe()
+				return response, fmt.Errorf("stripe %d has invalid I/O index %d", rawID, location.ioIndex)
 			}
 			if _, err = d.ios[location.ioIndex].Sync(physicalio.SyncRequest{Context: ctx, Key: location.key}); err != nil {
 				d.recordIOError(location.ioIndex, err)
-				return response, fmt.Errorf("sync stripe %d chunk %d on I/O %d: %w", rawID, rawNo, location.ioIndex, err)
+				unlockStripe()
+				return response, fmt.Errorf("sync stripe %d on I/O %d: %w", rawID, location.ioIndex, err)
 			}
 			response.SyncedChunks++
 		}
+		unlockStripe()
 	}
 	return response, nil
 }

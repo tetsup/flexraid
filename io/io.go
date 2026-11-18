@@ -7,8 +7,9 @@ import (
 )
 
 type IO struct {
-	root   string
-	logger *slog.Logger
+	root             string
+	preservationRoot string
+	logger           *slog.Logger
 }
 type ScanEntry struct {
 	Key   storage.FileKey
