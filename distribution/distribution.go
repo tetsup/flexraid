@@ -33,6 +33,12 @@ type Distribution struct {
 	ioFailures   []error
 	orphans      map[shared.ObjectID][]chunkLocation
 	cleanupQueue *cleanupQueue
+	cleanupControlMu sync.RWMutex
+	cleanupPermissions []CleanupPermissions
+	cleanupWorkerMu sync.Mutex
+	cleanupWorkerCancel context.CancelFunc
+	cleanupWorkerDone chan struct{}
+	cleanupWake chan struct{}
 }
 type stripeIDKey struct {
 	objectID shared.ObjectID
@@ -84,7 +90,7 @@ func New(request NewRequest) (NewResponse, error) {
 	d := &Distribution{stripeLocks: make(map[stripeIDKey]*sync.Mutex), ios: append([]*physicalio.IO(nil), request.IOs...), logger: logger,
 		objects:  make(map[shared.ObjectID]map[storage.StripeID]*stripeInfo),
 		versions: make(map[stripeIDKey]map[storage.StripeVersion]*versionInfo),
-		ioErrors: make([]uint64, len(request.IOs)), ioFailures: make([]error, len(request.IOs)), orphans: make(map[shared.ObjectID][]chunkLocation), cleanupQueue: newCleanupQueue()}
+		ioErrors: make([]uint64, len(request.IOs)), ioFailures: make([]error, len(request.IOs)), orphans: make(map[shared.ObjectID][]chunkLocation), cleanupQueue: newCleanupQueue(), cleanupPermissions: make([]CleanupPermissions, len(request.IOs)), cleanupWake: make(chan struct{}, 1)}
 	usable := 0
 	for index, layer := range d.ios {
 		scanResult, err := layer.ListChunks(physicalio.ListChunksRequest{Context: ctx, Callback: func(entry physicalio.ScanEntry) error {
