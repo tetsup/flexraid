@@ -132,6 +132,7 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - Platform の WWN 解決は Linux の `/dev/disk/by-id/wwn-*` を基準とし、パーティションではなく物理ブロックデバイスを対象とする。別識別子へのフォールバックは禁止する。
 - Management は設定済み WWN のみを指定できる `SpinUp` / `SpinDown` API を提供し、実際の OS 固有デバイス操作は Platform の公開 API に委譲する。電源制御の判断・スケジューリングは Management に属し、今回の API 実装自体は自動制御を開始しない。
 - ドライブの Cleanup 許可は `DriveCleanupPermissions{DeleteAllowed, PreserveAllowed}` として WWN ごとに保持し、2つの許可を混同・連動させない。`SetDriveCleanupDeletePermission` と `SetDriveCleanupPreservePermission` は独立して変更し、`GetDriveCleanupPermissions` は snapshot を返す。未知の WWN やキャンセル済み Context は拒否する。
+- Management は更新された許可情報を Drive の設定順で Distribution に渡す。Distribution は共有メモリ上の許可 snapshot を Cleanup の各処理開始時に読み取る。Management は ObjectID / StripeID / Chunk / Method を指定して個別 Cleanup を指示しない。Distribution の Cleanup ループは Management から起動・停止でき、異常終了時の死活監視・再起動も Management の責務とする。
 - 設定ファイルの各 disk は `cleanup_delete_allowed` / `cleanup_preserve_allowed` を任意指定でき、省略時は両方 false（禁止）とする。これらは起動時の初期値であり、実行中の変更は Management API を通す。外部コマンドから API を呼ぶための IPC / control socket は別途 Management の公開境界として実装し、CLI が Distribution や内部 map を直接操作しない。
 - Object の論理削除状態と削除待ちキューは Orchestration が所有する。削除待ちキューは Deleted Header から再構築可能なメモリ上の候補索引であり、永続化したり Management に複製したりしない。Management は Orchestration の候補 Snapshot と Distribution の物理 Stripe 情報を解析して削除メトリクスを作り、Cleanup の実行スケジュールを決める。物理削除は Distribution の Stripe 単位 API に依頼し、対象 Object の全 Stripe が削除された後に Orchestration へ論理 Object のメモリ状態と削除待ちキューの確定を依頼する。
 
