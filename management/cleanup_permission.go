@@ -47,6 +47,9 @@ func (layer *Management) SetDriveCleanupDeletePermission(
 	}
 	permissions.DeleteAllowed = request.Allowed
 	layer.cleanupPermissions[request.WWN] = permissions
+	if err := layer.publishCleanupPermissionsLocked(); err != nil {
+		return SetDriveCleanupDeletePermissionResponse{}, err
+	}
 	return SetDriveCleanupDeletePermissionResponse{WWN: request.WWN, Allowed: permissions.DeleteAllowed}, nil
 }
 
@@ -86,6 +89,9 @@ func (layer *Management) SetDriveCleanupPreservePermission(
 	}
 	permissions.PreserveAllowed = request.Allowed
 	layer.cleanupPermissions[request.WWN] = permissions
+	if err := layer.publishCleanupPermissionsLocked(); err != nil {
+		return SetDriveCleanupPreservePermissionResponse{}, err
+	}
 	return SetDriveCleanupPreservePermissionResponse{WWN: request.WWN, Allowed: permissions.PreserveAllowed}, nil
 }
 
