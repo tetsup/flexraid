@@ -36,7 +36,7 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 		return response, err
 	}
 	key := stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}
-\tunlockStripe, unlockMap := d.lockStripe(key)
+	unlockStripe, unlockMap := d.lockStripe(key)
 	defer unlockStripe()
 	needsClassificationRefresh := false
 	if cacheErr := d.cacheStripeLocked(request.Context, key); cacheErr != nil {
