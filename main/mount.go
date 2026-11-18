@@ -65,6 +65,9 @@ func (task *filesystemInitialization) Next(ctx context.Context) (bool, error) {
 			return false, fmt.Errorf("initialize Distribution: %w", err)
 		}
 		task.distributed = result.Layer
+		if err := task.managed.SetDistribution(task.distributed); err != nil {
+			return false, fmt.Errorf("publish initialized Distribution: %w", err)
+		}
 		task.stage++
 		return false, nil
 
