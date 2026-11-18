@@ -112,7 +112,7 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - Orchestration / Distribution の内部状態を直接変更しない。各レイヤーが公開する API を通じて操作し、状態の所有者と排他制御の所有者を分離する。
 - Foreground / Background / Exclusive / Initialization / Stop のすべてに共通する、Management 唯一の実行ロック機構を所有する。Management の実行単位は同時に一つだけ実行し、各単位が共通ロックを取得して直列実行する。ObjectID などの対象別ロック、複数対象ロック、別系統のメンテナンスロックは設けない。ロックは復旧可能な最小実行単位の開始時に取得し、その単位の完了・状態確定後に必ず解放する。次の単位へ進む前に実行権を譲り、Lifecycle と Scheduler が実行種別ごとの受付・優先順位・drain を調停する。これはロック粒度を Object や Stripe に広げることを意味しない。
 - 操作回数・所要時間・結果などの上位操作メトリクスを集計し、Distribution が提供するドライブ別 I/O 統計などを統合して監視 API から返す。物理 I/O のエラー検出・計数は実際に I/O を実行する下位レイヤーで行い、Management はそれを集約・公開する。
-- Management が Scheduler / MaintenanceExecutor を通じて実行する Background 作業は、Foreground との優先順位を Management の共通実行ロックで調停する。一方、Distribution の自律 Cleanup は Management の Background WorkItem として実行せず、Distribution 自身の Stripe ロックで Foreground / Cleanup 間の整合性を管理する。Cleanup の進捗は永続化せず、起動時・再開時に物理状態から候補を再構築する。
+- Management が Scheduler / MaintenanceExecutor を通じて実行する Background 作業は、Foreground との優先順位を Management の共通実行ロックで調停する。一方、Distribution の自律 Cleanup は Management の Background WorkItem として実行しない。Management は Distribution の Cleanup ループの起動・停止と Drive ごとの許可情報更新だけを行う。Cleanup の進捗は永続化せず、起動時・再開時に物理状態から候補を再構築する。
 
 #### Maintenance Policy / Executor
 
@@ -169,15 +169,15 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - Distribution は IOIndex + ObjectID + StripeID + Method を指定して一件の Cleanup 候補を処理する API を提供する。DeleteOldVersion は Delete、PreserveAbnormal は Preserve（同一物理ファイルシステム内の Rename）で処理し、対象チャンクのヘッダーや内容を Cleanup のために再解析しない。対象は Stripe の分類情報と物理 FileKey から特定する。
 - 保全領域名は `pkg/shared/config.PreservationDirectory` を唯一の正とし、初期値は `.flexraid-preserved` とする。各 Drive の物理 mountpoint 直下に固定し、元の物理ファイル名を維持する。16進数だけの名前にはしない。通常の `ListChunks` / `ScanHeaders` は保全領域を再帰探索しない。
 - 旧 Version / 異常 Version など、既に無効と確定した Stripe 内の Version 単位 Cleanup では Stripe 0 を最後にする順序制約を設けない。Stripe 0 を最後にする制約は、Header を含む論理削除 Object 全体の物理削除に限る。
-- 分類・候補生成は Stripe ロックの保護下で状態を参照し、候補登録後に物理 I/O を行わずロックを解放する。Cleanup ワーカーは実行時に Drive 単位の許可を確認し、map Mutex → Stripe Mutex の順で最新有効 Version と対象 Version / Chunk を再検証して対象ファイルを値として退避する。その後両ロックを解放して Delete / Rename を実行する。キュー Mutex を保持したまま map / Stripe ロック取得や物理 I/O を行わない。
+- 分類・候補生成は map Mutex で共有状態を保護して行い、候補登録後に物理 I/O を行わずロックを解放する。Cleanup ワーカーは Distribution 内の自律ループとして動作し、実行開始ごとに Drive 単位の許可情報を読み取る。map Mutex の短時間の保護下で対象 FileKey を確定し、解放後に Delete / Rename を実行する。Cleanup のために Stripe Mutex を取得しない。キュー Mutex を保持したまま map Mutex 取得や物理 I/O を行わない。
 - Mirror は有効な複製チャンクが1つ以上あれば復元可能とする。XOR 1 パリティは、全データチャンクがあればパリティチャンクが欠落していても復元可能とし、データチャンクが1つだけ欠落している場合はパリティチャンクを使って復元する。データチャンクが2つ以上欠落している場合は復元不能とする。
 - 読み込み時は選択済み Version の各チャンクを再読込し、物理読み取りエラーや不正なチャンクを欠落として扱って復元を試みる。復元できなければデータ破損エラーを返す。欠落チャンクを復元できた場合は、呼び出し元から修復配置が与えられていれば同じ Version の欠落チャンクを修復する。修復は新しい Version のコミットではない。
 - 復旧はチャンクの欠落または物理読み取りエラーにより取得できない場合を対象とする。読み取れたデータ同士の内容比較や、全データチャンクが読めた場合のパリティ不一致だけを理由にデータを訂正しない。チェックサム等によるサイレント破損・改ざん検出は保証しない。
-- Distribution は StripeID ごとの状態・物理チャンク候補を所有し、同一 ObjectID + StripeID を最小単位とする Stripe ロックで Read / Write / Recovery / Cleanup の競合を防ぐ。ロック取得後に削除対象 Version・Chunk がまだ不要であることを再検証し、物理削除と Distribution 内部状態の更新を一貫して行う。
+- Distribution は StripeID ごとの状態・物理チャンク候補を所有する。Foreground の Read / Write / Recovery は同一 ObjectID + StripeID の Stripe ロックで保護する。自律 Cleanup は Stripe ロックを取得せず、最新有効 Version 以外の不変 FileKey の物理削除・退避を Foreground の有効チャンク操作から独立して行う。
 - Distribution の共有 map（objects / versions / orphans / stripeLocks）へのアクセスは map Mutex で保護する。Stripe ロックの取得順序は必ず map Mutex → 対象 Stripe Mutex とする。Stripe Mutex の取得待ちで map Mutex を保持し続けてはならない。Stripe Mutex は map Mutex 保持中に TryLock し、取得できなければ map Mutex を解放して再試行する。これにより、Stripe ロック保持中の map 更新と、同じ Stripe を待つ処理のデッドロックを避ける。
 - Foreground の Stripe 操作（Read / Write / Recovery / Delete / Sync / Stripe 情報取得）は、最新の選択済み recoverable Version をキャッシュしてから実行する。キャッシュの確認・読み込み・map 反映は map Mutex を取得してから対象 Stripe Mutex を取得し、キャッシュ確保と map 反映が完了するまで両方を保持する。その後 map Mutex だけを解放し、Foreground 操作は Stripe Mutex を操作完了まで保持する。異なる Stripe の操作は並行可能とする。
 - Stripe のキャッシュは Foreground Read が物理 I/O を繰り返さずに済み、Background Cleanup が旧 Version / Chunk を物理削除した後も最新データを参照できるためのものとする。キャッシュを安全に確保できない場合、Foreground の更新・削除を開始しない。復元可能な欠損チャンクは既存の復旧契約に従って扱い、最新 Version 自体を復元不能と判断した場合は処理を中止する。
-- Background Cleanup は Foreground と同じ Stripe Mutex を使用するが、ロック保持範囲は異なる。map Mutex → Stripe Mutex の順で最新 Version のキャッシュ確保と削除対象の再検証を行い、その時点で削除対象を値として退避したら両ロックを解放する。物理削除中は map Mutex / Stripe Mutex のどちらも保持しない。削除後の map / queue 反映はそれぞれの Mutex で保護する。無効対象キューは Stripe / map Mutex とは独立した専用 Mutex で保護し、キュー Mutex を保持したまま Stripe ロック取得や物理 I/O を行わない。
+- Background Cleanup は Foreground の Stripe Mutex を使用しない。map Mutex の短時間の保護下で無効 FileKey を確定した後、map Mutex を解放して物理削除・退避する。削除後の map / queue 反映はそれぞれの Mutex で保護する。無効対象キューは専用 Mutex で保護し、キュー Mutex を保持したまま map Mutex 取得や物理 I/O を行わない。
 
 - Cleanup は、旧 Version、不正・復元不能 Version、未完了チャンク、孤立チャンクなどの Distribution 所有の物理的な不要データと、論理削除 Object の物理データを扱う。ただし、この2種類の Cleanup は候補の所有者・実行制御・削除順序を混同しない。旧 Version 等の Cleanup は本節の自律 Cleanup に従い、論理削除 Object の Cleanup は Management が ObjectID 単位のワークフローを調整し、Distribution が Stripe 単位で物理削除する。論理削除 Object では同一 ObjectID の Stripe 0 を他の Stripe の削除完了後に最後に処理する。この Stripe 0 の順序制約は旧 Version 等の Cleanup には適用しない。
 - 論理削除 Object の Cleanup では、Distribution は ObjectID + StripeID 単位で全 Version / Chunk / orphan を削除する公開 API を提供する。Management は Orchestration が所有する論理削除 Object の候補を管理し、Stripe 単位の削除ワークフローを調整する。Stripe 0 の削除は、同じ ObjectID の他 Stripe が残っている間は拒否する。全 Stripe の削除完了後に Orchestration の論理 Object メモリ状態を確定する。この順序制約は旧 Version 等の自律 Cleanup には適用しない。
@@ -276,10 +276,10 @@ Distribution -> Platform
 ### Distribution の内部 Stripe ロック
 
 - Distribution は Management とは独立して、Distribution 内部の同時実行制約を管理する。Management の実行単位・共通ロックとは概念も粒度も異なり、相互に統合・共有しない。自律 Cleanup は Management の WorkItem / MaintenanceExecutor を待たず、Management が設定した Drive 単位の許可レベルに従って Distribution 内部で進行する。
-- Distribution は同一 ObjectID + StripeID を唯一の Atomic / 最小排他単位とする Stripe ロックを所有し、Read / Write / Recovery / Cleanup の競合を防ぐ。Management の実行ロックとは独立しており、Management の WorkItem 境界を Distribution の Atomic に流用しない。
-- 自律 Cleanup の許可は Drive 単位、物理削除対象は Chunk 単位で選択できるが、Stripe 内の有効データのキャッシュ化・Foreground Read の切り替え・Cleanup との整合性は Stripe ロックで管理する。Foreground が削除対象の物理データを参照しない状態へ移行できる前に、その物理データを削除してはならない。
+- Distribution は同一 ObjectID + StripeID を Foreground Read / Write / Recovery の最小排他単位とする Stripe ロックを所有する。自律 Cleanup はそのロックを使用せず、Foreground と独立して動作する。Management の実行ロックとは独立しており、Management の WorkItem 境界を Distribution の Atomic に流用しない。
+- 自律 Cleanup の許可は Drive 単位、物理削除対象は Chunk / FileKey 単位で選択する。Cleanup 対象は最新有効 Version 以外の不変 FileKey に限るため、Foreground の有効データのキャッシュ化・Read / Write・Stripe ロックに関与しない。
 - 最新 Version の欠損が確認された Stripe と保護対象は Cleanup しない。最新 Version が復元可能であることを含め、削除候補の安全性を Distribution が判断する。
-- 削除候補を事前調査した場合は、Stripe ロック取得後に対象 Version / Chunk と削除可能条件を再検証する。
+- 削除候補は実行時に map Mutex の保護下で最新有効 Version と照合し、無効な FileKey であることを再検証する。物理 I/O はすべての Distribution 状態ロックを解放してから実行する。
 - 論理削除 Object の削除では Management が対象 Object の削除ワークフローを調整し、Distribution が Stripe 単位の排他を取得して物理削除する。Stripe 0 は他 Stripe の削除完了後に最後に処理する。全 Stripe の削除完了後に Orchestration の論理 Object メモリ状態を確定する。旧 Version 等の自律 Cleanup にはこの Object 全体の順序制約を持ち込まない。
 - Distribution の Stripe ロック取得中に Management の実行ロックを要求する逆方向の依存を作らない。Management は Distribution の内部ロックを直接操作しない。
 - I/O は物理ファイル操作を実行する。上位層の Object / Stripe の意味に基づくロックを持たず、必要性が実証された物理ファイル単位の排他だけを内部実装として持つ。
