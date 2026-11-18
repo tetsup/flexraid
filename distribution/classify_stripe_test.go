@@ -71,7 +71,7 @@ func TestRefreshStripeCleanupQueueClearsCandidatesWhenDeferred(t *testing.T) {
 		},
 		orphans: map[shared.ObjectID][]chunkLocation{},
 		cleanupQueue: &cleanupQueue{
-			pending: map[cleanupCandidateKey]struct{}{candidate: {}},
+			pending:  map[cleanupCandidateKey]struct{}{candidate: {}},
 			inFlight: make(map[cleanupCandidateKey]struct{}),
 		},
 	}
