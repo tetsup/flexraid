@@ -50,54 +50,39 @@ func (d *Distribution) refreshStripeCleanupQueueLocked(key stripeIDKey) {
 		d.cleanupQueue = newCleanupQueue()
 	}
 
-	current := d.objects[key.objectID][key.stripeID]
+	// Replace pending hints even when classification must be deferred. A stale
+	// candidate must never survive a transition to an unclassifiable Stripe.
 	d.cleanupQueue.mu.Lock()
-	defer d.cleanupQueue.mu.Unlock()
-
 	for candidate := range d.cleanupQueue.pending {
 		if candidate.objectID == key.objectID && candidate.stripeID == key.stripeID {
 			delete(d.cleanupQueue.pending, candidate)
 		}
 	}
-	if current == nil {
+	d.cleanupQueue.mu.Unlock()
+
+	var orphans []chunkLocation
+	for _, location := range d.orphans[key.objectID] {
+		if location.key.StripeID == key.stripeID {
+			orphans = append(orphans, location)
+		}
+	}
+	classified, ok := classifyStripe(d.versions[key], orphans, d.objects[key.objectID][key.stripeID])
+	if !ok {
 		return
 	}
 
-	for versionNo, version := range d.versions[key] {
-		var reason cleanupReason
-		switch {
-		case versionNo < current.version:
-			reason = cleanupOldVersion
-		case versionNo > current.version:
-			reason = cleanupAbnormalVersion
-		default:
-			continue
-		}
-		for ioIndex := range versionIOIndexes(version.chunks) {
+	byReason := map[cleanupReason][]chunkLocation{
+		cleanupOldVersion:      classified.OldVersions,
+		cleanupAbnormalVersion: classified.Abnormal,
+	}
+	d.cleanupQueue.mu.Lock()
+	defer d.cleanupQueue.mu.Unlock()
+	for reason, locations := range byReason {
+		for _, location := range locations {
 			d.cleanupQueue.pending[cleanupCandidateKey{
-				ioIndex: ioIndex, objectID: key.objectID, stripeID: key.stripeID, reason: reason,
+				ioIndex: location.ioIndex, objectID: key.objectID, stripeID: key.stripeID, reason: reason,
 			}] = struct{}{}
 		}
-	}
-
-	// Orphans retain their physical FileKey and can therefore be classified
-	// against the selected version even when their contents were not usable.
-	for _, location := range d.orphans[key.objectID] {
-		if location.key.StripeID != key.stripeID {
-			continue
-		}
-		var reason cleanupReason
-		switch {
-		case location.key.StripeVersion < current.version:
-			reason = cleanupOldVersion
-		case location.key.StripeVersion > current.version:
-			reason = cleanupAbnormalVersion
-		default:
-			continue
-		}
-		d.cleanupQueue.pending[cleanupCandidateKey{
-			ioIndex: location.ioIndex, objectID: key.objectID, stripeID: key.stripeID, reason: reason,
-		}] = struct{}{}
 	}
 }
 
