@@ -106,7 +106,7 @@ func TestCleanupQueueClassifiesNewerVersionAsAbnormal(t *testing.T) {
 	}
 	layer.versions[key] = map[storage.StripeVersion]*versionInfo{
 		1: {chunks: map[chunkNo]chunkLocation{0: {ioIndex: 0}}},
-		2: {chunks: map[chunkNo]chunkLocation{0: {ioIndex: 0}}},
+		2: {recoverable: true, chunks: map[chunkNo]chunkLocation{0: {ioIndex: 0}}},
 		3: {chunks: map[chunkNo]chunkLocation{0: {ioIndex: 1}}},
 	}
 	layer.mapMu.Lock()
