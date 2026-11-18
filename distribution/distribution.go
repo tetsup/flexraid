@@ -22,23 +22,23 @@ type NewRequest struct {
 type NewResponse struct{ Layer *Distribution }
 
 type Distribution struct {
-	mapMu        sync.Mutex
-	stripeLocks  map[stripeIDKey]*sync.Mutex
-	ios          []*physicalio.IO
-	logger       *slog.Logger
-	objects      map[shared.ObjectID]map[storage.StripeID]*stripeInfo
-	versions     map[stripeIDKey]map[storage.StripeVersion]*versionInfo
-	ioErrors     []uint64
-	totalErrors  uint64
-	ioFailures   []error
-	orphans      map[shared.ObjectID][]chunkLocation
-	cleanupQueue *cleanupQueue
-	cleanupControlMu sync.RWMutex
-	cleanupPermissions []CleanupPermissions
-	cleanupWorkerMu sync.Mutex
+	mapMu               sync.Mutex
+	stripeLocks         map[stripeIDKey]*sync.Mutex
+	ios                 []*physicalio.IO
+	logger              *slog.Logger
+	objects             map[shared.ObjectID]map[storage.StripeID]*stripeInfo
+	versions            map[stripeIDKey]map[storage.StripeVersion]*versionInfo
+	ioErrors            []uint64
+	totalErrors         uint64
+	ioFailures          []error
+	orphans             map[shared.ObjectID][]chunkLocation
+	cleanupQueue        *cleanupQueue
+	cleanupControlMu    sync.RWMutex
+	cleanupPermissions  []CleanupPermissions
+	cleanupWorkerMu     sync.Mutex
 	cleanupWorkerCancel context.CancelFunc
-	cleanupWorkerDone chan struct{}
-	cleanupWake chan struct{}
+	cleanupWorkerDone   chan struct{}
+	cleanupWake         chan struct{}
 }
 type stripeIDKey struct {
 	objectID shared.ObjectID
