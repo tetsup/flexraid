@@ -42,7 +42,7 @@ func TestCleanupStripeDriveDeletesOnlySelectedDriveOldVersion(t *testing.T) {
 	newKey.StripeVersion = second.Version
 
 	result, err := created.Layer.CleanupStripeDrive(CleanupStripeDriveRequest{
-		Context: ctx, IOIndex: 0, ObjectID: id, StripeID: request.StripeID, Reason: CleanupOldVersion,
+		Context: ctx, IOIndex: 0, ObjectID: id, StripeID: request.StripeID, Method: CleanupMethodDeleteOldVersion,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -95,11 +95,11 @@ func TestCleanupStripeDrivePreservesAbnormalUnreadableChunk(t *testing.T) {
 		t.Fatal(err)
 	}
 	if candidates := created.Layer.cleanupCandidates(); len(candidates) != 1 ||
-		candidates[0].ioIndex != 0 || candidates[0].reason != CleanupAbnormalVersion {
+		candidates[0].ioIndex != 0 || candidates[0].method != CleanupMethodPreserveAbnormal {
 		t.Fatalf("startup cleanup candidates = %+v; orphans = %+v", candidates, created.Layer.orphans[id])
 	}
 	result, err := created.Layer.CleanupStripeDrive(CleanupStripeDriveRequest{
-		Context: ctx, IOIndex: 0, ObjectID: id, StripeID: 9, Reason: CleanupAbnormalVersion,
+		Context: ctx, IOIndex: 0, ObjectID: id, StripeID: 9, Method: CleanupMethodPreserveAbnormal,
 	})
 	if err != nil {
 		t.Fatal(err)
