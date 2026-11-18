@@ -197,8 +197,8 @@ func TestConcurrentStripeWritesSerializeVersions(t *testing.T) {
 		t.Fatalf("write cleanup candidates = %+v, want one old-version candidate per drive", candidates)
 	}
 	for _, candidate := range candidates {
-		if candidate.reason != cleanupOldVersion {
-			t.Fatalf("write candidate reason = %v, want old version", candidate.reason)
+		if candidate.method != cleanupDeleteOldVersion {
+			t.Fatalf("write candidate method = %v, want old version", candidate.reason)
 		}
 	}
 	restarted, err := New(NewRequest{IOs: ios})
