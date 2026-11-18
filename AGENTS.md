@@ -123,7 +123,7 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - `MaintenanceExecutor` は Plan の Batch / WorkItem の順序を変更せず、各 WorkItem について Provider の最小安全単位を一度ずつ実行する。Provider はその WorkItem が完了したかを返し、未完了なら次回も同じ WorkItem を続ける。Executor は計画外の作業を追加せず、Disk ID に対応するドライブ状態を再取得・再判定せず、SpinUp / SpinDown もしない。
 - Management の共通実行ロックは復旧可能な最小作業単位ごとに取得・解放する。Batch 全体や WorkItem 全体でロックを保持せず、各 Provider unit の境界で Scheduler に実行権を返し、待機中の Foreground / Exclusive / Stop を調停する。MaintenanceExecutor は既存 Scheduler の BackgroundTask 契約に適合し、別のロック機構を設けない。
 - MaintenancePolicy / Executor が扱う Management 所有の保守作業では、停止中ドライブの扱いを Policy が判断する。Distribution Cleanup のドライブ選択・実行は、別途定義する Drive 単位の Cleanup 許可レベルに従い Distribution 自身が行う。
-- ドライブ状態の観測と SpinUp / SpinDown の OS 固有操作は Platform が提供する。Management はドライブ単位の Cleanup 許可レベルを決定して Distribution に設定し、Distribution はその許可に従って Cleanup を自律実行する。Distribution の Cleanup は Management の共通実行ロックとは独立した Stripe ロックで Foreground / Background の整合性を保つ。
+- ドライブ状態の観測と SpinUp / SpinDown の OS 固有操作は Platform が提供する。Management はドライブごとに「物理削除許可」と「異常データ退避許可」の独立した boolean を所有し、設定ファイルで初期値を受け取り、公開 API で実行中に変更する。スケジューリングまたは手動実行の指示に基づき、Management が許可状態を確認して Distribution の Stripe × Drive Cleanup API を呼び出す。許可フラグの変更自体は Cleanup を開始しない。Distribution は許可ポリシーを所有せず、呼び出された処理単位の Stripe 整合性と物理操作を担当する。
 - 初期実装に学習、適応的な効率推定、複雑な最適化アルゴリズムを持ち込まない。効率計算・アルゴリズム比較は外部シミュレータで行う。Policy は差し替え可能にし、判断入力・Plan・実行結果を観測できるようにする。
 
 - 起動・初期化・停止のライフサイクルを統括する。下位レイヤーの初期化を適切な順序で実行し、Orchestration に Header の読み込み・検証、Namespace 構築・整合性検査を行わせる。Orchestration は Deleted Header と整合性検査結果から自身の一時的な削除待ちキューを再構築する。Management は Orchestration の公開 API から候補 Snapshot を取得し、Distribution の物理 Stripe 情報と合わせてメトリクスを集計する。Management に削除キュー自体を複製しない。全レイヤーの初期化と整合性確認が成功するまで外部操作を Ready として受け付けず、途中失敗時は部分初期化状態を公開しない。
@@ -131,6 +131,8 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - 各ストレージ設定は FlexRAID の I/O root、物理ファイルシステムの mountpoint、WWN の3項目を必須とする。設定読み込み後、物理ストレージディレクトリの作成や Distribution の初期化など副作用を伴う処理より前に、重複・欠落を検証し Platform の公開 API で WWN を解決する。
 - Platform の WWN 解決は Linux の `/dev/disk/by-id/wwn-*` を基準とし、パーティションではなく物理ブロックデバイスを対象とする。別識別子へのフォールバックは禁止する。
 - Management は設定済み WWN のみを指定できる `SpinUp` / `SpinDown` API を提供し、実際の OS 固有デバイス操作は Platform の公開 API に委譲する。電源制御の判断・スケジューリングは Management に属し、今回の API 実装自体は自動制御を開始しない。
+- ドライブの Cleanup 許可は `DriveCleanupPermissions{DeleteAllowed, PreserveAllowed}` として WWN ごとに保持し、2つの許可を混同・連動させない。`SetDriveCleanupDeletePermission` と `SetDriveCleanupPreservePermission` は独立して変更し、`GetDriveCleanupPermissions` は snapshot を返す。未知の WWN やキャンセル済み Context は拒否する。
+- 設定ファイルの各 disk は `cleanup_delete_allowed` / `cleanup_preserve_allowed` を任意指定でき、省略時は両方 false（禁止）とする。これらは起動時の初期値であり、実行中の変更は Management API を通す。外部コマンドから API を呼ぶための IPC / control socket は別途 Management の公開境界として実装し、CLI が Distribution や内部 map を直接操作しない。
 - Object の論理削除状態と削除待ちキューは Orchestration が所有する。削除待ちキューは Deleted Header から再構築可能なメモリ上の候補索引であり、永続化したり Management に複製したりしない。Management は Orchestration の候補 Snapshot と Distribution の物理 Stripe 情報を解析して削除メトリクスを作り、Cleanup の実行スケジュールを決める。物理削除は Distribution の Stripe 単位 API に依頼し、対象 Object の全 Stripe が削除された後に Orchestration へ論理 Object のメモリ状態と削除待ちキューの確定を依頼する。
 
 ### Orchestration
