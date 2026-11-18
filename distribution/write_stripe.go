@@ -88,6 +88,7 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 				d.versions[key] = versions
 			}
 			versions[version] = &versionInfo{method: method, chunkSize: request.ChunkSize, chunks: cloneChunks(written), recoverable: false}
+			d.refreshStripeCleanupQueueLocked(key)
 		}
 	}
 	for _, no := range orderedChunkNos(chunks) {
