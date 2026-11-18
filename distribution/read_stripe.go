@@ -38,9 +38,17 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 	key := stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}
 	unlockStripe, unlockMap := d.lockStripe(key)
 	defer unlockStripe()
-	if cacheErr := d.cacheStripeLocked(request.Context, key); cacheErr != nil && !errors.Is(cacheErr, ErrDataCorrupted) {
-		unlockMap()
-		return response, cacheErr
+	if cacheErr := d.cacheStripeLocked(request.Context, key); cacheErr != nil {
+		if !errors.Is(cacheErr, ErrDataCorrupted) {
+			unlockMap()
+			return response, cacheErr
+		}
+		if versions := d.versions[key]; versions != nil {
+			if version := versions[d.objects[request.ObjectID][request.StripeID].version]; version != nil {
+				version.recoverable = false
+			}
+		}
+		d.refreshStripeCleanupQueueLocked(key)
 	}
 	unlockMap()
 	d.mapMu.Lock()
@@ -91,10 +99,12 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 	for _, chunk := range chunks {
 		if info.method.distributionType == distributionParity && len(chunk.data) != int(request.ChunkSize) {
 			info.corrupted = true
+			d.markStripeUnrecoverable(key, info.version)
 			return response, ErrDataCorrupted
 		}
 		if info.method.distributionType == distributionMirror && len(chunk.data) > int(request.ChunkSize) {
 			info.corrupted = true
+			d.markStripeUnrecoverable(key, info.version)
 			return response, ErrDataCorrupted
 		}
 	}
@@ -104,6 +114,7 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 		d.mapMu.Lock()
 		d.totalErrors++
 		d.mapMu.Unlock()
+		d.markStripeUnrecoverable(key, info.version)
 		d.logger.Error("stripe data corrupted", "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "error", restoreErr)
 		return response, ErrDataCorrupted
 	}
@@ -113,8 +124,22 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 		info.corrupted = true
 		d.logger.Warn("stripe recovered from missing chunks", "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "missing_chunks", len(missing))
 		d.repairStripe(request, info, missing, restored)
+		d.mapMu.Lock()
+		d.refreshStripeCleanupQueueLocked(key)
+		d.mapMu.Unlock()
 	}
 	return response, nil
+}
+
+func (d *Distribution) markStripeUnrecoverable(key stripeIDKey, versionNo storage.StripeVersion) {
+	d.mapMu.Lock()
+	defer d.mapMu.Unlock()
+	if versions := d.versions[key]; versions != nil {
+		if version := versions[versionNo]; version != nil {
+			version.recoverable = false
+		}
+	}
+	d.refreshStripeCleanupQueueLocked(key)
 }
 
 func (d *Distribution) repairStripe(request ReadStripeRequest, info *stripeInfo, missing []chunkNo, data []byte) {
