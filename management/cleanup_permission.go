@@ -129,3 +129,18 @@ func (layer *Management) GetDriveCleanupPermissions(
 	}
 	return GetDriveCleanupPermissionsResponse{WWN: request.WWN, Permissions: permissions}, nil
 }
+
+// StopDistributionCleanupWorker stops the autonomous cleanup loop without
+// stopping foreground filesystem operations.
+func (layer *Management) StopDistributionCleanupWorker(ctx context.Context) error {
+	if ctx == nil {
+		return fmt.Errorf("context is required")
+	}
+	layer.mu.Lock()
+	distributed := layer.distribution
+	layer.mu.Unlock()
+	if distributed == nil {
+		return fmt.Errorf("Distribution layer is not initialized")
+	}
+	return distributed.StopCleanupWorker(ctx)
+}
