@@ -86,11 +86,11 @@ func (layer *Management) ExecuteScheduledCleanup(
 	}
 
 	result, err := distributed.CleanupStripeDrive(distribution.CleanupStripeDriveRequest{
-		Context: request.Context,
-		IOIndex: ioIndex,
+		Context:  request.Context,
+		IOIndex:  ioIndex,
 		ObjectID: request.ObjectID,
 		StripeID: request.StripeID,
-		Method: request.Method,
+		Method:   request.Method,
 	})
 	if err != nil {
 		return response, err

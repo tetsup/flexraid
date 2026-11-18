@@ -23,7 +23,7 @@ func TestExecuteScheduledCleanupUsesConfiguredDriveAndPermission(t *testing.T) {
 	objectID := shared.ObjectID{1}
 	write := distribution.WriteStripeRequest{
 		Context: ctx, ObjectID: objectID, StripeID: 4, ChunkSize: 32,
-		Layout: distribution.Layout{Type: distribution.LayoutMirror, NumChunks: 2},
+		Layout:    distribution.Layout{Type: distribution.LayoutMirror, NumChunks: 2},
 		IOIndexes: []int{0, 1}, Data: []byte("old version"),
 	}
 	if _, err := created.Layer.WriteStripe(write); err != nil {
@@ -39,7 +39,7 @@ func TestExecuteScheduledCleanupUsesConfiguredDriveAndPermission(t *testing.T) {
 			{Root: rootA, Mountpoint: filepath.Dir(rootA), WWN: "wwn-a", CleanupDeleteAllowed: false},
 			{Root: rootB, Mountpoint: filepath.Dir(rootB), WWN: "wwn-b", CleanupDeleteAllowed: true},
 		}},
-		Distribution: created.Layer,
+		Distribution:   created.Layer,
 		Initialization: InitializationTaskFunc(func(context.Context) (bool, error) { return true, nil }),
 	})
 	if err != nil {
@@ -69,10 +69,10 @@ func TestExecuteScheduledCleanupUsesConfiguredDriveAndPermission(t *testing.T) {
 
 func TestExecuteScheduledCleanupRejectsUnknownDriveAndMethod(t *testing.T) {
 	layer := &Management{
-		drives: map[string]DriveConfig{"wwn-a": {WWN: "wwn-a"}},
-		driveOrder: []string{"wwn-a"},
+		drives:             map[string]DriveConfig{"wwn-a": {WWN: "wwn-a"}},
+		driveOrder:         []string{"wwn-a"},
 		cleanupPermissions: map[string]DriveCleanupPermissions{"wwn-a": {DeleteAllowed: true}},
-		distribution: &distribution.Distribution{},
+		distribution:       &distribution.Distribution{},
 	}
 	base := ExecuteScheduledCleanupRequest{Context: context.Background(), WWN: "missing", StripeID: storage.StripeID(1), Method: distribution.CleanupMethodDeleteOldVersion}
 	if _, err := layer.ExecuteScheduledCleanup(base); err == nil {
