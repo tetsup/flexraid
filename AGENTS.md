@@ -123,7 +123,7 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - `MaintenanceExecutor` は Plan の Batch / WorkItem の順序を変更せず、各 WorkItem について Provider の最小安全単位を一度ずつ実行する。Provider はその WorkItem が完了したかを返し、未完了なら次回も同じ WorkItem を続ける。Executor は計画外の作業を追加せず、Disk ID に対応するドライブ状態を再取得・再判定せず、SpinUp / SpinDown もしない。
 - Management の共通実行ロックは復旧可能な最小作業単位ごとに取得・解放する。Batch 全体や WorkItem 全体でロックを保持せず、各 Provider unit の境界で Scheduler に実行権を返し、待機中の Foreground / Exclusive / Stop を調停する。MaintenanceExecutor は既存 Scheduler の BackgroundTask 契約に適合し、別のロック機構を設けない。
 - MaintenancePolicy / Executor が扱う Management 所有の保守作業では、停止中ドライブの扱いを Policy が判断する。Distribution Cleanup のドライブ選択・実行は、別途定義する Drive 単位の Cleanup 許可レベルに従い Distribution 自身が行う。
-- ドライブ状態の観測と SpinUp / SpinDown の OS 固有操作は Platform が提供する。Management はドライブごとに「物理削除許可」と「異常データ退避許可」の独立した boolean を所有し、設定ファイルで初期値を受け取り、公開 API で実行中に変更する。スケジューリングまたは手動実行の指示に基づき、Management が許可状態を確認して Distribution の Stripe × Drive Cleanup API を呼び出す。許可フラグの変更自体は Cleanup を開始しない。Distribution は許可ポリシーを所有せず、呼び出された処理単位の Stripe 整合性と物理操作を担当する。
+- ドライブ状態の観測と SpinUp / SpinDown の OS 固有操作は Platform が提供する。Management はドライブ単位の Cleanup 許可レベルを所有し、設定ファイルで初期値を受け取り、公開 API で実行中に変更する。許可情報は不要 Version 等の自律 Cleanup と論理削除 Object の物理削除の双方に適用する。Management は許可情報を各レイヤーへ公開するだけで、削除対象や削除単位を選択・指示しない。許可情報の変更自体は削除処理を開始しない。
 - 初期実装に学習、適応的な効率推定、複雑な最適化アルゴリズムを持ち込まない。効率計算・アルゴリズム比較は外部シミュレータで行う。Policy は差し替え可能にし、判断入力・Plan・実行結果を観測できるようにする。
 
 - 起動・初期化・停止のライフサイクルを統括する。下位レイヤーの初期化を適切な順序で実行し、Orchestration に Header の読み込み・検証、Namespace 構築・整合性検査を行わせる。Orchestration は Deleted Header と整合性検査結果から自身の一時的な削除待ちキューを再構築する。Management は Orchestration の公開 API から候補 Snapshot を取得し、Distribution の物理 Stripe 情報と合わせてメトリクスを集計する。Management に削除キュー自体を複製しない。全レイヤーの初期化と整合性確認が成功するまで外部操作を Ready として受け付けず、途中失敗時は部分初期化状態を公開しない。
@@ -131,10 +131,10 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - 各ストレージ設定は FlexRAID の I/O root、物理ファイルシステムの mountpoint、WWN の3項目を必須とする。設定読み込み後、物理ストレージディレクトリの作成や Distribution の初期化など副作用を伴う処理より前に、重複・欠落を検証し Platform の公開 API で WWN を解決する。
 - Platform の WWN 解決は Linux の `/dev/disk/by-id/wwn-*` を基準とし、パーティションではなく物理ブロックデバイスを対象とする。別識別子へのフォールバックは禁止する。
 - Management は設定済み WWN のみを指定できる `SpinUp` / `SpinDown` API を提供し、実際の OS 固有デバイス操作は Platform の公開 API に委譲する。電源制御の判断・スケジューリングは Management に属し、今回の API 実装自体は自動制御を開始しない。
-- ドライブの Cleanup 許可は `DriveCleanupPermissions{DeleteAllowed, PreserveAllowed}` として WWN ごとに保持し、2つの許可を混同・連動させない。`SetDriveCleanupDeletePermission` と `SetDriveCleanupPreservePermission` は独立して変更し、`GetDriveCleanupPermissions` は snapshot を返す。未知の WWN やキャンセル済み Context は拒否する。
-- Management は更新された許可情報を Drive の設定順で Distribution に渡す。Distribution は共有メモリ上の許可 snapshot を Cleanup の各処理開始時に読み取る。Management は ObjectID / StripeID / Chunk / Method を指定して個別 Cleanup を指示しない。Distribution の Cleanup ループは Management から起動・停止でき、異常終了時の死活監視・再起動も Management の責務とする。
-- 設定ファイルの各 disk は `cleanup_delete_allowed` / `cleanup_preserve_allowed` を任意指定でき、省略時は両方 false（禁止）とする。これらは起動時の初期値であり、実行中の変更は Management API を通す。外部コマンドから API を呼ぶための IPC / control socket は別途 Management の公開境界として実装し、CLI が Distribution や内部 map を直接操作しない。
-- Object の論理削除状態と削除待ちキューは Orchestration が所有する。削除待ちキューは Deleted Header から再構築可能なメモリ上の候補索引であり、永続化したり Management に複製したりしない。Management は Orchestration の候補 Snapshot と Distribution の物理 Stripe 情報を解析して削除メトリクスを作り、Cleanup の実行スケジュールを決める。物理削除は Distribution の Stripe 単位 API に依頼し、対象 Object の全 Stripe が削除された後に Orchestration へ論理 Object のメモリ状態と削除待ちキューの確定を依頼する。
+- Management はドライブごとの `CleanupPermission` を所有し、許可レベルは「禁止」「Drive が既にスピンアップ状態なら許可（Cleanup のために起動しない）」「スピン状態にかかわらず許可」の3段階とする。設定ファイルで初期値を受け取り、公開 API で実行中に変更する。
+- Management は更新された許可情報を Distribution に公開し、論理削除 Object の処理では Orchestration にも許可ドライブ情報を渡す。Distribution は自律 Cleanup の処理開始時に許可 snapshot を参照する。論理削除 Object の許可条件は Orchestration が ObjectID の選択時に適用し、Distribution は ObjectID の処理開始時に必要なドライブが許可されていることを確認する。
+- 設定ファイルの各 disk は Cleanup 許可レベルを任意指定でき、省略時は禁止とする。実行中の変更は Management API を通す。外部コマンドから API を呼ぶ IPC / control socket は Management の公開境界として実装し、CLI が下位レイヤーや内部 map を直接操作しない。
+- Object の論理削除状態と削除待ちキューは Orchestration が所有する。削除待ちキューは Deleted Header から再構築可能なメモリ上の候補索引であり、永続化したり Management / Distribution に複製したりしない。Management はドライブ単位の許可情報を Orchestration に渡す。Orchestration は許可ドライブと Header / Namespace の状態から、削除可能な ObjectID をすべて特定し、一括削除要求として Distribution に渡す。Management は ObjectID や StripeID を選択せず、個別 Object の削除をスケジュールしない。
 
 ### Orchestration
 
@@ -142,7 +142,7 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - 通常のファイルシステム操作における論理状態の所有者である。Namespace、Header、Object の論理削除状態、open handle、および Deleted Header から再構築する一時的な削除待ちキューを管理する。削除待ちキューは Orchestration が所有し、Management はその候補 Snapshot を取得してメトリクス化・スケジューリングする。
 - Management が提供する共通実行ロック機構の制御下で呼び出される。Orchestration 自身はレイヤー横断のロック管理・ロック取得を行わない。Namespace の内部 map や Runtime 状態を外部へ直接公開しない。
 - 初期化では Header の読み込み・解析・検証、Namespace 構築、HardLink 解決、整合性検査を行う。Deleted Header を持つ ObjectID を一時的な削除待ちキューへ登録し、不整合保護対象はキューから除外する。Management が候補とメトリクスを取得できるよう、Orchestration は削除待ちキューの読み取り専用 Snapshot を公開 API で返す。Snapshot は内部 map を共有せず、候補の正は常に Orchestration 内のキューと Header にある。
-- 論理削除操作では Header の Deleted 状態、Namespace の変更、および削除待ちキューへの登録を担当する。Management は削除候補の Snapshot を解析して実行計画を作り、Distribution に Stripe 単位の物理削除を指示する。全 Stripe の削除完了後、Management からの完了通知を受けて Object の Header / Runtime 状態と削除待ちキューを確定する。
+- 論理削除操作では Header の Deleted 状態、Namespace の変更、および削除待ちキューへの登録を担当する。論理削除 Object の物理削除では、Orchestration が Management から受け取った許可ドライブ情報と自身の Header / Namespace 状態を照合し、削除可能な ObjectID をすべて選択して Distribution へ一括要求する。Distribution の ObjectID 単位の削除が完了した後、Orchestration は対象 Object の Runtime 状態と削除待ちキューを確定する。
 - Distribution の API は論理ストライプ単位で利用する。チャンク番号、StripeVersion、物理配置の内部表現を持ち込まない。
 - 通常の書き込みは変更対象ストライプだけを読み取り・変更・書き戻す。通常書き込みのためにファイル全体を RAM に読み込んで再構築しない。
 - ファイルサイズ変更などで配置計画が変わる場合は、必要な既存データを新しいストライプ境界・チャンクサイズへ移行する。サイズを変えない上書きでは配置計画を再計算しない。
@@ -180,8 +180,8 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - Stripe のキャッシュは Foreground Read が物理 I/O を繰り返さずに済み、Background Cleanup が旧 Version / Chunk を物理削除した後も最新データを参照できるためのものとする。キャッシュを安全に確保できない場合、Foreground の更新・削除を開始しない。復元可能な欠損チャンクは既存の復旧契約に従って扱い、最新 Version 自体を復元不能と判断した場合は処理を中止する。
 - Background Cleanup は Foreground の Stripe Mutex を使用しない。map Mutex の短時間の保護下で無効 FileKey を確定した後、map Mutex を解放して物理削除・退避する。削除後の map / queue 反映はそれぞれの Mutex で保護する。無効対象キューは専用 Mutex で保護し、キュー Mutex を保持したまま map Mutex 取得や物理 I/O を行わない。
 
-- Cleanup は、旧 Version、不正・復元不能 Version、未完了チャンク、孤立チャンクなどの Distribution 所有の物理的な不要データと、論理削除 Object の物理データを扱う。ただし、この2種類の Cleanup は候補の所有者・実行制御・削除順序を混同しない。旧 Version 等の Cleanup は本節の自律 Cleanup に従い、論理削除 Object の Cleanup は Management が ObjectID 単位のワークフローを調整し、Distribution が Stripe 単位で物理削除する。論理削除 Object では同一 ObjectID の Stripe 0 を他の Stripe の削除完了後に最後に処理する。この Stripe 0 の順序制約は旧 Version 等の Cleanup には適用しない。
-- 論理削除 Object の Cleanup では、Distribution は ObjectID + StripeID 単位で全 Version / Chunk / orphan を削除する公開 API を提供する。Management は Orchestration が所有する論理削除 Object の候補を管理し、Stripe 単位の削除ワークフローを調整する。Stripe 0 の削除は、同じ ObjectID の他 Stripe が残っている間は拒否する。全 Stripe の削除完了後に Orchestration の論理 Object メモリ状態を確定する。この順序制約は旧 Version 等の自律 Cleanup には適用しない。
+- Cleanup には、Distribution が自律実行する不要 Version 等の物理 Cleanup と、Orchestration が対象 ObjectID を選択する論理削除 Object の物理 Cleanup の2種類がある。候補の所有者・実行制御・削除順序を混同しない。不要 Version 等は Distribution のバックグラウンドループが Stripe 単位で選択・処理する。論理削除 Object は Orchestration が削除可能な ObjectID を一括選択し、Distribution に ObjectID 単位で削除を依頼する。Management は両方に Drive 単位の許可情報を与えるだけで、ObjectID / StripeID / Chunk の選択や個別削除の dispatch を行わない。
+- 論理削除 Object の Cleanup では、Distribution は ObjectID 単位の一括削除 API を提供する。Orchestration は許可ドライブ情報を受け取り、削除可能な ObjectID をすべて特定して一括要求する。Distribution は各 ObjectID について、まずその Object の無効 Version に属する物理データを削除し、続いて有効 Version のチャンクを後方（大きい StripeID / ChunkIndex）から順に削除する。これにより Stripe 0 は最後に残る。ObjectID の処理を開始した後は、Drive の許可条件が変更されても当該 ObjectID の削除を完了する。許可条件の再評価は次の ObjectID の選択・開始時に行う。処理に失敗して ObjectID の削除を完了できない場合は、その ObjectID を未完了として残し、後続 ObjectID の処理へ進まない。
 - 初期パリティ方式は XOR 1 パリティであり、1 データチャンクの欠損まで復元できる。内容改ざん・サイレント破損の検出を保証しない。
 - **旧 Version 等の自律 Cleanup** は Distribution が実行主体となる。Management は Distribution のバックグラウンドループを起動・停止し、各 Drive に対する Cleanup 許可情報を更新するだけとする。Cleanup の候補・Stripe / Object / Chunk・Method を指定する API や、個別 Cleanup を Management の Scheduler / MaintenanceExecutor から実行する経路を設けない。許可レベルは「Cleanup しない」「Drive が既にスピンアップ状態なら Cleanup 可（Cleanup のために停止中 Drive を起動しない）」「Drive のスピン状態にかかわらず Cleanup 可」の3段階とする。許可情報は Distribution が処理開始判断時に参照できる形で都度渡し、変更は次の処理選択から反映する。
 - Cleanup の候補選定・保護判定・実行順序・内部並列度は Distribution のバックグラウンドループが所有する。Management は候補一覧や Version / Chunk の内部状態を複製しない。Distribution は Drive ごとの許可レベルを参照し、許可された Drive 上の無効な物理 Chunk を順次削除する。Cleanup は Foreground の論理操作とは独立して実行し、Cleanup のための Object 単位・Stripe 単位ロックや Management 共通実行ロックを取得しない。物理ファイルは不変の Version として扱い、Foreground が参照・更新する最新有効 Version のファイルを候補に含めないこと、候補確定後に新しい Version が追加されても削除対象 FileKey が最新有効 Versionへ昇格しないことを保証する。物理 I/O 中に Distribution の共有 map ロックを保持せず、削除完了後の管理情報更新は短時間の map ロックで行う。
@@ -281,7 +281,7 @@ Distribution -> Platform
 - 自律 Cleanup の許可は Drive 単位、物理削除対象は Chunk / FileKey 単位で選択する。Cleanup 対象は最新有効 Version 以外の不変 FileKey に限るため、Foreground の有効データのキャッシュ化・Read / Write・Stripe ロックに関与しない。
 - 最新 Version の欠損が確認された Stripe と保護対象は Cleanup しない。最新 Version が復元可能であることを含め、削除候補の安全性を Distribution が判断する。
 - 削除候補は実行時に map Mutex の保護下で最新有効 Version と照合し、無効な FileKey であることを再検証する。物理 I/O はすべての Distribution 状態ロックを解放してから実行する。
-- 論理削除 Object の削除では Management が対象 Object の削除ワークフローを調整し、Distribution が Stripe 単位の排他を取得して物理削除する。Stripe 0 は他 Stripe の削除完了後に最後に処理する。全 Stripe の削除完了後に Orchestration の論理 Object メモリ状態を確定する。旧 Version 等の自律 Cleanup にはこの Object 全体の順序制約を持ち込まない。
+- 論理削除 Object の削除では Orchestration が削除可能な ObjectID を選び、Distribution が ObjectID 単位で物理削除する。Distribution は ObjectID の処理中に Management の実行ロックや Foreground の Stripe ロックを取得しない。ObjectID の削除完了後に Orchestration が論理 Object のメモリ状態を確定する。
 - Distribution の Stripe ロック取得中に Management の実行ロックを要求する逆方向の依存を作らない。Management は Distribution の内部ロックを直接操作しない。
 - I/O は物理ファイル操作を実行する。上位層の Object / Stripe の意味に基づくロックを持たず、必要性が実証された物理ファイル単位の排他だけを内部実装として持つ。
 
