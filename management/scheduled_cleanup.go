@@ -40,19 +40,7 @@ func (layer *Management) SetDistribution(distributed *distribution.Distribution)
 // publishCleanupPermissionsLocked passes a fresh drive-ordered permission
 // snapshot to Distribution. The caller must hold layer.mu.
 func (layer *Management) publishCleanupPermissionsLocked() error {
-	permissions := make([]shared.DriveCleanupPermission, len(layer.driveOrder))
-	for index, wwn := range layer.driveOrder {
-		current, exists := layer.cleanupPermissions[wwn]
-		if !exists {
-			return fmt.Errorf("cleanup permissions for WWN %q are not initialized", wwn)
-		}
-		permissions[index] = shared.DriveCleanupPermission{
-			DeleteAllowed: current.DeleteAllowed, PreserveAllowed: current.PreserveAllowed,
-		}
-	}
-	if err := layer.cleanupPermissionStore.Replace(permissions); err != nil {
-		return err
-	}
+	permissions := layer.cleanupPermissionStore.Snapshot().Drives
 	if layer.orchestration != nil {
 		layer.orchestration.SetCleanupPermissionStore(layer.cleanupPermissionStore)
 	}
