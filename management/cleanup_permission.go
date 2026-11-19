@@ -32,6 +32,8 @@ func (layer *Management) SetDriveCleanupDeletePermission(
 	if err := request.Context.Err(); err != nil {
 		return SetDriveCleanupDeletePermissionResponse{}, err
 	}
+	layer.cleanupPermissionUpdateMu.Lock()
+	defer layer.cleanupPermissionUpdateMu.Unlock()
 	if _, exists := layer.drives[request.WWN]; !exists {
 		return SetDriveCleanupDeletePermissionResponse{}, fmt.Errorf("WWN %q is not configured", request.WWN)
 	}
@@ -79,6 +81,8 @@ func (layer *Management) SetDriveCleanupPreservePermission(
 	if err := request.Context.Err(); err != nil {
 		return SetDriveCleanupPreservePermissionResponse{}, err
 	}
+	layer.cleanupPermissionUpdateMu.Lock()
+	defer layer.cleanupPermissionUpdateMu.Unlock()
 	if _, exists := layer.drives[request.WWN]; !exists {
 		return SetDriveCleanupPreservePermissionResponse{}, fmt.Errorf("WWN %q is not configured", request.WWN)
 	}
