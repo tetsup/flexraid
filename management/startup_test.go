@@ -3,7 +3,6 @@ package management
 import (
 	"context"
 	"errors"
-	"os"
 	"syscall"
 	"testing"
 	"time"
@@ -214,7 +213,7 @@ func TestBackgroundProcessesStartOnlyAfterReady(t *testing.T) {
 	}
 	layer, err := New(NewRequest{
 		Distribution: distributed.Layer,
-		Config:       Config{Disks: []DriveConfig{{Root: os.TempDir(), Mountpoint: t.TempDir(), WWN: "wwn-test"}}},
+		Config:       Config{Disks: []DriveConfig{{Root: t.TempDir(), Mountpoint: t.TempDir(), WWN: "wwn-test"}}},
 		Initialization: InitializationTaskFunc(func(context.Context) (bool, error) {
 			return true, nil
 		}),
