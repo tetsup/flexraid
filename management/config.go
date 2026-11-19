@@ -76,7 +76,9 @@ func LoadConfig(path string) (Config, error) {
 				current.CleanupDeleteDeprecatedVersionsAllowed = value
 			case strings.HasPrefix(line, "cleanup_delete_logical_objects_allowed:"):
 				value, err := strconv.ParseBool(unquoteConfig(strings.TrimSpace(strings.TrimPrefix(line, "cleanup_delete_logical_objects_allowed:"))))
-				if err != nil { return Config{}, fmt.Errorf("line %d: invalid cleanup_delete_logical_objects_allowed: %w", lineNo, err) }
+				if err != nil {
+					return Config{}, fmt.Errorf("line %d: invalid cleanup_delete_logical_objects_allowed: %w", lineNo, err)
+				}
 				current.CleanupDeleteLogicalObjectsAllowed = value
 			case strings.HasPrefix(line, "cleanup_preserve_abnormal_data_allowed:"):
 				value, err := strconv.ParseBool(unquoteConfig(strings.TrimSpace(strings.TrimPrefix(line, "cleanup_preserve_abnormal_data_allowed:"))))

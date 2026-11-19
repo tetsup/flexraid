@@ -12,12 +12,12 @@ import (
 
 // DriveConfig binds one storage root to its physical mountpoint and WWN.
 type DriveConfig struct {
-	Root                   string
-	Mountpoint             string
-	WWN                    string
+	Root                                   string
+	Mountpoint                             string
+	WWN                                    string
 	CleanupDeleteDeprecatedVersionsAllowed bool
-	CleanupPreserveAbnormalDataAllowed    bool
-	CleanupDeleteLogicalObjectsAllowed    bool
+	CleanupPreserveAbnormalDataAllowed     bool
+	CleanupDeleteLogicalObjectsAllowed     bool
 }
 
 // NewRequest initializes Management with Orchestration and its startup configuration.
