@@ -207,8 +207,11 @@ func waitForLifecyclePhase(t *testing.T, layer *Management, want LifecyclePhase)
 }
 
 func TestBackgroundProcessesStartOnlyAfterReady(t *testing.T) {
-	ioLayer := physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer
-	distributed, err := distribution.New(distribution.NewRequest{IOs: []*physicalio.IO{ioLayer}})
+	ioLayers := []*physicalio.IO{
+		physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer,
+		physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer,
+	}
+	distributed, err := distribution.New(distribution.NewRequest{IOs: ioLayers})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +224,10 @@ func TestBackgroundProcessesStartOnlyAfterReady(t *testing.T) {
 	layer, err := New(NewRequest{
 		Orchestration: created.Layer,
 		Distribution:  distributed.Layer,
-		Config:        Config{Disks: []DriveConfig{{Root: t.TempDir(), Mountpoint: t.TempDir(), WWN: "wwn-test"}}},
+		Config: Config{Disks: []DriveConfig{
+			{Root: t.TempDir(), Mountpoint: t.TempDir(), WWN: "wwn-test-1"},
+			{Root: t.TempDir(), Mountpoint: t.TempDir(), WWN: "wwn-test-2"},
+		}},
 		Initialization: InitializationTaskFunc(func(context.Context) (bool, error) {
 			return true, nil
 		}),
