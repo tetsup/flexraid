@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/tetsup/flexraid/distribution"
+	"github.com/tetsup/flexraid/pkg/shared"
 )
 
 // SetDistribution publishes the initialized Distribution layer and starts its
@@ -39,15 +40,18 @@ func (layer *Management) publishCleanupPermissionsLocked() error {
 	if layer.distribution == nil {
 		return nil
 	}
-	permissions := make([]distribution.CleanupPermissions, len(layer.driveOrder))
+	permissions := make([]shared.DriveCleanupPermission, len(layer.driveOrder))
 	for index, wwn := range layer.driveOrder {
 		current, exists := layer.cleanupPermissions[wwn]
 		if !exists {
 			return fmt.Errorf("cleanup permissions for WWN %q are not initialized", wwn)
 		}
-		permissions[index] = distribution.CleanupPermissions{
+		permissions[index] = shared.DriveCleanupPermission{
 			DeleteAllowed: current.DeleteAllowed, PreserveAllowed: current.PreserveAllowed,
 		}
 	}
-	return layer.distribution.SetCleanupPermissions(permissions)
+	if err := layer.cleanupPermissionStore.Replace(permissions); err != nil { return err }
+	if layer.orchestration != nil { layer.orchestration.SetCleanupPermissionStore(layer.cleanupPermissionStore) }
+	if layer.distribution != nil { return layer.distribution.SetCleanupPermissions(permissions) }
+	return nil
 }
