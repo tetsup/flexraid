@@ -17,7 +17,7 @@ type Management struct {
 	distribution           *distribution.Distribution
 	driveOrder             []string
 	drives                 map[string]DriveConfig
-	cleanupPermissions     map[string]DriveCleanupPermissions
+	cleanupPermissions     map[string]shared.DriveCleanupPermission
 	cleanupPermissionStore *shared.CleanupPermissionStore
 	scheduler              *Scheduler
 }
@@ -30,9 +30,9 @@ func New(request NewRequest) (*Management, error) {
 	if err != nil {
 		return nil, err
 	}
-	permissions := make(map[string]DriveCleanupPermissions, len(drives))
+	permissions := make(map[string]shared.DriveCleanupPermission, len(drives))
 	for wwn, drive := range drives {
-		permissions[wwn] = DriveCleanupPermissions{
+		permissions[wwn] = shared.DriveCleanupPermission{
 			DeleteAllowed:   drive.CleanupDeleteAllowed,
 			PreserveAllowed: drive.CleanupPreserveAllowed,
 		}
