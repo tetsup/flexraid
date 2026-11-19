@@ -47,7 +47,7 @@ func (executor LifecycleTransitionExecutor) Transition(
 		if err := exit(ctx); err != nil {
 			next.Phase = LifecycleFailed
 			return next, append(outputs, LifecycleChanged{From: state.Phase, To: LifecycleFailed},
-				LifecycleFailureReported{Reason: err.Error()}),
+					LifecycleFailureReported{Reason: err.Error()}),
 				fmt.Errorf("exit lifecycle phase %d: %w", state.Phase, err)
 		}
 	}
@@ -61,7 +61,7 @@ func (executor LifecycleTransitionExecutor) Transition(
 			next.Phase = LifecycleFailed
 			reason := errors.Join(err, rollbackErr)
 			return next, append(outputs, LifecycleChanged{From: state.Phase, To: LifecycleFailed},
-				LifecycleFailureReported{Reason: reason.Error()}),
+					LifecycleFailureReported{Reason: reason.Error()}),
 				fmt.Errorf("enter lifecycle phase %d: %w", next.Phase, reason)
 		}
 	}
