@@ -92,7 +92,6 @@ func (task *filesystemInitialization) Next(ctx context.Context) (bool, error) {
 		created, err := orchestration.CreateRoot(orchestration.CreateRootRequest{
 			Context:      ctx,
 			Distribution: task.distributed,
-			CleanupPermissions: task.cleanupPermissionStore,
 			Mode:         0755,
 			UID:          uint32(os.Getuid()),
 			GID:          uint32(os.Getgid()),
@@ -112,10 +111,12 @@ func (task *filesystemInitialization) Next(ctx context.Context) (bool, error) {
 		initialized, err := orchestration.New(orchestration.NewRequest{
 			Context:      ctx,
 			Distribution: task.distributed,
+			CleanupPermissions: task.cleanupPermissionStore,
 		})
 		if err != nil {
 			return false, fmt.Errorf("restore filesystem namespace: %w", err)
 		}
+		initialized.Layer.SetCleanupPermissionStore(task.cleanupPermissionStore)
 		*task.rootID = initialized.RootID
 		task.pendingLayer = initialized.Layer
 		task.stage = 6
