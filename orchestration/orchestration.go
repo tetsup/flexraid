@@ -15,6 +15,7 @@ type NewRequest struct {
 	Distribution *distribution.Distribution
 	LogLevel     slog.Level
 	Logger       *slog.Logger
+	CleanupPermissions *shared.CleanupPermissionStore
 }
 type NewResponse struct {
 	Layer  *Orchestration
@@ -23,6 +24,7 @@ type NewResponse struct {
 
 type Orchestration struct {
 	distribution     *distribution.Distribution
+	cleanupPermissionStore *shared.CleanupPermissionStore
 	logger           *slog.Logger
 	headers          map[shared.ObjectID]header
 	objects          map[shared.ObjectID]*runtimeObject
@@ -55,6 +57,7 @@ func New(request NewRequest) (NewResponse, error) {
 
 	layer := &Orchestration{
 		distribution: request.Distribution,
+		cleanupPermissionStore: request.CleanupPermissions,
 		logger:       logger,
 	}
 	if err := layer.initialize(initialObjects); err != nil {
