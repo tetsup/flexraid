@@ -111,7 +111,7 @@ func TestDeleteObjectRemovesHeaderLastAndAllVersions(t *testing.T) {
 			}
 		}
 	}
-	if _, err := created.Layer.DeleteObject(DeleteObjectRequest{Context: ctx, ObjectID: id}); !errors.Is(err, ErrCleanupDriveNotAllowed) {
+	if _, err := created.Layer.DeleteObject(DeleteObjectRequest{Context: ctx, ObjectID: id}); !errors.Is(err, ErrLogicalObjectDeletionNotAllowed) {
 		t.Fatalf("DeleteObject error = %v, want drive permission rejection", err)
 	}
 	objectsBefore, err := created.Layer.ListObjects(ListObjectsRequest{Context: ctx})
