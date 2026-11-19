@@ -2,6 +2,7 @@ package management
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"syscall"
 	"time"
@@ -135,18 +136,19 @@ func (layer *Management) StopBackgroundProcesses(ctx context.Context) error {
 	distributed := layer.distribution
 	layer.mu.Unlock()
 
+	var stopErr error
 	if orchestrationLayer != nil {
 		if err := orchestrationLayer.StopCleanupWorker(ctx); err != nil {
-			return fmt.Errorf("stop Orchestration cleanup worker: %w", err)
+			stopErr = errors.Join(stopErr, fmt.Errorf("stop Orchestration cleanup worker: %w", err))
 		}
 	}
 	if distributed != nil {
 		if err := distributed.StopCleanupWorker(ctx); err != nil {
-			return fmt.Errorf("stop Distribution cleanup worker: %w", err)
+			stopErr = errors.Join(stopErr, fmt.Errorf("stop Distribution cleanup worker: %w", err))
 		}
 	}
 	layer.mu.Lock()
 	layer.backgroundProcessesStarted = false
 	layer.mu.Unlock()
-	return nil
+	return stopErr
 }
