@@ -22,6 +22,7 @@ func (layer *Management) SetDistribution(distributed *distribution.Distribution)
 	if layer.distribution != nil {
 		return fmt.Errorf("Distribution layer is already set")
 	}
+	if err := distributed.SetCleanupPermissionStore(layer.cleanupPermissionStore); err != nil { return err }
 	layer.distribution = distributed
 	if err := layer.publishCleanupPermissionsLocked(); err != nil {
 		layer.distribution = nil
