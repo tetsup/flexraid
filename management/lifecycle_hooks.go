@@ -6,8 +6,8 @@ import (
 	"fmt"
 )
 
-// StateHooks contains the side effects associated with entering and leaving a
-// lifecycle phase. Hooks run serially as part of a lifecycle transition.
+// StateHooks contains side effects associated with entering and leaving a
+// lifecycle phase. Hooks execute serially as part of a phase transition.
 type StateHooks struct {
 	OnEnter func(context.Context) error
 	OnExit  func(context.Context) error
@@ -16,15 +16,15 @@ type StateHooks struct {
 // StateHookRegistry maps lifecycle phases to their entry and exit hooks.
 type StateHookRegistry map[LifecyclePhase]StateHooks
 
-// LifecycleTransitionExecutor applies state hooks around the pure lifecycle
-// reducer. The reducer remains responsible only for deciding the next state.
+// LifecycleTransitionExecutor applies hooks around the pure lifecycle reducer.
+// The reducer decides transitions; this executor owns transition side effects.
 type LifecycleTransitionExecutor struct {
 	Hooks StateHookRegistry
 }
 
-// Transition executes the hooks for a phase change before publishing it.
-// Hook failures move the returned state to Failed so partially applied
-// lifecycle side effects are never reported as a healthy phase.
+// Transition runs OnExit for the current phase and OnEnter for the target
+// phase. A target phase is committed only when both hooks succeed. Hook
+// failures move the lifecycle to Failed and return the original error.
 func (executor LifecycleTransitionExecutor) Transition(
 	ctx context.Context,
 	machine LifecycleMachine,
@@ -43,26 +43,25 @@ func (executor LifecycleTransitionExecutor) Transition(
 		return next, outputs, nil
 	}
 
+	target := next.Phase
 	if exit := executor.Hooks[state.Phase].OnExit; exit != nil {
 		if err := exit(ctx); err != nil {
 			next.Phase = LifecycleFailed
-			return next, append(outputs, LifecycleChanged{From: state.Phase, To: LifecycleFailed},
-					LifecycleFailureReported{Reason: err.Error()}),
+			return next, lifecycleFailureOutputs(outputs, state.Phase, err),
 				fmt.Errorf("exit lifecycle phase %d: %w", state.Phase, err)
 		}
 	}
 
-	if enter := executor.Hooks[next.Phase].OnEnter; enter != nil {
+	if enter := executor.Hooks[target].OnEnter; enter != nil {
 		if err := enter(ctx); err != nil {
 			rollbackErr := error(nil)
-			if rollback := executor.Hooks[next.Phase].OnExit; rollback != nil {
+			if rollback := executor.Hooks[target].OnExit; rollback != nil {
 				rollbackErr = rollback(ctx)
 			}
 			next.Phase = LifecycleFailed
 			reason := errors.Join(err, rollbackErr)
-			return next, append(outputs, LifecycleChanged{From: state.Phase, To: LifecycleFailed},
-					LifecycleFailureReported{Reason: reason.Error()}),
-				fmt.Errorf("enter lifecycle phase %d: %w", next.Phase, reason)
+			return next, lifecycleFailureOutputs(outputs, state.Phase, reason),
+				fmt.Errorf("enter lifecycle phase %d: %w", target, reason)
 		}
 	}
 
