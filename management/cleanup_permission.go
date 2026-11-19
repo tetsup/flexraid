@@ -50,9 +50,7 @@ func (layer *Management) SetDriveCleanupDeletePermission(
 		return SetDriveCleanupDeletePermissionResponse{}, err
 	}
 	if layer.distribution != nil {
-		if err := layer.distribution.SetCleanupPermissions(snapshot.Drives); err != nil {
-			return SetDriveCleanupDeletePermissionResponse{}, err
-		}
+		layer.distribution.NotifyCleanupPermissionsChanged()
 	}
 	return SetDriveCleanupDeletePermissionResponse{WWN: request.WWN, Allowed: request.Allowed}, nil
 }
@@ -99,9 +97,7 @@ func (layer *Management) SetDriveCleanupPreservePermission(
 		return SetDriveCleanupPreservePermissionResponse{}, err
 	}
 	if layer.distribution != nil {
-		if err := layer.distribution.SetCleanupPermissions(snapshot.Drives); err != nil {
-			return SetDriveCleanupPreservePermissionResponse{}, err
-		}
+		layer.distribution.NotifyCleanupPermissionsChanged()
 	}
 	return SetDriveCleanupPreservePermissionResponse{WWN: request.WWN, Allowed: request.Allowed}, nil
 }
