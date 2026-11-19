@@ -156,23 +156,30 @@ func mountFilesystem(config mountConfig) (*gofuse.Server, error) {
 
 	adapter, err := flexfuse.New(managed, rootID)
 	if err != nil {
+		stopManagement(managed)
 		return nil, fmt.Errorf("create FUSE adapter: %w", err)
 	}
 	mountpoint, err := filepath.Abs(config.Mountpoint)
 	if err != nil {
+		stopManagement(managed)
 		return nil, fmt.Errorf("resolve mountpoint: %w", err)
 	}
 	if err := os.MkdirAll(mountpoint, 0755); err != nil {
+		stopManagement(managed)
 		return nil, fmt.Errorf("create mountpoint: %w", err)
 	}
 	options := flexfuse.MountOptions()
 	options.MountOptions.FsName = "flexraid-fuse"
 	server, err := adapter.Mount(mountpoint, options)
 	if err != nil {
-		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = managed.Stop(stopCtx)
+		stopManagement(managed)
 		return nil, fmt.Errorf("mount at %s: %w", mountpoint, err)
 	}
 	return server, nil
+}
+
+func stopManagement(managed *management.Management) {
+	stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = managed.Stop(stopCtx)
 }
