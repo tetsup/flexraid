@@ -1,14 +1,13 @@
 package management
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/tetsup/flexraid/distribution"
 )
 
-// SetDistribution publishes the initialized Distribution layer and starts its
-// autonomous cleanup worker. It is used by the initialization path.
+// SetDistribution publishes the initialized Distribution layer. Background
+// processes are started separately after all startup initialization completes.
 func (layer *Management) SetDistribution(distributed *distribution.Distribution) error {
 	if distributed == nil {
 		return fmt.Errorf("Distribution layer is required")
@@ -21,33 +20,28 @@ func (layer *Management) SetDistribution(distributed *distribution.Distribution)
 	if layer.distribution != nil {
 		return fmt.Errorf("Distribution layer is already set")
 	}
-	layer.distribution = distributed
-	if err := layer.publishCleanupPermissionsLocked(); err != nil {
-		layer.distribution = nil
+	if err := distributed.SetCleanupPermissionStore(layer.cleanupPermissionStore); err != nil {
 		return err
 	}
-	if err := distributed.StartCleanupWorker(context.Background()); err != nil {
+	layer.distribution = distributed
+	if err := layer.publishCleanupPermissionsLocked(); err != nil {
 		layer.distribution = nil
 		return err
 	}
 	return nil
 }
 
-// publishCleanupPermissionsLocked passes a fresh drive-ordered permission
-// snapshot to Distribution. The caller must hold layer.mu.
+// publishCleanupPermissionsLocked attaches the shared permission store and
+// wakes the Distribution worker. The caller must hold layer.mu.
 func (layer *Management) publishCleanupPermissionsLocked() error {
-	if layer.distribution == nil {
+	if layer.orchestration != nil {
+		if err := layer.orchestration.SetCleanupPermissionStore(layer.cleanupPermissionStore); err != nil {
+			return err
+		}
+	}
+	if layer.distribution != nil {
+		layer.distribution.NotifyCleanupPermissionsChanged()
 		return nil
 	}
-	permissions := make([]distribution.CleanupPermissions, len(layer.driveOrder))
-	for index, wwn := range layer.driveOrder {
-		current, exists := layer.cleanupPermissions[wwn]
-		if !exists {
-			return fmt.Errorf("cleanup permissions for WWN %q are not initialized", wwn)
-		}
-		permissions[index] = distribution.CleanupPermissions{
-			DeleteAllowed: current.DeleteAllowed, PreserveAllowed: current.PreserveAllowed,
-		}
-	}
-	return layer.distribution.SetCleanupPermissions(permissions)
+	return nil
 }

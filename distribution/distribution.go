@@ -14,31 +14,31 @@ import (
 )
 
 type NewRequest struct {
-	Context  context.Context
-	IOs      []*physicalio.IO
-	LogLevel slog.Level
-	Logger   *slog.Logger
+	Context            context.Context
+	IOs                []*physicalio.IO
+	LogLevel           slog.Level
+	Logger             *slog.Logger
+	CleanupPermissions *shared.CleanupPermissionStore
 }
 type NewResponse struct{ Layer *Distribution }
 
 type Distribution struct {
-	mapMu               sync.Mutex
-	stripeLocks         map[stripeIDKey]*sync.Mutex
-	ios                 []*physicalio.IO
-	logger              *slog.Logger
-	objects             map[shared.ObjectID]map[storage.StripeID]*stripeInfo
-	versions            map[stripeIDKey]map[storage.StripeVersion]*versionInfo
-	ioErrors            []uint64
-	totalErrors         uint64
-	ioFailures          []error
-	orphans             map[shared.ObjectID][]chunkLocation
-	cleanupQueue        *cleanupQueue
-	cleanupControlMu    sync.RWMutex
-	cleanupPermissions  []CleanupPermissions
-	cleanupWorkerMu     sync.Mutex
-	cleanupWorkerCancel context.CancelFunc
-	cleanupWorkerDone   chan struct{}
-	cleanupWake         chan struct{}
+	mapMu                  sync.Mutex
+	stripeLocks            map[stripeIDKey]*sync.Mutex
+	ios                    []*physicalio.IO
+	logger                 *slog.Logger
+	objects                map[shared.ObjectID]map[storage.StripeID]*stripeInfo
+	versions               map[stripeIDKey]map[storage.StripeVersion]*versionInfo
+	ioErrors               []uint64
+	totalErrors            uint64
+	ioFailures             []error
+	orphans                map[shared.ObjectID][]chunkLocation
+	cleanupQueue           *cleanupQueue
+	cleanupPermissionStore *shared.CleanupPermissionStore
+	cleanupWorkerMu        sync.Mutex
+	cleanupWorkerCancel    context.CancelFunc
+	cleanupWorkerDone      chan struct{}
+	cleanupWake            chan struct{}
 }
 type stripeIDKey struct {
 	objectID shared.ObjectID
@@ -90,7 +90,10 @@ func New(request NewRequest) (NewResponse, error) {
 	d := &Distribution{stripeLocks: make(map[stripeIDKey]*sync.Mutex), ios: append([]*physicalio.IO(nil), request.IOs...), logger: logger,
 		objects:  make(map[shared.ObjectID]map[storage.StripeID]*stripeInfo),
 		versions: make(map[stripeIDKey]map[storage.StripeVersion]*versionInfo),
-		ioErrors: make([]uint64, len(request.IOs)), ioFailures: make([]error, len(request.IOs)), orphans: make(map[shared.ObjectID][]chunkLocation), cleanupQueue: newCleanupQueue(), cleanupPermissions: make([]CleanupPermissions, len(request.IOs)), cleanupWake: make(chan struct{}, 1)}
+		ioErrors: make([]uint64, len(request.IOs)), ioFailures: make([]error, len(request.IOs)), orphans: make(map[shared.ObjectID][]chunkLocation), cleanupQueue: newCleanupQueue(), cleanupPermissionStore: request.CleanupPermissions, cleanupWake: make(chan struct{}, 1)}
+	if d.cleanupPermissionStore == nil {
+		d.cleanupPermissionStore = shared.NewCleanupPermissionStore(make([]shared.DriveCleanupPermission, len(request.IOs)))
+	}
 	usable := 0
 	for index, layer := range d.ios {
 		scanResult, err := layer.ListChunks(physicalio.ListChunksRequest{Context: ctx, Callback: func(entry physicalio.ScanEntry) error {

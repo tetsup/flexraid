@@ -3,6 +3,7 @@ package distribution
 import (
 	"bytes"
 	"context"
+	"errors"
 	"sync"
 	"testing"
 
@@ -98,6 +99,10 @@ func TestDeleteObjectRemovesHeaderLastAndAllVersions(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := testObjectID()
+	permissionStore := shared.NewCleanupPermissionStore([]shared.DriveCleanupPermission{{DeleteLogicalObjectsAllowed: true}, {}})
+	if err := created.Layer.SetCleanupPermissionStore(permissionStore); err != nil {
+		t.Fatal(err)
+	}
 	for _, stripe := range []storage.StripeID{0, 1} {
 		for i := 0; i < 2; i++ {
 			_, err = created.Layer.WriteStripe(WriteStripeRequest{Context: ctx, ObjectID: id, StripeID: stripe, ChunkSize: 4, Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: []byte{byte(stripe), byte(i)}})
@@ -105,6 +110,16 @@ func TestDeleteObjectRemovesHeaderLastAndAllVersions(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+	}
+	if _, err := created.Layer.DeleteObject(DeleteObjectRequest{Context: ctx, ObjectID: id}); !errors.Is(err, ErrLogicalObjectDeletionNotAllowed) {
+		t.Fatalf("DeleteObject error = %v, want drive permission rejection", err)
+	}
+	objectsBefore, err := created.Layer.ListObjects(ListObjectsRequest{Context: ctx})
+	if err != nil || len(objectsBefore.ObjectIDs) != 1 {
+		t.Fatalf("Object changed after denied cleanup: %+v, %v", objectsBefore, err)
+	}
+	if err := permissionStore.Replace([]shared.DriveCleanupPermission{{DeleteLogicalObjectsAllowed: true}, {DeleteLogicalObjectsAllowed: true}}); err != nil {
+		t.Fatal(err)
 	}
 	result, err := created.Layer.DeleteObject(DeleteObjectRequest{Context: ctx, ObjectID: id})
 	if err != nil {

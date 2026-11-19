@@ -7,6 +7,7 @@ import (
 	"time"
 
 	physicalio "github.com/tetsup/flexraid/io"
+	"github.com/tetsup/flexraid/pkg/shared"
 	"github.com/tetsup/flexraid/storage"
 )
 
@@ -33,9 +34,10 @@ func TestCleanupWorkerRespectsDrivePermissionsAndStops(t *testing.T) {
 	oldKey := storage.FileKey{ObjectID: request.ObjectID, StripeVersion: first.Version, StripeID: request.StripeID,
 		LayoutID: storage.LayoutID{Type: storage.LayoutType(LayoutMirror), DriveCount: 2, Role: storage.ChunkRoleData, Index: 1}}
 
-	if err := created.Layer.SetCleanupPermissions([]CleanupPermissions{{}, {DeleteAllowed: true}}); err != nil {
+	if err := created.Layer.cleanupPermissionStore.Replace([]shared.DriveCleanupPermission{{}, {DeleteDeprecatedVersionsAllowed: true}}); err != nil {
 		t.Fatal(err)
 	}
+	created.Layer.NotifyCleanupPermissionsChanged()
 	if err := created.Layer.StartCleanupWorker(ctx); err != nil {
 		t.Fatal(err)
 	}

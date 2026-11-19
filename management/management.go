@@ -2,22 +2,24 @@
 package management
 
 import (
-	"context"
 	"fmt"
 	"sync"
 
 	"github.com/tetsup/flexraid/distribution"
 	"github.com/tetsup/flexraid/orchestration"
+	"github.com/tetsup/flexraid/pkg/shared"
 )
 
 type Management struct {
-	mu                 sync.Mutex
-	orchestration      *orchestration.Orchestration
-	distribution       *distribution.Distribution
-	driveOrder         []string
-	drives             map[string]DriveConfig
-	cleanupPermissions map[string]DriveCleanupPermissions
-	scheduler          *Scheduler
+	mu                         sync.Mutex
+	cleanupPermissionUpdateMu  sync.Mutex
+	orchestration              *orchestration.Orchestration
+	distribution               *distribution.Distribution
+	driveOrder                 []string
+	drives                     map[string]DriveConfig
+	cleanupPermissionStore     *shared.CleanupPermissionStore
+	backgroundProcessesStarted bool
+	scheduler                  *Scheduler
 }
 
 func New(request NewRequest) (*Management, error) {
@@ -28,31 +30,41 @@ func New(request NewRequest) (*Management, error) {
 	if err != nil {
 		return nil, err
 	}
-	permissions := make(map[string]DriveCleanupPermissions, len(drives))
-	for wwn, drive := range drives {
-		permissions[wwn] = DriveCleanupPermissions{
-			DeleteAllowed:   drive.CleanupDeleteAllowed,
-			PreserveAllowed: drive.CleanupPreserveAllowed,
-		}
+	driveOrder := configuredDriveOrder(request.Config.Disks)
+	sharedPermissions := make([]shared.DriveCleanupPermission, len(driveOrder))
+	for index, drive := range request.Config.Disks {
+		sharedPermissions[index] = shared.DriveCleanupPermission{DeleteDeprecatedVersionsAllowed: drive.CleanupDeleteDeprecatedVersionsAllowed, PreserveAbnormalDataAllowed: drive.CleanupPreserveAbnormalDataAllowed, DeleteLogicalObjectsAllowed: drive.CleanupDeleteLogicalObjectsAllowed}
+	}
+	permissionStore := request.CleanupPermissions
+	if permissionStore == nil {
+		permissionStore = shared.NewCleanupPermissionStore(sharedPermissions)
+	} else if len(permissionStore.Snapshot().Drives) != len(driveOrder) {
+		return nil, fmt.Errorf("cleanup permission store drive count does not match Management configuration")
 	}
 	layer := &Management{
-		orchestration:      request.Orchestration,
-		distribution:       request.Distribution,
-		driveOrder:         configuredDriveOrder(request.Config.Disks),
-		drives:             drives,
-		cleanupPermissions: permissions,
+		orchestration:          request.Orchestration,
+		distribution:           request.Distribution,
+		driveOrder:             driveOrder,
+		drives:                 drives,
+		cleanupPermissionStore: permissionStore,
+	}
+	if receiver, ok := request.Initialization.(cleanupPermissionStoreReceiver); ok {
+		receiver.SetCleanupPermissionStore(permissionStore)
+	}
+	if request.Orchestration != nil {
+		if err := request.Orchestration.SetCleanupPermissionStore(permissionStore); err != nil {
+			return nil, err
+		}
+	}
+	if request.Distribution != nil {
+		if err := request.Distribution.SetCleanupPermissionStore(permissionStore); err != nil {
+			return nil, err
+		}
 	}
 	if request.Initialization != nil {
-		layer.scheduler = NewSchedulerWithInitialization(request.Initialization, nil)
+		layer.scheduler = NewSchedulerWithLifecycleHooks(request.Initialization, nil, layer.lifecycleHooks())
 	}
-	if layer.distribution != nil {
-		if err := layer.publishCleanupPermissionsLocked(); err != nil {
-			return nil, err
-		}
-		if err := layer.distribution.StartCleanupWorker(context.Background()); err != nil {
-			return nil, err
-		}
-	}
+
 	return layer, nil
 }
 

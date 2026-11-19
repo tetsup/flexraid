@@ -3,28 +3,13 @@ package distribution
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 )
 
-// CleanupPermissions controls autonomous cleanup for one physical drive.
-// The slice order is the same as NewRequest.IOs.
-type CleanupPermissions struct {
-	DeleteAllowed   bool
-	PreserveAllowed bool
-}
-
-// SetCleanupPermissions replaces the drive permissions observed by the cleanup
-// worker. The worker reads a snapshot before starting each physical file.
-func (d *Distribution) SetCleanupPermissions(permissions []CleanupPermissions) error {
-	if len(permissions) != len(d.ios) {
-		return fmt.Errorf("got %d cleanup permission entries; want %d", len(permissions), len(d.ios))
-	}
-	d.cleanupControlMu.Lock()
-	d.cleanupPermissions = append([]CleanupPermissions(nil), permissions...)
-	d.cleanupControlMu.Unlock()
+// NotifyCleanupPermissionsChanged wakes the worker after Management updates
+// the shared permission store.
+func (d *Distribution) NotifyCleanupPermissionsChanged() {
 	d.wakeCleanupWorker()
-	return nil
 }
 
 // StartCleanupWorker starts Distribution's autonomous cleanup loop. Calling it
@@ -102,14 +87,13 @@ func (d *Distribution) runCleanupWorker(ctx context.Context, done chan struct{})
 			if err := ctx.Err(); err != nil {
 				return
 			}
-			d.cleanupControlMu.RLock()
-			allowed := candidate.ioIndex >= 0 && candidate.ioIndex < len(d.cleanupPermissions)
+			permissions := d.cleanupPermissionStore.Snapshot().Drives
+			allowed := candidate.ioIndex >= 0 && candidate.ioIndex < len(permissions)
 			if allowed {
-				permission := d.cleanupPermissions[candidate.ioIndex]
-				allowed = (candidate.method == cleanupDeleteOldVersion && permission.DeleteAllowed) ||
-					(candidate.method == cleanupPreserveAbnormal && permission.PreserveAllowed)
+				permission := permissions[candidate.ioIndex]
+				allowed = (candidate.method == cleanupDeleteOldVersion && permission.DeleteDeprecatedVersionsAllowed) ||
+					(candidate.method == cleanupPreserveAbnormal && permission.PreserveAbnormalDataAllowed)
 			}
-			d.cleanupControlMu.RUnlock()
 			if !allowed {
 				continue
 			}

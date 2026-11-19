@@ -5,31 +5,49 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 
 	"github.com/tetsup/flexraid/distribution"
 	"github.com/tetsup/flexraid/pkg/shared"
 )
 
 type NewRequest struct {
-	Context      context.Context
-	Distribution *distribution.Distribution
-	LogLevel     slog.Level
-	Logger       *slog.Logger
+	Context            context.Context
+	Distribution       *distribution.Distribution
+	LogLevel           slog.Level
+	Logger             *slog.Logger
+	CleanupPermissions *shared.CleanupPermissionStore
 }
 type NewResponse struct {
 	Layer  *Orchestration
 	RootID shared.ObjectID
 }
 
+// SetCleanupPermissionStore attaches the Management-owned shared permission state.
+func (layer *Orchestration) SetCleanupPermissionStore(store *shared.CleanupPermissionStore) error {
+	if store == nil {
+		return fmt.Errorf("cleanup permission store is required")
+	}
+	if err := layer.distribution.SetCleanupPermissionStore(store); err != nil {
+		return err
+	}
+	layer.cleanupPermissionStore = store
+	return nil
+}
+
 type Orchestration struct {
-	distribution     *distribution.Distribution
-	logger           *slog.Logger
-	headers          map[shared.ObjectID]header
-	objects          map[shared.ObjectID]*runtimeObject
-	root             *runtimeObject
-	deletionQueue    map[shared.ObjectID]struct{}
-	protectedObjects map[shared.ObjectID]struct{}
-	warnings         []initializationWarning
+	distribution           *distribution.Distribution
+	cleanupPermissionStore *shared.CleanupPermissionStore
+	logger                 *slog.Logger
+	headers                map[shared.ObjectID]header
+	objects                map[shared.ObjectID]*runtimeObject
+	root                   *runtimeObject
+	deletionQueue          map[shared.ObjectID]struct{}
+	protectedObjects       map[shared.ObjectID]struct{}
+	cleanupWorkerMu        sync.Mutex
+	cleanupWorkerCancel    context.CancelFunc
+	cleanupWorkerDone      chan struct{}
+	warnings               []initializationWarning
 }
 
 func New(request NewRequest) (NewResponse, error) {
@@ -54,8 +72,14 @@ func New(request NewRequest) (NewResponse, error) {
 	}
 
 	layer := &Orchestration{
-		distribution: request.Distribution,
-		logger:       logger,
+		distribution:           request.Distribution,
+		cleanupPermissionStore: request.CleanupPermissions,
+		logger:                 logger,
+	}
+	if request.CleanupPermissions != nil {
+		if err := layer.SetCleanupPermissionStore(request.CleanupPermissions); err != nil {
+			return NewResponse{}, err
+		}
 	}
 	if err := layer.initialize(initialObjects); err != nil {
 		return NewResponse{}, err

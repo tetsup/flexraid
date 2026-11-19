@@ -17,14 +17,19 @@ import (
 )
 
 type filesystemInitialization struct {
-	config       mountConfig
-	managed      *management.Management
-	rootID       *shared.ObjectID
-	ioLayers     []*physicalio.IO
-	distributed  *distribution.Distribution
-	pendingLayer *orchestration.Orchestration
-	stage        int
-	disk         int
+	config                 mountConfig
+	managed                *management.Management
+	rootID                 *shared.ObjectID
+	ioLayers               []*physicalio.IO
+	distributed            *distribution.Distribution
+	cleanupPermissionStore *shared.CleanupPermissionStore
+	pendingLayer           *orchestration.Orchestration
+	stage                  int
+	disk                   int
+}
+
+func (task *filesystemInitialization) SetCleanupPermissionStore(store *shared.CleanupPermissionStore) {
+	task.cleanupPermissionStore = store
 }
 
 func (task *filesystemInitialization) Next(ctx context.Context) (bool, error) {
@@ -60,7 +65,7 @@ func (task *filesystemInitialization) Next(ctx context.Context) (bool, error) {
 		return false, nil
 
 	case 2:
-		result, err := distribution.New(distribution.NewRequest{Context: ctx, IOs: task.ioLayers})
+		result, err := distribution.New(distribution.NewRequest{Context: ctx, IOs: task.ioLayers, CleanupPermissions: task.cleanupPermissionStore})
 		if err != nil {
 			return false, fmt.Errorf("initialize Distribution: %w", err)
 		}
@@ -94,6 +99,9 @@ func (task *filesystemInitialization) Next(ctx context.Context) (bool, error) {
 		if err != nil {
 			return false, fmt.Errorf("initialize filesystem root: %w", err)
 		}
+		if err := created.Layer.SetCleanupPermissionStore(task.cleanupPermissionStore); err != nil {
+			return false, err
+		}
 		*task.rootID = created.RootID
 		task.stage = 6
 		// Root creation is a durable initialization unit. Publish the layer in
@@ -103,8 +111,9 @@ func (task *filesystemInitialization) Next(ctx context.Context) (bool, error) {
 
 	case 5:
 		initialized, err := orchestration.New(orchestration.NewRequest{
-			Context:      ctx,
-			Distribution: task.distributed,
+			Context:            ctx,
+			Distribution:       task.distributed,
+			CleanupPermissions: task.cleanupPermissionStore,
 		})
 		if err != nil {
 			return false, fmt.Errorf("restore filesystem namespace: %w", err)
@@ -147,20 +156,30 @@ func mountFilesystem(config mountConfig) (*gofuse.Server, error) {
 
 	adapter, err := flexfuse.New(managed, rootID)
 	if err != nil {
+		stopManagement(managed)
 		return nil, fmt.Errorf("create FUSE adapter: %w", err)
 	}
 	mountpoint, err := filepath.Abs(config.Mountpoint)
 	if err != nil {
+		stopManagement(managed)
 		return nil, fmt.Errorf("resolve mountpoint: %w", err)
 	}
 	if err := os.MkdirAll(mountpoint, 0755); err != nil {
+		stopManagement(managed)
 		return nil, fmt.Errorf("create mountpoint: %w", err)
 	}
 	options := flexfuse.MountOptions()
 	options.MountOptions.FsName = "flexraid-fuse"
 	server, err := adapter.Mount(mountpoint, options)
 	if err != nil {
+		stopManagement(managed)
 		return nil, fmt.Errorf("mount at %s: %w", mountpoint, err)
 	}
 	return server, nil
+}
+
+func stopManagement(managed *management.Management) {
+	stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = managed.Stop(stopCtx)
 }

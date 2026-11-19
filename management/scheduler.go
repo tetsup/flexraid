@@ -148,6 +148,7 @@ type stopCompleted struct {
 type Scheduler struct {
 	initialization     InitializationTask
 	background         BackgroundTask
+	stateHooks         StateHookRegistry
 	execution          sync.Mutex
 	commands           chan any
 	done               chan struct{}
@@ -173,9 +174,15 @@ func NewScheduler(background BackgroundTask) *Scheduler {
 // NewSchedulerWithInitialization configures initialization and background
 // tasks. Initialization runs in safe units before the scheduler enters Ready.
 func NewSchedulerWithInitialization(initialization InitializationTask, background BackgroundTask) *Scheduler {
+	return NewSchedulerWithLifecycleHooks(initialization, background, nil)
+}
+
+// NewSchedulerWithLifecycleHooks configures lifecycle transition side effects.
+func NewSchedulerWithLifecycleHooks(initialization InitializationTask, background BackgroundTask, hooks StateHookRegistry) *Scheduler {
 	return &Scheduler{
 		initialization:     initialization,
 		background:         background,
+		stateHooks:         hooks,
 		commands:           make(chan any, 128),
 		done:               make(chan struct{}),
 		ready:              make(chan struct{}),
@@ -416,13 +423,23 @@ func (scheduler *Scheduler) run() {
 			scheduler.readyOnce.Do(func() { close(scheduler.ready) })
 		}
 	}
+	transitionExecutor := LifecycleTransitionExecutor{Hooks: scheduler.stateHooks}
 	transition := func(input LifecycleInput) ([]LifecycleOutput, error) {
-		next, outputs, err := machine.Transition(state, input)
-		if err != nil {
+		next, outputs, err := transitionExecutor.Transition(context.Background(), machine, state, input)
+		if err != nil && next.Phase != LifecycleFailed {
 			return nil, err
 		}
 		state = next
 		publishPhase()
+		if err != nil {
+			if state.Phase == LifecycleFailed {
+				scheduler.setBackgroundError(err)
+				if inputIsInitializationCompletion(input) {
+					scheduler.setInitializationError(err)
+				}
+			}
+			return outputs, err
+		}
 		return outputs, nil
 	}
 	publishPhase()
@@ -744,4 +761,13 @@ func runExclusiveUnit(lock *sync.Mutex, ctx context.Context, task ExclusiveTask)
 	}
 	done, err = task.Next(ctx)
 	return done, err, release
+}
+
+func inputIsInitializationCompletion(input LifecycleInput) bool {
+	switch input.(type) {
+	case InitializationUnitCompleted, InitializationFailed:
+		return true
+	default:
+		return false
+	}
 }

@@ -57,6 +57,20 @@ func TestStartupRebuildsDeletionQueueAndCleanupDeletesObject(t *testing.T) {
 	if len(started.Layer.deletionQueue) != 1 {
 		t.Fatalf("deletion queue has %d entries", len(started.Layer.deletionQueue))
 	}
+	permissionStore := shared.NewCleanupPermissionStore([]shared.DriveCleanupPermission{{}, {}})
+	if err := started.Layer.SetCleanupPermissionStore(permissionStore); err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := started.Layer.CleanupLocked(CleanupRequest{Context: ctx})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if blocked.DeletedObjects != 0 || blocked.SkippedObjects != 1 {
+		t.Fatalf("cleanup with denied drives = %+v; want one skipped Object", blocked)
+	}
+	if err := permissionStore.Replace([]shared.DriveCleanupPermission{{DeleteLogicalObjectsAllowed: true}, {DeleteLogicalObjectsAllowed: true}}); err != nil {
+		t.Fatal(err)
+	}
 	cleaned, err := started.Layer.CleanupLocked(CleanupRequest{Context: ctx})
 	if err != nil {
 		t.Fatal(err)
