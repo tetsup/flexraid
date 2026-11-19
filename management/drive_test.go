@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tetsup/flexraid/pkg/shared"
 )
@@ -123,5 +124,31 @@ func TestDriveCleanupPermissionRejectsCanceledContext(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("permission update succeeded with canceled context")
+	}
+}
+
+func TestCleanupPermissionUpdateDoesNotWaitForFilesystemLock(t *testing.T) {
+	layer := &Management{
+		cleanupPermissionStore: shared.NewCleanupPermissionStore([]shared.DriveCleanupPermission{{}}),
+		driveOrder:             []string{"wwn-1"},
+		drives:                 map[string]DriveConfig{"wwn-1": {WWN: "wwn-1"}},
+	}
+	layer.mu.Lock()
+	done := make(chan error, 1)
+	go func() {
+		_, err := layer.SetDriveCleanupDeletePermission(SetDriveCleanupDeletePermissionRequest{
+			Context: context.Background(), WWN: "wwn-1", Allowed: true,
+		})
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		layer.mu.Unlock()
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		layer.mu.Unlock()
+		t.Fatal("permission update waited for the filesystem-operation lock")
 	}
 }
