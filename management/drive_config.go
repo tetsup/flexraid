@@ -7,6 +7,7 @@ import (
 	"github.com/tetsup/flexraid/distribution"
 	"github.com/tetsup/flexraid/orchestration"
 	"github.com/tetsup/flexraid/platform"
+	"github.com/tetsup/flexraid/pkg/shared"
 )
 
 // DriveConfig binds one storage root to its physical mountpoint and WWN.
@@ -24,6 +25,11 @@ type NewRequest struct {
 	Distribution   *distribution.Distribution
 	Initialization InitializationTask
 	Config         Config
+	CleanupPermissions *shared.CleanupPermissionStore
+}
+
+type cleanupPermissionStoreReceiver interface {
+	SetCleanupPermissionStore(*shared.CleanupPermissionStore)
 }
 
 func validateDriveConfig(drives []DriveConfig) (map[string]DriveConfig, error) {
