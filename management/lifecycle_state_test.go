@@ -170,7 +170,6 @@ func TestInvalidEventsDoNotMutateInputState(t *testing.T) {
 	}
 }
 
-
 func TestLifecycleOperationAdmissionByPhase(t *testing.T) {
 	tests := []struct {
 		name             string
