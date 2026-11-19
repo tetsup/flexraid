@@ -94,7 +94,9 @@ func New(request NewRequest) (NewResponse, error) {
 		ioErrors: make([]uint64, len(request.IOs)), ioFailures: make([]error, len(request.IOs)), orphans: make(map[shared.ObjectID][]chunkLocation), cleanupQueue: newCleanupQueue(), cleanupPermissionStore: request.CleanupPermissions, cleanupWake: make(chan struct{}, 1)}
 	if d.cleanupPermissionStore == nil {
 		defaults := make([]shared.DriveCleanupPermission, len(request.IOs))
-		for index := range defaults { defaults[index] = shared.DriveCleanupPermission{DeleteAllowed: true, PreserveAllowed: true} }
+		for index := range defaults {
+			defaults[index] = shared.DriveCleanupPermission{DeleteAllowed: true, PreserveAllowed: true}
+		}
 		d.cleanupPermissionStore = shared.NewCleanupPermissionStore(defaults)
 	}
 	usable := 0
