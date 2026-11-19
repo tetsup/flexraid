@@ -40,13 +40,11 @@ func (layer *Management) Stop(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("stop context is required")
 	}
-	if err := layer.StopBackgroundProcesses(ctx); err != nil {
-		return err
-	}
+	backgroundErr := layer.StopBackgroundProcesses(ctx)
 	if layer.scheduler == nil {
-		return nil
+		return backgroundErr
 	}
-	return layer.scheduler.Stop(ctx)
+	return errors.Join(backgroundErr, layer.scheduler.Stop(ctx))
 }
 
 // SetOrchestration publishes the fully initialized Orchestration layer.
