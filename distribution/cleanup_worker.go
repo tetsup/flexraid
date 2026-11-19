@@ -5,24 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"time"
-)
 
-// CleanupPermissions controls autonomous cleanup for one physical drive.
-// The slice order is the same as NewRequest.IOs.
-type CleanupPermissions struct {
-	DeleteAllowed   bool
-	PreserveAllowed bool
-}
+	"github.com/tetsup/flexraid/pkg/shared"
+)
 
 // SetCleanupPermissions replaces the drive permissions observed by the cleanup
 // worker. The worker reads a snapshot before starting each physical file.
-func (d *Distribution) SetCleanupPermissions(permissions []CleanupPermissions) error {
-	if len(permissions) != len(d.ios) {
-		return fmt.Errorf("got %d cleanup permission entries; want %d", len(permissions), len(d.ios))
-	}
-	d.cleanupControlMu.Lock()
-	d.cleanupPermissions = append([]CleanupPermissions(nil), permissions...)
-	d.cleanupControlMu.Unlock()
+func (d *Distribution) SetCleanupPermissions(permissions []shared.DriveCleanupPermission) error {
+	if len(permissions) != len(d.ios) { return fmt.Errorf("got %d cleanup permission entries; want %d", len(permissions), len(d.ios)) }
+	if err := d.cleanupPermissionStore.Replace(permissions); err != nil { return err }
 	d.wakeCleanupWorker()
 	return nil
 }
@@ -102,14 +93,13 @@ func (d *Distribution) runCleanupWorker(ctx context.Context, done chan struct{})
 			if err := ctx.Err(); err != nil {
 				return
 			}
-			d.cleanupControlMu.RLock()
-			allowed := candidate.ioIndex >= 0 && candidate.ioIndex < len(d.cleanupPermissions)
+			permissions := d.cleanupPermissionStore.Snapshot().Drives
+			allowed := candidate.ioIndex >= 0 && candidate.ioIndex < len(permissions)
 			if allowed {
-				permission := d.cleanupPermissions[candidate.ioIndex]
+				permission := permissions[candidate.ioIndex]
 				allowed = (candidate.method == cleanupDeleteOldVersion && permission.DeleteAllowed) ||
 					(candidate.method == cleanupPreserveAbnormal && permission.PreserveAllowed)
 			}
-			d.cleanupControlMu.RUnlock()
 			if !allowed {
 				continue
 			}
