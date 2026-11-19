@@ -55,8 +55,8 @@ func (layer *Management) SetOrchestration(orchestrationLayer *orchestration.Orch
 	if layer.orchestration != nil {
 		return fmt.Errorf("Orchestration layer is already set")
 	}
+	if err := orchestrationLayer.SetCleanupPermissionStore(layer.cleanupPermissionStore); err != nil { return err }
 	layer.orchestration = orchestrationLayer
-	orchestrationLayer.SetCleanupPermissionStore(layer.cleanupPermissionStore)
 	return nil
 }
 
