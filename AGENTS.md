@@ -112,7 +112,7 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - Orchestration / Distribution の内部状態を直接変更しない。各レイヤーが公開する API を通じて操作し、状態の所有者と排他制御の所有者を分離する。
 - Foreground / Background / Exclusive / Initialization / Stop のすべてに共通する、Management 唯一の実行ロック機構を所有する。Management の実行単位は同時に一つだけ実行し、各単位が共通ロックを取得して直列実行する。ObjectID などの対象別ロック、複数対象ロック、別系統のメンテナンスロックは設けない。ロックは復旧可能な最小実行単位の開始時に取得し、その単位の完了・状態確定後に必ず解放する。次の単位へ進む前に実行権を譲り、Lifecycle と Scheduler が実行種別ごとの受付・優先順位・drain を調停する。これはロック粒度を Object や Stripe に広げることを意味しない。
 - 操作回数・所要時間・結果などの上位操作メトリクスを集計し、Distribution が提供するドライブ別 I/O 統計などを統合して監視 API から返す。物理 I/O のエラー検出・計数は実際に I/O を実行する下位レイヤーで行い、Management はそれを集約・公開する。
-- Management が Scheduler / MaintenanceExecutor を通じて実行する Background 作業は、Foreground との優先順位を Management の共通実行ロックで調停する。一方、Distribution の自律 Cleanup は Management の Background WorkItem として実行しない。Management は Distribution の Cleanup ループの起動・停止と Drive ごとの許可情報更新だけを行う。Cleanup の進捗は永続化せず、起動時・再開時に物理状態から候補を再構築する。
+- Management が Scheduler / MaintenanceExecutor を通じて実行する Background 作業は、Foreground との優先順位を Management の共通実行ロックで調停する。一方、Distribution の自律 Cleanup は Management の Background WorkItem として実行しない。Management は Distribution の物理 Cleanup ループと Orchestration の論理削除 Object Cleanup ループの起動・停止、および Drive ごとの許可情報更新を行う。各ループの処理判断と候補管理は所有レイヤーが行う。Orchestration worker は Management の公開 Cleanup 経路を通じて実行し、Management の操作排他を迂回しない。Cleanup の進捗は永続化せず、起動時・再開時に各所有レイヤーが状態から候補を再構築する。
 
 #### Maintenance Policy / Executor
 
@@ -126,7 +126,7 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - ドライブ状態の観測と SpinUp / SpinDown の OS 固有操作は Platform が提供する。Management はドライブ単位の Cleanup 許可レベルを所有し、設定ファイルで初期値を受け取り、公開 API で実行中に変更する。許可情報は不要 Version 等の自律 Cleanup と論理削除 Object の物理削除の双方に適用する。Management は許可情報を各レイヤーへ公開するだけで、削除対象や削除単位を選択・指示しない。許可情報の変更自体は削除処理を開始しない。
 - 初期実装に学習、適応的な効率推定、複雑な最適化アルゴリズムを持ち込まない。効率計算・アルゴリズム比較は外部シミュレータで行う。Policy は差し替え可能にし、判断入力・Plan・実行結果を観測できるようにする。
 
-- 起動・初期化・停止のライフサイクルを統括する。下位レイヤーの初期化を適切な順序で実行し、Orchestration に Header の読み込み・検証、Namespace 構築・整合性検査を行わせる。Orchestration は Deleted Header と整合性検査結果から自身の一時的な削除待ちキューを再構築する。Management は `CleanupPermissionStore` の同一インスタンスを Orchestration と Distribution に共有し、更新だけを行う。削除候補の選択・削除ワークフローは各所有レイヤーに委ね、Management は削除キューや ObjectID / StripeID の候補を複製しない。全レイヤーの初期化と整合性確認が成功するまで外部操作を Ready として受け付けず、途中失敗時は部分初期化状態を公開しない。初期化完了後に Lifecycle が Ready へ遷移し、その後 Management が Distribution の自律 Cleanup など各レイヤーのバックグラウンドプロセスを明示的に起動する。バックグラウンドプロセスの起動が完了するまでは FUSE mount を行わず、外部操作を受け付けない。
+- 起動・初期化・停止のライフサイクルを統括する。下位レイヤーの初期化を適切な順序で実行し、Orchestration に Header の読み込み・検証、Namespace 構築・整合性検査を行わせる。Orchestration は Deleted Header と整合性検査結果から自身の一時的な削除待ちキューを再構築する。Management は `CleanupPermissionStore` の同一インスタンスを Orchestration と Distribution に共有し、更新だけを行う。削除候補の選択・削除ワークフローは各所有レイヤーに委ね、Management は削除キューや ObjectID / StripeID の候補を複製しない。全レイヤーの初期化と整合性確認が成功するまで外部操作を Ready として受け付けず、途中失敗時は部分初期化状態を公開しない。初期化完了後に Lifecycle が Ready へ遷移し、その後 Management が Distribution の自律物理 Cleanup worker と Orchestration の論理削除 Cleanup worker の両方を明示的に起動する。停止時および起動途中の失敗時は、起動済み worker を逆順に停止する。バックグラウンドプロセスの起動が完了するまでは FUSE mount を行わず、外部操作を受け付けない。
 - 起動時に Management が設定を読み込み、各ストレージのマウントポイントと物理ドライブ WWN を一組として保持する。マウントポイントごとに対応する WWN を明示し、自動推測で補完しない。設定内でマウントポイントまたは WWN が重複する場合、WWN を Platform 経由で一意に解決できない場合、対応デバイスを確認できない場合は Ready にせず初期化を失敗させる。Management はこの対応付けを WWN をキーとするドライブ状態管理・電源制御の基礎情報として所有する。
 - 各ストレージ設定は FlexRAID の I/O root、物理ファイルシステムの mountpoint、WWN の3項目を必須とする。設定読み込み後、物理ストレージディレクトリの作成や Distribution の初期化など副作用を伴う処理より前に、重複・欠落を検証し Platform の公開 API で WWN を解決する。
 - Platform の WWN 解決は Linux の `/dev/disk/by-id/wwn-*` を基準とし、パーティションではなく物理ブロックデバイスを対象とする。別識別子へのフォールバックは禁止する。
