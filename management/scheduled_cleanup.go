@@ -40,7 +40,7 @@ func (layer *Management) SetDistribution(distributed *distribution.Distribution)
 // snapshot to Distribution. The caller must hold layer.mu.
 func (layer *Management) publishCleanupPermissionsLocked() error {
 	if layer.orchestration != nil {
-		layer.orchestration.SetCleanupPermissionStore(layer.cleanupPermissionStore)
+		if err := layer.orchestration.SetCleanupPermissionStore(layer.cleanupPermissionStore); err != nil { return err }
 	}
 	if layer.distribution != nil {
 		layer.distribution.NotifyCleanupPermissionsChanged()
