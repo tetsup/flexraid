@@ -144,26 +144,15 @@ func (layer *Management) cleanupDriveIndex(wwn string) int {
 	return -1
 }
 
-// StopDistributionCleanupWorker stops the Distribution-owned cleanup loop.
+// StopDistributionCleanupWorker is retained as the legacy entry point and
+// stops every background cleanup process owned by the initialized layers.
 func (layer *Management) StopDistributionCleanupWorker(ctx context.Context) error {
-	if ctx == nil {
-		return fmt.Errorf("context is required")
-	}
-	layer.mu.Lock()
-	defer layer.mu.Unlock()
-	if layer.distribution == nil {
-		return fmt.Errorf("Distribution layer is not initialized")
-	}
-	if err := layer.distribution.StopCleanupWorker(ctx); err != nil {
-		return err
-	}
-	layer.backgroundProcessesStarted = false
-	return nil
+	return layer.StopBackgroundProcesses(ctx)
 }
 
-// StartDistributionCleanupWorker starts all currently configured background
-// processes. It is retained as a focused entry point for the current
-// Distribution-owned cleanup process.
+// StartDistributionCleanupWorker is retained as the legacy entry point for
+// starting all initialized-layer background cleanup processes.
 func (layer *Management) StartDistributionCleanupWorker(ctx context.Context) error {
 	return layer.StartBackgroundProcesses(ctx)
 }
+
