@@ -11,13 +11,13 @@ permissions:
 
 jobs:
   pjdfstest:
-    name: FlexRAID pjdfstest shard ${{ matrix.shard }}
+    name: FlexRAID pjdfstest cleanup mode ${{ matrix.cleanup_mode }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+        cleanup_mode: [none, logical-only, all]
     steps:
       - name: Check out FlexRAID
         uses: actions/checkout@v6
@@ -54,6 +54,8 @@ jobs:
         run: go build -o "$RUNNER_TEMP/flexraid" ./main
 
       - name: Prepare FUSE storage
+        env:
+          CLEANUP_MODE: ${{ matrix.cleanup_mode }}
         run: |
           set -eu
           root="$RUNNER_TEMP/pjdfstest-flexraid"
@@ -68,50 +70,63 @@ jobs:
             echo "$device" >> "$root/loop-devices"
             sudo ln -sfn "$device" "/dev/disk/by-id/wwn-flexraid-ci-$index"
           done
+          case "$CLEANUP_MODE" in
+            none) delete_deprecated=false; preserve_abnormal=false; delete_objects=false ;;
+            logical-only) delete_deprecated=false; preserve_abnormal=false; delete_objects=true ;;
+            all) delete_deprecated=true; preserve_abnormal=true; delete_objects=true ;;
+            *) echo "unknown cleanup mode: $CLEANUP_MODE" >&2; exit 1 ;;
+          esac
           cat > "$root/flexraid.yaml" <<EOF
           disks:
             - root: "$root/disk1"
               mountpoint: "$root/physical1"
               wwn: flexraid-ci-1
+              cleanup_delete_deprecated_versions_allowed: $delete_deprecated
+              cleanup_preserve_abnormal_data_allowed: $preserve_abnormal
+              cleanup_delete_logical_objects_allowed: $delete_objects
             - root: "$root/disk2"
               mountpoint: "$root/physical2"
               wwn: flexraid-ci-2
+              cleanup_delete_deprecated_versions_allowed: $delete_deprecated
+              cleanup_preserve_abnormal_data_allowed: $preserve_abnormal
+              cleanup_delete_logical_objects_allowed: $delete_objects
             - root: "$root/disk3"
               mountpoint: "$root/physical3"
               wwn: flexraid-ci-3
+              cleanup_delete_deprecated_versions_allowed: $delete_deprecated
+              cleanup_preserve_abnormal_data_allowed: $preserve_abnormal
+              cleanup_delete_logical_objects_allowed: $delete_objects
             - root: "$root/disk4"
               mountpoint: "$root/physical4"
               wwn: flexraid-ci-4
+              cleanup_delete_deprecated_versions_allowed: $delete_deprecated
+              cleanup_preserve_abnormal_data_allowed: $preserve_abnormal
+              cleanup_delete_logical_objects_allowed: $delete_objects
           mountpoint: "$root/mount"
           EOF
           sudo chmod 0777 "$root" "$root/mount" "$root/logs" "$root/results"
 
-      - name: Select pjdfstest cases for this shard
-        env:
-          SHARD_INDEX: ${{ matrix.shard }}
-          SHARD_COUNT: 8
+      - name: Select all pjdfstest cases for serial execution
         run: |
           set -euo pipefail
-          test_list="$RUNNER_TEMP/pjdfstest-flexraid-shard-tests.txt"
-          find "$GITHUB_WORKSPACE/pjdfstest/tests" -type f -name '*.t' -print |
-            sort |
-            awk -v shard="$SHARD_INDEX" -v count="$SHARD_COUNT" '(NR - 1) % count == shard' > "$test_list"
+          test_list="$RUNNER_TEMP/pjdfstest-flexraid-tests.txt"
+          find "$GITHUB_WORKSPACE/pjdfstest/tests" -type f -name '*.t' -print | sort > "$test_list"
           test -s "$test_list"
-          printf 'pjdfstest shard %s/%s selected %s test files:\n' "$SHARD_INDEX" "$SHARD_COUNT" "$(wc -l < "$test_list")"
+          printf 'pjdfstest selected %s test files for serial execution:\n' "$(wc -l < "$test_list")"
           cat "$test_list"
-          echo "PJDFSTEST_SHARD_TEST_LIST=$test_list" >> "$GITHUB_ENV"
-          echo "PJDFSTEST_SHARD_INDEX=$SHARD_INDEX" >> "$GITHUB_ENV"
-          echo "PJDFSTEST_SHARD_COUNT=$SHARD_COUNT" >> "$GITHUB_ENV"
+          echo "PJDFSTEST_TEST_LIST=$test_list" >> "$GITHUB_ENV"
 
       - name: Run pjdfstest against FlexRAID as root
+        env:
+          CLEANUP_MODE: ${{ matrix.cleanup_mode }}
         run: |
           set -euo pipefail
-          sudo --preserve-env=GITHUB_WORKSPACE,RUNNER_TEMP,PJDFSTEST_SHARD_TEST_LIST,PJDFSTEST_SHARD_INDEX,PJDFSTEST_SHARD_COUNT env FLEXRAID_BIN="$RUNNER_TEMP/flexraid" bash -c 'set -euo pipefail
+          sudo --preserve-env=GITHUB_WORKSPACE,RUNNER_TEMP,PJDFSTEST_TEST_LIST,CLEANUP_MODE env FLEXRAID_BIN="$RUNNER_TEMP/flexraid" bash -c 'set -euo pipefail
             root="$RUNNER_TEMP/pjdfstest-flexraid"
             mount_dir="$root/mount"
             log_file="$root/logs/flexraid.log"
             pid_file="$root/flexraid.pid"
-            result_file="$root/results/pjdfstest-shard-${PJDFSTEST_SHARD_INDEX}.log"
+            result_file="$root/results/pjdfstest-${CLEANUP_MODE}.log"
             mount_pid=""
 
             cleanup() {
@@ -167,8 +182,8 @@ jobs:
               exit 1
             fi
 
-            mapfile -t tests < "$PJDFSTEST_SHARD_TEST_LIST"
-            printf "Running pjdfstest shard %s/%s (%s test files) on %s\n" "$PJDFSTEST_SHARD_INDEX" "$PJDFSTEST_SHARD_COUNT" "${#tests[@]}" "$mount_dir"
+            mapfile -t tests < "$PJDFSTEST_TEST_LIST"
+            printf "Running pjdfstest cleanup mode %s (%s test files, serial) on %s\n" "$CLEANUP_MODE" "${#tests[@]}" "$mount_dir"
             cd "$mount_dir"
             test_status=0
             for test_file in "${tests[@]}"; do
@@ -202,7 +217,7 @@ jobs:
                 test_status=1
               fi
             done
-            echo "pjdfstest shard ${PJDFSTEST_SHARD_INDEX} exit status: $test_status"
+            echo "pjdfstest cleanup mode ${CLEANUP_MODE} exit status: $test_status"
             exit "$test_status"'
 
       - name: Stop FlexRAID mount
@@ -238,10 +253,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: pjdfstest-flexraid-shard-${{ matrix.shard }}-results
+          name: pjdfstest-flexraid-${{ matrix.cleanup_mode }}-results
           path: |
             pjdfstest-build.log
             ${{ runner.temp }}/pjdfstest-flexraid/
-            ${{ runner.temp }}/pjdfstest-flexraid-shard-tests.txt
+            ${{ runner.temp }}/pjdfstest-flexraid-tests.txt
           if-no-files-found: warn
           retention-days: 14
