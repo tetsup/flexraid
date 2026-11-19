@@ -169,3 +169,99 @@ func TestInvalidEventsDoNotMutateInputState(t *testing.T) {
 		t.Fatalf("returned state aliases input state: input=%+v next=%+v", state, next)
 	}
 }
+
+
+func TestLifecycleOperationAdmissionByPhase(t *testing.T) {
+	tests := []struct {
+		name             string
+		phase            LifecyclePhase
+		normalAdmitted   bool
+		backgroundStarts bool
+		maintenanceOK    bool
+		stopOK           bool
+	}{
+		{name: "initializing", phase: LifecycleInitializing, maintenanceOK: true, stopOK: true},
+		{name: "ready", phase: LifecycleReady, normalAdmitted: true, backgroundStarts: true, maintenanceOK: true, stopOK: true},
+		{name: "draining", phase: LifecycleDraining, maintenanceOK: true, stopOK: true},
+		{name: "maintenance", phase: LifecycleMaintenance, maintenanceOK: true, stopOK: true},
+		{name: "failed", phase: LifecycleFailed, stopOK: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			state := LifecycleState{Phase: test.phase}
+			_, outputs, err := (LifecycleMachine{}).Transition(state, NormalOperationRequested{ID: "normal"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := hasOutput[AdmitNormalOperation](outputs); got != test.normalAdmitted {
+				t.Fatalf("normal admission = %v, want %v (outputs=%#v)", got, test.normalAdmitted, outputs)
+			}
+			if !test.normalAdmitted {
+				wantErrno := syscall.EBUSY
+				if test.phase == LifecycleFailed {
+					wantErrno = syscall.EIO
+				}
+				found := false
+				for _, output := range outputs {
+					if rejected, ok := output.(RejectNormalOperation); ok && rejected.Errno == wantErrno {
+						found = true
+					}
+				}
+				if !found {
+					t.Fatalf("normal operation rejection did not use %v: %#v", wantErrno, outputs)
+				}
+			}
+
+			_, outputs, err = (LifecycleMachine{}).Transition(state, BackgroundUnitRequested{TaskID: "background"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := hasOutput[RunBackgroundUnit](outputs); got != test.backgroundStarts {
+				t.Fatalf("background unit start = %v, want %v (outputs=%#v)", got, test.backgroundStarts, outputs)
+			}
+
+			maintenanceState, maintenanceOutputs, maintenanceErr := (LifecycleMachine{}).Transition(
+				state,
+				ExclusiveRequested{Request: ExclusiveRequest{ID: "maintenance", Kind: ExclusiveMaintenance}},
+			)
+			if got := maintenanceErr == nil; got != test.maintenanceOK {
+				t.Fatalf("maintenance request accepted = %v, want %v (state=%+v outputs=%#v err=%v)",
+					got, test.maintenanceOK, maintenanceState, maintenanceOutputs, maintenanceErr)
+			}
+
+			stopState, stopOutputs, stopErr := (LifecycleMachine{}).Transition(
+				state,
+				ExclusiveRequested{Request: ExclusiveRequest{ID: "stop", Kind: ExclusiveStop}},
+			)
+			if got := stopErr == nil; got != test.stopOK {
+				t.Fatalf("stop request accepted = %v, want %v (state=%+v outputs=%#v err=%v)",
+					got, test.stopOK, stopState, stopOutputs, stopErr)
+			}
+		})
+	}
+}
+
+func TestLifecycleReadyEntryIsOnlyReachedAfterInitializationOrMaintenance(t *testing.T) {
+	state := LifecycleState{Phase: LifecycleInitializing}
+	state, outputs := transition(t, state, InitializationStarted{})
+	state, outputs = transition(t, state, InitializationUnitCompleted{})
+	if state.Phase != LifecycleReady {
+		t.Fatalf("initialization completion phase = %v, want Ready", state.Phase)
+	}
+	if !hasOutput[LifecycleChanged](outputs) {
+		t.Fatalf("entering Ready did not publish lifecycle change: %#v", outputs)
+	}
+	if hasOutput[RunInitializationUnit](outputs) || hasOutput[RunExclusiveUnit](outputs) {
+		t.Fatalf("Ready entry unexpectedly scheduled another lifecycle unit: %#v", outputs)
+	}
+
+	state, _ = transition(t, state, ExclusiveRequested{Request: ExclusiveRequest{ID: "maintenance", Kind: ExclusiveMaintenance}})
+	if state.Phase != LifecycleMaintenance {
+		t.Fatalf("exclusive start phase = %v, want Maintenance", state.Phase)
+	}
+	state, outputs = transition(t, state, ExclusiveUnitCompleted{RequestID: "maintenance"})
+	if state.Phase != LifecycleReady || !hasOutput[LifecycleChanged](outputs) {
+		t.Fatalf("maintenance completion did not return to Ready: state=%+v outputs=%#v", state, outputs)
+	}
+}
