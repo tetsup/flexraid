@@ -20,8 +20,9 @@ type SetDriveCleanupDeletePermissionResponse struct {
 	Allowed bool
 }
 
-// SetDriveCleanupDeletePermission updates the in-memory deletion permission
-// for a configured drive. It does not start cleanup by itself.
+// SetDriveCleanupDeletePermission updates the shared permission state. It does
+// not acquire Management's filesystem-operation lock, so an active Object
+// cleanup can finish and observe the new setting at the next Object boundary.
 func (layer *Management) SetDriveCleanupDeletePermission(
 	request SetDriveCleanupDeletePermissionRequest,
 ) (SetDriveCleanupDeletePermissionResponse, error) {
@@ -31,22 +32,27 @@ func (layer *Management) SetDriveCleanupDeletePermission(
 	if err := request.Context.Err(); err != nil {
 		return SetDriveCleanupDeletePermissionResponse{}, err
 	}
-
-	layer.mu.Lock()
-	defer layer.mu.Unlock()
 	if _, exists := layer.drives[request.WWN]; !exists {
 		return SetDriveCleanupDeletePermissionResponse{}, fmt.Errorf("WWN %q is not configured", request.WWN)
 	}
-	permissions, exists := layer.cleanupPermissions[request.WWN]
-	if !exists {
+	index := layer.cleanupDriveIndex(request.WWN)
+	if index < 0 {
 		return SetDriveCleanupDeletePermissionResponse{}, fmt.Errorf("cleanup permissions for WWN %q are not initialized", request.WWN)
 	}
-	permissions.DeleteAllowed = request.Allowed
-	layer.cleanupPermissions[request.WWN] = permissions
-	if err := layer.publishCleanupPermissionsLocked(); err != nil {
+	snapshot := layer.cleanupPermissionStore.Snapshot()
+	if index >= len(snapshot.Drives) {
+		return SetDriveCleanupDeletePermissionResponse{}, fmt.Errorf("cleanup permission index %d is out of range", index)
+	}
+	snapshot.Drives[index].DeleteAllowed = request.Allowed
+	if err := layer.cleanupPermissionStore.Replace(snapshot.Drives); err != nil {
 		return SetDriveCleanupDeletePermissionResponse{}, err
 	}
-	return SetDriveCleanupDeletePermissionResponse{WWN: request.WWN, Allowed: permissions.DeleteAllowed}, nil
+	if layer.distribution != nil {
+		if err := layer.distribution.SetCleanupPermissions(snapshot.Drives); err != nil {
+			return SetDriveCleanupDeletePermissionResponse{}, err
+		}
+	}
+	return SetDriveCleanupDeletePermissionResponse{WWN: request.WWN, Allowed: request.Allowed}, nil
 }
 
 // SetDriveCleanupPreservePermissionRequest changes abnormal-data preservation permission.
@@ -62,8 +68,8 @@ type SetDriveCleanupPreservePermissionResponse struct {
 	Allowed bool
 }
 
-// SetDriveCleanupPreservePermission updates the in-memory preservation
-// permission for a configured drive. It does not start cleanup by itself.
+// SetDriveCleanupPreservePermission updates the shared preservation permission
+// without blocking an active Object-level cleanup work unit.
 func (layer *Management) SetDriveCleanupPreservePermission(
 	request SetDriveCleanupPreservePermissionRequest,
 ) (SetDriveCleanupPreservePermissionResponse, error) {
@@ -73,22 +79,27 @@ func (layer *Management) SetDriveCleanupPreservePermission(
 	if err := request.Context.Err(); err != nil {
 		return SetDriveCleanupPreservePermissionResponse{}, err
 	}
-
-	layer.mu.Lock()
-	defer layer.mu.Unlock()
 	if _, exists := layer.drives[request.WWN]; !exists {
 		return SetDriveCleanupPreservePermissionResponse{}, fmt.Errorf("WWN %q is not configured", request.WWN)
 	}
-	permissions, exists := layer.cleanupPermissions[request.WWN]
-	if !exists {
+	index := layer.cleanupDriveIndex(request.WWN)
+	if index < 0 {
 		return SetDriveCleanupPreservePermissionResponse{}, fmt.Errorf("cleanup permissions for WWN %q are not initialized", request.WWN)
 	}
-	permissions.PreserveAllowed = request.Allowed
-	layer.cleanupPermissions[request.WWN] = permissions
-	if err := layer.publishCleanupPermissionsLocked(); err != nil {
+	snapshot := layer.cleanupPermissionStore.Snapshot()
+	if index >= len(snapshot.Drives) {
+		return SetDriveCleanupPreservePermissionResponse{}, fmt.Errorf("cleanup permission index %d is out of range", index)
+	}
+	snapshot.Drives[index].PreserveAllowed = request.Allowed
+	if err := layer.cleanupPermissionStore.Replace(snapshot.Drives); err != nil {
 		return SetDriveCleanupPreservePermissionResponse{}, err
 	}
-	return SetDriveCleanupPreservePermissionResponse{WWN: request.WWN, Allowed: permissions.PreserveAllowed}, nil
+	if layer.distribution != nil {
+		if err := layer.distribution.SetCleanupPermissions(snapshot.Drives); err != nil {
+			return SetDriveCleanupPreservePermissionResponse{}, err
+		}
+	}
+	return SetDriveCleanupPreservePermissionResponse{WWN: request.WWN, Allowed: request.Allowed}, nil
 }
 
 // GetDriveCleanupPermissionsRequest reads the current permissions for one drive.
@@ -97,13 +108,13 @@ type GetDriveCleanupPermissionsRequest struct {
 	WWN     string
 }
 
-// GetDriveCleanupPermissionsResponse is a copy of the current drive permissions.
+// GetDriveCleanupPermissionsResponse contains the current shared drive permission.
 type GetDriveCleanupPermissionsResponse struct {
 	WWN         string
 	Permissions shared.DriveCleanupPermission
 }
 
-// GetDriveCleanupPermissions returns a snapshot without exposing Management's map.
+// GetDriveCleanupPermissions returns a value from the shared permission snapshot.
 func (layer *Management) GetDriveCleanupPermissions(
 	request GetDriveCleanupPermissionsRequest,
 ) (GetDriveCleanupPermissionsResponse, error) {
@@ -113,17 +124,24 @@ func (layer *Management) GetDriveCleanupPermissions(
 	if err := request.Context.Err(); err != nil {
 		return GetDriveCleanupPermissionsResponse{}, err
 	}
-
-	layer.mu.Lock()
-	defer layer.mu.Unlock()
 	if _, exists := layer.drives[request.WWN]; !exists {
 		return GetDriveCleanupPermissionsResponse{}, fmt.Errorf("WWN %q is not configured", request.WWN)
 	}
-	permissions, exists := layer.cleanupPermissions[request.WWN]
-	if !exists {
+	index := layer.cleanupDriveIndex(request.WWN)
+	snapshot := layer.cleanupPermissionStore.Snapshot()
+	if index < 0 || index >= len(snapshot.Drives) {
 		return GetDriveCleanupPermissionsResponse{}, fmt.Errorf("cleanup permissions for WWN %q are not initialized", request.WWN)
 	}
-	return GetDriveCleanupPermissionsResponse{WWN: request.WWN, Permissions: permissions}, nil
+	return GetDriveCleanupPermissionsResponse{WWN: request.WWN, Permissions: snapshot.Drives[index]}, nil
+}
+
+func (layer *Management) cleanupDriveIndex(wwn string) int {
+	for index, configured := range layer.driveOrder {
+		if configured == wwn {
+			return index
+		}
+	}
+	return -1
 }
 
 // StopDistributionCleanupWorker stops the autonomous cleanup loop without
@@ -142,7 +160,7 @@ func (layer *Management) StopDistributionCleanupWorker(ctx context.Context) erro
 }
 
 // StartDistributionCleanupWorker starts the Distribution-owned cleanup loop
-// after publishing the latest drive permission snapshot.
+// after publishing the latest shared drive permission snapshot.
 func (layer *Management) StartDistributionCleanupWorker(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("context is required")
@@ -154,9 +172,6 @@ func (layer *Management) StartDistributionCleanupWorker(ctx context.Context) err
 	defer layer.mu.Unlock()
 	if layer.distribution == nil {
 		return fmt.Errorf("Distribution layer is not initialized")
-	}
-	if err := layer.publishCleanupPermissionsLocked(); err != nil {
-		return err
 	}
 	return layer.distribution.StartCleanupWorker(ctx)
 }
