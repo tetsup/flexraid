@@ -9,17 +9,10 @@ import (
 	"github.com/tetsup/flexraid/pkg/shared"
 )
 
-// SetCleanupPermissions replaces the drive permissions observed by the cleanup
-// worker. The worker reads a snapshot before starting each physical file.
-func (d *Distribution) SetCleanupPermissions(permissions []shared.DriveCleanupPermission) error {
-	if len(permissions) != len(d.ios) {
-		return fmt.Errorf("got %d cleanup permission entries; want %d", len(permissions), len(d.ios))
-	}
-	if err := d.cleanupPermissionStore.Replace(permissions); err != nil {
-		return err
-	}
+// NotifyCleanupPermissionsChanged wakes the worker after Management updates
+// the shared permission store.
+func (d *Distribution) NotifyCleanupPermissionsChanged() {
 	d.wakeCleanupWorker()
-	return nil
 }
 
 // StartCleanupWorker starts Distribution's autonomous cleanup loop. Calling it
