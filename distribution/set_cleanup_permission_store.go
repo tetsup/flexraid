@@ -12,6 +12,9 @@ func (d *Distribution) SetCleanupPermissionStore(store *shared.CleanupPermission
 	if store == nil {
 		return fmt.Errorf("cleanup permission store is required")
 	}
+	if d.cleanupPermissionStore == store {
+		return nil
+	}
 	snapshot := store.Snapshot()
 	if len(snapshot.Drives) != len(d.ios) {
 		return fmt.Errorf("cleanup permission store has %d drives; want %d", len(snapshot.Drives), len(d.ios))
