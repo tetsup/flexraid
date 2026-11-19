@@ -3,13 +3,9 @@ package management
 import (
 	"context"
 	"fmt"
-)
 
-// DriveCleanupPermissions controls destructive cleanup operations for one drive.
-type DriveCleanupPermissions struct {
-	DeleteAllowed   bool
-	PreserveAllowed bool
-}
+	"github.com/tetsup/flexraid/pkg/shared"
+)
 
 // SetDriveCleanupDeletePermissionRequest changes physical deletion permission.
 type SetDriveCleanupDeletePermissionRequest struct {
@@ -104,7 +100,7 @@ type GetDriveCleanupPermissionsRequest struct {
 // GetDriveCleanupPermissionsResponse is a copy of the current drive permissions.
 type GetDriveCleanupPermissionsResponse struct {
 	WWN         string
-	Permissions DriveCleanupPermissions
+	Permissions shared.DriveCleanupPermission
 }
 
 // GetDriveCleanupPermissions returns a snapshot without exposing Management's map.
