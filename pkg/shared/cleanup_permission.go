@@ -7,6 +7,7 @@ import (
 
 // DriveCleanupPermission controls destructive cleanup operations on one drive.
 type DriveCleanupPermission struct {
+	ObjectDeleteAllowed bool
 	DeleteAllowed   bool
 	PreserveAllowed bool
 }
