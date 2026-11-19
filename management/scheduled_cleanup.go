@@ -1,14 +1,13 @@
 package management
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/tetsup/flexraid/distribution"
 )
 
-// SetDistribution publishes the initialized Distribution layer and starts its
-// autonomous cleanup worker. It is used by the initialization path.
+// SetDistribution publishes the initialized Distribution layer. Background
+// processes are started separately after all startup initialization completes.
 func (layer *Management) SetDistribution(distributed *distribution.Distribution) error {
 	if distributed == nil {
 		return fmt.Errorf("Distribution layer is required")
@@ -26,10 +25,6 @@ func (layer *Management) SetDistribution(distributed *distribution.Distribution)
 	}
 	layer.distribution = distributed
 	if err := layer.publishCleanupPermissionsLocked(); err != nil {
-		layer.distribution = nil
-		return err
-	}
-	if err := distributed.StartCleanupWorker(context.Background()); err != nil {
 		layer.distribution = nil
 		return err
 	}
