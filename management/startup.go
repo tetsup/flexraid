@@ -89,11 +89,18 @@ func (layer *Management) StartBackgroundProcesses(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("background process context is required")
 	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
 	if layer.Phase() != LifecycleReady {
 		return fmt.Errorf("background processes can only start when Management is Ready")
+	}
+	return layer.startBackgroundProcesses(ctx)
+}
+
+func (layer *Management) startBackgroundProcesses(ctx context.Context) error {
+	if ctx == nil {
+		return fmt.Errorf("background process context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
@@ -160,7 +167,7 @@ func (layer *Management) lifecycleHooks() StateHookRegistry {
 				if !hasDistribution {
 					return nil
 				}
-				return layer.StartBackgroundProcesses(ctx)
+				return layer.startBackgroundProcesses(ctx)
 			},
 			OnExit: func(ctx context.Context) error {
 				return layer.StopBackgroundProcesses(ctx)
