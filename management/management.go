@@ -17,7 +17,6 @@ type Management struct {
 	distribution           *distribution.Distribution
 	driveOrder             []string
 	drives                 map[string]DriveConfig
-	cleanupPermissions     map[string]shared.DriveCleanupPermission
 	cleanupPermissionStore *shared.CleanupPermissionStore
 	scheduler              *Scheduler
 }
@@ -30,18 +29,10 @@ func New(request NewRequest) (*Management, error) {
 	if err != nil {
 		return nil, err
 	}
-	permissions := make(map[string]shared.DriveCleanupPermission, len(drives))
-	for wwn, drive := range drives {
-		permissions[wwn] = shared.DriveCleanupPermission{
-			DeleteAllowed:   drive.CleanupDeleteAllowed,
-			PreserveAllowed: drive.CleanupPreserveAllowed,
-		}
-	}
 	driveOrder := configuredDriveOrder(request.Config.Disks)
 	sharedPermissions := make([]shared.DriveCleanupPermission, len(driveOrder))
-	for index, wwn := range driveOrder {
-		current := permissions[wwn]
-		sharedPermissions[index] = shared.DriveCleanupPermission{DeleteAllowed: current.DeleteAllowed, PreserveAllowed: current.PreserveAllowed}
+	for index, drive := range request.Config.Disks {
+		sharedPermissions[index] = shared.DriveCleanupPermission{DeleteAllowed: drive.CleanupDeleteAllowed, PreserveAllowed: drive.CleanupPreserveAllowed}
 	}
 	permissionStore := request.CleanupPermissions
 	if permissionStore == nil {
@@ -52,7 +43,6 @@ func New(request NewRequest) (*Management, error) {
 		distribution:           request.Distribution,
 		driveOrder:             driveOrder,
 		drives:                 drives,
-		cleanupPermissions:     permissions,
 		cleanupPermissionStore: permissionStore,
 	}
 	if receiver, ok := request.Initialization.(cleanupPermissionStoreReceiver); ok {
