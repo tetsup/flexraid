@@ -13,6 +13,7 @@ import (
 
 type Management struct {
 	mu                     sync.Mutex
+	cleanupPermissionUpdateMu sync.Mutex
 	orchestration          *orchestration.Orchestration
 	distribution           *distribution.Distribution
 	driveOrder             []string
