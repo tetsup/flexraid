@@ -246,23 +246,17 @@ func TestBackgroundProcessesStartOnlyAfterReady(t *testing.T) {
 	if err := layer.WaitReady(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := layer.StartBackgroundProcesses(ctx); err != nil {
-		t.Fatalf("StartBackgroundProcesses: %v", err)
+	if !layer.backgroundProcessesStarted {
+		t.Fatal("Ready OnEnter did not start background processes")
 	}
 	if !layer.backgroundProcessesStarted {
 		t.Fatal("background process start was not recorded after both workers started")
 	}
-	if err := layer.StartBackgroundProcesses(ctx); err != nil {
-		t.Fatalf("repeated StartBackgroundProcesses: %v", err)
-	}
-	if !layer.backgroundProcessesStarted {
-		t.Fatal("repeated start unexpectedly cleared background process state")
-	}
-	if err := layer.StopBackgroundProcesses(ctx); err != nil {
-		t.Fatalf("stop cleanup workers: %v", err)
+	if err := layer.Stop(ctx); err != nil {
+		t.Fatalf("Stop: %v", err)
 	}
 	if layer.backgroundProcessesStarted {
-		t.Fatal("background process state remained started after both workers stopped")
+		t.Fatal("Ready OnExit did not stop both cleanup workers")
 	}
 	if err := layer.Stop(ctx); err != nil {
 		t.Fatalf("Stop: %v", err)
