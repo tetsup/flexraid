@@ -12,8 +12,12 @@ import (
 // SetCleanupPermissions replaces the drive permissions observed by the cleanup
 // worker. The worker reads a snapshot before starting each physical file.
 func (d *Distribution) SetCleanupPermissions(permissions []shared.DriveCleanupPermission) error {
-	if len(permissions) != len(d.ios) { return fmt.Errorf("got %d cleanup permission entries; want %d", len(permissions), len(d.ios)) }
-	if err := d.cleanupPermissionStore.Replace(permissions); err != nil { return err }
+	if len(permissions) != len(d.ios) {
+		return fmt.Errorf("got %d cleanup permission entries; want %d", len(permissions), len(d.ios))
+	}
+	if err := d.cleanupPermissionStore.Replace(permissions); err != nil {
+		return err
+	}
 	d.wakeCleanupWorker()
 	return nil
 }

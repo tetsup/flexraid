@@ -11,10 +11,10 @@ import (
 )
 
 type NewRequest struct {
-	Context      context.Context
-	Distribution *distribution.Distribution
-	LogLevel     slog.Level
-	Logger       *slog.Logger
+	Context            context.Context
+	Distribution       *distribution.Distribution
+	LogLevel           slog.Level
+	Logger             *slog.Logger
 	CleanupPermissions *shared.CleanupPermissionStore
 }
 type NewResponse struct {
@@ -23,15 +23,15 @@ type NewResponse struct {
 }
 
 type Orchestration struct {
-	distribution     *distribution.Distribution
+	distribution           *distribution.Distribution
 	cleanupPermissionStore *shared.CleanupPermissionStore
-	logger           *slog.Logger
-	headers          map[shared.ObjectID]header
-	objects          map[shared.ObjectID]*runtimeObject
-	root             *runtimeObject
-	deletionQueue    map[shared.ObjectID]struct{}
-	protectedObjects map[shared.ObjectID]struct{}
-	warnings         []initializationWarning
+	logger                 *slog.Logger
+	headers                map[shared.ObjectID]header
+	objects                map[shared.ObjectID]*runtimeObject
+	root                   *runtimeObject
+	deletionQueue          map[shared.ObjectID]struct{}
+	protectedObjects       map[shared.ObjectID]struct{}
+	warnings               []initializationWarning
 }
 
 func New(request NewRequest) (NewResponse, error) {
@@ -56,9 +56,9 @@ func New(request NewRequest) (NewResponse, error) {
 	}
 
 	layer := &Orchestration{
-		distribution: request.Distribution,
+		distribution:           request.Distribution,
 		cleanupPermissionStore: request.CleanupPermissions,
-		logger:       logger,
+		logger:                 logger,
 	}
 	if err := layer.initialize(initialObjects); err != nil {
 		return NewResponse{}, err
