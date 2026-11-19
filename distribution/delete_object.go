@@ -96,7 +96,7 @@ func (d *Distribution) DeleteObject(request DeleteObjectRequest) (response Delet
 			return response, fmt.Errorf("invalid I/O index %d for Object %s", item.location.ioIndex, request.ObjectID.String())
 		}
 		if !permissions.Drives[item.location.ioIndex].DeleteLogicalObjectsAllowed {
-			return response, fmt.Errorf("%w: I/O index %d", ErrCleanupDriveNotAllowed, item.location.ioIndex)
+			return response, fmt.Errorf("%w: I/O index %d", ErrLogicalObjectDeletionNotAllowed, item.location.ioIndex)
 		}
 		work = append(work, item)
 	}
