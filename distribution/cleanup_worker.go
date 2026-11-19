@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"time"
-
 )
 
 // NotifyCleanupPermissionsChanged wakes the worker after Management updates
