@@ -105,20 +105,19 @@ func (layer *Management) StartBackgroundProcesses(ctx context.Context) error {
 	if layer.distribution == nil {
 		return fmt.Errorf("Distribution layer is not initialized")
 	}
-	if layer.orchestration == nil {
-		return fmt.Errorf("Orchestration layer is not initialized")
-	}
 	if err := layer.distribution.StartCleanupWorker(ctx); err != nil {
 		return fmt.Errorf("start Distribution cleanup worker: %w", err)
 	}
-	if err := layer.orchestration.StartCleanupWorker(ctx, func(cleanupCtx context.Context) error {
-		_, cleanupErr := layer.Cleanup(orchestration.CleanupRequest{Context: cleanupCtx})
-		return cleanupErr
-	}); err != nil {
+	if layer.orchestration != nil {
+		if err := layer.orchestration.StartCleanupWorker(ctx, func(cleanupCtx context.Context) error {
+			_, cleanupErr := layer.Cleanup(orchestration.CleanupRequest{Context: cleanupCtx})
+			return cleanupErr
+		}); err != nil {
 		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = layer.distribution.StopCleanupWorker(stopCtx)
-		return fmt.Errorf("start Orchestration cleanup worker: %w", err)
+			return fmt.Errorf("start Orchestration cleanup worker: %w", err)
+		}
 	}
 	layer.backgroundProcessesStarted = true
 	return nil
