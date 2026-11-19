@@ -51,9 +51,6 @@ func (d *Distribution) DeleteObject(request DeleteObjectRequest) (response Delet
 	d.mapMu.Lock()
 	locations := make(map[storage.FileKey]objectDeleteLocation)
 	currentKeys := make(map[storage.FileKey]struct{})
-	for _, stripes := range d.objects {
-		_ = stripes
-	}
 	for _, stripe := range d.objects[request.ObjectID] {
 		for _, location := range stripe.chunks {
 			currentKeys[location.key] = struct{}{}
@@ -100,19 +97,31 @@ func (d *Distribution) DeleteObject(request DeleteObjectRequest) (response Delet
 	// Changes published by Management apply when the next ObjectID is selected.
 	sort.Slice(work, func(i, j int) bool {
 		a, b := work[i], work[j]
-		if a.current != b.current {
-			return !a.current
-		}
 		ka, kb := a.location.key, b.location.key
-		if !a.current {
+		phase := func(item objectDeleteLocation) int {
+			if item.location.key.StripeID == 0 {
+				return 2
+			}
+			if !item.current {
+				return 0
+			}
+			return 1
+		}
+		phaseA, phaseB := phase(a), phase(b)
+		if phaseA != phaseB {
+			return phaseA < phaseB
+		}
+		if phaseA == 0 {
 			if ka.StripeID != kb.StripeID {
 				return ka.StripeID > kb.StripeID
 			}
 			if ka.StripeVersion != kb.StripeVersion {
 				return ka.StripeVersion < kb.StripeVersion
 			}
-		} else if ka.StripeID != kb.StripeID {
+		} else if phaseA == 1 && ka.StripeID != kb.StripeID {
 			return ka.StripeID > kb.StripeID
+		} else if phaseA == 2 && a.current != b.current {
+			return !a.current
 		}
 		if ka.LayoutID.Index != kb.LayoutID.Index {
 			return ka.LayoutID.Index > kb.LayoutID.Index
