@@ -101,8 +101,8 @@ func TestDriveCleanupPermissionsAreIndependentAndMutable(t *testing.T) {
 
 func TestDriveCleanupPermissionRejectsUnknownWWN(t *testing.T) {
 	layer := &Management{
-		drives: map[string]DriveConfig{"wwn-1": {WWN: "wwn-1"}},
-		driveOrder: []string{"wwn-1"},
+		drives:                 map[string]DriveConfig{"wwn-1": {WWN: "wwn-1"}},
+		driveOrder:             []string{"wwn-1"},
 		cleanupPermissionStore: shared.NewCleanupPermissionStore([]shared.DriveCleanupPermission{{}}),
 		cleanupPermissions: map[string]shared.DriveCleanupPermission{
 			"wwn-1": {},
@@ -118,8 +118,8 @@ func TestDriveCleanupPermissionRejectsUnknownWWN(t *testing.T) {
 
 func TestDriveCleanupPermissionRejectsCanceledContext(t *testing.T) {
 	layer := &Management{
-		drives: map[string]DriveConfig{"wwn-1": {WWN: "wwn-1"}},
-		driveOrder: []string{"wwn-1"},
+		drives:                 map[string]DriveConfig{"wwn-1": {WWN: "wwn-1"}},
+		driveOrder:             []string{"wwn-1"},
 		cleanupPermissionStore: shared.NewCleanupPermissionStore([]shared.DriveCleanupPermission{{}}),
 		cleanupPermissions: map[string]shared.DriveCleanupPermission{
 			"wwn-1": {},
