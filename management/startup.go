@@ -40,11 +40,10 @@ func (layer *Management) Stop(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("stop context is required")
 	}
-	backgroundErr := layer.StopBackgroundProcesses(ctx)
 	if layer.scheduler == nil {
-		return backgroundErr
+		return nil
 	}
-	return errors.Join(backgroundErr, layer.scheduler.Stop(ctx))
+	return layer.scheduler.Stop(ctx)
 }
 
 // SetOrchestration publishes the fully initialized Orchestration layer.
@@ -149,4 +148,23 @@ func (layer *Management) StopBackgroundProcesses(ctx context.Context) error {
 	layer.backgroundProcessesStarted = false
 	layer.mu.Unlock()
 	return stopErr
+}
+
+func (layer *Management) lifecycleHooks() StateHookRegistry {
+	return StateHookRegistry{
+		LifecycleReady: {
+			OnEnter: func(ctx context.Context) error {
+				layer.mu.Lock()
+				hasDistribution := layer.distribution != nil
+				layer.mu.Unlock()
+				if !hasDistribution {
+					return nil
+				}
+				return layer.StartBackgroundProcesses(ctx)
+			},
+			OnExit: func(ctx context.Context) error {
+				return layer.StopBackgroundProcesses(ctx)
+			},
+		},
+	}
 }
