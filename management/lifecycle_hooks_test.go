@@ -139,6 +139,10 @@ func TestLifecycleTransitionExecutorDoesNotEnterTargetAfterFailedOnExit(t *testi
 	if next.Phase != LifecycleFailed {
 		t.Fatalf("phase = %v, want Failed", next.Phase)
 	}
+	if next.RunningExclusive != nil || len(next.ExclusiveQueue) != 1 ||
+		next.ExclusiveQueue[0].ID != "maintenance" {
+		t.Fatalf("failed OnExit must not start maintenance; state=%+v", next)
+	}
 	if targetEntered {
 		t.Fatal("target OnEnter ran after source OnExit failed")
 	}
