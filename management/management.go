@@ -62,7 +62,7 @@ func New(request NewRequest) (*Management, error) {
 		}
 	}
 	if request.Initialization != nil {
-		layer.scheduler = NewSchedulerWithInitialization(request.Initialization, nil)
+		layer.scheduler = NewSchedulerWithLifecycleHooks(request.Initialization, nil, layer.lifecycleHooks())
 	}
 
 	return layer, nil
