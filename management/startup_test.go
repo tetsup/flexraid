@@ -9,6 +9,7 @@ import (
 
 	"github.com/tetsup/flexraid/distribution"
 	physicalio "github.com/tetsup/flexraid/io"
+	"github.com/tetsup/flexraid/orchestration"
 )
 
 func TestManagementStartupLifecycleReachesReady(t *testing.T) {
@@ -211,9 +212,16 @@ func TestBackgroundProcessesStartOnlyAfterReady(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	created, err := orchestration.CreateRoot(orchestration.CreateRootRequest{
+		Context: context.Background(), Distribution: distributed.Layer, Mode: 0755,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	layer, err := New(NewRequest{
-		Distribution: distributed.Layer,
-		Config:       Config{Disks: []DriveConfig{{Root: t.TempDir(), Mountpoint: t.TempDir(), WWN: "wwn-test"}}},
+		Orchestration: created.Layer,
+		Distribution:  distributed.Layer,
+		Config:        Config{Disks: []DriveConfig{{Root: t.TempDir(), Mountpoint: t.TempDir(), WWN: "wwn-test"}}},
 		Initialization: InitializationTaskFunc(func(context.Context) (bool, error) {
 			return true, nil
 		}),
@@ -238,7 +246,7 @@ func TestBackgroundProcessesStartOnlyAfterReady(t *testing.T) {
 	if err := layer.StartBackgroundProcesses(ctx); err != nil {
 		t.Fatalf("repeated StartBackgroundProcesses: %v", err)
 	}
-	if err := layer.StopDistributionCleanupWorker(ctx); err != nil {
+	if err := layer.StopBackgroundProcesses(ctx); err != nil {
 		t.Fatalf("stop cleanup worker: %v", err)
 	}
 	if err := layer.Stop(ctx); err != nil {
