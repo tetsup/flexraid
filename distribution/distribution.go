@@ -93,11 +93,7 @@ func New(request NewRequest) (NewResponse, error) {
 		versions: make(map[stripeIDKey]map[storage.StripeVersion]*versionInfo),
 		ioErrors: make([]uint64, len(request.IOs)), ioFailures: make([]error, len(request.IOs)), orphans: make(map[shared.ObjectID][]chunkLocation), cleanupQueue: newCleanupQueue(), cleanupPermissionStore: request.CleanupPermissions, cleanupWake: make(chan struct{}, 1)}
 	if d.cleanupPermissionStore == nil {
-		defaults := make([]shared.DriveCleanupPermission, len(request.IOs))
-		for index := range defaults {
-			defaults[index] = shared.DriveCleanupPermission{DeleteAllowed: true, PreserveAllowed: true}
-		}
-		d.cleanupPermissionStore = shared.NewCleanupPermissionStore(defaults)
+		d.cleanupPermissionStore = shared.NewCleanupPermissionStore(make([]shared.DriveCleanupPermission, len(request.IOs)))
 	}
 	usable := 0
 	for index, layer := range d.ios {
