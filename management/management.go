@@ -8,6 +8,7 @@ import (
 
 	"github.com/tetsup/flexraid/distribution"
 	"github.com/tetsup/flexraid/orchestration"
+	"github.com/tetsup/flexraid/pkg/shared"
 )
 
 type Management struct {
@@ -17,6 +18,7 @@ type Management struct {
 	driveOrder         []string
 	drives             map[string]DriveConfig
 	cleanupPermissions map[string]DriveCleanupPermissions
+	cleanupPermissionStore *shared.CleanupPermissionStore
 	scheduler          *Scheduler
 }
 
@@ -35,13 +37,24 @@ func New(request NewRequest) (*Management, error) {
 			PreserveAllowed: drive.CleanupPreserveAllowed,
 		}
 	}
+	driveOrder := configuredDriveOrder(request.Config.Disks)
+	sharedPermissions := make([]shared.DriveCleanupPermission, len(driveOrder))
+	for index, wwn := range driveOrder {
+		current := permissions[wwn]
+		sharedPermissions[index] = shared.DriveCleanupPermission{DeleteAllowed: current.DeleteAllowed, PreserveAllowed: current.PreserveAllowed}
+	}
+	permissionStore := request.CleanupPermissions
+	if permissionStore == nil { permissionStore = shared.NewCleanupPermissionStore(sharedPermissions) }
 	layer := &Management{
 		orchestration:      request.Orchestration,
 		distribution:       request.Distribution,
-		driveOrder:         configuredDriveOrder(request.Config.Disks),
+		driveOrder:         driveOrder,
 		drives:             drives,
 		cleanupPermissions: permissions,
+		cleanupPermissionStore: permissionStore,
 	}
+	if receiver, ok := request.Initialization.(cleanupPermissionStoreReceiver); ok { receiver.SetCleanupPermissionStore(permissionStore) }
+	if request.Orchestration != nil { request.Orchestration.SetCleanupPermissionStore(permissionStore) }
 	if request.Initialization != nil {
 		layer.scheduler = NewSchedulerWithInitialization(request.Initialization, nil)
 	}
