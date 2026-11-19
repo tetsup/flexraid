@@ -155,4 +155,3 @@ func (layer *Management) StopDistributionCleanupWorker(ctx context.Context) erro
 func (layer *Management) StartDistributionCleanupWorker(ctx context.Context) error {
 	return layer.StartBackgroundProcesses(ctx)
 }
-
