@@ -17,15 +17,15 @@ import (
 )
 
 type filesystemInitialization struct {
-	config       mountConfig
-	managed      *management.Management
-	rootID       *shared.ObjectID
-	ioLayers     []*physicalio.IO
-	distributed  *distribution.Distribution
+	config                 mountConfig
+	managed                *management.Management
+	rootID                 *shared.ObjectID
+	ioLayers               []*physicalio.IO
+	distributed            *distribution.Distribution
 	cleanupPermissionStore *shared.CleanupPermissionStore
-	pendingLayer *orchestration.Orchestration
-	stage        int
-	disk         int
+	pendingLayer           *orchestration.Orchestration
+	stage                  int
+	disk                   int
 }
 
 func (task *filesystemInitialization) SetCleanupPermissionStore(store *shared.CleanupPermissionStore) {
@@ -109,8 +109,8 @@ func (task *filesystemInitialization) Next(ctx context.Context) (bool, error) {
 
 	case 5:
 		initialized, err := orchestration.New(orchestration.NewRequest{
-			Context:      ctx,
-			Distribution: task.distributed,
+			Context:            ctx,
+			Distribution:       task.distributed,
 			CleanupPermissions: task.cleanupPermissionStore,
 		})
 		if err != nil {

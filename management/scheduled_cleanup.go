@@ -50,8 +50,14 @@ func (layer *Management) publishCleanupPermissionsLocked() error {
 			DeleteAllowed: current.DeleteAllowed, PreserveAllowed: current.PreserveAllowed,
 		}
 	}
-	if err := layer.cleanupPermissionStore.Replace(permissions); err != nil { return err }
-	if layer.orchestration != nil { layer.orchestration.SetCleanupPermissionStore(layer.cleanupPermissionStore) }
-	if layer.distribution != nil { return layer.distribution.SetCleanupPermissions(permissions) }
+	if err := layer.cleanupPermissionStore.Replace(permissions); err != nil {
+		return err
+	}
+	if layer.orchestration != nil {
+		layer.orchestration.SetCleanupPermissionStore(layer.cleanupPermissionStore)
+	}
+	if layer.distribution != nil {
+		return layer.distribution.SetCleanupPermissions(permissions)
+	}
 	return nil
 }
