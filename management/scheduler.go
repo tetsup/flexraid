@@ -416,13 +416,23 @@ func (scheduler *Scheduler) run() {
 			scheduler.readyOnce.Do(func() { close(scheduler.ready) })
 		}
 	}
+	transitionExecutor := LifecycleTransitionExecutor{Hooks: scheduler.stateHooks}
 	transition := func(input LifecycleInput) ([]LifecycleOutput, error) {
-		next, outputs, err := machine.Transition(state, input)
-		if err != nil {
+		next, outputs, err := transitionExecutor.Transition(context.Background(), machine, state, input)
+		if err != nil && next.Phase != LifecycleFailed {
 			return nil, err
 		}
 		state = next
 		publishPhase()
+		if err != nil {
+			if state.Phase == LifecycleFailed {
+				scheduler.setBackgroundError(err)
+				if inputIsInitializationCompletion(input) {
+					scheduler.setInitializationError(err)
+				}
+			}
+			return outputs, err
+		}
 		return outputs, nil
 	}
 	publishPhase()
@@ -744,4 +754,13 @@ func runExclusiveUnit(lock *sync.Mutex, ctx context.Context, task ExclusiveTask)
 	}
 	done, err = task.Next(ctx)
 	return done, err, release
+}
+
+func inputIsInitializationCompletion(input LifecycleInput) bool {
+	switch input.(type) {
+	case InitializationUnitCompleted, InitializationFailed:
+		return true
+	default:
+		return false
+	}
 }
