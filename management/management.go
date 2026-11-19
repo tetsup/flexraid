@@ -38,6 +38,8 @@ func New(request NewRequest) (*Management, error) {
 	permissionStore := request.CleanupPermissions
 	if permissionStore == nil {
 		permissionStore = shared.NewCleanupPermissionStore(sharedPermissions)
+	} else if len(permissionStore.Snapshot().Drives) != len(driveOrder) {
+		return nil, fmt.Errorf("cleanup permission store drive count does not match Management configuration")
 	}
 	layer := &Management{
 		orchestration:          request.Orchestration,
