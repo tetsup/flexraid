@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/tetsup/flexraid/distribution"
-	"github.com/tetsup/flexraid/pkg/shared"
 )
 
 // SetDistribution publishes the initialized Distribution layer and starts its
