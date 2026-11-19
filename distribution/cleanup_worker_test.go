@@ -7,8 +7,8 @@ import (
 	"time"
 
 	physicalio "github.com/tetsup/flexraid/io"
-	"github.com/tetsup/flexraid/storage"
 	"github.com/tetsup/flexraid/pkg/shared"
+	"github.com/tetsup/flexraid/storage"
 )
 
 func TestCleanupWorkerRespectsDrivePermissionsAndStops(t *testing.T) {
