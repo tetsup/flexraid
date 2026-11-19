@@ -46,7 +46,7 @@ func (executor LifecycleTransitionExecutor) Transition(
 	target := next.Phase
 	if exit := executor.Hooks[state.Phase].OnExit; exit != nil {
 		if err := exit(ctx); err != nil {
-			failed := failedLifecycleState(state)
+			failed := failedLifecycleState(next, target)
 			return failed, lifecycleFailureOutputs(outputs, state.Phase, err),
 				fmt.Errorf("exit lifecycle phase %d: %w", state.Phase, err)
 		}
@@ -58,7 +58,7 @@ func (executor LifecycleTransitionExecutor) Transition(
 			if rollback := executor.Hooks[target].OnExit; rollback != nil {
 				rollbackErr = rollback(ctx)
 			}
-			failed := failedLifecycleState(state)
+			failed := failedLifecycleState(next, target)
 			reason := errors.Join(err, rollbackErr)
 			return failed, lifecycleFailureOutputs(outputs, state.Phase, reason),
 				fmt.Errorf("enter lifecycle phase %d: %w", target, reason)
@@ -74,6 +74,9 @@ func lifecycleFailureOutputs(outputs []LifecycleOutput, from LifecyclePhase, err
 		if _, ok := output.(LifecycleChanged); ok {
 			continue
 		}
+		if started, ok := output.(StartExclusive); ok && started.Request.Kind != ExclusiveStop {
+			continue
+		}
 		filtered = append(filtered, output)
 	}
 	return append(filtered,
@@ -82,9 +85,15 @@ func lifecycleFailureOutputs(outputs []LifecycleOutput, from LifecyclePhase, err
 	)
 }
 
-func failedLifecycleState(state LifecycleState) LifecycleState {
-	failed := cloneLifecycleState(state)
+func failedLifecycleState(next LifecycleState, target LifecyclePhase) LifecycleState {
+	failed := cloneLifecycleState(next)
 	failed.Phase = LifecycleFailed
 	failed.InitializationStarted = false
+	if target == LifecycleMaintenance && failed.RunningExclusive != nil &&
+		failed.RunningExclusive.Kind != ExclusiveStop {
+		request := *failed.RunningExclusive
+		failed.ExclusiveQueue = append([]ExclusiveRequest{request}, failed.ExclusiveQueue...)
+		failed.RunningExclusive = nil
+	}
 	return failed
 }
