@@ -63,7 +63,7 @@ func TestSpinDownRejectsUnconfiguredWWN(t *testing.T) {
 
 func TestDriveCleanupPermissionsAreIndependentAndMutable(t *testing.T) {
 	layer := &Management{
-		cleanupPermissionStore: shared.NewCleanupPermissionStore([]shared.DriveCleanupPermission{{}}),
+		cleanupPermissionStore: shared.NewCleanupPermissionStore([]shared.DriveCleanupPermission{{PreserveAllowed: true}}),
 		driveOrder:             []string{"wwn-1"},
 		drives:                 map[string]DriveConfig{"wwn-1": {WWN: "wwn-1"}},
 	}
