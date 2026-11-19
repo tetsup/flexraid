@@ -78,7 +78,8 @@ func (layer *Management) LifecycleErrno() syscall.Errno {
 
 // StartBackgroundProcesses starts the autonomous processes owned by the
 // initialized layers. It must be called after WaitReady and before accepting
-// external filesystem requests.
+// external filesystem requests. Publishing a layer during initialization must
+// not start its worker before the remaining layers have been initialized.
 func (layer *Management) StartBackgroundProcesses(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("background process context is required")
