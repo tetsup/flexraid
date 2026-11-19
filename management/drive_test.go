@@ -119,7 +119,9 @@ func TestDriveCleanupPermissionRejectsUnknownWWN(t *testing.T) {
 func TestDriveCleanupPermissionRejectsCanceledContext(t *testing.T) {
 	layer := &Management{
 		drives: map[string]DriveConfig{"wwn-1": {WWN: "wwn-1"}},
-		cleanupPermissions: map[string]DriveCleanupPermissions{
+		driveOrder: []string{"wwn-1"},
+		cleanupPermissionStore: shared.NewCleanupPermissionStore([]shared.DriveCleanupPermission{{}}),
+		cleanupPermissions: map[string]shared.DriveCleanupPermission{
 			"wwn-1": {},
 		},
 	}
