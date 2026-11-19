@@ -68,3 +68,17 @@ func (executor LifecycleTransitionExecutor) Transition(
 
 	return next, outputs, nil
 }
+
+func lifecycleFailureOutputs(outputs []LifecycleOutput, from LifecyclePhase, err error) []LifecycleOutput {
+	filtered := make([]LifecycleOutput, 0, len(outputs)+2)
+	for _, output := range outputs {
+		if changed, ok := output.(LifecycleChanged); ok && changed.From == from {
+			continue
+		}
+		filtered = append(filtered, output)
+	}
+	return append(filtered,
+		LifecycleChanged{From: from, To: LifecycleFailed},
+		LifecycleFailureReported{Reason: err.Error()},
+	)
+}
