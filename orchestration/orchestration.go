@@ -22,6 +22,11 @@ type NewResponse struct {
 	RootID shared.ObjectID
 }
 
+// SetCleanupPermissionStore attaches the Management-owned shared permission state.
+func (layer *Orchestration) SetCleanupPermissionStore(store *shared.CleanupPermissionStore) {
+	layer.cleanupPermissionStore = store
+}
+
 type Orchestration struct {
 	distribution           *distribution.Distribution
 	cleanupPermissionStore *shared.CleanupPermissionStore
