@@ -19,6 +19,11 @@ func (d *Distribution) SetCleanupPermissionStore(store *shared.CleanupPermission
 	if len(snapshot.Drives) != len(d.ios) {
 		return fmt.Errorf("cleanup permission store has %d drives; want %d", len(snapshot.Drives), len(d.ios))
 	}
+	d.cleanupWorkerMu.Lock()
+	defer d.cleanupWorkerMu.Unlock()
+	if d.cleanupWorkerCancel != nil && d.cleanupPermissionStore != store {
+		return fmt.Errorf("cannot replace cleanup permission store while worker is running")
+	}
 	d.cleanupPermissionStore = store
 	d.wakeCleanupWorker()
 	return nil
