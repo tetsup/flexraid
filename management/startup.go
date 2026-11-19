@@ -75,3 +75,32 @@ func (layer *Management) LifecycleErrno() syscall.Errno {
 		return syscall.EBUSY
 	}
 }
+
+
+// StartBackgroundProcesses starts the autonomous processes owned by the
+// initialized layers. It must be called after WaitReady and before accepting
+// external filesystem requests.
+func (layer *Management) StartBackgroundProcesses(ctx context.Context) error {
+	if ctx == nil {
+		return fmt.Errorf("background process context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if layer.Phase() != LifecycleReady {
+		return fmt.Errorf("background processes can only start when Management is Ready")
+	}
+	layer.mu.Lock()
+	defer layer.mu.Unlock()
+	if layer.backgroundProcessesStarted {
+		return nil
+	}
+	if layer.distribution == nil {
+		return fmt.Errorf("Distribution layer is not initialized")
+	}
+	if err := layer.distribution.StartCleanupWorker(ctx); err != nil {
+		return fmt.Errorf("start Distribution cleanup worker: %w", err)
+	}
+	layer.backgroundProcessesStarted = true
+	return nil
+}
