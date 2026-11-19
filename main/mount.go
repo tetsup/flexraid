@@ -22,9 +22,14 @@ type filesystemInitialization struct {
 	rootID       *shared.ObjectID
 	ioLayers     []*physicalio.IO
 	distributed  *distribution.Distribution
+	cleanupPermissionStore *shared.CleanupPermissionStore
 	pendingLayer *orchestration.Orchestration
 	stage        int
 	disk         int
+}
+
+func (task *filesystemInitialization) SetCleanupPermissionStore(store *shared.CleanupPermissionStore) {
+	task.cleanupPermissionStore = store
 }
 
 func (task *filesystemInitialization) Next(ctx context.Context) (bool, error) {
@@ -60,7 +65,7 @@ func (task *filesystemInitialization) Next(ctx context.Context) (bool, error) {
 		return false, nil
 
 	case 2:
-		result, err := distribution.New(distribution.NewRequest{Context: ctx, IOs: task.ioLayers})
+		result, err := distribution.New(distribution.NewRequest{Context: ctx, IOs: task.ioLayers, CleanupPermissions: task.cleanupPermissionStore})
 		if err != nil {
 			return false, fmt.Errorf("initialize Distribution: %w", err)
 		}
@@ -87,6 +92,8 @@ func (task *filesystemInitialization) Next(ctx context.Context) (bool, error) {
 		created, err := orchestration.CreateRoot(orchestration.CreateRootRequest{
 			Context:      ctx,
 			Distribution: task.distributed,
+			CleanupPermissions: task.cleanupPermissionStore,
+			CleanupPermissions: task.cleanupPermissionStore,
 			Mode:         0755,
 			UID:          uint32(os.Getuid()),
 			GID:          uint32(os.Getgid()),
