@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/tetsup/flexraid/pkg/shared"
 )
 
 func TestValidateDriveConfig(t *testing.T) {
@@ -61,8 +63,9 @@ func TestSpinDownRejectsUnconfiguredWWN(t *testing.T) {
 
 func TestDriveCleanupPermissionsAreIndependentAndMutable(t *testing.T) {
 	layer := &Management{
+		cleanupPermissionStore: shared.NewCleanupPermissionStore([]shared.DriveCleanupPermission{{}}),
 		drives: map[string]DriveConfig{"wwn-1": {WWN: "wwn-1"}},
-		cleanupPermissions: map[string]DriveCleanupPermissions{
+		cleanupPermissions: map[string]shared.DriveCleanupPermission{
 			"wwn-1": {DeleteAllowed: false, PreserveAllowed: true},
 		},
 	}
