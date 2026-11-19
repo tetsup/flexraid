@@ -247,18 +247,12 @@ func TestBackgroundProcessesStartOnlyAfterReady(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !layer.backgroundProcessesStarted {
-		t.Fatal("Ready OnEnter did not start background processes")
-	}
-	if !layer.backgroundProcessesStarted {
-		t.Fatal("background process start was not recorded after both workers started")
+		t.Fatal("Ready OnEnter did not start both cleanup workers")
 	}
 	if err := layer.Stop(ctx); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
 	if layer.backgroundProcessesStarted {
 		t.Fatal("Ready OnExit did not stop both cleanup workers")
-	}
-	if err := layer.Stop(ctx); err != nil {
-		t.Fatalf("Stop: %v", err)
 	}
 }
