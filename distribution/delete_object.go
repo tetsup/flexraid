@@ -24,6 +24,11 @@ type DeleteObjectResponse struct {
 	DeletedFiles int
 }
 
+type objectDeleteFileKey struct {
+	ioIndex int
+	key     storage.FileKey
+}
+
 type objectDeleteLocation struct {
 	location chunkLocation
 	current  bool
@@ -49,11 +54,11 @@ func (d *Distribution) DeleteObject(request DeleteObjectRequest) (response Delet
 
 	permissions := d.cleanupPermissionStore.Snapshot()
 	d.mapMu.Lock()
-	locations := make(map[storage.FileKey]objectDeleteLocation)
-	currentKeys := make(map[storage.FileKey]struct{})
+	locations := make(map[objectDeleteFileKey]objectDeleteLocation)
+	currentKeys := make(map[objectDeleteFileKey]struct{})
 	for _, stripe := range d.objects[request.ObjectID] {
 		for _, location := range stripe.chunks {
-			currentKeys[location.key] = struct{}{}
+			currentKeys[objectDeleteFileKey{ioIndex: location.ioIndex, key: location.key}] = struct{}{}
 		}
 	}
 	for key, versions := range d.versions {
@@ -62,20 +67,23 @@ func (d *Distribution) DeleteObject(request DeleteObjectRequest) (response Delet
 		}
 		for _, version := range versions {
 			for _, location := range version.chunks {
-				_, current := currentKeys[location.key]
-				locations[location.key] = objectDeleteLocation{location: location, current: current}
+				identity := objectDeleteFileKey{ioIndex: location.ioIndex, key: location.key}
+				_, current := currentKeys[identity]
+				locations[identity] = objectDeleteLocation{location: location, current: current}
 			}
 		}
 	}
 	for _, location := range d.orphans[request.ObjectID] {
-		if _, exists := locations[location.key]; !exists {
-			locations[location.key] = objectDeleteLocation{location: location}
+		identity := objectDeleteFileKey{ioIndex: location.ioIndex, key: location.key}
+		if _, exists := locations[identity]; !exists {
+			locations[identity] = objectDeleteLocation{location: location}
 		}
 	}
 	for _, stripe := range d.objects[request.ObjectID] {
 		for _, location := range stripe.chunks {
-			if _, exists := locations[location.key]; !exists {
-				locations[location.key] = objectDeleteLocation{location: location, current: true}
+			identity := objectDeleteFileKey{ioIndex: location.ioIndex, key: location.key}
+			if _, exists := locations[identity]; !exists {
+				locations[identity] = objectDeleteLocation{location: location, current: true}
 			}
 		}
 	}
@@ -146,7 +154,7 @@ func (d *Distribution) DeleteObject(request DeleteObjectRequest) (response Delet
 			response.DeletedFiles++
 		}
 		d.mapMu.Lock()
-		d.removeObjectFileLocked(request.ObjectID, location.key)
+		d.removeObjectFileLocked(request.ObjectID, location)
 		d.mapMu.Unlock()
 	}
 
@@ -174,14 +182,14 @@ func (d *Distribution) DeleteObject(request DeleteObjectRequest) (response Delet
 	return response, nil
 }
 
-func (d *Distribution) removeObjectFileLocked(objectID shared.ObjectID, fileKey storage.FileKey) {
+func (d *Distribution) removeObjectFileLocked(objectID shared.ObjectID, removed chunkLocation) {
 	for key, versions := range d.versions {
 		if key.objectID != objectID {
 			continue
 		}
 		for versionNo, version := range versions {
 			for chunk, location := range version.chunks {
-				if location.key == fileKey {
+				if location.ioIndex == removed.ioIndex && location.key == removed.key {
 					delete(version.chunks, chunk)
 				}
 			}
@@ -205,7 +213,7 @@ func (d *Distribution) removeObjectFileLocked(objectID shared.ObjectID, fileKey 
 	}
 	remaining := d.orphans[objectID][:0]
 	for _, location := range d.orphans[objectID] {
-		if location.key != fileKey {
+		if location.ioIndex != removed.ioIndex || location.key != removed.key {
 			remaining = append(remaining, location)
 		}
 	}
