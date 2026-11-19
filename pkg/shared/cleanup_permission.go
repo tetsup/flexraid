@@ -1,6 +1,9 @@
 package shared
 
-import "sync"
+import (
+	"fmt"
+	"sync"
+)
 
 // DriveCleanupPermission controls destructive cleanup operations on one drive.
 type DriveCleanupPermission struct {
@@ -51,7 +54,7 @@ func (s *CleanupPermissionStore) Replace(drives []DriveCleanupPermission) error 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(drives) != len(s.drives) {
-		return ErrCleanupPermissionDriveCount
+		return fmt.Errorf("cleanup permission drive count mismatch: got %d drives, want %d", len(drives), len(s.drives))
 	}
 	s.drives = append(s.drives[:0], drives...)
 	s.generation++
