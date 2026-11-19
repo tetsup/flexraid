@@ -203,7 +203,7 @@ func (d *Distribution) removeObjectFileLocked(objectID shared.ObjectID, removed 
 	}
 	for stripeID, stripe := range d.objects[objectID] {
 		for chunk, location := range stripe.chunks {
-			if location.key == fileKey {
+			if location.ioIndex == removed.ioIndex && location.key == removed.key {
 				delete(stripe.chunks, chunk)
 			}
 		}
