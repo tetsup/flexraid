@@ -34,7 +34,6 @@ type Distribution struct {
 	ioFailures             []error
 	orphans                map[shared.ObjectID][]chunkLocation
 	cleanupQueue           *cleanupQueue
-	cleanupControlMu       sync.RWMutex
 	cleanupPermissionStore *shared.CleanupPermissionStore
 	cleanupWorkerMu        sync.Mutex
 	cleanupWorkerCancel    context.CancelFunc
