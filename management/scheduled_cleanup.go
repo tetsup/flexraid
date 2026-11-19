@@ -44,7 +44,8 @@ func (layer *Management) publishCleanupPermissionsLocked() error {
 		layer.orchestration.SetCleanupPermissionStore(layer.cleanupPermissionStore)
 	}
 	if layer.distribution != nil {
-		return layer.distribution.SetCleanupPermissions(permissions)
+		layer.distribution.NotifyCleanupPermissionsChanged()
+		return nil
 	}
 	return nil
 }
