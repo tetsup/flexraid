@@ -3,10 +3,8 @@ package distribution
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
-	"github.com/tetsup/flexraid/pkg/shared"
 )
 
 // NotifyCleanupPermissionsChanged wakes the worker after Management updates
