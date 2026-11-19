@@ -19,6 +19,7 @@ type Management struct {
 	driveOrder                []string
 	drives                    map[string]DriveConfig
 	cleanupPermissionStore    *shared.CleanupPermissionStore
+	backgroundProcessesStarted bool
 	scheduler                 *Scheduler
 }
 
@@ -64,14 +65,7 @@ func New(request NewRequest) (*Management, error) {
 	if request.Initialization != nil {
 		layer.scheduler = NewSchedulerWithInitialization(request.Initialization, nil)
 	}
-	if layer.distribution != nil {
-		if err := layer.publishCleanupPermissionsLocked(); err != nil {
-			return nil, err
-		}
-		if err := layer.distribution.StartCleanupWorker(context.Background()); err != nil {
-			return nil, err
-		}
-	}
+
 	return layer, nil
 }
 
