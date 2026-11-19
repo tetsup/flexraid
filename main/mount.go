@@ -93,7 +93,6 @@ func (task *filesystemInitialization) Next(ctx context.Context) (bool, error) {
 			Context:      ctx,
 			Distribution: task.distributed,
 			CleanupPermissions: task.cleanupPermissionStore,
-			CleanupPermissions: task.cleanupPermissionStore,
 			Mode:         0755,
 			UID:          uint32(os.Getuid()),
 			GID:          uint32(os.Getgid()),
@@ -101,6 +100,7 @@ func (task *filesystemInitialization) Next(ctx context.Context) (bool, error) {
 		if err != nil {
 			return false, fmt.Errorf("initialize filesystem root: %w", err)
 		}
+		created.Layer.SetCleanupPermissionStore(task.cleanupPermissionStore)
 		*task.rootID = created.RootID
 		task.stage = 6
 		// Root creation is a durable initialization unit. Publish the layer in
