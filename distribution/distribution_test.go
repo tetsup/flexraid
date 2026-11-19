@@ -99,7 +99,7 @@ func TestDeleteObjectRemovesHeaderLastAndAllVersions(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := testObjectID()
-	permissionStore := shared.NewCleanupPermissionStore([]shared.DriveCleanupPermission{{DeleteAllowed: true}, {}})
+	permissionStore := shared.NewCleanupPermissionStore([]shared.DriveCleanupPermission{{DeleteLogicalObjectsAllowed: true}, {}})
 	if err := created.Layer.SetCleanupPermissionStore(permissionStore); err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestDeleteObjectRemovesHeaderLastAndAllVersions(t *testing.T) {
 	if err != nil || len(objectsBefore.ObjectIDs) != 1 {
 		t.Fatalf("Object changed after denied cleanup: %+v, %v", objectsBefore, err)
 	}
-	if err := permissionStore.Replace([]shared.DriveCleanupPermission{{DeleteAllowed: true}, {DeleteAllowed: true}}); err != nil {
+	if err := permissionStore.Replace([]shared.DriveCleanupPermission{{DeleteLogicalObjectsAllowed: true}, {DeleteLogicalObjectsAllowed: true}}); err != nil {
 		t.Fatal(err)
 	}
 	result, err := created.Layer.DeleteObject(DeleteObjectRequest{Context: ctx, ObjectID: id})
