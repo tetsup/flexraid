@@ -3,10 +3,10 @@ package shared
 import "testing"
 
 func TestCleanupPermissionStoreSnapshotsAreDetached(t *testing.T) {
-	store := NewCleanupPermissionStore([]DriveCleanupPermission{{DeleteAllowed: true}})
+	store := NewCleanupPermissionStore([]DriveCleanupPermission{{DeleteDeprecatedVersionsAllowed: true}})
 	snapshot := store.Snapshot()
-	snapshot.Drives[0].DeleteAllowed = false
-	if !store.Snapshot().Drives[0].DeleteAllowed {
+	snapshot.Drives[0].DeleteDeprecatedVersionsAllowed = false
+	if !store.Snapshot().Drives[0].DeleteDeprecatedVersionsAllowed {
 		t.Fatal("mutating a snapshot changed the shared store")
 	}
 }
@@ -14,14 +14,14 @@ func TestCleanupPermissionStoreSnapshotsAreDetached(t *testing.T) {
 func TestCleanupPermissionStoreReplacePublishesGeneration(t *testing.T) {
 	store := NewCleanupPermissionStore([]DriveCleanupPermission{{}})
 	initial := store.Snapshot()
-	if err := store.Replace([]DriveCleanupPermission{{DeleteAllowed: true}}); err != nil {
+	if err := store.Replace([]DriveCleanupPermission{{DeleteDeprecatedVersionsAllowed: true}}); err != nil {
 		t.Fatal(err)
 	}
 	updated := store.Snapshot()
-	if updated.Generation != initial.Generation+1 || !updated.Drives[0].DeleteAllowed {
+	if updated.Generation != initial.Generation+1 || !updated.Drives[0].DeleteDeprecatedVersionsAllowed {
 		t.Fatalf("updated snapshot = %+v", updated)
 	}
-	if err := store.Replace([]DriveCleanupPermission{{DeleteAllowed: true}}); err != nil {
+	if err := store.Replace([]DriveCleanupPermission{{DeleteDeprecatedVersionsAllowed: true}}); err != nil {
 		t.Fatal(err)
 	}
 	if got := store.Snapshot().Generation; got != updated.Generation {

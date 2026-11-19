@@ -18,7 +18,7 @@ func writeManagementConfig(t *testing.T, yaml string) string {
 
 func TestLoadConfig(t *testing.T) {
 	yaml := "disks:\n" +
-		"  - root: /data/disk1\n    mountpoint: /mnt/disk1\n    wwn: 0x5000000000000001\n    cleanup_delete_allowed: true\n    cleanup_preserve_allowed: false\n" +
+		"  - root: /data/disk1\n    mountpoint: /mnt/disk1\n    wwn: 0x5000000000000001\n    cleanup_delete_deprecated_versions_allowed: true\n    cleanup_preserve_abnormal_data_allowed: false\n    cleanup_delete_logical_objects_allowed: true\n" +
 		"  - root: /data/disk2\n    mountpoint: /mnt/disk2\n    wwn: 0x5000000000000002\n" +
 		"  - root: /data/disk3\n    mountpoint: /mnt/disk3\n    wwn: 0x5000000000000003\n" +
 		"  - root: /data/disk4\n    mountpoint: /mnt/disk4\n    wwn: 0x5000000000000004\n" +
@@ -31,7 +31,7 @@ func TestLoadConfig(t *testing.T) {
 		got.Disks[0].Mountpoint != "/mnt/disk1" || got.Disks[0].WWN != "0x5000000000000001" {
 		t.Fatalf("unexpected config: %+v", got)
 	}
-	if !got.Disks[0].CleanupDeleteAllowed || got.Disks[0].CleanupPreserveAllowed {
+	if !got.Disks[0].CleanupDeleteDeprecatedVersionsAllowed || got.Disks[0].CleanupPreserveAbnormalDataAllowed || !got.Disks[0].CleanupDeleteLogicalObjectsAllowed {
 		t.Fatalf("unexpected cleanup permissions: %+v", got.Disks[0])
 	}
 	if got.Mountpoint != "/mnt/flexraid" {
@@ -78,7 +78,7 @@ func TestLoadConfigRejectsFilesystemMountpointCollision(t *testing.T) {
 
 func TestLoadConfigRejectsInvalidCleanupPermission(t *testing.T) {
 	yaml := "disks:\n" +
-		"  - root: /data/disk1\n    mountpoint: /mnt/disk1\n    wwn: w1\n    cleanup_delete_allowed: yes\n" +
+		"  - root: /data/disk1\n    mountpoint: /mnt/disk1\n    wwn: w1\n    cleanup_delete_deprecated_versions_allowed: yes\n" +
 		"  - root: /data/disk2\n    mountpoint: /mnt/disk2\n    wwn: w2\n" +
 		"  - root: /data/disk3\n    mountpoint: /mnt/disk3\n    wwn: w3\n" +
 		"  - root: /data/disk4\n    mountpoint: /mnt/disk4\n    wwn: w4\n" +

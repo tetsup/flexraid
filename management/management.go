@@ -33,7 +33,7 @@ func New(request NewRequest) (*Management, error) {
 	driveOrder := configuredDriveOrder(request.Config.Disks)
 	sharedPermissions := make([]shared.DriveCleanupPermission, len(driveOrder))
 	for index, drive := range request.Config.Disks {
-		sharedPermissions[index] = shared.DriveCleanupPermission{DeleteAllowed: drive.CleanupDeleteAllowed, PreserveAllowed: drive.CleanupPreserveAllowed}
+		sharedPermissions[index] = shared.DriveCleanupPermission{DeleteDeprecatedVersionsAllowed: drive.CleanupDeleteDeprecatedVersionsAllowed, PreserveAbnormalDataAllowed: drive.CleanupPreserveAbnormalDataAllowed, DeleteLogicalObjectsAllowed: drive.CleanupDeleteLogicalObjectsAllowed}
 	}
 	permissionStore := request.CleanupPermissions
 	if permissionStore == nil {

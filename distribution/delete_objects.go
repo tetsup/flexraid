@@ -33,7 +33,7 @@ func (d *Distribution) DeleteObjects(request DeleteObjectsRequest) (response Del
 			return response, err
 		}
 		result, deleteErr := d.DeleteObject(DeleteObjectRequest{Context: ctx, ObjectID: objectID})
-		if errors.Is(deleteErr, ErrCleanupDriveNotAllowed) {
+		if errors.Is(deleteErr, ErrLogicalObjectDeletionNotAllowed) {
 			response.SkippedObjects++
 			continue
 		}

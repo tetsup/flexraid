@@ -91,8 +91,8 @@ func (d *Distribution) runCleanupWorker(ctx context.Context, done chan struct{})
 			allowed := candidate.ioIndex >= 0 && candidate.ioIndex < len(permissions)
 			if allowed {
 				permission := permissions[candidate.ioIndex]
-				allowed = (candidate.method == cleanupDeleteOldVersion && permission.DeleteAllowed) ||
-					(candidate.method == cleanupPreserveAbnormal && permission.PreserveAllowed)
+				allowed = (candidate.method == cleanupDeleteOldVersion && permission.DeleteDeprecatedVersionsAllowed) ||
+					(candidate.method == cleanupPreserveAbnormal && permission.PreserveAbnormalDataAllowed)
 			}
 			if !allowed {
 				continue

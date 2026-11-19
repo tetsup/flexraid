@@ -64,7 +64,7 @@ func (layer *Orchestration) cleanupLocked(request CleanupRequest) (response Clea
 		allowed := true
 		if layer.cleanupPermissionStore != nil {
 			for _, index := range drives.IOIndexes {
-				if index < 0 || index >= len(permissions.Drives) || !permissions.Drives[index].DeleteAllowed {
+				if index < 0 || index >= len(permissions.Drives) || !permissions.Drives[index].DeleteLogicalObjectsAllowed {
 					allowed = false
 					break
 				}

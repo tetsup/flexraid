@@ -13,7 +13,7 @@ import (
 	"github.com/tetsup/flexraid/storage"
 )
 
-var ErrCleanupDriveNotAllowed = errors.New("cleanup is not allowed on every drive containing the object")
+var ErrLogicalObjectDeletionNotAllowed = errors.New("logical Object deletion is not allowed on every drive containing the object")
 
 type DeleteObjectRequest struct {
 	Context  context.Context
@@ -95,7 +95,7 @@ func (d *Distribution) DeleteObject(request DeleteObjectRequest) (response Delet
 			item.location.ioIndex >= len(d.ios) {
 			return response, fmt.Errorf("invalid I/O index %d for Object %s", item.location.ioIndex, request.ObjectID.String())
 		}
-		if !permissions.Drives[item.location.ioIndex].DeleteAllowed {
+		if !permissions.Drives[item.location.ioIndex].DeleteLogicalObjectsAllowed {
 			return response, fmt.Errorf("%w: I/O index %d", ErrCleanupDriveNotAllowed, item.location.ioIndex)
 		}
 		work = append(work, item)

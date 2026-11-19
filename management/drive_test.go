@@ -64,13 +64,13 @@ func TestSpinDownRejectsUnconfiguredWWN(t *testing.T) {
 
 func TestDriveCleanupPermissionsAreIndependentAndMutable(t *testing.T) {
 	layer := &Management{
-		cleanupPermissionStore: shared.NewCleanupPermissionStore([]shared.DriveCleanupPermission{{PreserveAllowed: true}}),
+		cleanupPermissionStore: shared.NewCleanupPermissionStore([]shared.DriveCleanupPermission{{PreserveAbnormalDataAllowed: true}}),
 		driveOrder:             []string{"wwn-1"},
 		drives:                 map[string]DriveConfig{"wwn-1": {WWN: "wwn-1"}},
 	}
 	ctx := context.Background()
 
-	if _, err := layer.SetDriveCleanupDeletePermission(SetDriveCleanupDeletePermissionRequest{
+	if _, err := layer.SetDriveDeprecatedVersionDeletionPermission(SetDriveDeprecatedVersionDeletionPermissionRequest{
 		Context: ctx, WWN: "wwn-1", Allowed: true,
 	}); err != nil {
 		t.Fatal(err)
@@ -79,11 +79,11 @@ func TestDriveCleanupPermissionsAreIndependentAndMutable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.Permissions.DeleteAllowed || !got.Permissions.PreserveAllowed {
+	if !got.Permissions.DeleteDeprecatedVersionsAllowed || !got.Permissions.PreserveAbnormalDataAllowed {
 		t.Fatalf("permissions after delete update = %+v", got.Permissions)
 	}
 
-	if _, err := layer.SetDriveCleanupPreservePermission(SetDriveCleanupPreservePermissionRequest{
+	if _, err := layer.SetDriveAbnormalDataPreservationPermission(SetDriveAbnormalDataPreservationPermissionRequest{
 		Context: ctx, WWN: "wwn-1", Allowed: false,
 	}); err != nil {
 		t.Fatal(err)
@@ -92,7 +92,7 @@ func TestDriveCleanupPermissionsAreIndependentAndMutable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.Permissions.DeleteAllowed || got.Permissions.PreserveAllowed {
+	if !got.Permissions.DeleteDeprecatedVersionsAllowed || got.Permissions.PreserveAbnormalDataAllowed {
 		t.Fatalf("permissions after preserve update = %+v", got.Permissions)
 	}
 }
@@ -103,7 +103,7 @@ func TestDriveCleanupPermissionRejectsUnknownWWN(t *testing.T) {
 		driveOrder:             []string{"wwn-1"},
 		cleanupPermissionStore: shared.NewCleanupPermissionStore([]shared.DriveCleanupPermission{{}}),
 	}
-	_, err := layer.SetDriveCleanupDeletePermission(SetDriveCleanupDeletePermissionRequest{
+	_, err := layer.SetDriveDeprecatedVersionDeletionPermission(SetDriveDeprecatedVersionDeletionPermissionRequest{
 		Context: context.Background(), WWN: "unknown", Allowed: true,
 	})
 	if err == nil {
@@ -119,7 +119,7 @@ func TestDriveCleanupPermissionRejectsCanceledContext(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := layer.SetDriveCleanupDeletePermission(SetDriveCleanupDeletePermissionRequest{
+	_, err := layer.SetDriveDeprecatedVersionDeletionPermission(SetDriveDeprecatedVersionDeletionPermissionRequest{
 		Context: ctx, WWN: "wwn-1", Allowed: true,
 	})
 	if err == nil {
@@ -136,7 +136,7 @@ func TestCleanupPermissionUpdateDoesNotWaitForFilesystemLock(t *testing.T) {
 	layer.mu.Lock()
 	done := make(chan error, 1)
 	go func() {
-		_, err := layer.SetDriveCleanupDeletePermission(SetDriveCleanupDeletePermissionRequest{
+		_, err := layer.SetDriveDeprecatedVersionDeletionPermission(SetDriveDeprecatedVersionDeletionPermissionRequest{
 			Context: context.Background(), WWN: "wwn-1", Allowed: true,
 		})
 		done <- err

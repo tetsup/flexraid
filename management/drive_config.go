@@ -15,8 +15,9 @@ type DriveConfig struct {
 	Root                   string
 	Mountpoint             string
 	WWN                    string
-	CleanupDeleteAllowed   bool
-	CleanupPreserveAllowed bool
+	CleanupDeleteDeprecatedVersionsAllowed bool
+	CleanupPreserveAbnormalDataAllowed    bool
+	CleanupDeleteLogicalObjectsAllowed    bool
 }
 
 // NewRequest initializes Management with Orchestration and its startup configuration.
