@@ -62,7 +62,9 @@ func New(request NewRequest) (*Management, error) {
 		request.Orchestration.SetCleanupPermissionStore(permissionStore)
 	}
 	if request.Distribution != nil {
-		if err := request.Distribution.SetCleanupPermissionStore(permissionStore); err != nil { return nil, err }
+		if err := request.Distribution.SetCleanupPermissionStore(permissionStore); err != nil {
+			return nil, err
+		}
 	}
 	if request.Initialization != nil {
 		layer.scheduler = NewSchedulerWithInitialization(request.Initialization, nil)
