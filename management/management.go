@@ -52,7 +52,9 @@ func New(request NewRequest) (*Management, error) {
 		receiver.SetCleanupPermissionStore(permissionStore)
 	}
 	if request.Orchestration != nil {
-		if err := request.Orchestration.SetCleanupPermissionStore(permissionStore); err != nil { return nil, err }
+		if err := request.Orchestration.SetCleanupPermissionStore(permissionStore); err != nil {
+			return nil, err
+		}
 	}
 	if request.Distribution != nil {
 		if err := request.Distribution.SetCleanupPermissionStore(permissionStore); err != nil {
