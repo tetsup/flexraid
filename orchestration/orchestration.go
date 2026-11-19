@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 
 	"github.com/tetsup/flexraid/distribution"
 	"github.com/tetsup/flexraid/pkg/shared"
@@ -43,6 +44,9 @@ type Orchestration struct {
 	root                   *runtimeObject
 	deletionQueue          map[shared.ObjectID]struct{}
 	protectedObjects       map[shared.ObjectID]struct{}
+	cleanupWorkerMu        sync.Mutex
+	cleanupWorkerCancel    context.CancelFunc
+	cleanupWorkerDone      chan struct{}
 	warnings               []initializationWarning
 }
 
