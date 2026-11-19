@@ -76,7 +76,6 @@ func (layer *Management) LifecycleErrno() syscall.Errno {
 	}
 }
 
-
 // StartBackgroundProcesses starts the autonomous processes owned by the
 // initialized layers. It must be called after WaitReady and before accepting
 // external filesystem requests.
