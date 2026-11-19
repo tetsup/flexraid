@@ -58,7 +58,7 @@ func TestStartupRebuildsDeletionQueueAndCleanupDeletesObject(t *testing.T) {
 		t.Fatalf("deletion queue has %d entries", len(started.Layer.deletionQueue))
 	}
 	permissionStore := shared.NewCleanupPermissionStore([]shared.DriveCleanupPermission{{}, {}})
-	if err := restarted.Layer.SetCleanupPermissionStore(permissionStore); err != nil {
+	if err := reif err := started.Layer.SetCleanupPermissionStore(permissionStore); err != nil { t.Fatal(err) }; err != nil {
 		t.Fatal(err)
 	}
 	started.Layer.SetCleanupPermissionStore(permissionStore)
