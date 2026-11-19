@@ -3,9 +3,13 @@ package management
 import (
 	"context"
 	"errors"
+	"os"
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/tetsup/flexraid/distribution"
+	physicalio "github.com/tetsup/flexraid/io"
 )
 
 func TestManagementStartupLifecycleReachesReady(t *testing.T) {
@@ -200,4 +204,46 @@ func waitForLifecyclePhase(t *testing.T, layer *Management, want LifecyclePhase)
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatalf("lifecycle phase = %v, want %v", layer.Phase(), want)
+}
+
+
+func TestBackgroundProcessesStartOnlyAfterReady(t *testing.T) {
+	ioLayer := physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer
+	distributed, err := distribution.New(distribution.NewRequest{IOs: []*physicalio.IO{ioLayer}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	layer, err := New(NewRequest{
+		Distribution: distributed.Layer,
+		Config: Config{Disks: []DriveConfig{{Root: os.TempDir(), Mountpoint: t.TempDir(), WWN: "wwn-test"}}},
+		Initialization: InitializationTaskFunc(func(context.Context) (bool, error) {
+			return true, nil
+		}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := layer.StartBackgroundProcesses(context.Background()); err == nil {
+		t.Fatal("background processes started before Management became Ready")
+	}
+	if err := layer.Start(); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := layer.WaitReady(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := layer.StartBackgroundProcesses(ctx); err != nil {
+		t.Fatalf("StartBackgroundProcesses: %v", err)
+	}
+	if err := layer.StartBackgroundProcesses(ctx); err != nil {
+		t.Fatalf("repeated StartBackgroundProcesses: %v", err)
+	}
+	if err := layer.StopDistributionCleanupWorker(ctx); err != nil {
+		t.Fatalf("stop cleanup worker: %v", err)
+	}
+	if err := layer.Stop(ctx); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
 }
