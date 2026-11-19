@@ -165,10 +165,16 @@ func mountFilesystem(config mountConfig) (*gofuse.Server, error) {
 	if err := os.MkdirAll(mountpoint, 0755); err != nil {
 		return nil, fmt.Errorf("create mountpoint: %w", err)
 	}
+	if err := managed.StartBackgroundProcesses(context.Background()); err != nil {
+		return nil, fmt.Errorf("start background processes: %w", err)
+	}
 	options := flexfuse.MountOptions()
 	options.MountOptions.FsName = "flexraid-fuse"
 	server, err := adapter.Mount(mountpoint, options)
 	if err != nil {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = managed.StopDistributionCleanupWorker(stopCtx)
 		return nil, fmt.Errorf("mount at %s: %w", mountpoint, err)
 	}
 	return server, nil
