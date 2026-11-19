@@ -174,7 +174,7 @@ func mountFilesystem(config mountConfig) (*gofuse.Server, error) {
 	if err != nil {
 		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = managed.StopDistributionCleanupWorker(stopCtx)
+		_ = managed.StopBackgroundProcesses(stopCtx)
 		return nil, fmt.Errorf("mount at %s: %w", mountpoint, err)
 	}
 	return server, nil
