@@ -105,6 +105,19 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - FUSE および将来の管理 API に対する、ファイルシステム全体の公開窓口となる。FUSE からの通常操作は Management を経由し、FUSE から Orchestration / Distribution を直接呼び出さない。
 - ファイルシステム操作 API、管理操作 API、監視 API、制御 API を提供する。ファイルシステム操作は同期的な結果・エラーを返し、長時間の Cleanup / Recovery 等はタスクの開始・進捗確認・キャンセルを扱える形にする。
 - **システム全体の実行状態を所有する唯一のレイヤー**となる。Lifecycle は Initializing / Ready / Draining / Maintenance / Failed の5状態とする。停止専用の状態は設けず、Stop は最優先の Exclusive 要求として安全単位の境界で実行する。
+
+#### Lifecycle StateMachine / State Hooks
+
+- Lifecycle の状態と遷移可否は Management の StateMachine が唯一の正として管理する。StateMachine は現在状態・遷移要求・遷移結果を扱い、外部プロセスの起動停止などの副作用を直接実行しない。
+- 状態ごとに `OnEnter` と `OnExit` の Hook を登録できる。Hook は `context.Context` を受け取り、失敗を error として返す。状態に依存するバックグラウンドプロセスや監視処理などの開始・終了は、呼び出し元が個別に順序制御するのではなく、該当状態の Hook に登録する。
+- 実際の遷移は StateMachine の状態判断と、副作用を実行する Transition Coordinator / Hook Executor を分離して扱う。StateMachine の状態判定ロジックを I/O、goroutine 起動停止、他レイヤー API 呼び出し等に依存させない。
+- 遷移元の `OnExit` を実行し、成功した後に遷移先の `OnEnter` を実行する。両 Hook が成功した場合に限り、遷移先状態を確定・公開する。Hook の実行中に遷移先状態を先行して公開しない。
+- `OnEnter` が失敗した場合は遷移を成立させず、同じ遷移で既に起動した処理があれば、その処理に対応する終了処理を逆順に実行してロールバックする。ロールバックの失敗も呼び出し元へ伝え、隠さない。
+- `OnExit` が失敗した場合は遷移先へ進まず、遷移失敗として扱う。終了処理が一部だけ成功した可能性を考慮し、状態と実プロセスの不一致を黙って通常運用へ戻さない。必要な復旧または Failed への遷移は、明示的なエラー処理として行う。
+- 同じ状態に留まる要求では Hook を実行しない。実際の状態変更一回につき各 Hook は一度だけ実行し、並行する遷移要求による二重実行を防ぐ。Hook 実行中に同じ StateMachine の別遷移を並行実行しない。
+- Hook は StateMachine 内部の状態 Mutex を保持したまま実行しない。遷移の直列化は別の仕組みで保証し、Hook から Lifecycle / Management API を呼び出しても状態 Mutex の自己デッドロックを起こさないようにする。
+- Ready に依存する worker は Ready の `OnEnter` で起動し、Ready の `OnExit` で停止する。初期化処理は Ready への遷移前に完了させる。main や FUSE mount 処理に worker の個別起動・停止順序を重複して持たせず、main は Management の Lifecycle 開始・停止 API を呼び出す。
+
 - 通常の FUSE / POSIX 操作は Ready でのみ受け付ける。Initializing / Draining / Maintenance では EBUSY、Failed では EIO で拒否する。状態照会は全状態で受け付ける。Release / Releasedir / Forget / Interrupt など、kernel bookkeeping と handle teardown に必要な処理は状態にかかわらず受け付ける。Flush は Release と同一視せず、通常操作として扱う。
 - 操作受付と状態遷移の競合を防ぐため、admission 登録と Lifecycle 遷移を原子的に調停する。実行権の取得待ちを含め、受付済み操作の開始・完了を追跡し、drain 時には新規受付を止めて必要な実行単位の完了を待つ。
 - Orchestration と Distribution の双方を統括する。通常のファイル操作では Orchestration を呼び出し、Orchestration が Distribution を呼び出す親子関係を維持する。
