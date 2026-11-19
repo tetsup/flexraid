@@ -6,8 +6,8 @@ import (
 
 	"github.com/tetsup/flexraid/distribution"
 	"github.com/tetsup/flexraid/orchestration"
-	"github.com/tetsup/flexraid/platform"
 	"github.com/tetsup/flexraid/pkg/shared"
+	"github.com/tetsup/flexraid/platform"
 )
 
 // DriveConfig binds one storage root to its physical mountpoint and WWN.
@@ -21,10 +21,10 @@ type DriveConfig struct {
 
 // NewRequest initializes Management with Orchestration and its startup configuration.
 type NewRequest struct {
-	Orchestration  *orchestration.Orchestration
-	Distribution   *distribution.Distribution
-	Initialization InitializationTask
-	Config         Config
+	Orchestration      *orchestration.Orchestration
+	Distribution       *distribution.Distribution
+	Initialization     InitializationTask
+	Config             Config
 	CleanupPermissions *shared.CleanupPermissionStore
 }
 

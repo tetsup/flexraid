@@ -12,14 +12,14 @@ import (
 )
 
 type Management struct {
-	mu                 sync.Mutex
-	orchestration      *orchestration.Orchestration
-	distribution       *distribution.Distribution
-	driveOrder         []string
-	drives             map[string]DriveConfig
-	cleanupPermissions map[string]DriveCleanupPermissions
+	mu                     sync.Mutex
+	orchestration          *orchestration.Orchestration
+	distribution           *distribution.Distribution
+	driveOrder             []string
+	drives                 map[string]DriveConfig
+	cleanupPermissions     map[string]DriveCleanupPermissions
 	cleanupPermissionStore *shared.CleanupPermissionStore
-	scheduler          *Scheduler
+	scheduler              *Scheduler
 }
 
 func New(request NewRequest) (*Management, error) {
@@ -44,17 +44,23 @@ func New(request NewRequest) (*Management, error) {
 		sharedPermissions[index] = shared.DriveCleanupPermission{DeleteAllowed: current.DeleteAllowed, PreserveAllowed: current.PreserveAllowed}
 	}
 	permissionStore := request.CleanupPermissions
-	if permissionStore == nil { permissionStore = shared.NewCleanupPermissionStore(sharedPermissions) }
+	if permissionStore == nil {
+		permissionStore = shared.NewCleanupPermissionStore(sharedPermissions)
+	}
 	layer := &Management{
-		orchestration:      request.Orchestration,
-		distribution:       request.Distribution,
-		driveOrder:         driveOrder,
-		drives:             drives,
-		cleanupPermissions: permissions,
+		orchestration:          request.Orchestration,
+		distribution:           request.Distribution,
+		driveOrder:             driveOrder,
+		drives:                 drives,
+		cleanupPermissions:     permissions,
 		cleanupPermissionStore: permissionStore,
 	}
-	if receiver, ok := request.Initialization.(cleanupPermissionStoreReceiver); ok { receiver.SetCleanupPermissionStore(permissionStore) }
-	if request.Orchestration != nil { request.Orchestration.SetCleanupPermissionStore(permissionStore) }
+	if receiver, ok := request.Initialization.(cleanupPermissionStoreReceiver); ok {
+		receiver.SetCleanupPermissionStore(permissionStore)
+	}
+	if request.Orchestration != nil {
+		request.Orchestration.SetCleanupPermissionStore(permissionStore)
+	}
 	if request.Initialization != nil {
 		layer.scheduler = NewSchedulerWithInitialization(request.Initialization, nil)
 	}
