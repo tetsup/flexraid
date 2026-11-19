@@ -100,7 +100,9 @@ func TestDeleteObjectRemovesHeaderLastAndAllVersions(t *testing.T) {
 	}
 	id := testObjectID()
 	permissionStore := shared.NewCleanupPermissionStore([]shared.DriveCleanupPermission{{DeleteAllowed: true}, {}})
-	if err := created.Layer.SetCleanupPermissionStore(permissionStore); err != nil { t.Fatal(err) }
+	if err := created.Layer.SetCleanupPermissionStore(permissionStore); err != nil {
+		t.Fatal(err)
+	}
 	for _, stripe := range []storage.StripeID{0, 1} {
 		for i := 0; i < 2; i++ {
 			_, err = created.Layer.WriteStripe(WriteStripeRequest{Context: ctx, ObjectID: id, StripeID: stripe, ChunkSize: 4, Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: []byte{byte(stripe), byte(i)}})
