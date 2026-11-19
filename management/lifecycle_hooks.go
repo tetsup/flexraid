@@ -46,8 +46,8 @@ func (executor LifecycleTransitionExecutor) Transition(
 	target := next.Phase
 	if exit := executor.Hooks[state.Phase].OnExit; exit != nil {
 		if err := exit(ctx); err != nil {
-			next.Phase = LifecycleFailed
-			return next, lifecycleFailureOutputs(outputs, state.Phase, err),
+			failed := failedLifecycleState(state)
+			return failed, lifecycleFailureOutputs(outputs, state.Phase, err),
 				fmt.Errorf("exit lifecycle phase %d: %w", state.Phase, err)
 		}
 	}
@@ -58,9 +58,9 @@ func (executor LifecycleTransitionExecutor) Transition(
 			if rollback := executor.Hooks[target].OnExit; rollback != nil {
 				rollbackErr = rollback(ctx)
 			}
-			next.Phase = LifecycleFailed
+			failed := failedLifecycleState(state)
 			reason := errors.Join(err, rollbackErr)
-			return next, lifecycleFailureOutputs(outputs, state.Phase, reason),
+			return failed, lifecycleFailureOutputs(outputs, state.Phase, reason),
 				fmt.Errorf("enter lifecycle phase %d: %w", target, reason)
 		}
 	}
@@ -80,4 +80,11 @@ func lifecycleFailureOutputs(outputs []LifecycleOutput, from LifecyclePhase, err
 		LifecycleChanged{From: from, To: LifecycleFailed},
 		LifecycleFailureReported{Reason: err.Error()},
 	)
+}
+
+func failedLifecycleState(state LifecycleState) LifecycleState {
+	failed := cloneLifecycleState(state)
+	failed.Phase = LifecycleFailed
+	failed.InitializationStarted = false
+	return failed
 }
