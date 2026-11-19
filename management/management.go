@@ -12,14 +12,14 @@ import (
 )
 
 type Management struct {
-	mu                     sync.Mutex
+	mu                        sync.Mutex
 	cleanupPermissionUpdateMu sync.Mutex
-	orchestration          *orchestration.Orchestration
-	distribution           *distribution.Distribution
-	driveOrder             []string
-	drives                 map[string]DriveConfig
-	cleanupPermissionStore *shared.CleanupPermissionStore
-	scheduler              *Scheduler
+	orchestration             *orchestration.Orchestration
+	distribution              *distribution.Distribution
+	driveOrder                []string
+	drives                    map[string]DriveConfig
+	cleanupPermissionStore    *shared.CleanupPermissionStore
+	scheduler                 *Scheduler
 }
 
 func New(request NewRequest) (*Management, error) {
