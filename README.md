@@ -229,10 +229,6 @@ workers:
           delete_deprecated_versions_allowed: true
           preserve_abnormal_data_allowed: false
           delete_logical_objects_allowed: false
-        schedule:
-          enabled: true
-          expression: "0 3 * * *"
-          timezone: Asia/Tokyo
 
   - name: backup
     socket_path: /run/flexraid/workers/backup.sock
@@ -281,20 +277,20 @@ frcon
 │   └── stop
 ├── drive
 │   ├── list
-│   ├── status <drive-id>
-│   ├── inspect <drive-id>
-│   ├── start <drive-id>
-│   └── stop <drive-id>
+│   ├── status <drive_name>
+│   ├── inspect <drive_name>
+│   ├── start <drive_name>
+│   └── stop <drive_name>
 ├── cleanup
-│   ├── status <drive-id>
+│   ├── status <drive_name>
 │   ├── policy
-│   │   ├── show <drive-id>
-│   │   └── set <drive-id> ...
+│   │   ├── show <drive_name>
+│   │   └── set <drive_name> ...
 │   ├── schedule
-│   │   ├── show <drive-id>
-│   │   ├── set <drive-id> ...
-│   │   └── disable <drive-id>
-│   └── run <drive-id>
+│   │   ├── show <drive_name>
+│   │   ├── set <drive_name> ...
+│   │   └── disable <drive_name>
+│   └── run <drive_name>
 └── config
     ├── show
     ├── validate
@@ -303,6 +299,6 @@ frcon
 
 - `system start/stop` は Controller の常駐 RPC サーバーを対象とし、Worker 群を一括起動・停止する意味ではありません。
 - `drive start/stop` は指定した論理ドライブの Worker だけを対象とします。
-- Cleanup の policy / schedule / run は、指定した論理ドライブの Worker に対する操作です。
+- Cleanup の policy / run は、指定した論理ドライブの Worker に対する操作です。Cleanup Schedule は drive status --detail と drive inspect に含め、専用の設定コマンドは設けません。
 
 実装規約・プロセス分離・RPC 契約の詳細は `AGENTS.md` を参照してください。
