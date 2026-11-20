@@ -293,9 +293,13 @@ frcon
     └── reload
 ```
 
+- `drive status <drive_name>` は簡易ヘルスチェックです。論理ドライブ全体として問題がないかを短時間で確認します。
+- `drive status <drive_name> --detail` は運用監視用の詳細状態です。全体集計に加えて、物理ドライブごとの生死・接続・電源状態、容量、I/O 統計、整合性情報を分けて返します。
+- `drive inspect <drive_name>` は監査用の完全な情報取得です。構成、Namespace、Stripe / Version / Chunk、Cleanup 対象とサイズ、現在および Cleanup 後の論理空き容量、履歴・統計などを網羅します。必要に応じてストレージ走査を伴います。
+- 物理デバイス情報は取得できる範囲を明示し、未取得・取得不能・古いキャッシュ値を区別します。Standby 中のデバイスを情報取得だけのために無条件でスピンアップしません。デバイス情報はスピンアップ処理と連携して更新します。
+- Cleanup Schedule の取得 API は維持し、その情報は `drive status --detail` と `drive inspect` に含めます。スケジュール専用の CLI コマンドは設けません。
 - `system start/stop` は Controller の常駐 RPC サーバーを対象とし、Worker 群を一括起動・停止する意味ではありません。
-- `drive status <drive_name>` は簡易ヘルスチェック、`drive status <drive_name> --detail` は物理ドライブ別の生死・I/O・整合性・容量などの運用監視情報を返します。`drive inspect <drive_name>` は監査に必要な情報を網羅します。
 - `drive start/stop` は指定した論理ドライブの Worker だけを対象とします。
-- Cleanup の policy / run は、指定した論理ドライブの Worker に対する操作です。Cleanup Schedule の取得 API は維持しますが、専用 CLI コマンドは設けず、drive status --detail と drive inspect に含めます。
+- Cleanup の policy / run は、指定した論理ドライブの Worker に対する操作です。
 
 実装規約・プロセス分離・RPC 契約の詳細は `AGENTS.md` を参照してください。
