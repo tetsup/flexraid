@@ -324,20 +324,20 @@ Distribution -> Platform
 - PR は変更範囲・設計判断・テスト結果を明記する。実装コードを変更した場合は、関連テストと CI 結果を確認する。
 - 変更対象外のファイルを整形・更新したり、無関係な変更を同じ PR に混ぜたりしない。
 
-## 11. 構想段階: 管理ユーティリティ（未実装・要件検討中）
+## 11. 物理ドライブ識別
 
-> **構想段階のメモ。** 以下は将来追加する管理ユーティリティの方向性と暫定要件であり、現行実装の仕様・確定した CLI 契約・実装着手指示ではない。コマンド名、設定形式、対応 OS などは今後の設計で決定する。物理ドライブ UUID の定義は WWN とする。
+物理ドライブの識別・対応付けに関する規約を定める。管理コマンドとプロセス構成は次節を正とする。
 
-- 将来的に、FlexRAID のストレージデバイスを管理するためのユーティリティを追加する。
+- FlexRAID のストレージデバイスは WWN によって識別する。
 - Management が起動時に読み込む設定に、各ストレージのマウントポイントと物理ドライブ WWN を一組として記述する。WWN はマウントポイントに対応する物理ドライブを明示するものであり、設定から省略したり実行時の自動推測で補完したりしない。
 - デバイス交換時には、交換先デバイスの識別子をコマンド引数として明示的に指定し、対象 I/O ルートとの対応付けを更新できるようにする。交換時に新しい識別子を指定できることを必須要件とする。
-- 将来の管理ユーティリティでは、ホストから認識できる対象デバイスとその識別子を列挙し、利用者が一覧から交換先デバイスを選択できるようにする。識別子だけでは候補を区別しにくい場合に備え、モデル名・容量など補助情報を併せて表示する方向で検討する。
+- 管理ユーティリティでは、ホストから認識できる対象デバイスと WWN を列挙し、利用者が交換先デバイスを選択できるようにする。モデル名・容量などは候補を区別する補助情報として表示する。
 - 一覧からの選択と同等に、コマンドから識別子を直接指定する操作も可能にする。対話 UI の利用を必須にしない。
 - 指定された識別子が見つからない場合や、一意に解決できない場合は、誤ったデバイスを対象にせず明確に失敗させる。既存の対応付けを暗黙に別デバイスへ切り替えない。
 - この用途で必要なのは物理デバイスの識別子であり、Filesystem UUID などファイルシステムの識別情報を代用しない。
 - 物理ドライブ UUID は WWN（World Wide Name）とする。Linux では `/dev/disk/by-id/wwn-*` 等で公開される WWN を基準にする。取得できないドライブは識別不能として扱い、シリアル番号など別形式への暗黙のフォールバックは行わない。WWN が重複するなど一意に解決できない場合も操作を拒否する。
 - マウントポイントから物理デバイスまでの自動トポロジー解決は、このユーティリティの必須要件に含めない。必要なデバイス識別情報は列挙結果から利用者が選択し、設定へ明示的に反映する方針とする。
-- 設定ファイルの具体的なフォーマット、設定更新の原子性、実行中プロセスへの反映タイミング、交換前後の安全確認、デバイスが未接続の場合の扱いは未決事項として今後定義する。
+- 設定ファイルの具体的なフォーマット、設定更新の原子性、実行中プロセスへの反映タイミング、交換前後の安全確認、デバイスが未接続の場合の扱いは、該当機能の実装時に定義する。
 
 ## 12. Controller / Worker と外部管理 API
 
@@ -361,7 +361,7 @@ Distribution -> Platform
 - Controller と Worker、および外部コマンドと Controller のプロセス間通信には、Unix Domain Socket 上の gRPC を使用する。
 - RPC のメッセージ形式には Protocol Buffers を使用する。JSON を独自に重ねた RPC や独自バイナリプロトコルを追加しない。
 - RPC 契約は Protocol Buffers の service / message 定義を正とし、Go の RPC コードは定義から生成する。生成コードを手編集しない。
-- Controller API と Worker API は別の service 契約として定義する。Controller は対象 Drive ID に対応する Worker を特定し、Worker API を呼び出す。
+- Controller API と Worker API は別の service 契約として定義する。Controller は drive_name に対応する Worker を特定し、Worker API を呼び出す。
 - 外部利用者向けの管理コマンドは Controller を入口とする。Worker の UDS は Controller から Worker への内部通信に使用し、通常の CLI 利用者に Worker の接続先を直接指定させない。
 - 単発 Controller コマンドは、常駐 Controller が利用可能なら Controller の UDS へ接続し、常駐 Controller がない場合も必要な Worker を特定して操作できる構成とする。単発モードと常駐モードで操作の意味や RPC 契約を変えない。
 - Socket の配置、権限、所有者、起動時の stale socket 処理、Worker の識別・再発見方法は実装時に定義する。PID ファイルの存在だけで Worker の稼働を断定しない。
@@ -374,17 +374,15 @@ Distribution -> Platform
 - `system start`: Controller の常駐 RPC サーバーを起動する。
 - `system stop`: Controller の常駐 RPC サーバーだけを停止する。Worker は停止しない。
 - `drive list`: 管理対象の論理ドライブを列挙する。
-- `drive status <drive-id>`: 指定 Worker／論理ドライブの状態を取得する。
-- `drive inspect <drive-id>`: 指定論理ドライブの構成・詳細情報を取得する。
-- `drive start <drive-id>`: 指定論理ドライブの Worker を独立プロセスとして起動する。
-- `drive stop <drive-id>`: 指定 Worker に停止を要求する。
-- `cleanup status <drive-id>`: Cleanup の状態・進捗を取得する。
-- `cleanup policy show <drive-id>`: Cleanup の実行ポリシーを取得する。
-- `cleanup policy set <drive-id> ...`: Cleanup の実行ポリシーを変更する。
-- `cleanup schedule show <drive-id>`: Cleanup のスケジュールを取得する。
-- `cleanup schedule set <drive-id> ...`: Cleanup のスケジュールを設定する。
-- `cleanup schedule disable <drive-id>`: Cleanup のスケジュール実行を無効化する。
-- `cleanup run <drive-id>`: 指定論理ドライブで Cleanup を手動実行する。
+- `drive status <drive_name>`: 簡易ヘルスチェックを行い、論理ドライブ全体として問題があるかを短時間で確認する。全デバイスの詳細照会やストレージ全走査を前提としない。
+- `drive status <drive_name> --detail`: 運用監視用の詳細状態を取得する。物理ドライブごとの生存・接続・電源状態、容量、I/O 統計、整合性に関する実行時統計を、全体集計と併せて返す。ドライブ別の内訳を失わず、合計値だけに集約しない。
+- `drive inspect <drive_name>`: 監査用の完全な情報を取得する。構成、論理 Namespace、Stripe / Version / Chunk の状態、物理ドライブごとの情報、Cleanup 対象の種類別件数・サイズ、現在の残論理空き容量、Cleanup 実行後に見込まれる残論理空き容量、履歴・統計など監査に必要な情報を網羅する。必要なストレージ走査を行う場合があるため、軽量なヘルスチェックや定期監視用途とは区別する。
+- `drive start <drive_name>`: 指定論理ドライブの Worker を独立プロセスとして起動する。
+- `drive stop <drive_name>`: 指定 Worker に停止を要求する。
+- `cleanup status <drive_name>`: Cleanup の実行状態・進捗を取得する。Cleanup Schedule の情報は drive status --detail および drive inspect に含め、スケジュール専用 CLI コマンドは設けない。
+- `cleanup policy show <drive_name>`: Cleanup の実行ポリシーを取得する。
+- `cleanup policy set <drive_name> ...`: Cleanup の実行ポリシーを変更する。
+- `cleanup run <drive_name>`: 指定論理ドライブで Cleanup を手動実行する。
 - `config show`: Controller が扱う設定を表示する。
 - `config validate`: 設定の妥当性を検証する。
 - `config reload`: 設定を再読み込みする。
@@ -397,3 +395,17 @@ Distribution -> Platform
 - Go のコマンド配置は `cmd/frcon` と `cmd/flexraid` を基本とし、生成される実行ファイル名も各ディレクトリ名に合わせる。
 
 上記の階層・コマンド名は初期の整備対象であり、個別引数・出力形式・終了コードは実装時に既存設定・Management API と整合させて確定する。
+
+### Status / Inspect の情報契約
+
+- `status` の通常表示は、Lifecycle、Worker の生存、Controller との接続、物理ドライブの基本的な到達可能性などから、論理ドライブ全体の正常性を簡潔に判定する。高コストな全ストレージ走査を実行しない。
+- `status --detail` は運用監視用 snapshot とする。論理ドライブ全体の集計値に加え、各物理ドライブを識別できる独立した要素として返す。I/O・整合性・容量について、ドライブ別に観測可能な値は全体値とドライブ別値の両方を返す。
+- `status --detail` の物理ドライブ情報には、WWN、デバイスパス、モデル、シリアル、接続方式、容量、ファイルシステム、mountpoint、Storage Root、生存・接続状態、電源状態、I/O エラー、最終アクセス時刻などを含める。取得できない値は不明として表現し、推測値で補完しない。
+- 物理デバイス情報の取得は Platform が担当する。デバイス照会がスピンアップを引き起こす可能性がある情報は、通常の status 取得時に無条件で問い合わせない。スピンアップ処理と連携して情報を取得・更新し、Standby 中はキャッシュ値・取得時刻・鮮度を示す。取得できない値と未取得の値を区別する。
+- 物理ドライブの生存状態は、Worker の生存状態や論理ドライブの Lifecycle と別に表現する。物理デバイス単位の状態を全体の単一状態に潰さない。
+- Cleanup 対象は Deprecated Versions / Abnormal Data / Deleted Logical Objects など対象種別ごとに件数とサイズを返す。物理ドライブ別に算出できる対象サイズもドライブごとに返す。
+- 容量は物理容量・物理使用量・物理空き容量と、冗長化・配置制約を反映した論理使用量・現在の残論理空き容量を区別する。Cleanup による物理解放見込みと、Cleanup 後に見込まれる残論理空き容量も別項目とする。
+- 整合性・I/O 統計は、全体集計に加えて物理ドライブ別の内訳を返す。Stripe の復旧可能性など複数ドライブにまたがる判定は論理ドライブ全体の値として扱い、ドライブ別の欠損・エラー状況と混同しない。
+- `inspect` は監査用の完全な snapshot とする。構成・デバイス識別情報・Namespace / Object / Stripe / Version / Chunk の監査情報、Cleanup 候補の詳細とサイズ、容量見積もり、統計および取得時刻を含める。全走査が必要な情報は走査結果であることと実施時刻を明示し、未実施の値をゼロとして扱わない。
+- Cleanup Schedule は読み取り API `GetCleanupSchedule` を維持し、その情報を `status --detail` と `inspect` に含める。スケジュールの設定・変更・無効化を行う専用 CLI コマンドは設けない。
+- Controller API / Worker API の RPC 名や Response 型は、上記の用途を混同しないよう Status と Inspect を別操作として定義する。
