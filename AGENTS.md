@@ -339,3 +339,54 @@ Distribution -> Platform
 - マウントポイントから物理デバイスまでの自動トポロジー解決は、このユーティリティの必須要件に含めない。必要なデバイス識別情報は列挙結果から利用者が選択し、設定へ明示的に反映する方針とする。
 - 設定ファイルの具体的なフォーマット、設定更新の原子性、実行中プロセスへの反映タイミング、交換前後の安全確認、デバイスが未接続の場合の扱いは未決事項として今後定義する。
 
+## 12. Controller / Worker と外部管理 API
+
+この節は、外部管理インターフェースとプロセス構成の確定した設計契約を定める。CLI コマンドの個別引数や RPC メッセージの詳細は、実装時に API 定義と合わせて決定する。
+
+### プロセス構成
+
+- 外部コマンドの受付を担う Controller と、論理ドライブを実際に管理する Worker を分離する。
+- Worker は論理ドライブごとに独立した OS プロセスとして起動する。各 Worker プロセスは一つの論理ドライブを担当し、そのドライブに対応する Management と下位レイヤーの実行状態を所有する。
+- 複数の論理ドライブは、それぞれ独立した Worker プロセスとして並行稼働できる。一つの Worker の異常終了が、他の Worker や Controller のプロセス終了を引き起こしてはならない。
+- Controller は外部コマンドを受け付け、対象 Worker へ操作を中継する。Controller 自身は論理ドライブの Management 実行状態を所有しない。
+- Controller は常駐 RPC サーバーモードと、コマンドを一度実行して終了する単発モードを持つ。両モードは同じ RPC 契約を使用する。
+- 常駐 Controller が終了・強制終了しても Worker は動作を継続する。Controller は Worker の親プロセス／監督プロセスではなく、Worker の生存期間を所有しない。
+- Controller から Worker を起動する場合も、Worker の独立起動コマンドを起動する薄いラッパーとして扱う。Controller 終了時に起動した Worker を連動終了させない。Worker は Controller を介さず単独でも起動できる。
+- Worker の停止は対象 Worker への明示的な停止要求で行う。Controller 自身の停止と Worker の停止を同一視しない。
+- Controller 再起動後は、既存 Worker の接続先を再発見して再接続できる設計とする。Controller のメモリ上の登録状態だけを Worker の存在根拠にしない。
+- プロセス分離はアプリケーションプロセス間の障害伝播を防ぐものであり、OS・カーネル・物理デバイスなど共有基盤の障害まで分離するものではない。
+
+### ローカル RPC
+
+- Controller と Worker、および外部コマンドと Controller のプロセス間通信には、Unix Domain Socket 上の gRPC を使用する。
+- RPC のメッセージ形式には Protocol Buffers を使用する。JSON を独自に重ねた RPC や独自バイナリプロトコルを追加しない。
+- RPC 契約は Protocol Buffers の service / message 定義を正とし、Go の RPC コードは定義から生成する。生成コードを手編集しない。
+- Controller API と Worker API は別の service 契約として定義する。Controller は対象 Drive ID に対応する Worker を特定し、Worker API を呼び出す。
+- 外部利用者向けの管理コマンドは Controller を入口とする。Worker の UDS は Controller から Worker への内部通信に使用し、通常の CLI 利用者に Worker の接続先を直接指定させない。
+- 単発 Controller コマンドは、常駐 Controller が利用可能なら Controller の UDS へ接続し、常駐 Controller がない場合も必要な Worker を特定して操作できる構成とする。単発モードと常駐モードで操作の意味や RPC 契約を変えない。
+- Socket の配置、権限、所有者、起動時の stale socket 処理、Worker の識別・再発見方法は実装時に定義する。PID ファイルの存在だけで Worker の稼働を断定しない。
+
+### コマンド体系
+
+以下は整備するコマンド領域の一覧であり、現時点で実装済みの CLI 契約を意味しない。引数・出力形式・終了コードは各コマンドの API 設計時に定義する。
+
+- `system status`: Controller および接続可能な Worker 群の状態を確認する。
+- `system start`: Controller の常駐 RPC サーバーを起動する。
+- `system stop`: Controller の常駐 RPC サーバーだけを停止する。Worker は停止しない。
+- `drive list`: 管理対象の論理ドライブを列挙する。
+- `drive status <drive-id>`: 指定 Worker／論理ドライブの状態を取得する。
+- `drive inspect <drive-id>`: 指定論理ドライブの構成・詳細情報を取得する。
+- `drive start <drive-id>`: 指定論理ドライブの Worker を独立プロセスとして起動する。
+- `drive stop <drive-id>`: 指定 Worker に停止を要求する。
+- `cleanup status <drive-id>`: Cleanup の状態・進捗を取得する。
+- `cleanup policy show <drive-id>`: Cleanup の実行ポリシーを取得する。
+- `cleanup policy set <drive-id> ...`: Cleanup の実行ポリシーを変更する。
+- `cleanup schedule show <drive-id>`: Cleanup のスケジュールを取得する。
+- `cleanup schedule set <drive-id> ...`: Cleanup のスケジュールを設定する。
+- `cleanup schedule disable <drive-id>`: Cleanup のスケジュール実行を無効化する。
+- `cleanup run <drive-id>`: 指定論理ドライブで Cleanup を手動実行する。
+- `config show`: Controller が扱う設定を表示する。
+- `config validate`: 設定の妥当性を検証する。
+- `config reload`: 設定を再読み込みする。
+
+コマンドの入口は Controller の実行ファイルに集約し、常駐サーバー起動は `flexraid-controller serve`、それ以外は単発コマンドとして提供する方向とする。上記の階層・コマンド名は初期の整備対象であり、実装時に既存設定・Management API と整合させて確定する。
