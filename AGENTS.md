@@ -389,4 +389,11 @@ Distribution -> Platform
 - `config validate`: 設定の妥当性を検証する。
 - `config reload`: 設定を再読み込みする。
 
-コマンドの入口は Controller の実行ファイルに集約し、常駐サーバー起動は `flexraid-controller serve`、それ以外は単発コマンドとして提供する方向とする。上記の階層・コマンド名は初期の整備対象であり、実装時に既存設定・Management API と整合させて確定する。
+コマンド名と実行ファイル名は次のとおりとする。
+
+- Controller の実行ファイル名は `frcon` とする。常駐 RPC サーバーの起動は `frcon serve)、それ以外の管理操作は `frcon` の単発コマンドとして提供する。
+- Worker の実行ファイル名は `flexraid` とする。論理ドライブごとに一つの `flexraid` プロセスを起動し、Controller を介さない独立起動も可能にする。
+- `frcon` と `flexraid` はそれぞれ正式な実行ファイル名とし、長い別名やシンボリックリンクによるエイリアスを前提にしない。
+- Go のコマンド配置は `cmd/frcon` と `cmd/flexraid` を基本とし、生成される実行ファイル名も各ディレクトリ名に合わせる。
+
+上記の階層・コマンド名は初期の整備対象であり、個別引数・出力形式・終了コードは実装時に既存設定・Management API と整合させて確定する。
