@@ -203,6 +203,71 @@ POSIX の基本操作は pjdfstest を用いて検証します。FlexRAID v1 で
 - Controller の停止は Worker の停止を意味しません。Worker の停止は対象ドライブを指定した明示的な操作で行います。
 - Controller 再起動後も既存 Worker を再発見して接続できる構成とします。
 
+### 統合設定ファイルと読み込み規則
+
+Controller と全 Worker の設定は、単一の YAML 設定ファイルにまとめます。トップレベルに `controller` と `workers` を定義し、各 Worker は `name` で識別します。Worker 名は設定ファイル内で一意でなければなりません。
+
+```yaml
+version: 1
+
+controller:
+  socket_path: /run/flexraid/controller.sock
+  log_level: info
+
+workers:
+  - name: main
+    socket_path: /run/flexraid/workers/main.sock
+    devices:
+      - uuid: "..."
+      - uuid: "..."
+      - uuid: "..."
+      - uuid: "..."
+    management:
+      cleanup:
+        execution: when_spun_up
+        policy:
+          delete_deprecated_versions_allowed: true
+          preserve_abnormal_data_allowed: false
+          delete_logical_objects_allowed: false
+        schedule:
+          enabled: true
+          expression: "0 3 * * *"
+          timezone: Asia/Tokyo
+
+  - name: backup
+    socket_path: /run/flexraid/workers/backup.sock
+    devices:
+      - uuid: "..."
+      - uuid: "..."
+      - uuid: "..."
+      - uuid: "..."
+```
+
+設定ファイルの選択規則は Controller / Worker で共通とし、次の優先順位で決定します。
+
+1. `--config <path>` が指定されている場合は、そのファイルを使用します。
+2. `--config` が指定されていない場合は、まず `/etc/flexraid/config.yaml` を確認します。
+3. そこにファイルが存在しない場合は、カレントディレクトリの `./config.yaml` を使用します。
+4. どちらも存在しない場合は起動エラーにします。
+
+`--config` で明示されたファイルが存在しない、または読み込めない場合はエラーとし、既定パスへフォールバックしません。相対パスはカレントディレクトリを基準に解決します。
+
+Controller は統合設定ファイルから Controller 自身の設定と Worker 一覧を読み込みます。Worker を単独起動する場合は、起動引数で `--name <worker-name>` を必須指定し、同じ設定ファイル内から名前が一致する Worker の設定を一つだけ選択して起動します。一致する Worker がない場合や名前が重複している場合は起動エラーにします。
+
+```sh
+# 設定ファイルを自動選択して Controller を起動
+frcon serve
+
+# 設定ファイルを明示して Controller を起動
+frcon serve --config ./production.yaml
+
+# Worker を単独起動（自動選択された設定ファイルから main を選択）
+flexraid --name main
+
+# Worker を単独起動（設定ファイルを明示）
+flexraid --config ./production.yaml --name main
+```
+
 ### 管理コマンドの整備対象
 
 以下は今後整備する `frcon` のコマンドの種類です。引数・出力形式は実装時に確定します。
