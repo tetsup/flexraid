@@ -391,7 +391,7 @@ Distribution -> Platform
 
 コマンド名と実行ファイル名は次のとおりとする。
 
-- Controller の実行ファイル名は `frcon` とする。常駐 RPC サーバーの起動は `frcon serve)、それ以外の管理操作は `frcon` の単発コマンドとして提供する。
+- Controller の実行ファイル名は `frcon` とする。常駐 RPC サーバーの起動は `frcon serve`、それ以外の管理操作は `frcon` の単発コマンドとして提供する。
 - Worker の実行ファイル名は `flexraid` とする。論理ドライブごとに一つの `flexraid` プロセスを起動し、Controller を介さない独立起動も可能にする。
 - `frcon` と `flexraid` はそれぞれ正式な実行ファイル名とし、長い別名やシンボリックリンクによるエイリアスを前提にしない。
 - Go のコマンド配置は `cmd/frcon` と `cmd/flexraid` を基本とし、生成される実行ファイル名も各ディレクトリ名に合わせる。
