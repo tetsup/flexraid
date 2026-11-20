@@ -277,7 +277,7 @@ frcon
 │   └── stop
 ├── drive
 │   ├── list
-│   ├── status <drive_name>
+│   ├── status <drive_name> [--detail]
 │   ├── inspect <drive_name>
 │   ├── start <drive_name>
 │   └── stop <drive_name>
@@ -286,10 +286,6 @@ frcon
 │   ├── policy
 │   │   ├── show <drive_name>
 │   │   └── set <drive_name> ...
-│   ├── schedule
-│   │   ├── show <drive_name>
-│   │   ├── set <drive_name> ...
-│   │   └── disable <drive_name>
 │   └── run <drive_name>
 └── config
     ├── show
@@ -298,7 +294,8 @@ frcon
 ```
 
 - `system start/stop` は Controller の常駐 RPC サーバーを対象とし、Worker 群を一括起動・停止する意味ではありません。
+- `drive status <drive_name>` は簡易ヘルスチェック、`drive status <drive_name> --detail` は物理ドライブ別の生死・I/O・整合性・容量などの運用監視情報を返します。`drive inspect <drive_name>` は監査に必要な情報を網羅します。
 - `drive start/stop` は指定した論理ドライブの Worker だけを対象とします。
-- Cleanup の policy / run は、指定した論理ドライブの Worker に対する操作です。Cleanup Schedule は drive status --detail と drive inspect に含め、専用の設定コマンドは設けません。
+- Cleanup の policy / run は、指定した論理ドライブの Worker に対する操作です。Cleanup Schedule の取得 API は維持しますが、専用 CLI コマンドは設けず、drive status --detail と drive inspect に含めます。
 
 実装規約・プロセス分離・RPC 契約の詳細は `AGENTS.md` を参照してください。
