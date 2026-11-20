@@ -192,3 +192,52 @@ go test ./...
 POSIX の基本操作は pjdfstest を用いて検証します。FlexRAID v1 でサポートしない特殊ファイルなどを前提とする一部ケースは、リポジトリ内の `tools/pjdfstest-flexraid-skiplist.tsv` に理由を記録したうえで SKIP とします。実装済み機能の不具合を SKIP で隠すことは認めません。
 
 詳細な実装規約は `AGENTS.md` を参照してください。
+
+## 管理コマンドとプロセス構成（設計方針）
+
+外部からの管理操作は `flexraid-controller` を入口とし、Controller と論理ドライブごとの Worker がローカル RPC で連携する構成を目標とします。プロセス間通信には Unix Domain Socket 上の gRPC、メッセージ形式には Protocol Buffers を使用します。
+
+- **Controller** は外部コマンドを受け付け、対象 Worker へ操作を中継します。常駐 RPC サーバーモード（`flexraid-controller serve`）と、単発コマンドを実行して終了するモードを持ちます。
+- **Worker** は論理ドライブごとに一つ起動する独立プロセスです。各 Worker が担当ドライブの Management と下位レイヤーの状態を所有し、複数 Worker は互いに独立して動作します。
+- Controller は Worker を起動できますが、Worker の親・監督プロセスにはなりません。Controller が終了しても Worker は動作を継続し、Worker は Controller を介さず単独起動することもできます。
+- Controller の停止は Worker の停止を意味しません。Worker の停止は対象ドライブを指定した明示的な操作で行います。
+- Controller 再起動後も既存 Worker を再発見して接続できる構成とします。
+
+### 管理コマンドの整備対象
+
+以下は今後整備するコマンドの種類です。コマンド名・引数・出力形式は実装時に確定します。
+
+```text
+flexraid-controller
+├── serve
+├── system
+│   ├── status
+│   ├── start
+│   └── stop
+├── drive
+│   ├── list
+│   ├── status <drive-id>
+│   ├── inspect <drive-id>
+│   ├── start <drive-id>
+│   └── stop <drive-id>
+├── cleanup
+│   ├── status <drive-id>
+│   ├── policy
+│   │   ├── show <drive-id>
+│   │   └── set <drive-id> ...
+│   ├── schedule
+│   │   ├── show <drive-id>
+│   │   ├── set <drive-id> ...
+│   │   └── disable <drive-id>
+│   └── run <drive-id>
+└── config
+    ├── show
+    ├── validate
+    └── reload
+```
+
+- `system start/stop` は Controller の常駐 RPC サーバーを対象とし、Worker 群を一括起動・停止する意味ではありません。
+- `drive start/stop` は指定した論理ドライブの Worker だけを対象とします。
+- Cleanup の policy / schedule / run は、指定した論理ドライブの Worker に対する操作です。
+
+実装規約・プロセス分離・RPC 契約の詳細は `AGENTS.md` を参照してください。
