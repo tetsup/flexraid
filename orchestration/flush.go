@@ -1,6 +1,7 @@
 package orchestration
 
 import (
+	"time"
 	"context"
 	"fmt"
 	"os"
@@ -15,7 +16,9 @@ type FlushRequest struct {
 }
 type FlushResponse struct{ PersistedStripes uint32 }
 
-func (o *Orchestration) FlushLocked(r FlushRequest) (FlushResponse, error) {
+func (o *Orchestration) FlushLocked(r FlushRequest) (response FlushResponse, err error) {
+	started := time.Now()
+	defer func() { o.recordOperation("Flush", started, err) }()
 	return o.flushLocked(r)
 }
 
