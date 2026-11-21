@@ -74,6 +74,7 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 		}
 		if location.data == nil {
 			read, readErr := d.ios[location.ioIndex].Read(physicalio.ReadRequest{Context: request.Context, Key: location.key})
+			d.recordChunkOperation("Read", readErr)
 			if readErr != nil {
 				if errors.Is(readErr, context.Canceled) || errors.Is(readErr, context.DeadlineExceeded) {
 					return response, readErr
@@ -184,6 +185,7 @@ func (d *Distribution) repairStripe(request ReadStripeRequest, info *stripeInfo,
 		oldLocation, hadOld := info.chunks[no]
 		if hadOld {
 			_, removeErr := d.ios[oldLocation.ioIndex].Delete(physicalio.DeleteRequest{Context: request.Context, Key: oldLocation.key})
+			d.recordChunkOperation("Delete", removeErr)
 			if removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
 				return
 			}
@@ -193,6 +195,7 @@ func (d *Distribution) repairStripe(request ReadStripeRequest, info *stripeInfo,
 			index := request.RepairIOIndexes[next]
 			next++
 			_, err := d.ios[index].Write(physicalio.WriteRequest{Context: request.Context, Key: fileKey, Data: encodeChunk(uint64(len(data)), payload)})
+			d.recordChunkOperation("Write", err)
 			if err == nil {
 				location := chunkLocation{ioIndex: index, key: fileKey, data: payload, totalLength: uint64(len(data))}
 				d.mapMu.Lock()
