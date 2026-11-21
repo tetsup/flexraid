@@ -319,22 +319,36 @@ func TestMonitoringAPIsSeparateSummaryDetailsAndAudit(t *testing.T) {
 func TestInspectIncludesLogicalNamespaceSnapshot(t *testing.T) {
 	ctx := context.Background()
 	ioLayers := []*physicalio.IO{
-		physicalio.New(physicalio.NewRequest{Root:t.TempDir()}).Layer,
-		physicalio.New(physicalio.NewRequest{Root:t.TempDir()}).Layer,
+		physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer,
+		physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer,
 	}
-	distributed, err := distribution.New(distribution.NewRequest{IOs:ioLayers})
-	if err != nil { t.Fatal(err) }
-	root, err := orchestration.CreateRoot(orchestration.CreateRootRequest{Context:ctx,Distribution:distributed.Layer,Mode:0755})
-	if err != nil { t.Fatal(err) }
+	distributed, err := distribution.New(distribution.NewRequest{IOs: ioLayers})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := orchestration.CreateRoot(orchestration.CreateRootRequest{Context: ctx, Distribution: distributed.Layer, Mode: 0755})
+	if err != nil {
+		t.Fatal(err)
+	}
 	disks := []DriveConfig{
-		{Root:ioLayers[0].RootPath(),Mountpoint:t.TempDir(),WWN:"wwn-audit-1"},
-		{Root:ioLayers[1].RootPath(),Mountpoint:t.TempDir(),WWN:"wwn-audit-2"},
+		{Root: ioLayers[0].RootPath(), Mountpoint: t.TempDir(), WWN: "wwn-audit-1"},
+		{Root: ioLayers[1].RootPath(), Mountpoint: t.TempDir(), WWN: "wwn-audit-2"},
 	}
-	layer, err := New(NewRequest{Orchestration:root.Layer,Distribution:distributed.Layer,IOs:ioLayers,Config:Config{Disks:disks}})
-	if err != nil { t.Fatal(err) }
-	audit, err := layer.Inspect(InspectRequest{Context:ctx})
-	if err != nil { t.Fatal(err) }
-	if !audit.NamespaceAvailable { t.Fatalf("namespace snapshot unavailable: %s",audit.NamespaceError) }
-	if audit.Namespace.RootID != root.RootID || len(audit.Namespace.Objects)!=1 { t.Fatalf("namespace audit: %+v",audit.Namespace) }
-	if audit.Namespace.Objects[0].ObjectID != root.RootID || !audit.Namespace.Objects[0].Reachable { t.Fatalf("root object audit: %+v",audit.Namespace.Objects[0]) }
+	layer, err := New(NewRequest{Orchestration: root.Layer, Distribution: distributed.Layer, IOs: ioLayers, Config: Config{Disks: disks}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	audit, err := layer.Inspect(InspectRequest{Context: ctx})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !audit.NamespaceAvailable {
+		t.Fatalf("namespace snapshot unavailable: %s", audit.NamespaceError)
+	}
+	if audit.Namespace.RootID != root.RootID || len(audit.Namespace.Objects) != 1 {
+		t.Fatalf("namespace audit: %+v", audit.Namespace)
+	}
+	if audit.Namespace.Objects[0].ObjectID != root.RootID || !audit.Namespace.Objects[0].Reachable {
+		t.Fatalf("root object audit: %+v", audit.Namespace.Objects[0])
+	}
 }

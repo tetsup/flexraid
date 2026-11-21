@@ -179,7 +179,9 @@ func New(request NewRequest) (NewResponse, error) {
 				continue
 			}
 			version.recoverable = true
-			if len(version.chunks) < len(expectedChunkNos(version.method)) { d.recordIntegrityError() }
+			if len(version.chunks) < len(expectedChunkNos(version.method)) {
+				d.recordIntegrityError()
+			}
 			if selectedInfo == nil || versionNo > selected {
 				selected, selectedInfo = versionNo, version
 			}
