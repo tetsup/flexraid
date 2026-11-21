@@ -89,6 +89,7 @@ func (d *Distribution) Cleanup(request CleanupRequest) (response CleanupResponse
 				}
 				response.DeletedFiles++
 				delete(version.chunks, no)
+				delete(version.missing, no)
 			}
 			if removeVersion || len(version.chunks) == 0 {
 				delete(versions, versionNo)
