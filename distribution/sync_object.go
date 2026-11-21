@@ -26,7 +26,7 @@ func (d *Distribution) SyncObject(request SyncObjectRequest) (response SyncObjec
 		ctx = context.Background()
 	}
 	defer func() {
-		logOperation(d.logger, "SyncObject", started, err, "object_id", request.ObjectID.String(), "synced_chunks", response.SyncedChunks)
+		logOperation(d, "SyncObject", started, err, "object_id", request.ObjectID.String(), "synced_chunks", response.SyncedChunks)
 	}()
 	if err = ctx.Err(); err != nil {
 		return response, err
