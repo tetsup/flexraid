@@ -38,6 +38,7 @@ func (layer *IO) Delete(request DeleteRequest) (response DeleteResponse, err err
 		return response, err
 	}
 	layer.recordAccess()
+	defer layer.recordAccess()
 	err = os.Remove(path)
 	response.Deleted = err == nil
 	return response, err
