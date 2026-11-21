@@ -152,18 +152,18 @@ func (c *metricsCollector) snapshot() (map[string]OperationMetrics, ChunkMetrics
 	}
 	chunks := ChunkMetrics{}
 	for kind, value := range c.chunks {
-		for i:=0; i<value.count; i++ { index:=(value.next-value.count+i+recentOperationLimit)%recentOperationLimit; value.metrics.RecentProcessedCount++; if value.samples[index] { value.metrics.RecentSuccessCount++ } else { value.metrics.RecentFailureCount++ } }
+		metrics := value.metrics
+		for i := 0; i < value.count; i++ {
+			index := (value.next - value.count + i + recentOperationLimit) % recentOperationLimit
+			metrics.RecentProcessedCount++
+			if value.samples[index] { metrics.RecentSuccessCount++ } else { metrics.RecentFailureCount++ }
+		}
 		switch kind {
-		case "Read":
-			chunks.Read = value.metrics
-		case "Write":
-			chunks.Write = value.metrics
-		case "Delete":
-			chunks.Delete = value.metrics
-		case "Preserve":
-			chunks.Preserve = value.metrics
-		case "Sync":
-			chunks.Sync = value.metrics
+		case "Read": chunks.Read = metrics
+		case "Write": chunks.Write = metrics
+		case "Delete": chunks.Delete = metrics
+		case "Preserve": chunks.Preserve = metrics
+		case "Sync": chunks.Sync = metrics
 		}
 	}
 	return operations, chunks, c.integrityErrorCount, c.recoveryCount, c.recoveryFailureCount
