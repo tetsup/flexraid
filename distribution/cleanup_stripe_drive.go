@@ -72,11 +72,13 @@ func (d *Distribution) CleanupStripeDrive(request CleanupStripeDriveRequest) (re
 	switch request.Method {
 	case CleanupMethodDeleteOldVersion:
 		_, err = d.ios[request.IOIndex].Delete(physicalio.DeleteRequest{Context: ctx, Key: location.key})
+		d.recordChunkOperation("Delete", err)
 		if errors.Is(err, os.ErrNotExist) {
 			err = nil
 		}
 	case CleanupMethodPreserveAbnormal:
 		_, err = d.ios[request.IOIndex].Preserve(physicalio.PreserveRequest{Context: ctx, Key: location.key})
+		d.recordChunkOperation("Preserve", err)
 	}
 	if err != nil {
 		return response, err
