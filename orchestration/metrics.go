@@ -83,13 +83,13 @@ type readErrorSample struct {
 }
 
 type metricsCollector struct {
-	mu                 sync.RWMutex
-	operations         map[string]*operationMetricState
+	mu                   sync.RWMutex
+	operations           map[string]*operationMetricState
 	readErrorOccurrences uint64
-	readErrorObjects   map[shared.ObjectID]uint64
-	readErrorSamples   [recentMetricsLimit]readErrorSample
-	readErrorNext      int
-	readErrorCount     int
+	readErrorObjects     map[shared.ObjectID]uint64
+	readErrorSamples     [recentMetricsLimit]readErrorSample
+	readErrorNext        int
+	readErrorCount       int
 }
 
 func newMetricsCollector() *metricsCollector {
@@ -182,10 +182,10 @@ func (c *metricsCollector) snapshot() (map[string]OperationMetrics, ReadErrorMet
 	operations := make(map[string]OperationMetrics, len(c.operations))
 	for name, state := range c.operations {
 		value := OperationMetrics{
-			SuccessCount: state.successCount,
-			FailureCount: state.failureCount,
+			SuccessCount:  state.successCount,
+			FailureCount:  state.failureCount,
 			TotalDuration: state.totalDuration,
-			Recent: RecentOperationMetrics{ErrorTypes: make(map[string]uint64)},
+			Recent:        RecentOperationMetrics{ErrorTypes: make(map[string]uint64)},
 		}
 		for i := 0; i < state.count; i++ {
 			index := (state.next - state.count + i + recentMetricsLimit) % recentMetricsLimit
@@ -206,10 +206,10 @@ func (c *metricsCollector) snapshot() (map[string]OperationMetrics, ReadErrorMet
 	}
 
 	readErrors := ReadErrorMetrics{
-		OccurrenceCount: c.readErrorOccurrences,
+		OccurrenceCount:   c.readErrorOccurrences,
 		UniqueObjectCount: uint64(len(c.readErrorObjects)),
-		ByObject: make([]ObjectReadErrorMetrics, 0, len(c.readErrorObjects)),
-		Recent: RecentReadErrorMetrics{ErrorTypes: make(map[string]uint64)},
+		ByObject:          make([]ObjectReadErrorMetrics, 0, len(c.readErrorObjects)),
+		Recent:            RecentReadErrorMetrics{ErrorTypes: make(map[string]uint64)},
 	}
 	for objectID, count := range c.readErrorObjects {
 		readErrors.ByObject = append(readErrors.ByObject, ObjectReadErrorMetrics{ObjectID: objectID, OccurrenceCount: count})
