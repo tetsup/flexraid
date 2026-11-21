@@ -318,7 +318,7 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 			sort.Slice(object.Stripes, func(i,j int) bool { if object.Stripes[i].StripeID != object.Stripes[j].StripeID { return object.Stripes[i].StripeID < object.Stripes[j].StripeID }; return object.Stripes[i].Version < object.Stripes[j].Version })
 			response.Objects = append(response.Objects, object)
 		}
-		sort.Slice(response.OrphanChunks, func(i,j int) bool { if response.OrphanChunks[i].DriveIndex != response.OrphanChunks[j].DriveIndex { return response.OrphanChunks[i].DriveIndex < response.OrphanChunks[j].DriveIndex }; return response.OrphanChunks[i].Key.String() < response.OrphanChunks[j].Key.String() })
+		sort.Slice(response.OrphanChunks, func(i,j int) bool { if response.OrphanChunks[i].DriveIndex != response.OrphanChunks[j].DriveIndex { return response.OrphanChunks[i].DriveIndex < response.OrphanChunks[j].DriveIndex }; if response.OrphanChunks[i].Key.ObjectID != response.OrphanChunks[j].Key.ObjectID { return response.OrphanChunks[i].Key.ObjectID.String() < response.OrphanChunks[j].Key.ObjectID.String() }; if response.OrphanChunks[i].Key.StripeID != response.OrphanChunks[j].Key.StripeID { return response.OrphanChunks[i].Key.StripeID < response.OrphanChunks[j].Key.StripeID }; return response.OrphanChunks[i].Key.StripeVersion < response.OrphanChunks[j].Key.StripeVersion })
 	}
 	response.Stripes.ObjectCount = uint64(len(objects))
 	response.Stripes.StripeCount = uint64(len(stripes))
