@@ -143,19 +143,6 @@ func (layer *Management) GetDetailedStatus(request GetDetailedStatusRequest) (Ge
 		}
 	}
 	result.Status = statusFromMetrics(layer.Phase(), result.Distribution)
-	layer.mu.Lock()
-	orchestrationLayer := layer.orchestration
-	if orchestrationLayer != nil {
-		result.Namespace, err = orchestrationLayer.InspectNamespace(orchestration.InspectNamespaceRequest{Context: request.Context})
-		if err != nil {
-			layer.mu.Unlock()
-			return InspectResponse{}, fmt.Errorf("inspect Orchestration namespace: %w", err)
-		}
-		result.NamespaceAvailable = true
-	} else {
-		result.NamespaceError = "Orchestration layer is not initialized"
-	}
-	layer.mu.Unlock()
 	for index, wwn := range layer.driveOrder {
 		if err := request.Context.Err(); err != nil {
 			return GetDetailedStatusResponse{}, err
@@ -213,6 +200,20 @@ func (layer *Management) Inspect(request InspectRequest) (InspectResponse, error
 		}
 	}
 	result.Status = statusFromMetrics(layer.Phase(), result.Distribution)
+	layer.mu.Lock()
+	orchestrationLayer := layer.orchestration
+	if orchestrationLayer != nil {
+		namespace, namespaceErr := orchestrationLayer.InspectNamespace(orchestration.InspectNamespaceRequest{Context: request.Context})
+		if namespaceErr != nil {
+			layer.mu.Unlock()
+			return InspectResponse{}, fmt.Errorf("inspect Orchestration namespace: %w", namespaceErr)
+		}
+		result.Namespace = namespace
+		result.NamespaceAvailable = true
+	} else {
+		result.NamespaceError = "Orchestration layer is not initialized"
+	}
+	layer.mu.Unlock()
 	for _, orphan := range result.Distribution.OrphanChunks {
 		if orphan.DriveIndex >= 0 && orphan.DriveIndex < len(layer.driveOrder) {
 			_ = orphan
