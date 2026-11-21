@@ -55,6 +55,7 @@ type DriveMonitoringStatus struct {
 	IOMetrics               physicalio.GetMetricsResponse
 	IOMetricsAvailable      bool
 	IOMetricsError          string
+	OrphanChunkCount        uint64
 }
 
 // GetDetailedStatusRequest requests operational monitoring for every configured drive.
@@ -91,8 +92,7 @@ func validateMonitoringContext(ctx context.Context) error {
 	return ctx.Err()
 }
 
-// GetStatus provides a compact health summary. It deliberately avoids per-drive
-// device and capacity probes; those belong to GetDetailedStatus.
+// statusFromMetrics converts a Distribution snapshot into the coarse health view.
 func statusFromMetrics(phase LifecyclePhase, metrics distribution.GetMetricsResponse) GetStatusResponse {
 	result := GetStatusResponse{
 		Lifecycle: phase, Level: StatusHealthy,
@@ -213,6 +213,7 @@ func (layer *Management) Inspect(request InspectRequest) (InspectResponse, error
 		}
 	}
 	result.Status = statusFromMetrics(layer.Phase(), result.Distribution)
+	for _, orphan := range result.Distribution.OrphanChunks { if orphan.DriveIndex >= 0 && orphan.DriveIndex < len(layer.driveOrder) { _ = orphan } }
 	for index, wwn := range layer.driveOrder {
 		if err := request.Context.Err(); err != nil {
 			return InspectResponse{}, err
