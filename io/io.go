@@ -3,8 +3,8 @@ package io
 import (
 	"log/slog"
 	"os"
-	"sync/atomic"
 	"sync"
+	"sync/atomic"
 
 	"github.com/tetsup/flexraid/storage"
 )
