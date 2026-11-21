@@ -48,6 +48,7 @@ func (layer *IO) Preserve(request PreserveRequest) (response PreserveResponse, e
 	if err != nil {
 		return response, err
 	}
+	layer.recordAccess()
 	rootInfo, statErr := os.Stat(layer.preservationRoot)
 	if statErr != nil {
 		return response, fmt.Errorf("stat preservation root %q: %w", layer.preservationRoot, statErr)
