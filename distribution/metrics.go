@@ -36,6 +36,8 @@ type StripeMetrics struct {
 	MissingChunkCount         uint64
 	OrphanChunkCount          uint64
 }
+type ChunkOperationMetrics struct { SuccessCount uint64; FailureCount uint64 }
+type ChunkMetrics struct { Read ChunkOperationMetrics; Write ChunkOperationMetrics; Delete ChunkOperationMetrics; Preserve ChunkOperationMetrics; Sync ChunkOperationMetrics }
 type GetMetricsRequest struct{ Context context.Context }
 type GetMetricsResponse struct {
 	Operations           map[string]OperationMetrics
