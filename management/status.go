@@ -107,11 +107,6 @@ func validateMonitoringContext(ctx context.Context) error {
 func statusFromMetrics(phase LifecyclePhase, metrics distribution.GetMetricsResponse) GetStatusResponse {
 	result := GetStatusResponse{
 		Lifecycle: phase, Level: StatusHealthy,
-		ObjectCount: metrics.Stripes.ObjectCount, StripeCount: metrics.Stripes.StripeCount,
-		UnrecoverableStripeCount: metrics.Stripes.UnrecoverableStripeCount,
-		CorruptedStripeCount:     metrics.Stripes.CorruptedStripeCount,
-		MissingChunkCount:        metrics.Stripes.MissingChunkCount,
-		OrphanChunkCount:         metrics.Stripes.OrphanChunkCount,
 		IntegrityErrorCount:      metrics.IntegrityErrorCount,
 		RecoveryFailureCount:     metrics.RecoveryFailureCount,
 	}
