@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/tetsup/flexraid/pkg/shared"
+	"github.com/tetsup/flexraid/pkg/shared/config"
 	"github.com/tetsup/flexraid/storage"
 )
 
@@ -423,14 +424,14 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 				}
 			}
 			available := saturatingAdd(drive.AvailableBytes, reclaimable)
-			availableBlocks[index] = available / configBlockSize()
+			availableBlocks[index] = available / config.BlockSize
 			response.CleanupAfterPhysicalAvailableBytes[index] = DriveCleanupCapacityMetrics{
 				DriveIndex: index, CurrentAvailableBytes: drive.AvailableBytes,
 				ReclaimableBytes: reclaimable, EstimatedAvailableBytes: available,
 			}
 		}
 		response.CleanupAfterMirrorAvailableBlocks, response.CleanupAfterParityAvailableBlocks =
-			estimateLogicalCapacityBlocks(availableBlocks, configBlockSize(), 2, 3, 1)
+			estimateLogicalCapacityBlocks(availableBlocks, config.BlockSize, 2, config.DefaultDataChunks, config.DefaultParityChunks)
 		response.CleanupAfterCapacityAvailable = true
 	}
 	return response, nil
