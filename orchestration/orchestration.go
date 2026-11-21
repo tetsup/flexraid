@@ -89,6 +89,9 @@ func New(request NewRequest) (NewResponse, error) {
 	if err := layer.initialize(initialObjects); err != nil {
 		return NewResponse{}, err
 	}
+	if err := layer.refreshMissingFileStates(ctx); err != nil {
+		return NewResponse{}, fmt.Errorf("rebuild logical missing-file state: %w", err)
+	}
 	logger.Debug("Orchestration initialized", "root_id", layer.root.header.ObjectID.String(), "objects", len(layer.headers), "deletion_queue", len(layer.deletionQueue), "protected_objects", len(layer.protectedObjects), "warnings", len(layer.warnings))
 	return NewResponse{Layer: layer, RootID: layer.root.header.ObjectID}, nil
 }
