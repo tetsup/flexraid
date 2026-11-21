@@ -134,3 +134,38 @@ func TestMetricsKeepOnlyLatestThousandSamples(t *testing.T) {
 		t.Fatalf("chunk recent window: %+v", chunks.Write)
 	}
 }
+
+func TestGetMetricsRetainsRuntimeUnreadableChunk(t *testing.T) {
+	ctx := context.Background()
+	ios := makeIOs(t, 2)
+	created, err := New(NewRequest{IOs: ios})
+	if err != nil { t.Fatal(err) }
+	id := testObjectID()
+	data := []byte("runtime missing")
+	written, err := created.Layer.WriteStripe(WriteStripeRequest{
+		Context: ctx, ObjectID: id, StripeID: 9, ChunkSize: 16,
+		Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: data,
+	})
+	if err != nil { t.Fatal(err) }
+	key := storage.FileKey{
+		ObjectID: id, StripeVersion: written.Version, StripeID: 9,
+		LayoutID: storage.LayoutID{Type: storage.LayoutType(LayoutMirror), DriveCount: 2, Role: storage.ChunkRoleData, Index: 1},
+	}
+	if _, err := ios[0].Delete(physicalio.DeleteRequest{Context: ctx, Key: key}); err != nil { t.Fatal(err) }
+	created.Layer.mapMu.Lock()
+	info := created.Layer.objects[id][9]
+	location := info.chunks[0]
+	location.data = nil
+	info.chunks[0] = location
+	created.Layer.versions[stripeIDKey{objectID:id,stripeID:9}][written.Version].chunks[0] = location
+	created.Layer.mapMu.Unlock()
+
+	read, err := created.Layer.ReadStripe(ReadStripeRequest{Context:ctx,ObjectID:id,StripeID:9,ChunkSize:16})
+	if err != nil || !bytes.Equal(read.Data,data) { t.Fatalf("read = %q, %v",read.Data,err) }
+	got, err := created.Layer.GetMetrics(GetMetricsRequest{Context:ctx})
+	if err != nil { t.Fatal(err) }
+	if got.Stripes.MissingChunkCount != 1 || got.Stripes.CorruptedStripeCount != 1 || got.RecoveryCount != 1 {
+		t.Fatalf("runtime missing metrics: %+v",got)
+	}
+	if got.Chunks.Read.FailureCount == 0 { t.Fatalf("read failures not counted: %+v",got.Chunks.Read) }
+}
