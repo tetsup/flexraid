@@ -97,6 +97,7 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 			if versions := d.versions[stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}]; versions != nil {
 				if version := versions[info.version]; version != nil {
 					version.chunks[no] = location
+					delete(version.missing, no)
 				}
 			}
 			d.mapMu.Unlock()
@@ -105,6 +106,7 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 	}
 	for _, chunk := range chunks {
 		if info.method.distributionType == distributionParity && len(chunk.data) != int(request.ChunkSize) {
+			d.markChunkMissing(key, info.version, chunk.chunkNo)
 			d.recordIntegrityError()
 			d.recordRecovery(false)
 			info.corrupted = true
@@ -112,6 +114,7 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 			return response, ErrDataCorrupted
 		}
 		if info.method.distributionType == distributionMirror && len(chunk.data) > int(request.ChunkSize) {
+			d.markChunkMissing(key, info.version, chunk.chunkNo)
 			d.recordIntegrityError()
 			d.recordRecovery(false)
 			info.corrupted = true
