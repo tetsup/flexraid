@@ -232,9 +232,10 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 		versions := d.versions[key]
 		for _, version := range versions {
 			expectedChunks := len(expectedChunkNos(version.method))
-			if len(version.chunks) < expectedChunks {
+			missingCount := expectedChunks - len(version.chunks) + len(version.missing)
+			if missingCount > 0 {
 				response.Stripes.IncompleteVersionCount++
-				response.Stripes.MissingChunkCount += uint64(expectedChunks - len(version.chunks))
+				response.Stripes.MissingChunkCount += uint64(missingCount)
 			}
 			if version.recoverable {
 				response.Stripes.RecoverableVersionCount++
