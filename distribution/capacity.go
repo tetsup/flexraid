@@ -94,8 +94,6 @@ func estimateLogicalCapacityBlocks(availableBlocks []uint64, blockSize uint64, m
 	}
 	parityBytes := subtractFloor(parityRawBytes, parityHeaders)
 	return mirrorBytes / blockSize, parityBytes / blockSize
-
-	return result, nil
 }
 
 // maxStripeCount computes the maximum number of complete stripes that can be
