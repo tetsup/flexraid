@@ -184,7 +184,7 @@ func TestGetMetricsRetainsRuntimeUnreadableChunk(t *testing.T) {
 
 func TestGetMetricsReportsCleanupInventoryAndCapacityEstimate(t *testing.T) {
 	ctx := context.Background()
-	ios := makeIOs(t, 2)
+	ios := makeIOs(t, 4)
 	created, err := New(NewRequest{IOs: ios})
 	if err != nil {
 		t.Fatal(err)
@@ -219,11 +219,12 @@ func TestGetMetricsReportsCleanupInventoryAndCapacityEstimate(t *testing.T) {
 	if !got.CleanupAfterCapacityAvailable {
 		t.Fatalf("cleanup capacity estimate unavailable: %s", got.CleanupAfterCapacityError)
 	}
-	if len(got.CleanupAfterPhysicalAvailableBytes) != 2 {
+	if len(got.CleanupAfterPhysicalAvailableBytes) != len(ios) {
 		t.Fatalf("post-cleanup drive capacities = %+v", got.CleanupAfterPhysicalAvailableBytes)
 	}
 	for index, drive := range got.CleanupAfterPhysicalAvailableBytes {
-		if drive.DriveIndex != index || drive.ReclaimableBytes == 0 ||
+		wantReclaimable := index < 2
+		if drive.DriveIndex != index || (drive.ReclaimableBytes > 0) != wantReclaimable ||
 			drive.EstimatedAvailableBytes != drive.CurrentAvailableBytes+drive.ReclaimableBytes {
 			t.Errorf("post-cleanup capacity[%d] = %+v", index, drive)
 		}
