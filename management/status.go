@@ -69,7 +69,7 @@ type GetDetailedStatusResponse struct {
 	LogicalCapacityAvailable bool
 	LogicalCapacityError     string
 	CleanupWorkersStarted    bool
-	Operations                map[string]OperationMetrics
+	Operations               map[string]OperationMetrics
 	Status                   GetStatusResponse
 	Distribution             distribution.GetMetricsResponse
 	Drives                   []DriveMonitoringStatus
@@ -89,7 +89,7 @@ type InspectResponse struct {
 	LogicalCapacityAvailable bool
 	LogicalCapacityError     string
 	CleanupWorkersStarted    bool
-	Operations                map[string]OperationMetrics
+	Operations               map[string]OperationMetrics
 	Namespace                orchestration.InspectNamespaceResponse
 	NamespaceAvailable       bool
 	NamespaceError           string
