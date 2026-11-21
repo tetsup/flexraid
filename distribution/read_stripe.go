@@ -27,7 +27,7 @@ type ReadStripeResponse struct {
 func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStripeResponse, err error) {
 	started := time.Now()
 	defer func() {
-		logOperation(d.logger, "ReadStripe", started, err, "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "bytes", len(response.Data))
+		logOperation(d, "ReadStripe", started, err, "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "bytes", len(response.Data))
 	}()
 	if request.ChunkSize == 0 {
 		return response, fmt.Errorf("chunk size must be positive")
