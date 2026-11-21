@@ -292,7 +292,9 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 	}
 	if request.IncludeDetails {
 		objectIDs := make([]shared.ObjectID, 0, len(objects))
-		for id := range objects { objectIDs = append(objectIDs, id) }
+		for id := range objects {
+			objectIDs = append(objectIDs, id)
+		}
 		sort.Slice(objectIDs, func(i, j int) bool { return objectIDs[i].String() < objectIDs[j].String() })
 		for _, objectID := range objectIDs {
 			object := ObjectMetrics{ObjectID: objectID}
@@ -301,24 +303,46 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 				response.OrphanChunks = append(response.OrphanChunks, OrphanChunkMetrics{DriveIndex: orphan.ioIndex, Key: orphan.key})
 			}
 			for key, versions := range d.versions {
-				if key.objectID != objectID { continue }
+				if key.objectID != objectID {
+					continue
+				}
 				object.StripeCount++
 				current := d.objects[objectID][key.stripeID]
 				versionIDs := make([]storage.StripeVersion, 0, len(versions))
-				for versionID := range versions { versionIDs = append(versionIDs, versionID) }
-				sort.Slice(versionIDs, func(i,j int) bool { return versionIDs[i] < versionIDs[j] })
+				for versionID := range versions {
+					versionIDs = append(versionIDs, versionID)
+				}
+				sort.Slice(versionIDs, func(i, j int) bool { return versionIDs[i] < versionIDs[j] })
 				for _, versionID := range versionIDs {
 					version := versions[versionID]
-					entry := StripeVersionMetrics{StripeID:key.stripeID, Version:versionID, Layout:version.method.layout(), ChunkSize:version.chunkSize, ExpectedChunkCount:uint64(len(expectedChunkNos(version.method))), PresentChunkCount:uint64(len(version.chunks)), Invalid:version.invalid, Recoverable:version.recoverable, Current:current != nil && current.version == versionID, Corrupted:version.invalid || !version.recoverable || (current != nil && current.version == versionID && current.corrupted)}
-					for missing := range version.missing { entry.MissingChunkIndexes = append(entry.MissingChunkIndexes, uint8(missing)) }
-					sort.Slice(entry.MissingChunkIndexes, func(i,j int) bool { return entry.MissingChunkIndexes[i] < entry.MissingChunkIndexes[j] })
+					entry := StripeVersionMetrics{StripeID: key.stripeID, Version: versionID, Layout: version.method.layout(), ChunkSize: version.chunkSize, ExpectedChunkCount: uint64(len(expectedChunkNos(version.method))), PresentChunkCount: uint64(len(version.chunks)), Invalid: version.invalid, Recoverable: version.recoverable, Current: current != nil && current.version == versionID, Corrupted: version.invalid || !version.recoverable || (current != nil && current.version == versionID && current.corrupted)}
+					for missing := range version.missing {
+						entry.MissingChunkIndexes = append(entry.MissingChunkIndexes, uint8(missing))
+					}
+					sort.Slice(entry.MissingChunkIndexes, func(i, j int) bool { return entry.MissingChunkIndexes[i] < entry.MissingChunkIndexes[j] })
 					object.Stripes = append(object.Stripes, entry)
 				}
 			}
-			sort.Slice(object.Stripes, func(i,j int) bool { if object.Stripes[i].StripeID != object.Stripes[j].StripeID { return object.Stripes[i].StripeID < object.Stripes[j].StripeID }; return object.Stripes[i].Version < object.Stripes[j].Version })
+			sort.Slice(object.Stripes, func(i, j int) bool {
+				if object.Stripes[i].StripeID != object.Stripes[j].StripeID {
+					return object.Stripes[i].StripeID < object.Stripes[j].StripeID
+				}
+				return object.Stripes[i].Version < object.Stripes[j].Version
+			})
 			response.Objects = append(response.Objects, object)
 		}
-		sort.Slice(response.OrphanChunks, func(i,j int) bool { if response.OrphanChunks[i].DriveIndex != response.OrphanChunks[j].DriveIndex { return response.OrphanChunks[i].DriveIndex < response.OrphanChunks[j].DriveIndex }; if response.OrphanChunks[i].Key.ObjectID != response.OrphanChunks[j].Key.ObjectID { return response.OrphanChunks[i].Key.ObjectID.String() < response.OrphanChunks[j].Key.ObjectID.String() }; if response.OrphanChunks[i].Key.StripeID != response.OrphanChunks[j].Key.StripeID { return response.OrphanChunks[i].Key.StripeID < response.OrphanChunks[j].Key.StripeID }; return response.OrphanChunks[i].Key.StripeVersion < response.OrphanChunks[j].Key.StripeVersion })
+		sort.Slice(response.OrphanChunks, func(i, j int) bool {
+			if response.OrphanChunks[i].DriveIndex != response.OrphanChunks[j].DriveIndex {
+				return response.OrphanChunks[i].DriveIndex < response.OrphanChunks[j].DriveIndex
+			}
+			if response.OrphanChunks[i].Key.ObjectID != response.OrphanChunks[j].Key.ObjectID {
+				return response.OrphanChunks[i].Key.ObjectID.String() < response.OrphanChunks[j].Key.ObjectID.String()
+			}
+			if response.OrphanChunks[i].Key.StripeID != response.OrphanChunks[j].Key.StripeID {
+				return response.OrphanChunks[i].Key.StripeID < response.OrphanChunks[j].Key.StripeID
+			}
+			return response.OrphanChunks[i].Key.StripeVersion < response.OrphanChunks[j].Key.StripeVersion
+		})
 	}
 	response.Stripes.ObjectCount = uint64(len(objects))
 	response.Stripes.StripeCount = uint64(len(stripes))
