@@ -56,9 +56,9 @@ type ChunkMetrics struct {
 	Sync     ChunkOperationMetrics
 }
 type GetMetricsRequest struct {
-	Context context.Context
+	Context        context.Context
 	IncludeDetails bool
-	SummaryOnly bool
+	SummaryOnly    bool
 }
 type ObjectMetrics struct {
 	ObjectID         shared.ObjectID
@@ -270,7 +270,9 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 		return response, err
 	}
 	response.Operations, response.Chunks, response.IntegrityErrorCount, response.RecoveryCount, response.RecoveryFailureCount = d.metricsCollector().snapshot()
-	if request.SummaryOnly { return response, nil }
+	if request.SummaryOnly {
+		return response, nil
+	}
 	d.mapMu.Lock()
 	defer d.mapMu.Unlock()
 	objects := make(map[shared.ObjectID]struct{})
