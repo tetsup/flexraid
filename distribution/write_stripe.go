@@ -25,7 +25,7 @@ type WriteStripeResponse struct{ Version storage.StripeVersion }
 func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteStripeResponse, err error) {
 	started := time.Now()
 	defer func() {
-		logOperation(d.logger, "WriteStripe", started, err, "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "bytes", len(request.Data))
+		logOperation(d, "WriteStripe", started, err, "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "bytes", len(request.Data))
 	}()
 	if request.ChunkSize == 0 {
 		return response, fmt.Errorf("chunk size must be positive")
