@@ -245,6 +245,7 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 		current := d.objects[key.objectID][key.stripeID]
 		if current == nil {
 			response.Stripes.UnrecoverableStripeCount++
+			for _, version := range versions { if version.invalid || !version.recoverable { response.Stripes.CorruptedStripeCount++; break } }
 			continue
 		}
 		selected := versions[current.version]
@@ -253,7 +254,7 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 		} else {
 			response.Stripes.UnrecoverableStripeCount++
 		}
-		if current.corrupted {
+		if current.corrupted || selected == nil || selected.invalid || !selected.recoverable {
 			response.Stripes.CorruptedStripeCount++
 		}
 	}
