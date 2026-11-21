@@ -84,6 +84,7 @@ func CreateRoot(request CreateRootRequest) (response CreateRootResponse, err err
 	}
 	layer := &Orchestration{
 		distribution: request.Distribution,
+		metrics:      newMetricsCollector(),
 		logger:       logger,
 	}
 	rootHeader, err = layer.persistNewObject(ctx, rootHeader, nil)
