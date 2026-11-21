@@ -9,6 +9,8 @@ func logOperation(layer *Distribution, name string, started time.Time, err error
 	duration := time.Since(started)
 	layer.metrics.recordOperation(name, duration, err)
 	attributes = append(attributes, "duration", duration)
-	if err != nil { attributes = append(attributes, "error", err) }
+	if err != nil {
+		attributes = append(attributes, "error", err)
+	}
 	layer.logger.Debug("Distribution operation completed", append(attributes, "operation", name)...)
 }
