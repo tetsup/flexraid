@@ -135,12 +135,13 @@ func (c *metricsCollector) recordOperation(name string, duration time.Duration, 
 	}
 }
 func (d *Distribution) recordChunkOperation(kind string, err error) {
-	d.metricsCollector().mu.Lock()
-	defer d.metricsCollector().mu.Unlock()
-	value := d.metricsCollector().chunks[kind]
+	collector := d.metricsCollector()
+	collector.mu.Lock()
+	defer collector.mu.Unlock()
+	value := collector.chunks[kind]
 	if value == nil {
 		value = &chunkMetricState{}
-		d.metrics.chunks[kind] = value
+		collector.chunks[kind] = value
 	}
 	if err != nil {
 		value.metrics.FailureCount++
@@ -153,20 +154,25 @@ func (d *Distribution) recordChunkOperation(kind string, err error) {
 		value.count++
 	}
 }
+
 func (d *Distribution) recordIntegrityError() {
-	d.metrics.mu.Lock()
-	d.metricsCollector().integrityErrorCount++
-	d.metrics.mu.Unlock()
+	collector := d.metricsCollector()
+	collector.mu.Lock()
+	collector.integrityErrorCount++
+	collector.mu.Unlock()
 }
+
 func (d *Distribution) recordRecovery(success bool) {
-	d.metrics.mu.Lock()
+	collector := d.metricsCollector()
+	collector.mu.Lock()
 	if success {
-		d.metricsCollector().recoveryCount++
+		collector.recoveryCount++
 	} else {
-		d.metricsCollector().recoveryFailureCount++
+		collector.recoveryFailureCount++
 	}
-	d.metrics.mu.Unlock()
+	collector.mu.Unlock()
 }
+
 func (c *metricsCollector) snapshot() (map[string]OperationMetrics, ChunkMetrics, uint64, uint64, uint64) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
