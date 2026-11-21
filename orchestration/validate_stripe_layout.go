@@ -76,7 +76,7 @@ func validateHeaderStripeLayouts(ctx context.Context, layer *distribution.Distri
 func (layer *Orchestration) readStripeValidated(ctx context.Context, objectID shared.ObjectID, h header, geometry stripeGeometry) (data []byte, err error) {
 	defer func() { layer.recordReadError(objectID, err) }()
 	info, err := layer.distribution.GetStripeInfo(distribution.GetStripeInfoRequest{
-		ObjectID: objectID, StripeID: geometry.StripeID,
+		Context: ctx, ObjectID: objectID, StripeID: geometry.StripeID,
 	})
 	if err != nil {
 		return nil, err
