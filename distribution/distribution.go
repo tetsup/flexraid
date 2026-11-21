@@ -106,7 +106,7 @@ func New(request NewRequest) (NewResponse, error) {
 			method, no, methodErr := methodFromLayout(entry.Key.LayoutID)
 			if methodErr != nil {
 				d.recordIntegrityError()
-				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key})
+				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key, sizeBytes: entry.SizeBytes})
 				return nil
 			}
 			total, payload, decodeErr := decodeChunk(entry.Data)
