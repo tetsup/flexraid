@@ -162,6 +162,8 @@ func metricErrorType(err error) string {
 		return "deadline_exceeded"
 	case errors.Is(err, distribution.ErrDataCorrupted):
 		return "data_corrupted"
+	case errors.Is(err, distribution.ErrStripeNotFound):
+		return "stripe_not_found"
 	case errors.Is(err, os.ErrNotExist):
 		return "not_found"
 	case errors.Is(err, os.ErrPermission), errors.Is(err, syscall.EACCES), errors.Is(err, syscall.EPERM):
