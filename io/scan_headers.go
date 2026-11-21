@@ -28,6 +28,7 @@ func (layer *IO) ScanHeaders(req ScanHeadersRequest) (res ScanHeadersResponse, e
 	if err = req.Context.Err(); err != nil {
 		return res, err
 	}
+	layer.recordAccess()
 	res.Entries, err = layer.walkFiles(
 		req.Context,
 		func(key storage.FileKey) bool { return key.StripeID == 0 },
