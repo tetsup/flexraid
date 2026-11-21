@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/tetsup/flexraid/pkg/shared"
 )
@@ -20,9 +21,9 @@ type NamespaceObjectInspection struct {
 	GID           uint32
 	Size          uint64
 	Deleted       bool
-	AtimeUnixNano int64
-	MtimeUnixNano int64
-	CtimeUnixNano int64
+	Atime time.Time
+	Mtime time.Time
+	Ctime time.Time
 	OpenCount     uint64
 	Reachable     bool
 	Protected     bool
@@ -59,12 +60,25 @@ func (layer *Orchestration) InspectNamespace(request InspectNamespaceRequest) (I
 	if layer.root != nil {
 		result.RootID = layer.root.header.ObjectID
 	}
+	reachable := make(map[shared.ObjectID]struct{}, len(layer.objects))
+	reachableFiles := make(map[shared.ObjectID]struct{})
+	queue := []*runtimeObject{layer.root}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		if current == nil { continue }
+		id := current.header.ObjectID
+		if _, exists := reachable[id]; exists { continue }
+		reachable[id] = struct{}{}
+		if current.header.Kind == objectKindHardLink && current.file != nil { reachableFiles[current.file.objectID] = struct{}{} }
+		for _, child := range current.children { queue = append(queue, child) }
+	}
 	for id, object := range layer.objects {
 		if err := request.Context.Err(); err != nil {
 			return InspectNamespaceResponse{}, err
 		}
 		h := object.header
-		entry := NamespaceObjectInspection{ObjectID: id, ParentID: cloneObjectID(h.ParentID), TargetID: cloneObjectID(h.TargetID), Kind: h.Kind, Name: h.Name, Mode: h.Mode, UID: h.UID, GID: h.GID, Size: h.Size, Deleted: h.Deleted, AtimeUnixNano: h.Atime.UnixNano(), MtimeUnixNano: h.Mtime.UnixNano(), CtimeUnixNano: h.Ctime.UnixNano()}
+		entry := NamespaceObjectInspection{ObjectID: id, ParentID: cloneObjectID(h.ParentID), TargetID: cloneObjectID(h.TargetID), Kind: h.Kind, Name: h.Name, Mode: h.Mode, UID: h.UID, GID: h.GID, Size: h.Size, Deleted: h.Deleted, Atime: h.Atime, Mtime: h.Mtime, Ctime: h.Ctime}
 		if object.file != nil {
 			entry.OpenCount = object.file.openCount
 		}
@@ -72,11 +86,9 @@ func (layer *Orchestration) InspectNamespace(request InspectNamespaceRequest) (I
 			entry.Protected = true
 		}
 		if !h.Deleted {
-			if h.ParentID == nil {
-				entry.Reachable = object == layer.root
-			} else if parent := layer.objects[*h.ParentID]; parent != nil && parent.children[h.Name] == object {
-				entry.Reachable = true
-			}
+			_, directlyReachable := reachable[id]
+			_, hardLinkReachable := reachableFiles[id]
+			entry.Reachable = directlyReachable || hardLinkReachable
 		}
 		result.Objects = append(result.Objects, entry)
 	}
