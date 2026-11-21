@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"testing"
+	"time"
 
 	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/storage"
@@ -110,5 +111,21 @@ func TestGetMetricsRequiresContext(t *testing.T) {
 	}
 	if _, err := created.Layer.GetMetrics(GetMetricsRequest{}); err == nil {
 		t.Fatal("expected nil context error")
+	}
+}
+
+func TestMetricsKeepOnlyLatestThousandSamples(t *testing.T) {
+	collector := newMetricsCollector()
+	for i:=0; i<recentOperationLimit+2; i++ {
+		collector.recordOperation("WriteStripe", time.Duration(i), nil)
+	}
+	d := &Distribution{metrics:collector}
+	for i:=0; i<recentOperationLimit+2; i++ { d.recordChunkOperation("Write", nil) }
+	operations, chunks, _, _, _ := collector.snapshot()
+	if operations["WriteStripe"].SuccessCount != recentOperationLimit+2 || operations["WriteStripe"].Recent.ProcessedCount != recentOperationLimit {
+		t.Fatalf("operation recent window: %+v", operations["WriteStripe"])
+	}
+	if chunks.Write.SuccessCount != recentOperationLimit+2 || chunks.Write.RecentProcessedCount != recentOperationLimit {
+		t.Fatalf("chunk recent window: %+v", chunks.Write)
 	}
 }
