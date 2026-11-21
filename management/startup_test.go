@@ -292,6 +292,8 @@ func TestMonitoringAPIsSeparateSummaryDetailsAndAudit(t *testing.T) {
 	if len(detailed.Drives) != 2 {
 		t.Fatalf("detailed drive count = %d", len(detailed.Drives))
 	}
+	if detailed.CapacityDriveCount != 2 || detailed.CapacityAggregate.TotalBytes == 0 { t.Fatalf("capacity aggregate: count=%d capacity=%+v", detailed.CapacityDriveCount, detailed.CapacityAggregate) }
+	if len(detailed.IOMetricsAggregate.Operations) == 0 { t.Fatal("I/O metrics aggregate is empty") }
 	for i, drive := range detailed.Drives {
 		if drive.WWN != disks[i].WWN || !drive.IOMetricsAvailable {
 			t.Fatalf("drive %d metrics: %+v", i, drive)
