@@ -26,6 +26,8 @@ type ReadResponse struct {
 // Header bytes are hidden from callers; Offset is relative to file content.
 // A valid handle from Open is mandatory.
 func (layer *Orchestration) ReadLocked(request ReadRequest) (response ReadResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Read", started, err) }()
 	return layer.readLocked(request)
 }
 

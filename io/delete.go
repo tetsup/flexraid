@@ -23,6 +23,7 @@ type DeleteResponse struct {
 func (layer *IO) Delete(request DeleteRequest) (response DeleteResponse, err error) {
 	started := operationStarted()
 	defer func() {
+		layer.recordOperation(OperationDelete, started, err, 0)
 		logResult(layer.logger, "Delete", err,
 			"key", request.Key, "duration", time.Since(started),
 			"deleted", response.Deleted)

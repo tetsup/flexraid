@@ -23,19 +23,27 @@ func (d *Distribution) cacheStripeLocked(ctx context.Context, key stripeIDKey) e
 		}
 		if location.data == nil {
 			read, err := d.ios[location.ioIndex].Read(physicalio.ReadRequest{Context: ctx, Key: location.key})
+			d.recordChunkOperation("Read", err)
 			if err != nil {
 				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 					return err
 				}
-				d.recordIOErrorLocked(location.ioIndex, err)
+				if selected := d.versions[key][version]; selected != nil {
+					if selected.missing == nil {
+						selected.missing = make(map[chunkNo]struct{})
+					}
+					selected.missing[no] = struct{}{}
+				}
 				continue
 			}
 			total, payload, err := decodeChunk(read.Data)
 			if err != nil {
-				d.recordIOErrorLocked(location.ioIndex, err)
 				continue
 			}
 			location.data, location.totalLength = payload, total
+			if selected := d.versions[key][version]; selected != nil {
+				delete(selected.missing, no)
+			}
 			info.chunks[no] = location
 			if versions := d.versions[key]; versions != nil {
 				if selected := versions[version]; selected != nil {
@@ -49,6 +57,8 @@ func (d *Distribution) cacheStripeLocked(ctx context.Context, key stripeIDKey) e
 		})
 	}
 	if _, err := restoreStripe(chunks); err != nil {
+		info.corrupted = true
+		d.recordIntegrityError()
 		return fmt.Errorf("%w: latest stripe version %d is not recoverable: %v", ErrDataCorrupted, version, err)
 	}
 	return nil

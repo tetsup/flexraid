@@ -22,6 +22,7 @@ type SyncResponse struct{ Synced bool }
 func (layer *IO) Sync(request SyncRequest) (response SyncResponse, err error) {
 	started := operationStarted()
 	defer func() {
+		layer.recordOperation(OperationSync, started, err, 0)
 		logResult(layer.logger, "Sync", err,
 			"key", request.Key, "duration", time.Since(started),
 			"synced", response.Synced)

@@ -22,7 +22,7 @@ type CleanupResponse struct{ DeletedFiles int }
 
 func (d *Distribution) Cleanup(request CleanupRequest) (response CleanupResponse, err error) {
 	started := time.Now()
-	defer func() { logOperation(d.logger, "Cleanup", started, err, "deleted_files", response.DeletedFiles) }()
+	defer func() { logOperation(d, "Cleanup", started, err, "deleted_files", response.DeletedFiles) }()
 	if err = request.Context.Err(); err != nil {
 		return response, err
 	}
@@ -47,6 +47,7 @@ func (d *Distribution) Cleanup(request CleanupRequest) (response CleanupResponse
 					return response, err
 				}
 				_, deleteErr := d.ios[location.ioIndex].Delete(physicalio.DeleteRequest{Context: request.Context, Key: location.key})
+				d.recordChunkOperation("Delete", deleteErr)
 				if deleteErr != nil && !errors.Is(deleteErr, os.ErrNotExist) {
 					remaining = append(remaining, location)
 					d.orphans[objectID] = remaining
@@ -81,12 +82,14 @@ func (d *Distribution) Cleanup(request CleanupRequest) (response CleanupResponse
 					return response, err
 				}
 				_, deleteErr := d.ios[location.ioIndex].Delete(physicalio.DeleteRequest{Context: request.Context, Key: location.key})
+				d.recordChunkOperation("Delete", deleteErr)
 				if deleteErr != nil && !errors.Is(deleteErr, os.ErrNotExist) {
 					err = deleteErr
 					return response, err
 				}
 				response.DeletedFiles++
 				delete(version.chunks, no)
+				delete(version.missing, no)
 			}
 			if removeVersion || len(version.chunks) == 0 {
 				delete(versions, versionNo)

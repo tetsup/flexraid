@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/tetsup/flexraid/distribution"
 	"github.com/tetsup/flexraid/pkg/shared"
@@ -24,7 +25,9 @@ type NewResponse struct {
 }
 
 // SetCleanupPermissionStore attaches the Management-owned shared permission state.
-func (layer *Orchestration) SetCleanupPermissionStore(store *shared.CleanupPermissionStore) error {
+func (layer *Orchestration) SetCleanupPermissionStore(store *shared.CleanupPermissionStore) (err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("SetCleanupPermissionStore", started, err) }()
 	if store == nil {
 		return fmt.Errorf("cleanup permission store is required")
 	}
@@ -48,6 +51,7 @@ type Orchestration struct {
 	cleanupWorkerCancel    context.CancelFunc
 	cleanupWorkerDone      chan struct{}
 	warnings               []initializationWarning
+	metrics                *metricsCollector
 }
 
 func New(request NewRequest) (NewResponse, error) {
@@ -73,6 +77,7 @@ func New(request NewRequest) (NewResponse, error) {
 
 	layer := &Orchestration{
 		distribution:           request.Distribution,
+		metrics:                newMetricsCollector(),
 		cleanupPermissionStore: request.CleanupPermissions,
 		logger:                 logger,
 	}
@@ -83,6 +88,9 @@ func New(request NewRequest) (NewResponse, error) {
 	}
 	if err := layer.initialize(initialObjects); err != nil {
 		return NewResponse{}, err
+	}
+	if err := layer.refreshMissingFileStates(ctx); err != nil {
+		return NewResponse{}, fmt.Errorf("rebuild logical missing-file state: %w", err)
 	}
 	logger.Debug("Orchestration initialized", "root_id", layer.root.header.ObjectID.String(), "objects", len(layer.headers), "deletion_queue", len(layer.deletionQueue), "protected_objects", len(layer.protectedObjects), "warnings", len(layer.warnings))
 	return NewResponse{Layer: layer, RootID: layer.root.header.ObjectID}, nil

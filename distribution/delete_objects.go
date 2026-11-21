@@ -3,6 +3,7 @@ package distribution
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/tetsup/flexraid/pkg/shared"
 )
@@ -24,6 +25,10 @@ type DeleteObjectsResponse struct {
 // re-evaluated at each Object boundary; once DeleteObject starts, its captured
 // permission snapshot governs that Object until completion.
 func (d *Distribution) DeleteObjects(request DeleteObjectsRequest) (response DeleteObjectsResponse, err error) {
+	started := time.Now()
+	defer func() {
+		logOperation(d, "DeleteObjects", started, err, "objects", len(request.ObjectIDs), "deleted_files", response.DeletedFiles)
+	}()
 	ctx := request.Context
 	if ctx == nil {
 		ctx = context.Background()

@@ -21,6 +21,8 @@ type CleanupResponse struct {
 }
 
 func (layer *Orchestration) CleanupLocked(request CleanupRequest) (response CleanupResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Cleanup", started, err) }()
 	return layer.cleanupLocked(request)
 }
 

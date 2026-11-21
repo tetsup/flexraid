@@ -1,14 +1,15 @@
 package distribution
 
 import (
-	"log/slog"
 	"time"
 )
 
-func logOperation(logger *slog.Logger, name string, started time.Time, err error, attributes ...any) {
-	attributes = append(attributes, "duration", time.Since(started))
+func logOperation(layer *Distribution, name string, started time.Time, err error, attributes ...any) {
+	duration := time.Since(started)
+	layer.metricsCollector().recordOperation(name, duration, err)
+	attributes = append(attributes, "duration", duration)
 	if err != nil {
 		attributes = append(attributes, "error", err)
 	}
-	logger.Debug("Distribution operation completed", append(attributes, "operation", name)...)
+	layer.logger.Debug("Distribution operation completed", append(attributes, "operation", name)...)
 }

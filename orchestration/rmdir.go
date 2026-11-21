@@ -22,6 +22,8 @@ type RmdirResponse struct{}
 // derived from the Namespace, so removing the child entry updates it without
 // persisting a separate link-count field.
 func (layer *Orchestration) RmdirLocked(request RmdirRequest) (response RmdirResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Rmdir", started, err) }()
 	response, err = layer.rmdirLocked(request)
 	if err != nil {
 		return response, err

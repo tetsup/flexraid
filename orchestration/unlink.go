@@ -21,6 +21,8 @@ type UnlinkResponse struct{}
 // Unlink removes a name from a directory. Object-kind-specific state changes
 // are kept in separate internal functions.
 func (layer *Orchestration) UnlinkLocked(request UnlinkRequest) (response UnlinkResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Unlink", started, err) }()
 	response, err = layer.unlinkLocked(request)
 	if err != nil {
 		return response, err

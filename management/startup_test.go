@@ -224,6 +224,7 @@ func TestBackgroundProcessesStartOnlyAfterReady(t *testing.T) {
 	layer, err := New(NewRequest{
 		Orchestration: created.Layer,
 		Distribution:  distributed.Layer,
+		IOs:           ioLayers,
 		Config: Config{Disks: []DriveConfig{
 			{Root: t.TempDir(), Mountpoint: t.TempDir(), WWN: "wwn-test-1"},
 			{Root: t.TempDir(), Mountpoint: t.TempDir(), WWN: "wwn-test-2"},
@@ -254,5 +255,112 @@ func TestBackgroundProcessesStartOnlyAfterReady(t *testing.T) {
 	}
 	if layer.backgroundProcessesStarted {
 		t.Fatal("Ready OnExit did not stop both cleanup workers")
+	}
+}
+
+func TestMonitoringAPIsSeparateSummaryDetailsAndAudit(t *testing.T) {
+	ctx := context.Background()
+	ioLayers := []*physicalio.IO{
+		physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer,
+		physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer,
+	}
+	distributed, err := distribution.New(distribution.NewRequest{IOs: ioLayers})
+	if err != nil {
+		t.Fatal(err)
+	}
+	disks := []DriveConfig{
+		{Root: ioLayers[0].RootPath(), Mountpoint: t.TempDir(), WWN: "wwn-test-1"},
+		{Root: ioLayers[1].RootPath(), Mountpoint: t.TempDir(), WWN: "wwn-test-2"},
+	}
+	layer, err := New(NewRequest{Distribution: distributed.Layer, IOs: ioLayers, Config: Config{Disks: disks}, Initialization: InitializationTaskFunc(func(context.Context) (bool, error) { return true, nil })})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	status, err := layer.GetStatus(GetStatusRequest{Context: ctx})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Lifecycle != LifecycleInitializing || status.Level != StatusDegraded {
+		t.Fatalf("summary status: %+v", status)
+	}
+
+	detailed, err := layer.GetDetailedStatus(GetDetailedStatusRequest{Context: ctx})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detailed.Drives) != 2 {
+		t.Fatalf("detailed drive count = %d", len(detailed.Drives))
+	}
+	if detailed.CapacityDriveCount != 2 || detailed.CapacityAggregate.TotalBytes == 0 {
+		t.Fatalf("capacity aggregate: count=%d capacity=%+v", detailed.CapacityDriveCount, detailed.CapacityAggregate)
+	}
+	if len(detailed.IOMetricsAggregate.Operations) == 0 {
+		t.Fatal("I/O metrics aggregate is empty")
+	}
+	for i, drive := range detailed.Drives {
+		if drive.WWN != disks[i].WWN || !drive.IOMetricsAvailable {
+			t.Fatalf("drive %d metrics: %+v", i, drive)
+		}
+		if !drive.CapacityAvailable {
+			t.Fatalf("drive %d capacity unavailable: %s", i, drive.CapacityError)
+		}
+	}
+
+	audit, err := layer.Inspect(InspectRequest{Context: ctx})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(audit.Distribution.Objects) != 0 {
+		t.Fatalf("empty Distribution audit returned objects: %+v", audit.Distribution.Objects)
+	}
+	if audit.NamespaceAvailable || audit.NamespaceError == "" {
+		t.Fatalf("namespace availability: %+v", audit)
+	}
+	if len(audit.Drives) != 2 {
+		t.Fatalf("audit drive count = %d", len(audit.Drives))
+	}
+}
+
+func TestInspectIncludesLogicalNamespaceSnapshot(t *testing.T) {
+	ctx := context.Background()
+	ioLayers := []*physicalio.IO{
+		physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer,
+		physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer,
+	}
+	distributed, err := distribution.New(distribution.NewRequest{IOs: ioLayers})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := orchestration.CreateRoot(orchestration.CreateRootRequest{Context: ctx, Distribution: distributed.Layer, Mode: 0755})
+	if err != nil {
+		t.Fatal(err)
+	}
+	disks := []DriveConfig{
+		{Root: ioLayers[0].RootPath(), Mountpoint: t.TempDir(), WWN: "wwn-audit-1"},
+		{Root: ioLayers[1].RootPath(), Mountpoint: t.TempDir(), WWN: "wwn-audit-2"},
+	}
+	layer, err := New(NewRequest{Orchestration: root.Layer, Distribution: distributed.Layer, IOs: ioLayers, Config: Config{Disks: disks}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	audit, err := layer.Inspect(InspectRequest{Context: ctx})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !audit.NamespaceAvailable {
+		t.Fatalf("namespace snapshot unavailable: %s", audit.NamespaceError)
+	}
+	if !audit.LogicalCapacityAvailable {
+		t.Fatalf("logical capacity unavailable: %s", audit.LogicalCapacityError)
+	}
+	if !audit.Drives[0].CleanupPermissionsAvailable {
+		t.Fatalf("cleanup policy unavailable: %+v", audit.Drives[0])
+	}
+	if audit.Namespace.RootID != root.RootID || len(audit.Namespace.Objects) != 1 {
+		t.Fatalf("namespace audit: %+v", audit.Namespace)
+	}
+	if audit.Namespace.Objects[0].ObjectID != root.RootID || !audit.Namespace.Objects[0].Reachable {
+		t.Fatalf("root object audit: %+v", audit.Namespace.Objects[0])
 	}
 }

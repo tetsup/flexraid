@@ -45,7 +45,7 @@ func (d *Distribution) DeleteObject(request DeleteObjectRequest) (response Delet
 		ctx = context.Background()
 	}
 	defer func() {
-		logOperation(d.logger, "DeleteObject", started, err,
+		logOperation(d, "DeleteObject", started, err,
 			"object_id", request.ObjectID.String(), "deleted_files", response.DeletedFiles)
 	}()
 	if err = ctx.Err(); err != nil {
@@ -146,6 +146,7 @@ func (d *Distribution) DeleteObject(request DeleteObjectRequest) (response Delet
 		}
 		location := item.location
 		_, deleteErr := d.ios[location.ioIndex].Delete(physicalio.DeleteRequest{Context: ctx, Key: location.key})
+		d.recordChunkOperation("Delete", deleteErr)
 		if deleteErr != nil && !errors.Is(deleteErr, os.ErrNotExist) {
 			return response, fmt.Errorf("delete Object %s physical file on I/O %d: %w",
 				request.ObjectID.String(), location.ioIndex, deleteErr)

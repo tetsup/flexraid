@@ -27,6 +27,7 @@ type WriteResponse struct {
 func (layer *IO) Write(request WriteRequest) (response WriteResponse, err error) {
 	started := operationStarted()
 	defer func() {
+		layer.recordOperation(OperationWrite, started, err, 0)
 		logResult(layer.logger, "Write", err,
 			"key", request.Key, "duration", time.Since(started),
 			"bytes", response.BytesWritten)

@@ -192,3 +192,143 @@ go test ./...
 POSIX の基本操作は pjdfstest を用いて検証します。FlexRAID v1 でサポートしない特殊ファイルなどを前提とする一部ケースは、リポジトリ内の `tools/pjdfstest-flexraid-skiplist.tsv` に理由を記録したうえで SKIP とします。実装済み機能の不具合を SKIP で隠すことは認めません。
 
 詳細な実装規約は `AGENTS.md` を参照してください。
+
+## 管理コマンドとプロセス構成（設計方針）
+
+外部からの管理操作は `frcon` を入口とし、Controller と論理ドライブごとの Worker（実行ファイル名 `flexraid`）がローカル RPC で連携する構成を目標とします。プロセス間通信には Unix Domain Socket 上の gRPC、メッセージ形式には Protocol Buffers を使用します。
+
+- **Controller** は外部コマンドを受け付け、対象 Worker へ操作を中継します。常駐 RPC サーバーモード（`frcon serve`）と、単発コマンドを実行して終了するモードを持ちます。
+- **Worker**（実行ファイル名 `flexraid`）は論理ドライブごとに一つ起動する独立プロセスです。各 Worker が担当ドライブの Management と下位レイヤーの状態を所有し、複数 Worker は互いに独立して動作します。Worker は Controller を介さず単独起動することもできます。
+- Controller は Worker を起動できますが、Worker の親・監督プロセスにはなりません。Controller が終了しても Worker は動作を継続し、Worker は Controller を介さず単独起動することもできます。
+- Controller の停止は Worker の停止を意味しません。Worker の停止は対象ドライブを指定した明示的な操作で行います。
+- Controller 再起動後も既存 Worker を再発見して接続できる構成とします。
+
+### 統合設定ファイルと読み込み規則
+
+Controller と全 Worker の設定は、単一の YAML 設定ファイルにまとめます。トップレベルに `controller` と `workers` を定義し、各 Worker は `name` で識別します。Worker 名は設定ファイル内で一意でなければなりません。
+
+```yaml
+version: 1
+
+controller:
+  socket_path: /run/flexraid/controller.sock
+  log_level: info
+
+workers:
+  - name: main
+    socket_path: /run/flexraid/workers/main.sock
+    devices:
+      - uuid: "..."
+      - uuid: "..."
+      - uuid: "..."
+      - uuid: "..."
+    management:
+      cleanup:
+        execution: when_spun_up
+        policy:
+          delete_deprecated_versions_allowed: true
+          preserve_abnormal_data_allowed: false
+          delete_logical_objects_allowed: false
+
+  - name: backup
+    socket_path: /run/flexraid/workers/backup.sock
+    devices:
+      - uuid: "..."
+      - uuid: "..."
+      - uuid: "..."
+      - uuid: "..."
+```
+
+設定ファイルの選択規則は Controller / Worker で共通とし、次の優先順位で決定します。
+
+1. `--config <path>` が指定されている場合は、そのファイルを使用します。
+2. `--config` が指定されていない場合は、まず `/etc/flexraid/config.yaml` を確認します。
+3. そこにファイルが存在しない場合は、カレントディレクトリの `./config.yaml` を使用します。
+4. どちらも存在しない場合は起動エラーにします。
+
+`--config` で明示されたファイルが存在しない、または読み込めない場合はエラーとし、既定パスへフォールバックしません。相対パスはカレントディレクトリを基準に解決します。
+
+Controller は統合設定ファイルから Controller 自身の設定と Worker 一覧を読み込みます。Worker を単独起動する場合は、起動引数で `--name <worker-name>` を必須指定し、同じ設定ファイル内から名前が一致する Worker の設定を一つだけ選択して起動します。一致する Worker がない場合や名前が重複している場合は起動エラーにします。
+
+```sh
+# 設定ファイルを自動選択して Controller を起動
+frcon serve
+
+# 設定ファイルを明示して Controller を起動
+frcon serve --config ./production.yaml
+
+# Worker を単独起動（自動選択された設定ファイルから main を選択）
+flexraid --name main
+
+# Worker を単独起動（設定ファイルを明示）
+flexraid --config ./production.yaml --name main
+```
+
+### 管理コマンドの整備対象
+
+以下は今後整備する `frcon` のコマンドの種類です。引数・出力形式は実装時に確定します。
+
+```text
+frcon
+├── serve
+├── system
+│   ├── status
+│   ├── start
+│   └── stop
+├── drive
+│   ├── list
+│   ├── status <drive_name> [--detail]
+│   ├── inspect <drive_name>
+│   ├── start <drive_name>
+│   └── stop <drive_name>
+├── cleanup
+│   ├── status <drive_name>
+│   ├── policy
+│   │   ├── show <drive_name>
+│   │   └── set <drive_name> ...
+│   └── run <drive_name>
+└── config
+    ├── show
+    ├── validate
+    └── reload
+```
+
+- `drive status <drive_name>` は簡易ヘルスチェックです。論理ドライブ全体として問題がないかを短時間で確認します。
+- `drive status <drive_name> --detail` は運用監視用の詳細状態です。全体集計に加えて、物理ドライブごとの生死・接続・電源状態、容量、I/O 統計、整合性情報を分けて返します。
+- `drive inspect <drive_name>` は監査用の完全な情報取得です。構成、Namespace、Stripe / Version / Chunk、Cleanup 対象とサイズ、現在および Cleanup 後の論理空き容量、履歴・統計などを網羅します。必要に応じてストレージ走査を伴います。
+- 起動後に変化しない物理デバイス情報は Initialization 中に取得し、Ready になる前に snapshot として確定します。取得にデバイスの起動が必要な情報は Initialization の SpinUp 処理と連携し、非侵襲的に取得できる情報のために不要な SpinUp は行いません。I/O 回数・転送量・レイテンシ・I/O エラー・最終アクセス時刻などは、実際の読み込み・書き込みのたびに物理ドライブ別と全体集計を更新します。OS から低コストかつ非侵襲的に取得できる接続・電源状態は status 照会ごとに再取得し、コストの高い情報は項目ごとに定めた更新間隔で再取得します。取得元・最終取得時刻・更新間隔・取得状態を保持します。status の照会だけを理由に Standby 中のデバイスを起こしません。
+- Cleanup Schedule は `drive status --detail` の Cleanup 情報内に、状態・Policy などと同列の項目として表示し、`drive inspect` にも監査情報として含めます。独立した公開関数・RPC・CLI コマンドは設けません。
+
+### 監視カウンターと欠損情報
+
+監視統計は各レイヤーが自分の責務で発生した事象を保持・集計します。Management は各レイヤーの統計取得 API から snapshot を取得して監視応答にまとめます。統計をレイヤー間で受け渡して、別のレイヤーに再集計させることはありません。
+
+- I/O：物理ドライブごとに、物理ファイル操作のコマンド別成功数・失敗数・所要時間、読み取りエラー発生回数、エラーが発生した FileKey のユニーク数を集計します。直近 1,000 処理もコマンド別に保持します。
+- Distribution：Stripe / Chunk の読み書き、Version 選択、復旧、欠損・破損判定、Cleanup など、Distribution 自身の操作・内部処理で発生した事象を集計します。I/O の物理ファイル別・ドライブ別統計は保持せず、I/O から受け取って再集計もしません。 `GetMetrics` は操作別の成功・失敗・累積所要時間・直近 1,000 件の結果に加え、Chunk Read / Write / Delete / Preserve / Sync の成功・失敗数と直近 1,000 件、Integrity error と Recovery の成功・失敗回数、Object / Stripe / Version の復元可能性、破損 Stripe、Incomplete Version、Missing Chunk、Orphan Chunk の現在数を返します。さらに Cleanup 候補を DeleteOldVersion / PreserveAbnormal と物理ドライブ別に集計し、ファイル件数・ファイル長合計・削除による解放見込みサイズ、Cleanup 後のドライブ別物理空き容量と Mirror / Parity の論理空き容量を見積もります。容量見積もりは物理ファイル長に基づく概算です。
+- Orchestration：`GetMetrics` で Object / 論理ファイル単位の操作成功・失敗数と所要時間、ObjectID ごとの読み取りエラー発生数・ユニーク数、直近 1,000 件の結果、および復旧可能・復旧不可能な論理ファイル欠損数を返します。欠損状態は Distribution の詳細 Stripe / Version snapshot から論理 Object 単位で判定し、起動時にメモリ上へ再構築します。読み取りエラー履歴・カウンターは永続化しません。物理ファイルの欠損数を単純合算して論理ファイルの復旧可能性とはしません。
+- Management：Management 自身の公開操作結果を `GetMetrics` で集計し、他レイヤーの snapshot と合わせて監視応答を構成します。
+
+各レイヤーは監視統計を取得する公開関数を一つだけ持ち、関数名は `GetMetrics` とします。Management はこの関数を各層に対して呼び出します。I/O は物理ドライブごとのインスタンスから取得し、Management が設定上の drive_name と対応付けます。
+
+成功数・失敗数・エラー発生回数は累積値に加え、直近 1,000 処理の値も表示します。直近履歴はレイヤー・操作ごとに独立し、I/O は物理ドライブごとにも分けます。1,000 件に満たない場合は実際に保持している処理数を併せて表示します。
+
+欠損状態リスト、ユニーク対象リスト、カウンター、直近 1,000 処理の履歴は FlexRAID プロセス内のメモリだけで保持し、再起動後に復元・永続化しません。欠損状態のうちストレージ状態から判定できるものは起動時に再構築しますが、過去の読み取りエラー回数は復元しません。監視カウンターを保存したい場合は、外部監視側が各レイヤーの `GetMetrics` を通じて取得・保存します。個々の事象の詳細履歴はログに出力します。
+
+- `system start/stop` は Controller の常駐 RPC サーバーを対象とし、Worker 群を一括起動・停止する意味ではありません。
+- `drive start/stop` は指定した論理ドライブの Worker だけを対象とします。
+- Cleanup の policy / run は、指定した論理ドライブの Worker に対する操作です。
+
+実装規約・プロセス分離・RPC 契約の詳細は `AGENTS.md` を参照してください。
+
+
+### Management の監視 API
+
+Management は用途別に3つの公開 API を提供します。
+
+- `GetStatus`: Lifecycle と Distribution の集約異常数だけを返す簡易確認。物理デバイスや容量の問い合わせは行いません。
+- `GetDetailedStatus`: Distribution の集約統計と、設定順の各物理ドライブについて I/O の `GetMetrics`、WWN 解決結果、Platform のファイルシステム容量を返します。個別取得に失敗した項目は、そのドライブの取得エラーとして返し、他ドライブの情報を隠しません。
+- `Inspect`: 詳細監視に加え、Distribution の Object / Stripe / Version / Orphan Chunk の物理配置情報と、Orchestration が保持する論理 Namespace / Object / 初期化時警告、Cleanup worker の稼働状態、ドライブ別 Cleanup 許可設定、Orchestration が算出する現在の論理空き容量を返す監査 API です。
+
+物理ドライブ情報の取得に失敗した値は補完・推測しません。容量には取得元と取得時刻を付けます。これらの監視 API は standby デバイスを起こすための SpinUp を実行しません。I/O 統計は設定された Drive 順と I/O インスタンス順の対応で返します。 `GetStatus` は Distribution の累積異常カウンターを使うため Stripe map を走査せず、Stripe 数などの inventory は含めません。`GetDetailedStatus` は全体 I/O / 容量集計とドライブ別 Cleanup 許可・Orphan Chunk 数・現在の論理空き容量を含みます。`Inspect` は Distribution のメモリ上の物理配置 snapshot と Orchestration の Namespace snapshot を返します。 Orphan Chunk は Distribution が識別できる物理ドライブ別件数も含みます。Namespace の到達可能性は root からの探索と HardLink 参照を考慮します。Distribution の Cleanup 候補件数・物理ファイルサイズは種別別・ドライブ別に集計し、削除候補のファイルサイズを加算した物理空き容量と、その容量を使った Mirror / Parity の論理空き容量を見積もります。この容量見積もりはファイル長に基づく概算であり、ファイルシステムの実割当ブロック数を保証するものではありません。
+
+簡易 Status は Distribution のメモリ上の異常カウンターと Lifecycle / Cleanup worker 状態のみを参照し、Stripe map の全走査を行いません。詳細 Status はドライブ別 Cleanup 許可設定、論理空き容量、物理容量と I/O の全体集計を返します。

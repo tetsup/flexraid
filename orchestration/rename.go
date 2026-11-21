@@ -29,6 +29,8 @@ type RenameResponse struct {
 // a directory requires it to be empty. Header updates are persisted in order
 // and are not crash-atomic across multiple objects.
 func (layer *Orchestration) RenameLocked(request RenameRequest) (response RenameResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Rename", started, err) }()
 	response, err = layer.renameLocked(request)
 	if err != nil || !response.Changed {
 		return response, err

@@ -25,7 +25,7 @@ type WriteStripeResponse struct{ Version storage.StripeVersion }
 func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteStripeResponse, err error) {
 	started := time.Now()
 	defer func() {
-		logOperation(d.logger, "WriteStripe", started, err, "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "bytes", len(request.Data))
+		logOperation(d, "WriteStripe", started, err, "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "bytes", len(request.Data))
 	}()
 	if request.ChunkSize == 0 {
 		return response, fmt.Errorf("chunk size must be positive")
@@ -101,14 +101,16 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 			ioIndex = request.IOIndexes[int(method.numChunks)]
 		}
 		fileKey := storage.FileKey{ObjectID: request.ObjectID, StripeVersion: version, LayoutID: layoutFor(method, no), StripeID: request.StripeID}
-		_, writeErr := d.ios[ioIndex].Write(physicalio.WriteRequest{Context: request.Context, Key: fileKey, Data: encodeChunk(uint64(len(request.Data)), chunks[no]), Sync: request.Sync})
+		encoded := encodeChunk(uint64(len(request.Data)), chunks[no])
+		_, writeErr := d.ios[ioIndex].Write(physicalio.WriteRequest{Context: request.Context, Key: fileKey, Data: encoded, Sync: request.Sync})
+		d.recordChunkOperation("Write", writeErr)
 		if writeErr != nil {
 			savePartial()
 			err = fmt.Errorf("write chunk %d to I/O %d: %w", no, ioIndex, writeErr)
 			d.logger.Error("stripe write failed", "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "io_index", ioIndex, "chunk", no, "error", err)
 			return response, err
 		}
-		written[no] = chunkLocation{ioIndex: ioIndex, key: fileKey, data: append([]byte(nil), chunks[no]...), totalLength: uint64(len(request.Data))}
+		written[no] = chunkLocation{ioIndex: ioIndex, key: fileKey, data: append([]byte(nil), chunks[no]...), totalLength: uint64(len(request.Data)), sizeBytes: uint64(len(encoded))}
 	}
 	d.mapMu.Lock()
 	defer d.mapMu.Unlock()

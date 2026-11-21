@@ -46,6 +46,9 @@ func (layer *Orchestration) initialize(initialObjects []initialObject) error {
 		return err
 	}
 
+	if layer.metrics == nil {
+		layer.metrics = newMetricsCollector()
+	}
 	layer.headers = state.headers
 	layer.objects = state.objects
 	layer.root = state.root

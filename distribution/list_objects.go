@@ -13,7 +13,7 @@ type ListObjectsResponse struct{ ObjectIDs []shared.ObjectID }
 
 func (d *Distribution) ListObjects(request ListObjectsRequest) (response ListObjectsResponse, err error) {
 	started := time.Now()
-	defer func() { logOperation(d.logger, "ListObjects", started, err, "objects", len(response.ObjectIDs)) }()
+	defer func() { logOperation(d, "ListObjects", started, err, "objects", len(response.ObjectIDs)) }()
 	if err = request.Context.Err(); err != nil {
 		return response, err
 	}
