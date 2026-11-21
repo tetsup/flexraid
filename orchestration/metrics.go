@@ -383,7 +383,7 @@ func logicalFileMissingState(fileHeader header, metrics distribution.ObjectMetri
 			}
 			return true, false
 		}
-		if len(current.MissingChunkIndexes) > 0 || current.Corrupted {
+		if current.PresentChunkCount < current.ExpectedChunkCount || len(current.MissingChunkIndexes) > 0 || current.Corrupted {
 			missing = true
 			if !current.Recoverable {
 				return true, false
