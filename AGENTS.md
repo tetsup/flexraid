@@ -207,6 +207,7 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - 自律 Cleanup は旧 Version、不正・復元不能 Version、未完了チャンク、孤立チャンク等の Distribution 所有の物理データを対象とする。最新の復元可能 Version は削除対象にしない。最新 Version の欠損がある Stripe は上記のとおり保留する。Stripe 0 を特別扱いする削除順序制約は設けない。Stripe 0 を最後にする制約は、論理削除 Object の全 Stripe 削除にのみ適用する。
 - 配置ポリシーは決定せず、Orchestration から渡された配置方針を実際のチャンク配置に反映する。
 - Distribution は Stripe / Chunk の読み書き、Version 選択、復旧、欠損・破損判定、Cleanup など、Distribution 自身の公開操作と内部処理で発生した事象を Distribution の統計として保持・集計する。物理ファイル単位の I/O 成否・エラー回数・物理ドライブ別 I/O 統計は I/O の所有物であり、Distribution に渡して再集計させない。Distribution の統計取得 API は Distribution 自身の統計だけを snapshot として返す。
+- Distribution の `GetMetrics` は Cleanup 候補を Method（DeleteOldVersion / PreserveAbnormal）と IOIndex ごとに集計し、候補件数・物理ファイル長合計・削除による解放見込みサイズを返す。最新有効 Version を確定できない Stripe は候補に含めない。Cleanup 後の物理空き容量は Drive ごとの現在 AvailableBytes に削除候補のファイル長を加算した概算とし、その Drive 別見込み値を既定 Mirror / Parity 配置計算へ渡して論理空き容量を推定する。PreserveAbnormal は削除ではないため解放見込みに含めない。ファイル長はファイルシステムの実割当ブロック数を保証しない。
 
 ### I/O
 
