@@ -53,33 +53,36 @@ type ChunkMetrics struct {
 	Preserve ChunkOperationMetrics
 	Sync     ChunkOperationMetrics
 }
-type GetMetricsRequest struct { Context context.Context; IncludeDetails bool }
+type GetMetricsRequest struct {
+	Context        context.Context
+	IncludeDetails bool
+}
 type ObjectMetrics struct {
-	ObjectID shared.ObjectID
-	StripeCount uint64
+	ObjectID         shared.ObjectID
+	StripeCount      uint64
 	OrphanChunkCount uint64
-	Stripes []StripeVersionMetrics
+	Stripes          []StripeVersionMetrics
 }
 type StripeVersionMetrics struct {
-	StripeID storage.StripeID
-	Version storage.StripeVersion
-	Layout Layout
-	ChunkSize uint32
-	ExpectedChunkCount uint64
-	PresentChunkCount uint64
+	StripeID            storage.StripeID
+	Version             storage.StripeVersion
+	Layout              Layout
+	ChunkSize           uint32
+	ExpectedChunkCount  uint64
+	PresentChunkCount   uint64
 	MissingChunkIndexes []uint8
-	Invalid bool
-	Recoverable bool
-	Current bool
-	Corrupted bool
+	Invalid             bool
+	Recoverable         bool
+	Current             bool
+	Corrupted           bool
 }
 type OrphanChunkMetrics struct {
 	DriveIndex int
-	Key storage.FileKey
+	Key        storage.FileKey
 }
 type GetMetricsResponse struct {
-	Objects []ObjectMetrics
-	OrphanChunks []OrphanChunkMetrics
+	Objects              []ObjectMetrics
+	OrphanChunks         []OrphanChunkMetrics
 	Operations           map[string]OperationMetrics
 	Chunks               ChunkMetrics
 	Stripes              StripeMetrics

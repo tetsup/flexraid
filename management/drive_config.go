@@ -23,8 +23,8 @@ type DriveConfig struct {
 
 // NewRequest initializes Management with Orchestration and its startup configuration.
 type NewRequest struct {
-	Orchestration      *orchestration.Orchestration
-	Distribution       *distribution.Distribution
+	Orchestration *orchestration.Orchestration
+	Distribution  *distribution.Distribution
 	// IOs must follow Config.Disks order. They are used only for per-drive I/O metrics.
 	IOs                []*physicalio.IO
 	Initialization     InitializationTask
