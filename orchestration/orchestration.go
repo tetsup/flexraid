@@ -48,7 +48,7 @@ type Orchestration struct {
 	cleanupWorkerCancel    context.CancelFunc
 	cleanupWorkerDone      chan struct{}
 	warnings               []initializationWarning
-	metrics                 *metricsCollector
+	metrics                *metricsCollector
 }
 
 func New(request NewRequest) (NewResponse, error) {
