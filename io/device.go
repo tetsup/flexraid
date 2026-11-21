@@ -106,7 +106,9 @@ func (layer *IO) StartMonitoring() error {
 	layer.monitorWake = make(chan struct{}, 1)
 	layer.monitorStop = make(chan struct{})
 	layer.monitorDone = make(chan struct{})
-	go layer.monitorDevice(layer.monitorWake, layer.monitorStop, layer.monitorDone)
+	monitorCtx, cancel := context.WithCancel(context.Background())
+	layer.monitorCancel = cancel
+	go layer.monitorDevice(monitorCtx, layer.monitorWake, layer.monitorStop, layer.monitorDone)
 	return nil
 }
 
@@ -116,13 +118,15 @@ func (layer *IO) StopMonitoring(ctx context.Context) error {
 		return errors.New("monitor stop context is required")
 	}
 	layer.monitorMu.Lock()
-	stop, done := layer.monitorStop, layer.monitorDone
+	stop, done, cancel := layer.monitorStop, layer.monitorDone, layer.monitorCancel
 	if stop == nil {
 		layer.monitorMu.Unlock()
 		return nil
 	}
 	close(stop)
 	layer.monitorStop = nil
+	layer.monitorCancel = nil
+	cancel()
 	layer.monitorMu.Unlock()
 	select {
 	case <-done:
@@ -160,7 +164,7 @@ type GetDeviceStatusResponse struct {
 	Status DeviceStatus
 }
 
-func (layer *IO) monitorDevice(wake <-chan struct{}, stop <-chan struct{}, done chan<- struct{}) {
+func (layer *IO) monitorDevice(ctx context.Context, wake <-chan struct{}, stop <-chan struct{}, done chan<- struct{}) {
 	defer close(done)
 	for {
 		select {
@@ -171,7 +175,7 @@ func (layer *IO) monitorDevice(wake <-chan struct{}, stop <-chan struct{}, done 
 				continue
 			}
 			layer.device.mu.Lock()
-			refreshDeviceActive(context.Background(), layer.device.config, &layer.device.status, time.Now(), deviceRefreshInterval)
+			refreshDeviceActive(ctx, layer.device.config, &layer.device.status, time.Now(), deviceRefreshInterval)
 			layer.device.mu.Unlock()
 		}
 	}
