@@ -34,6 +34,8 @@ type SetAttrResponse struct{}
 // SetAttr updates logical attributes. A handle is optional, as FUSE may invoke
 // setattr for path-based operations without an open file description.
 func (layer *Orchestration) SetAttrLocked(request SetAttrRequest) (response SetAttrResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("SetAttr", started, err) }()
 	return layer.setAttrLocked(request)
 }
 
