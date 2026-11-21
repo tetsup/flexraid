@@ -134,7 +134,9 @@ type ReleaseRequest struct {
 
 type ReleaseResponse struct{}
 
-func (layer *Orchestration) ReleaseLocked(request ReleaseRequest) (response ReleaseResponse, err error) {
+func (layer *Orchestration) ReleaseLocked(request ReleaseRequest) (response ReleaseResponse, err error)) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Release", started, err) }()
 	return layer.releaseLocked(request)
 }
 
