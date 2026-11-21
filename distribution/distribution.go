@@ -112,7 +112,7 @@ func New(request NewRequest) (NewResponse, error) {
 			total, payload, decodeErr := decodeChunk(entry.Data)
 			if decodeErr != nil {
 				d.recordIntegrityError()
-				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key})
+				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key, sizeBytes: entry.SizeBytes})
 				return nil
 			}
 			key := stripeIDKey{objectID: entry.Key.ObjectID, stripeID: entry.Key.StripeID}
@@ -129,13 +129,13 @@ func New(request NewRequest) (NewResponse, error) {
 			if version.method != method {
 				version.invalid = true
 				d.recordIntegrityError()
-				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key})
+				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key, sizeBytes: entry.SizeBytes})
 				return nil
 			}
 			if _, exists := version.chunks[no]; exists {
 				version.invalid = true
 				d.recordIntegrityError()
-				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key})
+				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key, sizeBytes: entry.SizeBytes})
 				return nil
 			}
 			version.chunks[no] = chunkLocation{ioIndex: index, key: entry.Key, data: payload, totalLength: total, sizeBytes: entry.SizeBytes}
