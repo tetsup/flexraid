@@ -58,7 +58,9 @@ type FsyncRequest struct {
 }
 type FsyncResponse struct{ PersistedStripes uint32 }
 
-func (o *Orchestration) FsyncLocked(r FsyncRequest) (FsyncResponse, error) {
+func (o *Orchestration) FsyncLocked(r FsyncRequest) (response FsyncResponse, err error) {
+	started := time.Now()
+	defer func() { o.recordOperation("Fsync", started, err) }()
 	return o.fsyncLocked(r)
 }
 
