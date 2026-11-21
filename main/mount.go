@@ -60,7 +60,7 @@ func (task *filesystemInitialization) Next(ctx context.Context) (bool, error) {
 			layer := physicalio.New(physicalio.NewRequest{Root: disk.Root, PreservationRoot: disk.Mountpoint}).Layer
 			if _, err := layer.InitializeDevice(physicalio.InitializeDeviceRequest{
 				Context: ctx,
-				Config: physicalio.DeviceConfig{Mountpoint: disk.Mountpoint, WWN: disk.WWN},
+				Config:  physicalio.DeviceConfig{Mountpoint: disk.Mountpoint, WWN: disk.WWN},
 			}); err != nil {
 				return false, fmt.Errorf("initialize physical drive %d: %w", task.disk+1, err)
 			}
