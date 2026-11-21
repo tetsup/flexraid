@@ -22,7 +22,7 @@ type CleanupResponse struct{ DeletedFiles int }
 
 func (d *Distribution) Cleanup(request CleanupRequest) (response CleanupResponse, err error) {
 	started := time.Now()
-	defer func() { logOperation(d.logger, "Cleanup", started, err, "deleted_files", response.DeletedFiles) }()
+	defer func() { logOperation(d, "Cleanup", started, err, "deleted_files", response.DeletedFiles) }()
 	if err = request.Context.Err(); err != nil {
 		return response, err
 	}
