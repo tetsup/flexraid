@@ -41,22 +41,22 @@ type GetStatusResponse struct {
 // DriveMonitoringStatus identifies the configured physical drive and reports
 // which observations could be retrieved. Unknown values are never fabricated.
 type DriveMonitoringStatus struct {
-	WWN                     string
-	Root                    string
-	Mountpoint              string
-	DevicePath              string
-	DeviceIdentityAvailable bool
-	DeviceIdentityError     string
-	Capacity                shared.Capacity
-	CapacityAvailable       bool
-	CapacityError           string
-	CapacitySource          string
-	CapacityRetrievedAt     time.Time
-	IOMetrics               physicalio.GetMetricsResponse
-	IOMetricsAvailable      bool
-	IOMetricsError          string
-	OrphanChunkCount        uint64
-	CleanupPermissions      shared.DriveCleanupPermission
+	WWN                         string
+	Root                        string
+	Mountpoint                  string
+	DevicePath                  string
+	DeviceIdentityAvailable     bool
+	DeviceIdentityError         string
+	Capacity                    shared.Capacity
+	CapacityAvailable           bool
+	CapacityError               string
+	CapacitySource              string
+	CapacityRetrievedAt         time.Time
+	IOMetrics                   physicalio.GetMetricsResponse
+	IOMetricsAvailable          bool
+	IOMetricsError              string
+	OrphanChunkCount            uint64
+	CleanupPermissions          shared.DriveCleanupPermission
 	CleanupPermissionsAvailable bool
 }
 
@@ -66,17 +66,17 @@ type GetDetailedStatusRequest struct{ Context context.Context }
 // GetDetailedStatusResponse combines Distribution metrics and per-drive I/O,
 // device identity, and filesystem capacity observations.
 type GetDetailedStatusResponse struct {
-	IOMetricsAggregate physicalio.GetMetricsResponse
-	CapacityAggregate  shared.Capacity
-	CapacityDriveCount uint64
-	LogicalFreeBytes uint64
+	IOMetricsAggregate       physicalio.GetMetricsResponse
+	CapacityAggregate        shared.Capacity
+	CapacityDriveCount       uint64
+	LogicalFreeBytes         uint64
 	LogicalCapacityAvailable bool
-	LogicalCapacityError string
-	CleanupWorkersStarted bool
-	Status             GetStatusResponse
-	Distribution       distribution.GetMetricsResponse
-	Drives             []DriveMonitoringStatus
-	CollectedAt        time.Time
+	LogicalCapacityError     string
+	CleanupWorkersStarted    bool
+	Status                   GetStatusResponse
+	Distribution             distribution.GetMetricsResponse
+	Drives                   []DriveMonitoringStatus
+	CollectedAt              time.Time
 }
 
 // InspectRequest requests the detailed physical layout audit.
@@ -85,20 +85,20 @@ type InspectRequest struct{ Context context.Context }
 // InspectResponse contains detailed monitoring plus Distribution's per-object,
 // per-stripe, per-version and orphan-chunk inventory.
 type InspectResponse struct {
-	IOMetricsAggregate physicalio.GetMetricsResponse
-	CapacityAggregate  shared.Capacity
-	CapacityDriveCount uint64
-	LogicalFreeBytes uint64
+	IOMetricsAggregate       physicalio.GetMetricsResponse
+	CapacityAggregate        shared.Capacity
+	CapacityDriveCount       uint64
+	LogicalFreeBytes         uint64
 	LogicalCapacityAvailable bool
-	LogicalCapacityError string
-	CleanupWorkersStarted bool
-	Namespace          orchestration.InspectNamespaceResponse
-	NamespaceAvailable bool
-	NamespaceError     string
-	Status             GetStatusResponse
-	Distribution       distribution.GetMetricsResponse
-	Drives             []DriveMonitoringStatus
-	CollectedAt        time.Time
+	LogicalCapacityError     string
+	CleanupWorkersStarted    bool
+	Namespace                orchestration.InspectNamespaceResponse
+	NamespaceAvailable       bool
+	NamespaceError           string
+	Status                   GetStatusResponse
+	Distribution             distribution.GetMetricsResponse
+	Drives                   []DriveMonitoringStatus
+	CollectedAt              time.Time
 }
 
 func validateMonitoringContext(ctx context.Context) error {
@@ -161,14 +161,20 @@ func (layer *Management) GetDetailedStatus(request GetDetailedStatusRequest) (Ge
 		}
 	}
 	result.Status = statusFromMetrics(layer.Phase(), result.Distribution)
-	if layer.distribution == nil { result.Status.Level = StatusFailed }
+	if layer.distribution == nil {
+		result.Status.Level = StatusFailed
+	}
 	layer.mu.Lock()
 	result.CleanupWorkersStarted = layer.backgroundProcessesStarted
 	orchestrationLayer := layer.orchestration
 	if orchestrationLayer != nil {
 		statfs, statErr := orchestrationLayer.StatFsLocked(orchestration.StatFsRequest{Context: request.Context})
-		if statErr != nil { result.LogicalCapacityError = statErr.Error()
-		} else { result.LogicalFreeBytes = statfs.Bavail * statfs.Bsize; result.LogicalCapacityAvailable = true }
+		if statErr != nil {
+			result.LogicalCapacityError = statErr.Error()
+		} else {
+			result.LogicalFreeBytes = statfs.Bavail * statfs.Bsize
+			result.LogicalCapacityAvailable = true
+		}
 	}
 	permissionSnapshot := layer.cleanupPermissionStore.Snapshot()
 	layer.mu.Unlock()
@@ -178,7 +184,10 @@ func (layer *Management) GetDetailedStatus(request GetDetailedStatusRequest) (Ge
 		}
 		config := layer.drives[wwn]
 		drive := DriveMonitoringStatus{WWN: wwn, Root: config.Root, Mountpoint: config.Mountpoint}
-if index < len(permissionSnapshot.Drives) { drive.CleanupPermissions = permissionSnapshot.Drives[index]; drive.CleanupPermissionsAvailable = true }
+		if index < len(permissionSnapshot.Drives) {
+			drive.CleanupPermissions = permissionSnapshot.Drives[index]
+			drive.CleanupPermissionsAvailable = true
+		}
 		device, deviceErr := platform.ResolveDrive(platform.DriveRequest{Context: request.Context, WWN: wwn})
 		if deviceErr != nil {
 			drive.DeviceIdentityError = deviceErr.Error()
@@ -248,7 +257,12 @@ func (layer *Management) Inspect(request InspectRequest) (InspectResponse, error
 		result.Namespace = namespace
 		result.NamespaceAvailable = true
 		statfs, statErr := orchestrationLayer.StatFsLocked(orchestration.StatFsRequest{Context: request.Context})
-		if statErr != nil { result.LogicalCapacityError = statErr.Error() } else { result.LogicalFreeBytes = statfs.Bavail * statfs.Bsize; result.LogicalCapacityAvailable = true }
+		if statErr != nil {
+			result.LogicalCapacityError = statErr.Error()
+		} else {
+			result.LogicalFreeBytes = statfs.Bavail * statfs.Bsize
+			result.LogicalCapacityAvailable = true
+		}
 	} else {
 		result.NamespaceError = "Orchestration layer is not initialized"
 	}
@@ -264,7 +278,10 @@ func (layer *Management) Inspect(request InspectRequest) (InspectResponse, error
 		}
 		config := layer.drives[wwn]
 		drive := DriveMonitoringStatus{WWN: wwn, Root: config.Root, Mountpoint: config.Mountpoint}
-if index < len(permissionSnapshot.Drives) { drive.CleanupPermissions = permissionSnapshot.Drives[index]; drive.CleanupPermissionsAvailable = true }
+		if index < len(permissionSnapshot.Drives) {
+			drive.CleanupPermissions = permissionSnapshot.Drives[index]
+			drive.CleanupPermissionsAvailable = true
+		}
 		for _, orphan := range result.Distribution.OrphanChunks {
 			if orphan.DriveIndex == index {
 				drive.OrphanChunkCount++
