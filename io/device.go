@@ -39,6 +39,8 @@ type DeviceValue[T any] struct {
 type DeviceCapabilities struct {
 	SMARTHealthProbeAvailable bool
 	TemperatureProbeAvailable bool
+	SpinStateProbeAvailable   bool
+	PowerStateProbeAvailable  bool
 }
 
 // DeviceStatus is an independent snapshot of one physical drive's observations.
@@ -134,7 +136,7 @@ func (layer *IO) StopMonitoring(ctx context.Context) error {
 	}
 }
 
-// GetDeviceStatus refreshes non-invasive observations and returns a detached snapshot.
+// GetDeviceStatus returns the latest observations without issuing device commands.
 func (layer *IO) GetDeviceStatus(request GetDeviceStatusRequest) (GetDeviceStatusResponse, error) {
 	if request.Context == nil {
 		return GetDeviceStatusResponse{}, errors.New("device status context is required")
@@ -145,10 +147,9 @@ func (layer *IO) GetDeviceStatus(request GetDeviceStatusRequest) (GetDeviceStatu
 	if layer.device == nil {
 		return GetDeviceStatusResponse{}, errors.New("physical device is not initialized")
 	}
-	layer.device.mu.Lock()
-	refreshDevicePassive(request.Context, layer.device.config, &layer.device.status)
+	layer.device.mu.RLock()
 	status := cloneDeviceStatus(layer.device.status)
-	layer.device.mu.Unlock()
+	layer.device.mu.RUnlock()
 	return GetDeviceStatusResponse{Status: status}, nil
 }
 
