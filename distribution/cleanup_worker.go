@@ -9,7 +9,9 @@ import (
 // NotifyCleanupPermissionsChanged wakes the worker after Management updates
 // the shared permission store.
 func (d *Distribution) NotifyCleanupPermissionsChanged() {
+	started := time.Now()
 	d.wakeCleanupWorker()
+	d.metrics.recordOperation("NotifyCleanupPermissionsChanged", time.Since(started), nil)
 }
 
 // StartCleanupWorker starts Distribution's autonomous cleanup loop. Calling it
