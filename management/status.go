@@ -89,36 +89,30 @@ func validateMonitoringContext(ctx context.Context) error {
 
 // GetStatus provides a compact health summary. It deliberately avoids per-drive
 // device and capacity probes; those belong to GetDetailedStatus.
+func statusFromMetrics(phase LifecyclePhase, metrics distribution.GetMetricsResponse) GetStatusResponse {
+	result := GetStatusResponse{
+		Lifecycle: phase, Level: StatusHealthy,
+		ObjectCount: metrics.Stripes.ObjectCount, StripeCount: metrics.Stripes.StripeCount,
+		UnrecoverableStripeCount: metrics.Stripes.UnrecoverableStripeCount,
+		CorruptedStripeCount: metrics.Stripes.CorruptedStripeCount,
+		MissingChunkCount: metrics.Stripes.MissingChunkCount,
+		OrphanChunkCount: metrics.Stripes.OrphanChunkCount,
+		IntegrityErrorCount: metrics.IntegrityErrorCount,
+		RecoveryFailureCount: metrics.RecoveryFailureCount,
+	}
+	if phase == LifecycleFailed { result.Level = StatusFailed
+	} else if phase != LifecycleReady || result.UnrecoverableStripeCount > 0 || result.CorruptedStripeCount > 0 || result.OrphanChunkCount > 0 || result.IntegrityErrorCount > 0 || result.RecoveryFailureCount > 0 { result.Level = StatusDegraded }
+	return result
+}
+
+// GetStatus provides a compact health summary. It deliberately avoids per-drive
+// device and capacity probes; those belong to GetDetailedStatus.
 func (layer *Management) GetStatus(request GetStatusRequest) (GetStatusResponse, error) {
-	if err := validateMonitoringContext(request.Context); err != nil {
-		return GetStatusResponse{}, err
-	}
-	result := GetStatusResponse{Lifecycle: layer.Phase(), Level: StatusHealthy}
-	if result.Lifecycle == LifecycleFailed {
-		result.Level = StatusFailed
-	} else if result.Lifecycle != LifecycleReady {
-		result.Level = StatusDegraded
-	}
-	if layer.distribution == nil {
-		result.Level = StatusFailed
-		return result, nil
-	}
+	if err := validateMonitoringContext(request.Context); err != nil { return GetStatusResponse{}, err }
+	if layer.distribution == nil { return statusFromMetrics(layer.Phase(), distribution.GetMetricsResponse{}), nil }
 	metrics, err := layer.distribution.GetMetrics(distribution.GetMetricsRequest{Context: request.Context})
-	if err != nil {
-		return GetStatusResponse{}, fmt.Errorf("get Distribution status: %w", err)
-	}
-	result.ObjectCount = metrics.Stripes.ObjectCount
-	result.StripeCount = metrics.Stripes.StripeCount
-	result.UnrecoverableStripeCount = metrics.Stripes.UnrecoverableStripeCount
-	result.CorruptedStripeCount = metrics.Stripes.CorruptedStripeCount
-	result.MissingChunkCount = metrics.Stripes.MissingChunkCount
-	result.OrphanChunkCount = metrics.Stripes.OrphanChunkCount
-	result.IntegrityErrorCount = metrics.IntegrityErrorCount
-	result.RecoveryFailureCount = metrics.RecoveryFailureCount
-	if result.Level != StatusFailed && (result.UnrecoverableStripeCount > 0 || result.CorruptedStripeCount > 0 || result.OrphanChunkCount > 0 || result.IntegrityErrorCount > 0 || result.RecoveryFailureCount > 0) {
-		result.Level = StatusDegraded
-	}
-	return result, nil
+	if err != nil { return GetStatusResponse{}, fmt.Errorf("get Distribution status: %w", err) }
+	return statusFromMetrics(layer.Phase(), metrics), nil
 }
 
 // GetDetailedStatus gathers a current snapshot from each layer. A failure to
@@ -127,17 +121,13 @@ func (layer *Management) GetDetailedStatus(request GetDetailedStatusRequest) (Ge
 	if err := validateMonitoringContext(request.Context); err != nil {
 		return GetDetailedStatusResponse{}, err
 	}
-	status, err := layer.GetStatus(GetStatusRequest{Context: request.Context})
-	if err != nil {
-		return GetDetailedStatusResponse{}, err
-	}
-	result := GetDetailedStatusResponse{Status: status, CollectedAt: time.Now(), Drives: make([]DriveMonitoringStatus, 0, len(layer.driveOrder))}
+	result := GetDetailedStatusResponse{CollectedAt: time.Now(), Drives: make([]DriveMonitoringStatus, 0, len(layer.driveOrder))}
 	if layer.distribution != nil {
+		var err error
 		result.Distribution, err = layer.distribution.GetMetrics(distribution.GetMetricsRequest{Context: request.Context})
-		if err != nil {
-			return GetDetailedStatusResponse{}, fmt.Errorf("get Distribution metrics: %w", err)
-		}
+		if err != nil { return GetDetailedStatusResponse{}, fmt.Errorf("get Distribution metrics: %w", err) }
 	}
+	result.Status = statusFromMetrics(layer.Phase(), result.Distribution)
 	for index, wwn := range layer.driveOrder {
 		if err := request.Context.Err(); err != nil {
 			return GetDetailedStatusResponse{}, err
@@ -186,17 +176,13 @@ func (layer *Management) Inspect(request InspectRequest) (InspectResponse, error
 	if err := validateMonitoringContext(request.Context); err != nil {
 		return InspectResponse{}, err
 	}
-	status, err := layer.GetStatus(GetStatusRequest{Context: request.Context})
-	if err != nil {
-		return InspectResponse{}, err
-	}
-	result := InspectResponse{Status: status, CollectedAt: time.Now(), Drives: make([]DriveMonitoringStatus, 0, len(layer.driveOrder))}
+	result := InspectResponse{CollectedAt: time.Now(), Drives: make([]DriveMonitoringStatus, 0, len(layer.driveOrder))}
 	if layer.distribution != nil {
+		var err error
 		result.Distribution, err = layer.distribution.GetMetrics(distribution.GetMetricsRequest{Context: request.Context, IncludeDetails: true})
-		if err != nil {
-			return InspectResponse{}, fmt.Errorf("inspect Distribution: %w", err)
-		}
+		if err != nil { return InspectResponse{}, fmt.Errorf("inspect Distribution: %w", err) }
 	}
+	result.Status = statusFromMetrics(layer.Phase(), result.Distribution)
 	for index, wwn := range layer.driveOrder {
 		if err := request.Context.Err(); err != nil {
 			return InspectResponse{}, err
