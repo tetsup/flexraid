@@ -84,7 +84,7 @@ type OrphanChunkMetrics struct {
 	Key        storage.FileKey
 }
 type DriveOrphanMetrics struct {
-	DriveIndex int
+	DriveIndex       int
 	OrphanChunkCount uint64
 }
 type GetMetricsResponse struct {
