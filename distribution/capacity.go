@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/tetsup/flexraid/pkg/shared"
 	"github.com/tetsup/flexraid/pkg/shared/config"
@@ -27,7 +28,9 @@ type CapacityResponse struct {
 // GetCapacity returns physical capacities for all I/O layers in index order,
 // and estimates logical capacity for Mirror and Parity layouts. The estimate
 // counts complete stripes first and subtracts the minimum header overhead last.
-func (d *Distribution) GetCapacity(request CapacityRequest) (CapacityResponse, error) {
+func (d *Distribution) GetCapacity(request CapacityRequest) (response CapacityResponse, err error) {
+	started := time.Now()
+	defer func(){ logOperation(d, "GetCapacity", started, err, "drives", len(d.ios)) }()
 	blockSize := request.BlockSize
 	if blockSize == 0 {
 		blockSize = config.BlockSize
@@ -58,9 +61,10 @@ func (d *Distribution) GetCapacity(request CapacityRequest) (CapacityResponse, e
 		if err := ctx.Err(); err != nil {
 			return CapacityResponse{}, err
 		}
-		capacity, err := platform.GetCapacity(platform.CapacityRequest{Context: ctx, Root: d.ios[index].RootPath()})
-		if err != nil {
-			return CapacityResponse{}, fmt.Errorf("get capacity for I/O %d: %w", index, err)
+		capacity, capacityErr := platform.GetCapacity(platform.CapacityRequest{Context: ctx, Root: d.ios[index].RootPath()})
+		if capacityErr != nil {
+			err = fmt.Errorf("get capacity for I/O %d: %w", index, capacityErr)
+			return CapacityResponse{}, err
 		}
 		result.Capacities[index] = capacity.Capacity
 		availableBlocks = append(availableBlocks, capacity.Capacity.AvailableBytes/blockSize)
