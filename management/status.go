@@ -36,6 +36,7 @@ type GetStatusResponse struct {
 	OrphanChunkCount         uint64
 	IntegrityErrorCount      uint64
 	RecoveryFailureCount     uint64
+	CleanupWorkersStarted    bool
 }
 
 // DriveMonitoringStatus identifies the configured physical drive and reports
@@ -143,7 +144,12 @@ func (layer *Management) GetStatus(request GetStatusRequest) (GetStatusResponse,
 	if err != nil {
 		return GetStatusResponse{}, fmt.Errorf("get Distribution status: %w", err)
 	}
-	return statusFromMetrics(layer.Phase(), metrics), nil
+	result := statusFromMetrics(layer.Phase(), metrics)
+	layer.mu.Lock()
+	result.CleanupWorkersStarted = layer.backgroundProcessesStarted
+	layer.mu.Unlock()
+	if layer.Phase() == LifecycleReady && !result.CleanupWorkersStarted { result.Level = StatusDegraded }
+	return result, nil
 }
 
 // GetDetailedStatus gathers a current snapshot from each layer. A failure to
