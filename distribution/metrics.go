@@ -83,9 +83,14 @@ type OrphanChunkMetrics struct {
 	DriveIndex int
 	Key        storage.FileKey
 }
+type DriveOrphanMetrics struct {
+	DriveIndex int
+	OrphanChunkCount uint64
+}
 type GetMetricsResponse struct {
 	Objects              []ObjectMetrics
 	OrphanChunks         []OrphanChunkMetrics
+	OrphanChunksByDrive  []DriveOrphanMetrics
 	Operations           map[string]OperationMetrics
 	Chunks               ChunkMetrics
 	Stripes              StripeMetrics
