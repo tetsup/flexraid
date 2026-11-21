@@ -45,7 +45,7 @@ func (d *Distribution) DeleteObject(request DeleteObjectRequest) (response Delet
 		ctx = context.Background()
 	}
 	defer func() {
-		logOperation(d.logger, "DeleteObject", started, err,
+		logOperation(d, "DeleteObject", started, err,
 			"object_id", request.ObjectID.String(), "deleted_files", response.DeletedFiles)
 	}()
 	if err = ctx.Err(); err != nil {
