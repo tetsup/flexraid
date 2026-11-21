@@ -64,6 +64,9 @@ type GetDetailedStatusRequest struct{ Context context.Context }
 // GetDetailedStatusResponse combines Distribution metrics and per-drive I/O,
 // device identity, and filesystem capacity observations.
 type GetDetailedStatusResponse struct {
+	IOMetricsAggregate physicalio.GetMetricsResponse
+	CapacityAggregate shared.Capacity
+	CapacityDriveCount uint64
 	Status       GetStatusResponse
 	Distribution distribution.GetMetricsResponse
 	Drives       []DriveMonitoringStatus
@@ -76,6 +79,9 @@ type InspectRequest struct{ Context context.Context }
 // InspectResponse contains detailed monitoring plus Distribution's per-object,
 // per-stripe, per-version and orphan-chunk inventory.
 type InspectResponse struct {
+	IOMetricsAggregate physicalio.GetMetricsResponse
+	CapacityAggregate shared.Capacity
+	CapacityDriveCount uint64
 	Namespace          orchestration.InspectNamespaceResponse
 	NamespaceAvailable bool
 	NamespaceError     string
@@ -119,7 +125,9 @@ func (layer *Management) GetStatus(request GetStatusRequest) (GetStatusResponse,
 		return GetStatusResponse{}, err
 	}
 	if layer.distribution == nil {
-		return statusFromMetrics(layer.Phase(), distribution.GetMetricsResponse{}), nil
+		result := statusFromMetrics(layer.Phase(), distribution.GetMetricsResponse{})
+		result.Level = StatusFailed
+		return result, nil
 	}
 	metrics, err := layer.distribution.GetMetrics(distribution.GetMetricsRequest{Context: request.Context, SummaryOnly: true})
 	if err != nil {
@@ -143,6 +151,7 @@ func (layer *Management) GetDetailedStatus(request GetDetailedStatusRequest) (Ge
 		}
 	}
 	result.Status = statusFromMetrics(layer.Phase(), result.Distribution)
+	if layer.distribution == nil { result.Status.Level = StatusFailed }
 	for index, wwn := range layer.driveOrder {
 		if err := request.Context.Err(); err != nil {
 			return GetDetailedStatusResponse{}, err
@@ -182,6 +191,8 @@ func (layer *Management) GetDetailedStatus(request GetDetailedStatusRequest) (Ge
 		}
 		result.Drives = append(result.Drives, drive)
 	}
+	result.IOMetricsAggregate = aggregateIOMetrics(result.Drives)
+	result.CapacityAggregate, result.CapacityDriveCount = aggregateCapacity(result.Drives)
 	return result, nil
 }
 
@@ -200,6 +211,7 @@ func (layer *Management) Inspect(request InspectRequest) (InspectResponse, error
 		}
 	}
 	result.Status = statusFromMetrics(layer.Phase(), result.Distribution)
+	if layer.distribution == nil { result.Status.Level = StatusFailed }
 	layer.mu.Lock()
 	orchestrationLayer := layer.orchestration
 	if orchestrationLayer != nil {
@@ -261,5 +273,49 @@ func (layer *Management) Inspect(request InspectRequest) (InspectResponse, error
 			result.Status.Level = StatusDegraded
 		}
 	}
+	result.IOMetricsAggregate = aggregateIOMetrics(result.Drives)
+	result.CapacityAggregate, result.CapacityDriveCount = aggregateCapacity(result.Drives)
 	return result, nil
+}
+
+func aggregateIOMetrics(drives []DriveMonitoringStatus) physicalio.GetMetricsResponse {
+	result := physicalio.GetMetricsResponse{Operations: make(map[physicalio.Operation]physicalio.OperationMetrics)}
+	for _, drive := range drives {
+		if !drive.IOMetricsAvailable { continue }
+		for operation, value := range drive.IOMetrics.Operations {
+			total := result.Operations[operation]
+			total.SuccessCount += value.SuccessCount
+			total.FailureCount += value.FailureCount
+			total.ReadErrorCount += value.ReadErrorCount
+			total.UniqueReadErrorFileCount += value.UniqueReadErrorFileCount
+			total.TotalDuration += value.TotalDuration
+			total.Recent.ProcessedCount += value.Recent.ProcessedCount
+			total.Recent.SuccessCount += value.Recent.SuccessCount
+			total.Recent.FailureCount += value.Recent.FailureCount
+			total.Recent.ReadErrorCount += value.Recent.ReadErrorCount
+			total.Recent.TotalDuration += value.Recent.TotalDuration
+			if value.Recent.MaxDuration > total.Recent.MaxDuration { total.Recent.MaxDuration = value.Recent.MaxDuration }
+			result.Operations[operation] = total
+		}
+	}
+	return result
+}
+
+func aggregateCapacity(drives []DriveMonitoringStatus) (shared.Capacity, uint64) {
+	var result shared.Capacity
+	var count uint64
+	for _, drive := range drives {
+		if !drive.CapacityAvailable { continue }
+		result.TotalBytes = saturatingAddBytes(result.TotalBytes, drive.Capacity.TotalBytes)
+		result.FreeBytes = saturatingAddBytes(result.FreeBytes, drive.Capacity.FreeBytes)
+		result.AvailableBytes = saturatingAddBytes(result.AvailableBytes, drive.Capacity.AvailableBytes)
+		count++
+	}
+	return result, count
+}
+
+func saturatingAddBytes(a, b uint64) uint64 {
+	const maxUint64 = ^uint64(0)
+	if maxUint64-a < b { return maxUint64 }
+	return a+b
 }
