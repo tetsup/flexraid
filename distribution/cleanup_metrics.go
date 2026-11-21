@@ -3,7 +3,7 @@ package distribution
 import (
 	"sort"
 
-	"github.com/tetsup/flexraid/storage"
+
 )
 
 // CleanupCandidateMetrics summarizes Distribution-owned cleanup inventory.
@@ -95,5 +95,3 @@ func (d *Distribution) cleanupCandidateMetricsLocked() []CleanupCandidateMetrics
 	return result
 }
 
-// Keep the storage import tied to this file's stripe-key map semantics.
-var _ map[storage.StripeVersion]*versionInfo
