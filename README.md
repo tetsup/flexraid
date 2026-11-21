@@ -305,8 +305,8 @@ frcon
 
 - I/O：物理ドライブごとに、物理ファイル操作のコマンド別成功数・失敗数・所要時間、読み取りエラー発生回数、エラーが発生した FileKey のユニーク数を集計します。直近 1,000 処理もコマンド別に保持します。
 - Distribution：Stripe / Chunk の読み書き、Version 選択、復旧、欠損・破損判定、Cleanup など、Distribution 自身の操作・内部処理で発生した事象を集計します。I/O の物理ファイル別・ドライブ別統計は保持せず、I/O から受け取って再集計もしません。 `GetMetrics` は操作別の成功・失敗・累積所要時間・直近 1,000 件の結果に加え、Chunk Read / Write / Delete / Preserve / Sync の成功・失敗数と直近 1,000 件、Integrity error と Recovery の成功・失敗回数、Object / Stripe / Version の復元可能性、破損 Stripe、Incomplete Version、Missing Chunk、Orphan Chunk の現在数を返します。
-- Orchestration：Object / 論理ファイル単位の操作結果、読み取りエラー、復旧可能・復旧不可能な欠損状態を集計します。物理ファイルの欠損数を単純合算して論理ファイルの復旧可能性とはしません。
-- Management：Management 自身の操作結果を集計し、他レイヤーの snapshot と合わせて監視応答を構成します。
+- Orchestration：Object / 論理ファイル単位の操作結果、読み取りエラー、復旧可能・復旧不可能な欠損状態を集計します。物理ファイルの欠損数を単純合算して論理ファイルの復旧可能性とはしません。現行実装では Orchestration の `GetMetrics` は未実装です。
+- Management：Management 自身の公開操作結果を `GetMetrics` で集計し、他レイヤーの snapshot と合わせて監視応答を構成します。
 
 各レイヤーは監視統計を取得する公開関数を一つだけ持ち、関数名は `GetMetrics` とします。Management はこの関数を各層に対して呼び出します。I/O は物理ドライブごとのインスタンスから取得し、Management が設定上の drive_name と対応付けます。
 
