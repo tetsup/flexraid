@@ -15,9 +15,10 @@ type IO struct {
 }
 
 type ScanEntry struct {
-	Key   storage.FileKey
-	Data  []byte
-	Error error
+	Key       storage.FileKey
+	Data      []byte
+	SizeBytes uint64
+	Error     error
 }
 
 func newLogger(level slog.Level) *slog.Logger {
