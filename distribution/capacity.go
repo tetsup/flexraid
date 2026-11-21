@@ -30,7 +30,7 @@ type CapacityResponse struct {
 // counts complete stripes first and subtracts the minimum header overhead last.
 func (d *Distribution) GetCapacity(request CapacityRequest) (response CapacityResponse, err error) {
 	started := time.Now()
-	defer func(){ logOperation(d, "GetCapacity", started, err, "drives", len(d.ios)) }()
+	defer func() { logOperation(d, "GetCapacity", started, err, "drives", len(d.ios)) }()
 	blockSize := request.BlockSize
 	if blockSize == 0 {
 		blockSize = config.BlockSize

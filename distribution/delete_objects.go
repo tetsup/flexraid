@@ -26,7 +26,9 @@ type DeleteObjectsResponse struct {
 // permission snapshot governs that Object until completion.
 func (d *Distribution) DeleteObjects(request DeleteObjectsRequest) (response DeleteObjectsResponse, err error) {
 	started := time.Now()
-	defer func(){ logOperation(d, "DeleteObjects", started, err, "objects", len(request.ObjectIDs), "deleted_files", response.DeletedFiles) }()
+	defer func() {
+		logOperation(d, "DeleteObjects", started, err, "objects", len(request.ObjectIDs), "deleted_files", response.DeletedFiles)
+	}()
 	ctx := request.Context
 	if ctx == nil {
 		ctx = context.Background()

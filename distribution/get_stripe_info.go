@@ -24,7 +24,9 @@ type GetStripeInfoResponse struct {
 // GetStripeInfo returns the newest recoverable version's persisted layout metadata.
 func (d *Distribution) GetStripeInfo(request GetStripeInfoRequest) (response GetStripeInfoResponse, err error) {
 	started := time.Now()
-	defer func(){ logOperation(d, "GetStripeInfo", started, err, "object_id", request.ObjectID.String(), "stripe_id", request.StripeID) }()
+	defer func() {
+		logOperation(d, "GetStripeInfo", started, err, "object_id", request.ObjectID.String(), "stripe_id", request.StripeID)
+	}()
 	ctx := request.Context
 	if ctx == nil {
 		ctx = context.Background()
