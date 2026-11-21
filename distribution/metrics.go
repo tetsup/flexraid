@@ -62,7 +62,7 @@ type metricsCollector struct {
 	integrityErrorCount  uint64
 	recoveryCount        uint64
 	recoveryFailureCount uint64
-	chunks map[string]*ChunkOperationMetrics
+	chunks               map[string]*ChunkOperationMetrics
 }
 
 func newMetricsCollector() *metricsCollector {
@@ -89,9 +89,18 @@ func (c *metricsCollector) recordOperation(name string, duration time.Duration, 
 	}
 }
 func (d *Distribution) recordChunkOperation(kind string, err error) {
-	d.metrics.mu.Lock(); defer d.metrics.mu.Unlock()
-	value := d.metrics.chunks[kind]; if value == nil { value = &ChunkOperationMetrics{}; d.metrics.chunks[kind] = value }
-	if err != nil { value.FailureCount++ } else { value.SuccessCount++ }
+	d.metrics.mu.Lock()
+	defer d.metrics.mu.Unlock()
+	value := d.metrics.chunks[kind]
+	if value == nil {
+		value = &ChunkOperationMetrics{}
+		d.metrics.chunks[kind] = value
+	}
+	if err != nil {
+		value.FailureCount++
+	} else {
+		value.SuccessCount++
+	}
 }
 func (d *Distribution) recordIntegrityError() {
 	d.metrics.mu.Lock()
@@ -130,7 +139,20 @@ func (c *metricsCollector) snapshot() (map[string]OperationMetrics, ChunkMetrics
 		operations[name] = value
 	}
 	chunks := ChunkMetrics{}
-	for kind, value := range c.chunks { switch kind { case "Read": chunks.Read=*value; case "Write": chunks.Write=*value; case "Delete": chunks.Delete=*value; case "Preserve": chunks.Preserve=*value; case "Sync": chunks.Sync=*value } }
+	for kind, value := range c.chunks {
+		switch kind {
+		case "Read":
+			chunks.Read = *value
+		case "Write":
+			chunks.Write = *value
+		case "Delete":
+			chunks.Delete = *value
+		case "Preserve":
+			chunks.Preserve = *value
+		case "Sync":
+			chunks.Sync = *value
+		}
+	}
 	return operations, chunks, c.integrityErrorCount, c.recoveryCount, c.recoveryFailureCount
 }
 
