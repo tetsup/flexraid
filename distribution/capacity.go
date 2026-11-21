@@ -58,7 +58,7 @@ func (d *Distribution) GetCapacity(request CapacityRequest) (response CapacityRe
 	result := CapacityResponse{Capacities: make([]shared.Capacity, len(d.ios))}
 	availableBlocks := make([]uint64, 0, len(d.ios))
 	for index := range d.ios {
-		if err := ctx.Err(); err != nil {
+		if err = ctx.Err(); err != nil {
 			return CapacityResponse{}, err
 		}
 		capacity, capacityErr := platform.GetCapacity(platform.CapacityRequest{Context: ctx, Root: d.ios[index].RootPath()})
