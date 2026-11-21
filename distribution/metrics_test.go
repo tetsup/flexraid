@@ -181,3 +181,55 @@ func TestGetMetricsRetainsRuntimeUnreadableChunk(t *testing.T) {
 		t.Fatalf("read failures not counted: %+v", got.Chunks.Read)
 	}
 }
+
+func TestGetMetricsReportsCleanupInventoryAndCapacityEstimate(t *testing.T) {
+	ctx := context.Background()
+	ios := makeIOs(t, 2)
+	created, err := New(NewRequest{IOs: ios})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := WriteStripeRequest{
+		Context: ctx, ObjectID: testObjectID(), StripeID: 17, ChunkSize: 32,
+		Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1},
+		Data: []byte("first cleanup version"),
+	}
+	for _, value := range []string{"first cleanup version", "second cleanup version", "current version"} {
+		request.Data = []byte(value)
+		if _, err := created.Layer.WriteStripe(request); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := created.Layer.GetMetrics(GetMetricsRequest{Context: ctx})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.CleanupCandidates) != 2 {
+		t.Fatalf("cleanup candidates = %+v, want one old-version summary per drive", got.CleanupCandidates)
+	}
+	for index, candidate := range got.CleanupCandidates {
+		if candidate.Method != CleanupMethodDeleteOldVersion || candidate.DriveIndex != index {
+			t.Errorf("candidate[%d] = %+v", index, candidate)
+		}
+		if candidate.FileCount != 2 || candidate.FileBytes == 0 || candidate.ReclaimableBytes != candidate.FileBytes {
+			t.Errorf("candidate[%d] size/count = %+v", index, candidate)
+		}
+	}
+	if !got.CleanupAfterCapacityAvailable {
+		t.Fatalf("cleanup capacity estimate unavailable: %s", got.CleanupAfterCapacityError)
+	}
+	if len(got.CleanupAfterPhysicalAvailableBytes) != 2 {
+		t.Fatalf("post-cleanup drive capacities = %+v", got.CleanupAfterPhysicalAvailableBytes)
+	}
+	for index, drive := range got.CleanupAfterPhysicalAvailableBytes {
+		if drive.DriveIndex != index || drive.ReclaimableBytes == 0 ||
+			drive.EstimatedAvailableBytes != drive.CurrentAvailableBytes+drive.ReclaimableBytes {
+			t.Errorf("post-cleanup capacity[%d] = %+v", index, drive)
+		}
+	}
+	if got.CleanupAfterMirrorAvailableBlocks == 0 || got.CleanupAfterParityAvailableBlocks == 0 {
+		t.Fatalf("logical post-cleanup capacity not estimated: mirror=%d parity=%d",
+			got.CleanupAfterMirrorAvailableBlocks, got.CleanupAfterParityAvailableBlocks)
+	}
+}
