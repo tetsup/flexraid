@@ -83,22 +83,22 @@ type readErrorSample struct {
 }
 
 type metricsCollector struct {
-	mu                   sync.RWMutex
-	operations           map[string]*operationMetricState
-	readErrorOccurrences uint64
-	readErrorObjects     map[shared.ObjectID]uint64
-	readErrorSamples     [recentMetricsLimit]readErrorSample
-	readErrorNext        int
-	readErrorCount       int
-	recoverableMissingFiles map[shared.ObjectID]struct{}
+	mu                        sync.RWMutex
+	operations                map[string]*operationMetricState
+	readErrorOccurrences      uint64
+	readErrorObjects          map[shared.ObjectID]uint64
+	readErrorSamples          [recentMetricsLimit]readErrorSample
+	readErrorNext             int
+	readErrorCount            int
+	recoverableMissingFiles   map[shared.ObjectID]struct{}
 	unrecoverableMissingFiles map[shared.ObjectID]struct{}
 }
 
 func newMetricsCollector() *metricsCollector {
 	collector := &metricsCollector{
-		operations:       make(map[string]*operationMetricState),
-		readErrorObjects: make(map[shared.ObjectID]uint64),
-		recoverableMissingFiles: make(map[shared.ObjectID]struct{}),
+		operations:                make(map[string]*operationMetricState),
+		readErrorObjects:          make(map[shared.ObjectID]uint64),
+		recoverableMissingFiles:   make(map[shared.ObjectID]struct{}),
 		unrecoverableMissingFiles: make(map[shared.ObjectID]struct{}),
 	}
 	for _, name := range []string{
