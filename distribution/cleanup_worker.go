@@ -14,9 +14,13 @@ func (d *Distribution) NotifyCleanupPermissionsChanged() {
 
 // StartCleanupWorker starts Distribution's autonomous cleanup loop. Calling it
 // while the worker is running is harmless.
+	started := time.Now()
+	var resultErr error
+	defer func(){ logOperation(d, "StartCleanupWorker", started, resultErr) }()
 func (d *Distribution) StartCleanupWorker(parent context.Context) error {
 	if parent == nil {
-		return errors.New("cleanup worker context is required")
+		resultErr = errors.New("cleanup worker context is required")
+		return resultErr
 	}
 	d.cleanupWorkerMu.Lock()
 	defer d.cleanupWorkerMu.Unlock()
@@ -33,9 +37,13 @@ func (d *Distribution) StartCleanupWorker(parent context.Context) error {
 
 // StopCleanupWorker requests a graceful stop and waits for the current physical
 // file operation to finish. It is safe to call when the worker is not running.
+	started := time.Now()
+	var resultErr error
+	defer func(){ logOperation(d, "StopCleanupWorker", started, resultErr) }()
 func (d *Distribution) StopCleanupWorker(ctx context.Context) error {
 	if ctx == nil {
-		return errors.New("cleanup worker stop context is required")
+		resultErr = errors.New("cleanup worker stop context is required")
+		return resultErr
 	}
 	d.cleanupWorkerMu.Lock()
 	cancel, done := d.cleanupWorkerCancel, d.cleanupWorkerDone
@@ -55,7 +63,8 @@ func (d *Distribution) StopCleanupWorker(ctx context.Context) error {
 		d.cleanupWorkerMu.Unlock()
 		return nil
 	case <-ctx.Done():
-		return ctx.Err()
+		resultErr = ctx.Err()
+		return resultErr
 	}
 }
 
