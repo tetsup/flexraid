@@ -54,6 +54,7 @@ type versionInfo struct {
 	chunkSize   uint32
 	invalid     bool
 	chunks      map[chunkNo]chunkLocation
+	missing     map[chunkNo]struct{}
 	recoverable bool
 }
 type chunkLocation struct {
