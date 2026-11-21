@@ -96,7 +96,7 @@ type InitializeDeviceResponse struct {
 // StartMonitoring starts event-driven refreshes for values requiring an active drive.
 func (layer *IO) StartMonitoring() error {
 	if layer.device == nil {
-		return errors.New("physical device is not initialized")
+		return nil
 	}
 	layer.monitorMu.Lock()
 	defer layer.monitorMu.Unlock()
