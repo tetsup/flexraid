@@ -15,6 +15,8 @@ type OperationMetrics struct {
 	SuccessCount  uint64
 	FailureCount  uint64
 	TotalDuration time.Duration
+	MinDuration time.Duration
+	MaxDuration time.Duration
 	Recent        RecentOperationMetrics
 }
 type RecentOperationMetrics struct {
@@ -22,6 +24,7 @@ type RecentOperationMetrics struct {
 	SuccessCount   uint64
 	FailureCount   uint64
 	TotalDuration  time.Duration
+	MinDuration   time.Duration
 	MaxDuration    time.Duration
 }
 type StripeMetrics struct {
@@ -67,6 +70,8 @@ type operationMetricState struct {
 	successCount  uint64
 	failureCount  uint64
 	totalDuration time.Duration
+	minDuration time.Duration
+	maxDuration time.Duration
 	samples       [recentOperationLimit]operationSample
 	nextSample    int
 	sampleCount   int
@@ -97,7 +102,9 @@ func (d *Distribution) metricsCollector() *metricsCollector {
 }
 
 func newMetricsCollector() *metricsCollector {
-	return &metricsCollector{operations: make(map[string]*operationMetricState), chunks: make(map[string]*chunkMetricState)}
+	collector := &metricsCollector{operations: make(map[string]*operationMetricState), chunks: make(map[string]*chunkMetricState)}
+	for _, name := range []string{"ReadStripe", "WriteStripe", "Cleanup", "CleanupStripeDrive", "DeleteObject", "DeleteObjects", "ListObjects", "GetStripeInfo", "ListStripeInfos", "SyncObject", "GetCapacity", "StartCleanupWorker", "StopCleanupWorker", "SetCleanupPermissionStore", "ObjectDriveIndexes", "NotifyCleanupPermissionsChanged"} { collector.operations[name] = &operationMetricState{} }
+	return collector
 }
 func (c *metricsCollector) recordOperation(name string, duration time.Duration, err error) {
 	c.mu.Lock()
@@ -107,6 +114,8 @@ func (c *metricsCollector) recordOperation(name string, duration time.Duration, 
 		state = &operationMetricState{}
 		c.operations[name] = state
 	}
+	if state.successCount+state.failureCount == 0 || duration < state.minDuration { state.minDuration = duration }
+	if duration > state.maxDuration { state.maxDuration = duration }
 	if err != nil {
 		state.failureCount++
 	} else {
@@ -157,7 +166,7 @@ func (c *metricsCollector) snapshot() (map[string]OperationMetrics, ChunkMetrics
 	defer c.mu.RUnlock()
 	operations := make(map[string]OperationMetrics, len(c.operations))
 	for name, state := range c.operations {
-		value := OperationMetrics{SuccessCount: state.successCount, FailureCount: state.failureCount, TotalDuration: state.totalDuration}
+		value := OperationMetrics{SuccessCount: state.successCount, FailureCount: state.failureCount, TotalDuration: state.totalDuration, MinDuration: state.minDuration, MaxDuration: state.maxDuration}
 		for i := 0; i < state.sampleCount; i++ {
 			index := (state.nextSample - state.sampleCount + i + recentOperationLimit) % recentOperationLimit
 			sample := state.samples[index]
@@ -168,6 +177,7 @@ func (c *metricsCollector) snapshot() (map[string]OperationMetrics, ChunkMetrics
 				value.Recent.FailureCount++
 			}
 			value.Recent.TotalDuration += sample.duration
+			if value.Recent.ProcessedCount == 1 || sample.duration < value.Recent.MinDuration { value.Recent.MinDuration = sample.duration }
 			if sample.duration > value.Recent.MaxDuration {
 				value.Recent.MaxDuration = sample.duration
 			}
