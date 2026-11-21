@@ -21,6 +21,7 @@ type IO struct {
 	monitorWake      chan struct{}
 	monitorStop      chan struct{}
 	monitorDone      chan struct{}
+	monitorCancel    context.CancelFunc
 }
 
 type ScanEntry struct {
