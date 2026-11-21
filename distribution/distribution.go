@@ -30,6 +30,7 @@ type Distribution struct {
 	objects                map[shared.ObjectID]map[storage.StripeID]*stripeInfo
 	versions               map[stripeIDKey]map[storage.StripeVersion]*versionInfo
 	metrics                *metricsCollector
+	metricsOnce            sync.Once
 	orphans                map[shared.ObjectID][]chunkLocation
 	cleanupQueue           *cleanupQueue
 	cleanupPermissionStore *shared.CleanupPermissionStore
