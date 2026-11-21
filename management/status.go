@@ -148,7 +148,9 @@ func (layer *Management) GetStatus(request GetStatusRequest) (GetStatusResponse,
 	layer.mu.Lock()
 	result.CleanupWorkersStarted = layer.backgroundProcessesStarted
 	layer.mu.Unlock()
-	if layer.Phase() == LifecycleReady && !result.CleanupWorkersStarted { result.Level = StatusDegraded }
+	if layer.Phase() == LifecycleReady && !result.CleanupWorkersStarted {
+		result.Level = StatusDegraded
+	}
 	return result, nil
 }
 
@@ -193,7 +195,12 @@ func (layer *Management) GetDetailedStatus(request GetDetailedStatusRequest) (Ge
 		}
 		config := layer.drives[wwn]
 		drive := DriveMonitoringStatus{WWN: wwn, Root: config.Root, Mountpoint: config.Mountpoint}
-for _, orphan := range result.Distribution.OrphanChunksByDrive { if orphan.DriveIndex == index { drive.OrphanChunkCount = orphan.OrphanChunkCount; break } }
+		for _, orphan := range result.Distribution.OrphanChunksByDrive {
+			if orphan.DriveIndex == index {
+				drive.OrphanChunkCount = orphan.OrphanChunkCount
+				break
+			}
+		}
 		if index < len(permissionSnapshot.Drives) {
 			drive.CleanupPermissions = permissionSnapshot.Drives[index]
 			drive.CleanupPermissionsAvailable = true
@@ -290,7 +297,12 @@ func (layer *Management) Inspect(request InspectRequest) (InspectResponse, error
 		}
 		config := layer.drives[wwn]
 		drive := DriveMonitoringStatus{WWN: wwn, Root: config.Root, Mountpoint: config.Mountpoint}
-for _, orphan := range result.Distribution.OrphanChunksByDrive { if orphan.DriveIndex == index { drive.OrphanChunkCount = orphan.OrphanChunkCount; break } }
+		for _, orphan := range result.Distribution.OrphanChunksByDrive {
+			if orphan.DriveIndex == index {
+				drive.OrphanChunkCount = orphan.OrphanChunkCount
+				break
+			}
+		}
 		if index < len(permissionSnapshot.Drives) {
 			drive.CleanupPermissions = permissionSnapshot.Drives[index]
 			drive.CleanupPermissionsAvailable = true
