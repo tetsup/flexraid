@@ -88,15 +88,21 @@ type DriveOrphanMetrics struct {
 	OrphanChunkCount uint64
 }
 type GetMetricsResponse struct {
-	Objects              []ObjectMetrics
-	OrphanChunks         []OrphanChunkMetrics
-	OrphanChunksByDrive  []DriveOrphanMetrics
-	Operations           map[string]OperationMetrics
-	Chunks               ChunkMetrics
-	Stripes              StripeMetrics
-	IntegrityErrorCount  uint64
-	RecoveryCount        uint64
-	RecoveryFailureCount uint64
+	Objects                            []ObjectMetrics
+	OrphanChunks                       []OrphanChunkMetrics
+	OrphanChunksByDrive                []DriveOrphanMetrics
+	CleanupCandidates                  []CleanupCandidateMetrics
+	CleanupAfterPhysicalAvailableBytes []DriveCleanupCapacityMetrics
+	CleanupAfterMirrorAvailableBlocks  uint64
+	CleanupAfterParityAvailableBlocks  uint64
+	CleanupAfterCapacityAvailable      bool
+	CleanupAfterCapacityError          string
+	Operations                         map[string]OperationMetrics
+	Chunks                             ChunkMetrics
+	Stripes                            StripeMetrics
+	IntegrityErrorCount                uint64
+	RecoveryCount                      uint64
+	RecoveryFailureCount               uint64
 }
 type operationSample struct {
 	success  bool
@@ -279,7 +285,6 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 		return response, nil
 	}
 	d.mapMu.Lock()
-	defer d.mapMu.Unlock()
 	objects := make(map[shared.ObjectID]struct{})
 	stripes := make(map[stripeIDKey]struct{})
 	for objectID, entries := range d.objects {
@@ -400,6 +405,33 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 		if current.corrupted || selected == nil || selected.invalid || !selected.recoverable {
 			response.Stripes.CorruptedStripeCount++
 		}
+	}
+	response.CleanupCandidates = d.cleanupCandidateMetricsLocked()
+	d.mapMu.Unlock()
+
+	capacity, capacityErr := d.GetCapacity(CapacityRequest{Context: request.Context})
+	if capacityErr != nil {
+		response.CleanupAfterCapacityError = capacityErr.Error()
+	} else {
+		availableBlocks := make([]uint64, len(capacity.Capacities))
+		response.CleanupAfterPhysicalAvailableBytes = make([]DriveCleanupCapacityMetrics, len(capacity.Capacities))
+		for index, drive := range capacity.Capacities {
+			var reclaimable uint64
+			for _, candidate := range response.CleanupCandidates {
+				if candidate.DriveIndex == index {
+					reclaimable = saturatingAdd(reclaimable, candidate.ReclaimableBytes)
+				}
+			}
+			available := saturatingAdd(drive.AvailableBytes, reclaimable)
+			availableBlocks[index] = available / configBlockSize()
+			response.CleanupAfterPhysicalAvailableBytes[index] = DriveCleanupCapacityMetrics{
+				DriveIndex: index, CurrentAvailableBytes: drive.AvailableBytes,
+				ReclaimableBytes: reclaimable, EstimatedAvailableBytes: available,
+			}
+		}
+		response.CleanupAfterMirrorAvailableBlocks, response.CleanupAfterParityAvailableBlocks =
+			estimateLogicalCapacityBlocks(availableBlocks, configBlockSize(), 2, 3, 1)
+		response.CleanupAfterCapacityAvailable = true
 	}
 	return response, nil
 }
