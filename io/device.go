@@ -37,10 +37,8 @@ type DeviceValue[T any] struct {
 
 // DeviceCapabilities describes which observations can be collected.
 type DeviceCapabilities struct {
-	SMARTHealth bool
-	Temperature bool
-	SpinState   bool
-	PowerState  bool
+	SMARTHealthProbeAvailable bool
+	TemperatureProbeAvailable bool
 }
 
 // DeviceStatus is an independent snapshot of one physical drive's observations.
