@@ -101,7 +101,7 @@ func newMetricsCollector() *metricsCollector {
 		"Create", "Mkdir", "Symlink", "Link", "Unlink", "Rmdir", "Rename",
 		"Lookup", "GetAttr", "ReadDir", "Open", "Release", "Read", "Write",
 		"Truncate", "SetAttr", "ReadLink", "Flush", "Fsync", "StatFs", "Cleanup",
-		"InspectNamespace",
+		"InspectNamespace", "GetMetrics", "StartCleanupWorker", "StopCleanupWorker", "SetCleanupPermissionStore",
 	} {
 		collector.operations[name] = &operationMetricState{}
 	}
@@ -339,6 +339,11 @@ func logicalFileMissingState(fileHeader header, metrics distribution.ObjectMetri
 			}
 		}
 		if current == nil {
+			for i := range versions {
+				if versions[i].Recoverable && !versions[i].Invalid {
+					return true, true
+				}
+			}
 			return true, false
 		}
 		if len(current.MissingChunkIndexes) > 0 || current.Corrupted {
