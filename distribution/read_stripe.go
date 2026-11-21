@@ -79,16 +79,19 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 				if errors.Is(readErr, context.Canceled) || errors.Is(readErr, context.DeadlineExceeded) {
 					return response, readErr
 				}
+				d.markChunkMissing(key, info.version, no)
 				missing = append(missing, no)
 				continue
 			}
 			total, payload, decodeErr := decodeChunk(read.Data)
 			if decodeErr != nil {
 				d.recordIntegrityError()
+				d.markChunkMissing(key, info.version, no)
 				missing = append(missing, no)
 				continue
 			}
 			location.data, location.totalLength = payload, total
+			d.markChunkPresent(key, info.version, no)
 			d.mapMu.Lock()
 			info.chunks[no] = location
 			if versions := d.versions[stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}]; versions != nil {
@@ -147,6 +150,25 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 		d.mapMu.Unlock()
 	}
 	return response, nil
+}
+
+func (d *Distribution) markChunkMissing(key stripeIDKey, version storage.StripeVersion, no chunkNo) {
+	d.mapMu.Lock()
+	defer d.mapMu.Unlock()
+	if versions := d.versions[key]; versions != nil {
+		if selected := versions[version]; selected != nil {
+			if selected.missing == nil { selected.missing = make(map[chunkNo]struct{}) }
+			selected.missing[no] = struct{}{}
+		}
+	}
+}
+
+func (d *Distribution) markChunkPresent(key stripeIDKey, version storage.StripeVersion, no chunkNo) {
+	d.mapMu.Lock()
+	defer d.mapMu.Unlock()
+	if versions := d.versions[key]; versions != nil {
+		if selected := versions[version]; selected != nil { delete(selected.missing, no) }
+	}
 }
 
 func (d *Distribution) markStripeUnrecoverable(key stripeIDKey, versionNo storage.StripeVersion) {
@@ -208,6 +230,7 @@ func (d *Distribution) repairStripe(request ReadStripeRequest, info *stripeInfo,
 				if versions := d.versions[stripeKey]; versions != nil {
 					if version := versions[info.version]; version != nil {
 						version.chunks[no] = location
+						delete(version.missing, no)
 					}
 				}
 				d.mapMu.Unlock()
