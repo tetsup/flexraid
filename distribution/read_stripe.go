@@ -102,11 +102,15 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 	}
 	for _, chunk := range chunks {
 		if info.method.distributionType == distributionParity && len(chunk.data) != int(request.ChunkSize) {
+			d.recordIntegrityError()
+			d.recordRecovery(false)
 			info.corrupted = true
 			d.markStripeUnrecoverable(key, info.version)
 			return response, ErrDataCorrupted
 		}
 		if info.method.distributionType == distributionMirror && len(chunk.data) > int(request.ChunkSize) {
+			d.recordIntegrityError()
+			d.recordRecovery(false)
 			info.corrupted = true
 			d.markStripeUnrecoverable(key, info.version)
 			return response, ErrDataCorrupted
