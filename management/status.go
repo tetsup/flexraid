@@ -31,6 +31,7 @@ type GetStatusResponse struct {
 	IntegrityErrorCount   uint64
 	RecoveryFailureCount  uint64
 	CleanupWorkersStarted bool
+	Operations            map[string]OperationMetrics
 }
 
 // DriveMonitoringStatus identifies the configured physical drive and reports
@@ -68,6 +69,7 @@ type GetDetailedStatusResponse struct {
 	LogicalCapacityAvailable bool
 	LogicalCapacityError     string
 	CleanupWorkersStarted    bool
+	Operations                map[string]OperationMetrics
 	Status                   GetStatusResponse
 	Distribution             distribution.GetMetricsResponse
 	Drives                   []DriveMonitoringStatus
@@ -87,6 +89,7 @@ type InspectResponse struct {
 	LogicalCapacityAvailable bool
 	LogicalCapacityError     string
 	CleanupWorkersStarted    bool
+	Operations                map[string]OperationMetrics
 	Namespace                orchestration.InspectNamespaceResponse
 	NamespaceAvailable       bool
 	NamespaceError           string
@@ -127,6 +130,7 @@ func (layer *Management) GetStatus(request GetStatusRequest) (GetStatusResponse,
 	if layer.distribution == nil {
 		result := statusFromMetrics(layer.Phase(), distribution.GetMetricsResponse{})
 		result.Level = StatusFailed
+		result.Operations = layer.metrics.snapshot()
 		return result, nil
 	}
 	metrics, err := layer.distribution.GetMetrics(distribution.GetMetricsRequest{Context: request.Context, SummaryOnly: true})
@@ -134,6 +138,7 @@ func (layer *Management) GetStatus(request GetStatusRequest) (GetStatusResponse,
 		return GetStatusResponse{}, fmt.Errorf("get Distribution status: %w", err)
 	}
 	result := statusFromMetrics(layer.Phase(), metrics)
+	result.Operations = layer.metrics.snapshot()
 	layer.mu.Lock()
 	result.CleanupWorkersStarted = layer.backgroundProcessesStarted
 	layer.mu.Unlock()
@@ -149,7 +154,7 @@ func (layer *Management) GetDetailedStatus(request GetDetailedStatusRequest) (Ge
 	if err := validateMonitoringContext(request.Context); err != nil {
 		return GetDetailedStatusResponse{}, err
 	}
-	result := GetDetailedStatusResponse{CollectedAt: time.Now(), Drives: make([]DriveMonitoringStatus, 0, len(layer.driveOrder))}
+	result := GetDetailedStatusResponse{CollectedAt: time.Now(), Drives: make([]DriveMonitoringStatus, 0, len(layer.driveOrder)), Operations: layer.metrics.snapshot()}
 	if layer.distribution != nil {
 		var err error
 		result.Distribution, err = layer.distribution.GetMetrics(distribution.GetMetricsRequest{Context: request.Context})
@@ -238,7 +243,7 @@ func (layer *Management) Inspect(request InspectRequest) (InspectResponse, error
 	if err := validateMonitoringContext(request.Context); err != nil {
 		return InspectResponse{}, err
 	}
-	result := InspectResponse{CollectedAt: time.Now(), Drives: make([]DriveMonitoringStatus, 0, len(layer.driveOrder))}
+	result := InspectResponse{CollectedAt: time.Now(), Drives: make([]DriveMonitoringStatus, 0, len(layer.driveOrder)), Operations: layer.metrics.snapshot()}
 	if layer.distribution != nil {
 		var err error
 		result.Distribution, err = layer.distribution.GetMetrics(distribution.GetMetricsRequest{Context: request.Context, IncludeDetails: true})
