@@ -31,6 +31,12 @@ func probeDevice(ctx context.Context, config DeviceConfig) (DeviceStatus, error)
 	status.PowerState = unavailableValue[string]("sysfs", "power state is not exposed without device access")
 
 	blockName := filepath.Base(resolved.Path)
+	modelPath := filepath.Join("/sys/class/block", blockName, "device", "model")
+	if raw, readErr := os.ReadFile(modelPath); readErr == nil {
+		status.Model = observedValue(strings.TrimSpace(string(raw)), "sysfs")
+	} else {
+		status.Model = unavailableValue[string]("sysfs", readErr.Error())
+	}
 	rotationalPath := filepath.Join("/sys/class/block", blockName, "queue", "rotational")
 	if raw, readErr := os.ReadFile(rotationalPath); readErr == nil {
 		rotational := strings.TrimSpace(string(raw)) == "1"
@@ -65,22 +71,16 @@ func refreshDevicePassive(ctx context.Context, config DeviceConfig, status *Devi
 func refreshDeviceActive(ctx context.Context, config DeviceConfig, status *DeviceStatus, now time.Time, interval time.Duration) {
 	if status.Capabilities.SMARTHealth && due(status.SMARTHealth.UpdatedAt, now, interval) {
 		output, err := exec.CommandContext(ctx, "smartctl", "-H", status.DevicePath).CombinedOutput()
-		if err != nil {
-			status.SMARTHealth = DeviceValue[string]{State: ObservationUnavailable, Source: "smartctl -H", UpdatedAt: now, Error: fmt.Sprintf("%v: %s", err, strings.TrimSpace(string(output)))}
-		} else {
-			value := "unknown"
-			text := string(output)
-			switch {
-			case strings.Contains(text, "PASSED"):
-				value = "passed"
-			case strings.Contains(text, "FAILED"):
-				value = "failed"
-			}
-			state := ObservationSupported
-			if value == "unknown" {
-				state = ObservationUnavailable
-			}
-			status.SMARTHealth = DeviceValue[string]{Value: value, State: state, Source: "smartctl -H", UpdatedAt: now}
+		text := string(output)
+		switch {
+		case strings.Contains(text, "PASSED"):
+			status.SMARTHealth = DeviceValue[string]{Value: "passed", State: ObservationSupported, Source: "smartctl -H", UpdatedAt: now}
+		case strings.Contains(text, "FAILED"):
+			status.SMARTHealth = DeviceValue[string]{Value: "failed", State: ObservationSupported, Source: "smartctl -H", UpdatedAt: now}
+		case err != nil:
+			status.SMARTHealth = DeviceValue[string]{State: ObservationUnavailable, Source: "smartctl -H", UpdatedAt: now, Error: fmt.Sprintf("%v: %s", err, strings.TrimSpace(text))}
+		default:
+			status.SMARTHealth = DeviceValue[string]{State: ObservationUnsupported, Source: "smartctl -H", UpdatedAt: now}
 		}
 	}
 	if status.Capabilities.Temperature && due(status.TemperatureC.UpdatedAt, now, interval) {
