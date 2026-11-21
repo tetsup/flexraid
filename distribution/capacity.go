@@ -70,11 +70,20 @@ func (d *Distribution) GetCapacity(request CapacityRequest) (response CapacityRe
 		availableBlocks = append(availableBlocks, capacity.Capacity.AvailableBytes/blockSize)
 	}
 
+	result.MirrorAvailableBlocks, result.ParityAvailableBlocks = estimateLogicalCapacityBlocks(
+		availableBlocks, blockSize, mirrorCopies, dataChunks, parityChunks,
+	)
+	return result, nil
+}
+
+// estimateLogicalCapacityBlocks estimates usable logical blocks from per-drive
+// available physical blocks. It uses the same complete-stripe placement model
+// for both current and post-cleanup capacity estimates.
+func estimateLogicalCapacityBlocks(availableBlocks []uint64, blockSize uint64, mirrorCopies, dataChunks, parityChunks int) (uint64, uint64) {
 	mirrorStripes := maxStripeCount(availableBlocks, mirrorCopies)
 	mirrorRawBytes := saturatingMul(mirrorStripes, blockSize)
 	mirrorHeaders := saturatingMul(mirrorStripes, config.HeaderReservedSize)
 	mirrorBytes := subtractFloor(mirrorRawBytes, mirrorHeaders)
-	result.MirrorAvailableBlocks = mirrorBytes / blockSize
 
 	parityStripes := maxStripeCount(availableBlocks, dataChunks+parityChunks)
 	parityRawBytes := saturatingMul(saturatingMul(parityStripes, uint64(dataChunks)), blockSize)
@@ -84,7 +93,7 @@ func (d *Distribution) GetCapacity(request CapacityRequest) (response CapacityRe
 		parityHeaders = config.HeaderReservedSize
 	}
 	parityBytes := subtractFloor(parityRawBytes, parityHeaders)
-	result.ParityAvailableBlocks = parityBytes / blockSize
+	return mirrorBytes / blockSize, parityBytes / blockSize
 
 	return result, nil
 }
