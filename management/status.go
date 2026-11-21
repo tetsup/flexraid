@@ -121,7 +121,7 @@ func (layer *Management) GetStatus(request GetStatusRequest) (GetStatusResponse,
 	if layer.distribution == nil {
 		return statusFromMetrics(layer.Phase(), distribution.GetMetricsResponse{}), nil
 	}
-	metrics, err := layer.distribution.GetMetrics(distribution.GetMetricsRequest{Context: request.Context})
+	metrics, err := layer.distribution.GetMetrics(distribution.GetMetricsRequest{Context: request.Context, SummaryOnly: true})
 	if err != nil {
 		return GetStatusResponse{}, fmt.Errorf("get Distribution status: %w", err)
 	}
