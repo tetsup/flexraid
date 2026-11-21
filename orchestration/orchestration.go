@@ -24,7 +24,9 @@ type NewResponse struct {
 }
 
 // SetCleanupPermissionStore attaches the Management-owned shared permission state.
-func (layer *Orchestration) SetCleanupPermissionStore(store *shared.CleanupPermissionStore) error {
+func (layer *Orchestration) SetCleanupPermissionStore(store *shared.CleanupPermissionStore) (err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("SetCleanupPermissionStore", started, err) }()
 	if store == nil {
 		return fmt.Errorf("cleanup permission store is required")
 	}
