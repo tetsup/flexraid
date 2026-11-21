@@ -29,6 +29,7 @@ func (layer *IO) ListChunks(request ListChunksRequest) (response ListChunksRespo
 		return response, err
 	}
 	layer.recordAccess()
+	defer layer.recordAccess()
 	response.Entries, err = layer.walkFiles(
 		request.Context,
 		func(storage.FileKey) bool { return true },
