@@ -172,6 +172,7 @@ func New(request NewRequest) (NewResponse, error) {
 				chunks = append(chunks, chunkDataWithInfo{stripeKey: stripeKeyInfo{objectID: key.objectID, stripeID: key.stripeID, stripeVersion: versionNo}, distributionMethod: version.method, chunkNo: no, data: location.data, totalLength: location.totalLength})
 			}
 			if _, err := restoreStripe(chunks); err != nil {
+				d.recordIntegrityError()
 				continue
 			}
 			version.recoverable = true
