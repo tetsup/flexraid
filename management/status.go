@@ -213,14 +213,22 @@ func (layer *Management) Inspect(request InspectRequest) (InspectResponse, error
 		}
 	}
 	result.Status = statusFromMetrics(layer.Phase(), result.Distribution)
-	for _, orphan := range result.Distribution.OrphanChunks { if orphan.DriveIndex >= 0 && orphan.DriveIndex < len(layer.driveOrder) { _ = orphan } }
+	for _, orphan := range result.Distribution.OrphanChunks {
+		if orphan.DriveIndex >= 0 && orphan.DriveIndex < len(layer.driveOrder) {
+			_ = orphan
+		}
+	}
 	for index, wwn := range layer.driveOrder {
 		if err := request.Context.Err(); err != nil {
 			return InspectResponse{}, err
 		}
 		config := layer.drives[wwn]
 		drive := DriveMonitoringStatus{WWN: wwn, Root: config.Root, Mountpoint: config.Mountpoint}
-		for _, orphan := range result.Distribution.OrphanChunks { if orphan.DriveIndex == index { drive.OrphanChunkCount++ } }
+		for _, orphan := range result.Distribution.OrphanChunks {
+			if orphan.DriveIndex == index {
+				drive.OrphanChunkCount++
+			}
+		}
 		device, deviceErr := platform.ResolveDrive(platform.DriveRequest{Context: request.Context, WWN: wwn})
 		if deviceErr != nil {
 			drive.DeviceIdentityError = deviceErr.Error()
