@@ -48,6 +48,7 @@ type Orchestration struct {
 	cleanupWorkerCancel    context.CancelFunc
 	cleanupWorkerDone      chan struct{}
 	warnings               []initializationWarning
+	metrics                 *metricsCollector
 }
 
 func New(request NewRequest) (NewResponse, error) {
@@ -73,6 +74,7 @@ func New(request NewRequest) (NewResponse, error) {
 
 	layer := &Orchestration{
 		distribution:           request.Distribution,
+		metrics:                newMetricsCollector(),
 		cleanupPermissionStore: request.CleanupPermissions,
 		logger:                 logger,
 	}
