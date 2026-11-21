@@ -69,7 +69,9 @@ func (d *Distribution) SyncObject(request SyncObjectRequest) (response SyncObjec
 				unlockStripe()
 				return response, fmt.Errorf("stripe %d has invalid I/O index %d", rawID, location.ioIndex)
 			}
-			if _, err = d.ios[location.ioIndex].Sync(physicalio.SyncRequest{Context: ctx, Key: location.key}); err != nil {
+			_, syncErr := d.ios[location.ioIndex].Sync(physicalio.SyncRequest{Context: ctx, Key: location.key})
+			d.recordChunkOperation("Sync", syncErr)
+			if err = syncErr; err != nil {
 				unlockStripe()
 				return response, fmt.Errorf("sync stripe %d on I/O %d: %w", rawID, location.ioIndex, err)
 			}
