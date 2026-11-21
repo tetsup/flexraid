@@ -2,8 +2,6 @@ package distribution
 
 import (
 	"sort"
-
-
 )
 
 // CleanupCandidateMetrics summarizes Distribution-owned cleanup inventory.
@@ -94,4 +92,3 @@ func (d *Distribution) cleanupCandidateMetricsLocked() []CleanupCandidateMetrics
 	})
 	return result
 }
-
