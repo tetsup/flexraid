@@ -49,7 +49,9 @@ type InspectNamespaceResponse struct {
 
 // InspectNamespace returns a detached audit snapshot. Management serializes this
 // call with filesystem operations so the returned object graph is consistent.
-func (layer *Orchestration) InspectNamespace(request InspectNamespaceRequest) (InspectNamespaceResponse, error) {
+func (layer *Orchestration) InspectNamespace(request InspectNamespaceRequest) (response InspectNamespaceResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("InspectNamespace", started, err) }()
 	if request.Context == nil {
 		return InspectNamespaceResponse{}, fmt.Errorf("context is required")
 	}
