@@ -36,7 +36,7 @@ func (d *Distribution) CleanupStripeDrive(request CleanupStripeDriveRequest) (re
 		ctx = context.Background()
 	}
 	defer func() {
-		logOperation(d.logger, "CleanupStripeDrive", started, err,
+		logOperation(d, "CleanupStripeDrive", started, err,
 			"io_index", request.IOIndex, "object_id", request.ObjectID.String(),
 			"stripe_id", request.StripeID, "method", request.Method,
 			"files_processed", response.FilesProcessed)
