@@ -27,12 +27,10 @@ func (d *Distribution) cacheStripeLocked(ctx context.Context, key stripeIDKey) e
 				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 					return err
 				}
-				d.recordIOErrorLocked(location.ioIndex, err)
 				continue
 			}
 			total, payload, err := decodeChunk(read.Data)
 			if err != nil {
-				d.recordIOErrorLocked(location.ioIndex, err)
 				continue
 			}
 			location.data, location.totalLength = payload, total
