@@ -42,6 +42,7 @@ func (layer *IO) Write(request WriteRequest) (response WriteResponse, err error)
 		return response, err
 	}
 	layer.recordAccess()
+	defer layer.recordAccess()
 	if err = os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return response, err
 	}
