@@ -88,7 +88,11 @@ type chunkMetricState struct {
 }
 
 func (d *Distribution) metricsCollector() *metricsCollector {
-	d.metricsOnce.Do(func() { if d.metrics == nil { d.metrics = newMetricsCollector() } })
+	d.metricsOnce.Do(func() {
+		if d.metrics == nil {
+			d.metrics = newMetricsCollector()
+		}
+	})
 	return d.metrics
 }
 
