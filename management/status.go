@@ -28,12 +28,6 @@ type GetStatusRequest struct{ Context context.Context }
 type GetStatusResponse struct {
 	Level                    StatusLevel
 	Lifecycle                LifecyclePhase
-	ObjectCount              uint64
-	StripeCount              uint64
-	UnrecoverableStripeCount uint64
-	CorruptedStripeCount     uint64
-	MissingChunkCount        uint64
-	OrphanChunkCount         uint64
 	IntegrityErrorCount      uint64
 	RecoveryFailureCount     uint64
 	CleanupWorkersStarted    bool
@@ -123,7 +117,7 @@ func statusFromMetrics(phase LifecyclePhase, metrics distribution.GetMetricsResp
 	}
 	if phase == LifecycleFailed {
 		result.Level = StatusFailed
-	} else if phase != LifecycleReady || result.UnrecoverableStripeCount > 0 || result.CorruptedStripeCount > 0 || result.OrphanChunkCount > 0 || result.IntegrityErrorCount > 0 || result.RecoveryFailureCount > 0 {
+	} else if phase != LifecycleReady || result.IntegrityErrorCount > 0 || result.RecoveryFailureCount > 0 {
 		result.Level = StatusDegraded
 	}
 	return result
