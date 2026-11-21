@@ -157,7 +157,9 @@ func (d *Distribution) markChunkMissing(key stripeIDKey, version storage.StripeV
 	defer d.mapMu.Unlock()
 	if versions := d.versions[key]; versions != nil {
 		if selected := versions[version]; selected != nil {
-			if selected.missing == nil { selected.missing = make(map[chunkNo]struct{}) }
+			if selected.missing == nil {
+				selected.missing = make(map[chunkNo]struct{})
+			}
 			selected.missing[no] = struct{}{}
 		}
 	}
@@ -167,7 +169,9 @@ func (d *Distribution) markChunkPresent(key stripeIDKey, version storage.StripeV
 	d.mapMu.Lock()
 	defer d.mapMu.Unlock()
 	if versions := d.versions[key]; versions != nil {
-		if selected := versions[version]; selected != nil { delete(selected.missing, no) }
+		if selected := versions[version]; selected != nil {
+			delete(selected.missing, no)
+		}
 	}
 }
 

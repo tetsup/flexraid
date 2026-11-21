@@ -28,7 +28,12 @@ func (d *Distribution) cacheStripeLocked(ctx context.Context, key stripeIDKey) e
 				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 					return err
 				}
-				if selected := d.versions[key][version]; selected != nil { if selected.missing == nil { selected.missing = make(map[chunkNo]struct{}) }; selected.missing[no] = struct{}{} }
+				if selected := d.versions[key][version]; selected != nil {
+					if selected.missing == nil {
+						selected.missing = make(map[chunkNo]struct{})
+					}
+					selected.missing[no] = struct{}{}
+				}
 				continue
 			}
 			total, payload, err := decodeChunk(read.Data)
@@ -36,7 +41,9 @@ func (d *Distribution) cacheStripeLocked(ctx context.Context, key stripeIDKey) e
 				continue
 			}
 			location.data, location.totalLength = payload, total
-			if selected := d.versions[key][version]; selected != nil { delete(selected.missing, no) }
+			if selected := d.versions[key][version]; selected != nil {
+				delete(selected.missing, no)
+			}
 			info.chunks[no] = location
 			if versions := d.versions[key]; versions != nil {
 				if selected := versions[version]; selected != nil {
