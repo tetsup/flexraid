@@ -33,7 +33,7 @@ func New(request NewRequest) (*Management, error) {
 		return nil, err
 	}
 	driveOrder := configuredDriveOrder(request.Config.Disks)
-	if len(request.IOs) != 0 && len(request.IOs) != len(driveOrder) {
+	if request.Distribution != nil && len(request.IOs) != len(driveOrder) {
 		return nil, fmt.Errorf("I/O metrics source count %d does not match configured drive count %d", len(request.IOs), len(driveOrder))
 	}
 	sharedPermissions := make([]shared.DriveCleanupPermission, len(driveOrder))
