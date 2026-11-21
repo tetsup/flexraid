@@ -47,6 +47,8 @@ func (d *Distribution) Cleanup(request CleanupRequest) (response CleanupResponse
 					return response, err
 				}
 				_, deleteErr := d.ios[location.ioIndex].Delete(physicalio.DeleteRequest{Context: request.Context, Key: location.key})
+				d.recordChunkOperation("Delete", deleteErr)
+				d.recordChunkOperation("Delete", deleteErr)
 				if deleteErr != nil && !errors.Is(deleteErr, os.ErrNotExist) {
 					remaining = append(remaining, location)
 					d.orphans[objectID] = remaining
