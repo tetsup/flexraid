@@ -6,6 +6,15 @@ import "time"
 // Monitoring uses this timestamp to refresh drive state only during active I/O windows.
 func (layer *IO) recordAccess() {
 	layer.lastAccess.Store(time.Now().UnixNano())
+	layer.monitorMu.Lock()
+	wake := layer.monitorWake
+	layer.monitorMu.Unlock()
+	if wake != nil {
+		select {
+		case wake <- struct{}{}:
+		default:
+		}
+	}
 }
 
 func (layer *IO) lastAccessTime() time.Time {
