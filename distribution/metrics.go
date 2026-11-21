@@ -410,7 +410,7 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 	response.CleanupCandidates = d.cleanupCandidateMetricsLocked()
 	d.mapMu.Unlock()
 
-	capacity, capacityErr := d.GetCapacity(CapacityRequest{Context: request.Context})
+	capacity, capacityErr := d.getCapacity(CapacityRequest{Context: request.Context})
 	if capacityErr != nil {
 		response.CleanupAfterCapacityError = capacityErr.Error()
 	} else {
