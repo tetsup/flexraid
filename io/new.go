@@ -25,7 +25,12 @@ func New(request NewRequest) NewResponse {
 	if preservationRoot == "" {
 		preservationRoot = request.Root
 	}
-	layer := &IO{root: request.Root, preservationRoot: preservationRoot, logger: logger}
+	layer := &IO{
+		root:             request.Root,
+		preservationRoot: preservationRoot,
+		logger:           logger,
+		metrics:          newMetricsCollector(),
+	}
 	logResult(logger, "New", nil, "root", request.Root, "preservation_root", preservationRoot)
 	return NewResponse{Layer: layer}
 }

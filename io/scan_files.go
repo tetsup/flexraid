@@ -2,15 +2,20 @@ package io
 
 import (
 	"context"
-	"github.com/tetsup/flexraid/storage"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/tetsup/flexraid/pkg/shared/config"
+	"github.com/tetsup/flexraid/storage"
 )
 
-func (layer *IO) walkFiles(ctx context.Context, include func(storage.FileKey) bool, callback func(ScanEntry) error) (int, error) {
+func (layer *IO) walkFiles(
+	ctx context.Context,
+	include func(storage.FileKey) bool,
+	callback func(ScanEntry) error,
+	onReadError func(storage.FileKey),
+) (int, error) {
 	count := 0
 	err := filepath.WalkDir(layer.root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -45,6 +50,9 @@ func (layer *IO) walkFiles(ctx context.Context, include func(storage.FileKey) bo
 		count++
 		data, readErr := os.ReadFile(path)
 		if readErr != nil {
+			if onReadError != nil {
+				onReadError(key)
+			}
 			if callbackErr := callback(ScanEntry{Key: key, Error: readErr}); callbackErr != nil {
 				return callbackErr
 			}

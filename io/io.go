@@ -1,16 +1,19 @@
 package io
 
 import (
-	"github.com/tetsup/flexraid/storage"
 	"log/slog"
 	"os"
+
+	"github.com/tetsup/flexraid/storage"
 )
 
 type IO struct {
 	root             string
 	preservationRoot string
 	logger           *slog.Logger
+	metrics          *metricsCollector
 }
+
 type ScanEntry struct {
 	Key   storage.FileKey
 	Data  []byte
