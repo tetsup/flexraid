@@ -33,7 +33,6 @@ flowchart TD
     Orchestration --> Distribution
     Management --> I/O
     Distribution --> I/O
-    I/O --> DriveIO[io]
 ```
 
 - **FUSE** — go-fuse と Management のアダプターです。OS の callback を Management のファイルシステム API に変換し、結果・エラーを FUSE の形式へ写像します。
