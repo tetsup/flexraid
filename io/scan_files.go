@@ -48,17 +48,22 @@ func (layer *IO) walkFiles(
 			return nil
 		}
 		count++
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			return infoErr
+		}
+		sizeBytes := uint64(info.Size())
 		data, readErr := os.ReadFile(path)
 		if readErr != nil {
 			if onReadError != nil {
 				onReadError(key)
 			}
-			if callbackErr := callback(ScanEntry{Key: key, Error: readErr}); callbackErr != nil {
+			if callbackErr := callback(ScanEntry{Key: key, SizeBytes: sizeBytes, Error: readErr}); callbackErr != nil {
 				return callbackErr
 			}
 			return nil
 		}
-		if err := callback(ScanEntry{Key: key, Data: data}); err != nil {
+		if err := callback(ScanEntry{Key: key, Data: data, SizeBytes: sizeBytes}); err != nil {
 			return err
 		}
 		return nil
