@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 	"sync/atomic"
+	"sync"
 
 	"github.com/tetsup/flexraid/storage"
 )
@@ -14,6 +15,11 @@ type IO struct {
 	logger           *slog.Logger
 	metrics          *metricsCollector
 	lastAccess       atomic.Int64
+	device           *deviceState
+	monitorMu        sync.Mutex
+	monitorWake      chan struct{}
+	monitorStop      chan struct{}
+	monitorDone      chan struct{}
 }
 
 type ScanEntry struct {
