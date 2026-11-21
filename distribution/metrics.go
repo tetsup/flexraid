@@ -62,10 +62,11 @@ type metricsCollector struct {
 	integrityErrorCount  uint64
 	recoveryCount        uint64
 	recoveryFailureCount uint64
+	chunks map[string]*ChunkOperationMetrics
 }
 
 func newMetricsCollector() *metricsCollector {
-	return &metricsCollector{operations: make(map[string]*operationMetricState)}
+	return &metricsCollector{operations: make(map[string]*operationMetricState), chunks: make(map[string]*ChunkOperationMetrics)}
 }
 func (c *metricsCollector) recordOperation(name string, duration time.Duration, err error) {
 	c.mu.Lock()
@@ -87,6 +88,11 @@ func (c *metricsCollector) recordOperation(name string, duration time.Duration, 
 		state.sampleCount++
 	}
 }
+func (d *Distribution) recordChunkOperation(kind string, err error) {
+	d.metrics.mu.Lock(); defer d.metrics.mu.Unlock()
+	value := d.metrics.chunks[kind]; if value == nil { value = &ChunkOperationMetrics{}; d.metrics.chunks[kind] = value }
+	if err != nil { value.FailureCount++ } else { value.SuccessCount++ }
+}
 func (d *Distribution) recordIntegrityError() {
 	d.metrics.mu.Lock()
 	d.metrics.integrityErrorCount++
@@ -101,7 +107,7 @@ func (d *Distribution) recordRecovery(success bool) {
 	}
 	d.metrics.mu.Unlock()
 }
-func (c *metricsCollector) snapshot() (map[string]OperationMetrics, uint64, uint64, uint64) {
+func (c *metricsCollector) snapshot() (map[string]OperationMetrics, ChunkMetrics, uint64, uint64, uint64) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	operations := make(map[string]OperationMetrics, len(c.operations))
@@ -123,7 +129,9 @@ func (c *metricsCollector) snapshot() (map[string]OperationMetrics, uint64, uint
 		}
 		operations[name] = value
 	}
-	return operations, c.integrityErrorCount, c.recoveryCount, c.recoveryFailureCount
+	chunks := ChunkMetrics{}
+	for kind, value := range c.chunks { switch kind { case "Read": chunks.Read=*value; case "Write": chunks.Write=*value; case "Delete": chunks.Delete=*value; case "Preserve": chunks.Preserve=*value; case "Sync": chunks.Sync=*value } }
+	return operations, chunks, c.integrityErrorCount, c.recoveryCount, c.recoveryFailureCount
 }
 
 // GetMetrics returns Distribution-owned statistics only; physical I/O metrics remain owned by I/O.
@@ -138,7 +146,7 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 	if err = request.Context.Err(); err != nil {
 		return response, err
 	}
-	response.Operations, response.IntegrityErrorCount, response.RecoveryCount, response.RecoveryFailureCount = d.metrics.snapshot()
+	response.Operations, response.Chunks, response.IntegrityErrorCount, response.RecoveryCount, response.RecoveryFailureCount = d.metrics.snapshot()
 	d.mapMu.Lock()
 	defer d.mapMu.Unlock()
 	objects := make(map[shared.ObjectID]struct{})
