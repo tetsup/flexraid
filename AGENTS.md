@@ -425,7 +425,7 @@ Distribution -> Platform
 - `GetStatus` は Lifecycle とメモリ上の累積異常カウンターを用いる低コストな要約とし、物理デバイス照会・容量照会・ストレージ全走査を行わない。
 - `GetDetailedStatus` は Distribution と各 I/O インスタンスの `GetMetrics` snapshot、および Platform のデバイス識別・容量情報を drive_name / WWN ごとに返す。I/O インスタンスの順序は設定ドライブ順と一致させ、Distribution が設定されている場合は件数不一致を初期化時に拒否する。
 - `Inspect` は詳細監視に加えて Distribution の物理 Object / Stripe / Version / Chunk / Orphan 情報と Orchestration の論理 Namespace / Object / 初期化警告を含める。詳細状態 API の単なる別名にしない。
-- 物理情報の取得失敗は項目ごとに取得不能として返し、他ドライブの情報を捨てない。値を推測で埋めず、取得元・最終取得時刻を明示する。監視・監査のためだけに standby デバイスを SpinUp しない。 詳細状態は取得できた I/O 統計・物理容量のドライブ別内訳と全体集計、Cleanup worker 稼働状態、Drive ごとの Cleanup 許可設定、Orchestration が算出する現在の論理空き容量も含める。未実装・未取得の Cleanup 候補サイズ、Cleanup 後の容量見積もり、物理デバイス属性はゼロや推測値で代用しない。
+- 物理情報の取得失敗は項目ごとに取得不能として返し、他ドライブの情報を捨てない。値を推測で埋めず、取得元・最終取得時刻を明示する。監視・監査のためだけに standby デバイスを SpinUp しない。 詳細状態は取得できた I/O 統計・物理容量のドライブ別内訳と全体集計、Cleanup worker 稼働状態、Drive ごとの Cleanup 許可設定、Orchestration が算出する現在の論理空き容量も含める。Cleanup 候補サイズと Cleanup 後の容量見積もりは Distribution の `GetMetrics` が返す。サイズは I/O の走査結果または書き込み時に取得した物理ファイル長であり、ファイルシステムの実割当ブロック数とは区別する。物理デバイス属性など未実装・未取得の情報はゼロや推測値で代用しない。
 
 - `status` の通常表示は、Lifecycle、Worker の生存、Controller との接続、物理ドライブの基本的な到達可能性などから、論理ドライブ全体の正常性を簡潔に判定する。高コストな全ストレージ走査を実行しない。
 - `status --detail` は運用監視用 snapshot とする。論理ドライブ全体の集計値に加え、各物理ドライブを識別できる独立した要素として返す。I/O・整合性・容量について、ドライブ別に観測可能な値は全体値とドライブ別値の両方を返す。
