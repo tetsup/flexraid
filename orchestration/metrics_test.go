@@ -76,9 +76,9 @@ func TestLogicalFileMissingStateUsesStripeRecoverability(t *testing.T) {
 	fileHeader.Size = 128
 
 	cases := []struct {
-		name       string
-		stripes    []distribution.StripeVersionMetrics
-		wantMissing bool
+		name            string
+		stripes         []distribution.StripeVersionMetrics
+		wantMissing     bool
 		wantRecoverable bool
 	}{
 		{
@@ -105,7 +105,7 @@ func TestLogicalFileMissingStateUsesStripeRecoverability(t *testing.T) {
 			wantMissing: true, wantRecoverable: true,
 		},
 		{
-			name: "stripe absent",
+			name:        "stripe absent",
 			wantMissing: true, wantRecoverable: false,
 		},
 	}
