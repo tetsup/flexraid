@@ -102,6 +102,7 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 		}
 		fileKey := storage.FileKey{ObjectID: request.ObjectID, StripeVersion: version, LayoutID: layoutFor(method, no), StripeID: request.StripeID}
 		_, writeErr := d.ios[ioIndex].Write(physicalio.WriteRequest{Context: request.Context, Key: fileKey, Data: encodeChunk(uint64(len(request.Data)), chunks[no]), Sync: request.Sync})
+		d.recordChunkOperation("Write", writeErr)
 		if writeErr != nil {
 			savePartial()
 			err = fmt.Errorf("write chunk %d to I/O %d: %w", no, ioIndex, writeErr)
