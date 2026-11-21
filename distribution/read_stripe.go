@@ -78,13 +78,12 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 				if errors.Is(readErr, context.Canceled) || errors.Is(readErr, context.DeadlineExceeded) {
 					return response, readErr
 				}
-				d.recordIOError(location.ioIndex, readErr)
 				missing = append(missing, no)
 				continue
 			}
 			total, payload, decodeErr := decodeChunk(read.Data)
 			if decodeErr != nil {
-				d.recordIOError(location.ioIndex, decodeErr)
+				d.recordIntegrityError()
 				missing = append(missing, no)
 				continue
 			}
@@ -116,7 +115,8 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 	if restoreErr != nil {
 		info.corrupted = true
 		d.mapMu.Lock()
-		d.totalErrors++
+		d.recordIntegrityError()
+		d.recordRecovery(false)
 		d.mapMu.Unlock()
 		d.markStripeUnrecoverable(key, info.version)
 		d.logger.Error("stripe data corrupted", "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "error", restoreErr)
@@ -125,6 +125,7 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 	response.Data = restored
 	response.Version = info.version
 	if len(missing) > 0 {
+		d.recordRecovery(true)
 		info.corrupted = true
 		d.logger.Warn("stripe recovered from missing chunks", "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "missing_chunks", len(missing))
 		d.repairStripe(request, info, missing, restored)
@@ -184,7 +185,6 @@ func (d *Distribution) repairStripe(request ReadStripeRequest, info *stripeInfo,
 		if hadOld {
 			_, removeErr := d.ios[oldLocation.ioIndex].Delete(physicalio.DeleteRequest{Context: request.Context, Key: oldLocation.key})
 			if removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-				d.recordIOError(oldLocation.ioIndex, removeErr)
 				return
 			}
 		}
@@ -208,7 +208,6 @@ func (d *Distribution) repairStripe(request ReadStripeRequest, info *stripeInfo,
 				break
 			}
 			if !errors.Is(err, os.ErrExist) {
-				d.recordIOError(index, err)
 			}
 		}
 		if !written {
