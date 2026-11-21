@@ -124,7 +124,7 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - Cleanup、Recovery、Scrub 等のレイヤー横断の管理ワークフローでは、必要な論理判断を Orchestration に依頼し、物理ストライプ処理を Distribution に依頼する。意味上 Orchestration を通すべき通常データ操作を、Management から Distribution へ迂回させない。
 - Orchestration / Distribution の内部状態を直接変更しない。各レイヤーが公開する API を通じて操作し、状態の所有者と排他制御の所有者を分離する。
 - Foreground / Background / Exclusive / Initialization / Stop のすべてに共通する、Management 唯一の実行ロック機構を所有する。Management の実行単位は同時に一つだけ実行し、各単位が共通ロックを取得して直列実行する。ObjectID などの対象別ロック、複数対象ロック、別系統のメンテナンスロックは設けない。ロックは復旧可能な最小実行単位の開始時に取得し、その単位の完了・状態確定後に必ず解放する。次の単位へ進む前に実行権を譲り、Lifecycle と Scheduler が実行種別ごとの受付・優先順位・drain を調停する。これはロック粒度を Object や Stripe に広げることを意味しない。
-- 操作回数・所要時間・結果などの上位操作メトリクスを集計し、Distribution が提供するドライブ別 I/O 統計などを統合して監視 API から返す。物理 I/O のエラー検出・計数は実際に I/O を実行する下位レイヤーで行い、Management はそれを集約・公開する。
+- Management 自身の操作メトリクスは Management が所有・集計する。監視 API の応答を構成するときは、Orchestration・Distribution・I/O がそれぞれ所有するメトリクス snapshot を各層の公開取得 API から直接取得する。下位層のメトリクスを別の下位層へ渡して再集計させない。Management は表示・集約の窓口であり、各層の統計の所有者にはならない。
 - Management が Scheduler / MaintenanceExecutor を通じて実行する Background 作業は、Foreground との優先順位を Management の共通実行ロックで調停する。一方、Distribution の自律 Cleanup は Management の Background WorkItem として実行しない。Management は Distribution の物理 Cleanup ループと Orchestration の論理削除 Object Cleanup ループの起動・停止、および Drive ごとの許可情報更新を行う。各ループの処理判断と候補管理は所有レイヤーが行う。Orchestration worker は Management の公開 Cleanup 経路を通じて実行し、Management の操作排他を迂回しない。Cleanup の進捗は永続化せず、起動時・再開時に各所有レイヤーが状態から候補を再構築する。
 
 #### Maintenance Policy / Executor
@@ -206,11 +206,13 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - Queue Mutex の保持中に他の Distribution 状態ロックを取得する設計、または逆順で取得する設計を混在させない。ロック順序を固定し、キュー操作と Stripe 処理の間でデッドロックを発生させない。
 - 自律 Cleanup は旧 Version、不正・復元不能 Version、未完了チャンク、孤立チャンク等の Distribution 所有の物理データを対象とする。最新の復元可能 Version は削除対象にしない。最新 Version の欠損がある Stripe は上記のとおり保留する。Stripe 0 を特別扱いする削除順序制約は設けない。Stripe 0 を最後にする制約は、論理削除 Object の全 Stripe 削除にのみ適用する。
 - 配置ポリシーは決定せず、Orchestration から渡された配置方針を実際のチャンク配置に反映する。
-- ドライブ別 I/O エラー統計など Distribution が取得できる物理層の観測値を、Management が問い合わせ・集約できる公開 API として提供する。統計値は内部 map を共有せず snapshot として返す。
+- Distribution は Stripe / Chunk の読み書き、Version 選択、復旧、欠損・破損判定、Cleanup など、Distribution 自身の公開操作と内部処理で発生した事象を Distribution の統計として保持・集計する。物理ファイル単位の I/O 成否・エラー回数・物理ドライブ別 I/O 統計は I/O の所有物であり、Distribution に渡して再集計させない。Distribution の統計取得 API は Distribution 自身の統計だけを snapshot として返す。
 
 ### I/O
 
 - 指定された物理 root 上で物理ファイルの読み書き・同期・削除・列挙を行う。
+- I/O は物理ドライブ単位の実体として生成し、そのインスタンス内で物理ファイル操作の成功・失敗・所要時間、読み取りエラー発生回数、FileKey のエラーユニーク数、直近 1,000 処理を操作別に保持・集計する。複数ドライブの集計は Management が各 I/O インスタンスの snapshot を drive_name と対応付けて行う。
+- I/O の監視統計を取得する公開 API は `GetMetrics` 一つとし、操作別の統計 snapshot を返す。物理ファイルの統計を Distribution へ渡さない。`GetMetrics` 自身の呼び出しは集計対象の操作カウンターに含めない。
 - Header の解析、チャンクやストライプの意味解釈、配置方針、パリティ計算、復旧判断を行わない。
 - `ScanHeaders` は StripeID 0 の物理ファイル列挙、`ListChunks` は全ストライプの物理ファイル列挙を行う。どちらも Header / Chunk の意味を解析しない。
 - ディスクの電源状態やスピンダウン・スピンアップを判断するポリシー、Cleanup のスケジューリングを持たない。必要な物理操作を実行し、その結果を上位層へ返す。
@@ -396,10 +398,18 @@ Distribution -> Platform
 
 上記の階層・コマンド名は初期の整備対象であり、個別引数・出力形式・終了コードは実装時に既存設定・Management API と整合させて確定する。
 
+### レイヤー別メトリクス API と所有権
+
+- Management / Orchestration / Distribution / I/O の各レイヤーは、監視統計を取得する公開関数を一つだけ提供し、関数名は `GetMetrics` とする。Request / Response 型は各レイヤー固有とし、取得結果は内部状態を共有しない整合した snapshot とする。個別統計ごとの公開 getter を増やさず、追加項目は同じ `GetMetrics` Response に含める。
+- 各レイヤーの統計は、その事象が発生したレイヤー自身が保持・集計する。下位レイヤーの物理ファイル統計やエラー履歴を上位レイヤーへ渡して再集計させない。上位レイヤーの操作結果と下位レイヤーの操作結果は、それぞれ独立した操作結果として記録する。
+- Management は各レイヤーの `GetMetrics` を直接呼び出して snapshot を取得し、監視応答としてまとめる。Management は統計の所有者ではなく、他レイヤーの内部 map / slice を直接参照しない。I/O 統計は各 I/O インスタンスから取得し、Management が設定上の drive_name と対応付ける。Distribution を経由して I/O 統計を取得したり、Distribution に I/O 統計を転送したりしない。
+- I/O は物理ドライブ上で実行した物理ファイル操作の統計を所有する。Distribution は Stripe / Chunk の操作・復旧・欠損判定等、Distribution 内で発生した事象の統計を所有する。Orchestration は Object / 論理ファイル単位の操作・欠損判定等の統計を所有する。Management は Management 自身の公開操作の統計を所有する。
+- 既存の個別統計取得 API は `GetMetrics` に統合する。特定レイヤーの統計を別のレイヤーの統計として再公開しない。
+
 ### 実行統計・欠損状態・エラー観測
 
 - 各レイヤーは、自身が公開する各操作（コマンド/API）について成功数・失敗数を個別に集計する。操作名とレイヤーを集計キーに含め、異なる操作やレイヤーの結果を一つの総数へ潰さない。Management は自身の操作統計を所有し、下位レイヤーの統計は各所有レイヤーから snapshot として取得・集約する。
-- I/O レイヤーの操作統計・エラー統計は物理ドライブごと、かつ I/O 操作ごとに集計する。I/O 以外の各レイヤーも、そのレイヤーの操作ごとに成功数・失敗数を持つ。上位操作の失敗と下位操作の失敗は別々の事象として記録し、単純加算して同じ失敗として扱わない。
+- I/O レイヤーの操作統計・エラー統計は物理ドライブごと、かつ I/O 操作ごとに集計する。Distribution / Orchestration / Management はそれぞれ自身の操作ごとに成功数・失敗数を持つ。上位操作の失敗と下位操作の失敗は別々の事象として記録し、単純加算して同じ失敗として扱わない。
 - 読み取りエラーは発生回数とユニーク対象数を分離する。物理層では物理ファイル（FileKey）単位で、ドライブごと・I/O 操作ごとにエラー対象のユニーク数と発生回数を記録する。同じ物理ファイルへの再試行はユニーク数を増やさず、発生回数だけを増やす。
 - 物理ファイルの欠損状態は FileKey を識別子とするメモリ上の状態リストで保持し、ドライブごとに復旧可能な欠損ファイルと復旧不可能な欠損ファイルのユニーク数を分けて集計する。読み取りエラーが発生したことだけで欠損と断定せず、確認された欠損状態・復旧判定を別に保持する。
 - 論理層では ObjectID 単位で、読み取りエラーのユニーク数・発生回数、復旧可能な欠損を持つ論理ファイル数、復旧不可能な欠損を持つ論理ファイル数を分けて集計する。論理ファイルの復旧可能性は Stripe / Chunk の物理状態から論理ファイルとして判定し、物理ファイルの件数を単純合算しない。
