@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/tetsup/flexraid/distribution"
+	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/orchestration"
 	"github.com/tetsup/flexraid/pkg/shared"
 )
@@ -15,6 +16,7 @@ type Management struct {
 	cleanupPermissionUpdateMu  sync.Mutex
 	orchestration              *orchestration.Orchestration
 	distribution               *distribution.Distribution
+	ios                        []*physicalio.IO
 	driveOrder                 []string
 	drives                     map[string]DriveConfig
 	cleanupPermissionStore     *shared.CleanupPermissionStore
@@ -44,6 +46,7 @@ func New(request NewRequest) (*Management, error) {
 	layer := &Management{
 		orchestration:          request.Orchestration,
 		distribution:           request.Distribution,
+		ios:                    append([]*physicalio.IO(nil), request.IOs...),
 		driveOrder:             driveOrder,
 		drives:                 drives,
 		cleanupPermissionStore: permissionStore,
