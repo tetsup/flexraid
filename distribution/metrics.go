@@ -87,6 +87,11 @@ type chunkMetricState struct {
 	count   int
 }
 
+func (d *Distribution) metricsCollector() *metricsCollector {
+	d.metricsOnce.Do(func() { if d.metrics == nil { d.metrics = newMetricsCollector() } })
+	return d.metrics
+}
+
 func newMetricsCollector() *metricsCollector {
 	return &metricsCollector{operations: make(map[string]*operationMetricState), chunks: make(map[string]*chunkMetricState)}
 }
@@ -111,9 +116,9 @@ func (c *metricsCollector) recordOperation(name string, duration time.Duration, 
 	}
 }
 func (d *Distribution) recordChunkOperation(kind string, err error) {
-	d.metrics.mu.Lock()
-	defer d.metrics.mu.Unlock()
-	value := d.metrics.chunks[kind]
+	d.metricsCollector().mu.Lock()
+	defer d.metricsCollector().mu.Unlock()
+	value := d.metricsCollector().chunks[kind]
 	if value == nil {
 		value = &chunkMetricState{}
 		d.metrics.chunks[kind] = value
@@ -131,15 +136,15 @@ func (d *Distribution) recordChunkOperation(kind string, err error) {
 }
 func (d *Distribution) recordIntegrityError() {
 	d.metrics.mu.Lock()
-	d.metrics.integrityErrorCount++
+	d.metricsCollector().integrityErrorCount++
 	d.metrics.mu.Unlock()
 }
 func (d *Distribution) recordRecovery(success bool) {
 	d.metrics.mu.Lock()
 	if success {
-		d.metrics.recoveryCount++
+		d.metricsCollector().recoveryCount++
 	} else {
-		d.metrics.recoveryFailureCount++
+		d.metricsCollector().recoveryFailureCount++
 	}
 	d.metrics.mu.Unlock()
 }
@@ -207,7 +212,7 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 	}
 	d.mapMu.Lock()
 	defer d.mapMu.Unlock()
-	response.Operations, response.Chunks, response.IntegrityErrorCount, response.RecoveryCount, response.RecoveryFailureCount = d.metrics.snapshot()
+	response.Operations, response.Chunks, response.IntegrityErrorCount, response.RecoveryCount, response.RecoveryFailureCount = d.metricsCollector().snapshot()
 	objects := make(map[shared.ObjectID]struct{})
 	stripes := make(map[stripeIDKey]struct{})
 	for objectID, entries := range d.objects {
