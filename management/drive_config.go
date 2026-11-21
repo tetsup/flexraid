@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/tetsup/flexraid/distribution"
+	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/orchestration"
 	"github.com/tetsup/flexraid/pkg/shared"
 	"github.com/tetsup/flexraid/platform"
@@ -24,6 +25,8 @@ type DriveConfig struct {
 type NewRequest struct {
 	Orchestration      *orchestration.Orchestration
 	Distribution       *distribution.Distribution
+	// IOs must follow Config.Disks order. They are used only for per-drive I/O metrics.
+	IOs                []*physicalio.IO
 	Initialization     InitializationTask
 	Config             Config
 	CleanupPermissions *shared.CleanupPermissionStore
