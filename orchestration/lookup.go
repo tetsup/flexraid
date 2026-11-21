@@ -26,7 +26,7 @@ type LookupResponse struct {
 }
 
 // Lookup resolves a child name in a directory.
-func (layer *Orchestration) LookupLocked(request LookupRequest) (LookupResponse, error)) {
+func (layer *Orchestration) LookupLocked(request LookupRequest) (response LookupResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("Lookup", started, err) }()
 	return layer.lookupLocked(request)
