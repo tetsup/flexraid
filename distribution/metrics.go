@@ -56,8 +56,9 @@ type ChunkMetrics struct {
 	Sync     ChunkOperationMetrics
 }
 type GetMetricsRequest struct {
-	Context        context.Context
+	Context context.Context
 	IncludeDetails bool
+	SummaryOnly bool
 }
 type ObjectMetrics struct {
 	ObjectID         shared.ObjectID
