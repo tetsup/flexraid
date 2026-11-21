@@ -9,6 +9,7 @@ import (
 	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/pkg/shared"
 	"github.com/tetsup/flexraid/platform"
+	"github.com/tetsup/flexraid/orchestration"
 )
 
 // StatusLevel is the coarse health classification returned by GetStatus.
@@ -74,6 +75,9 @@ type InspectRequest struct{ Context context.Context }
 // InspectResponse contains detailed monitoring plus Distribution's per-object,
 // per-stripe, per-version and orphan-chunk inventory.
 type InspectResponse struct {
+	Namespace orchestration.InspectNamespaceResponse
+	NamespaceAvailable bool
+	NamespaceError string
 	Status       GetStatusResponse
 	Distribution distribution.GetMetricsResponse
 	Drives       []DriveMonitoringStatus
@@ -139,6 +143,14 @@ func (layer *Management) GetDetailedStatus(request GetDetailedStatusRequest) (Ge
 		}
 	}
 	result.Status = statusFromMetrics(layer.Phase(), result.Distribution)
+	layer.mu.Lock()
+	orchestrationLayer := layer.orchestration
+	if orchestrationLayer != nil {
+		result.Namespace, err = orchestrationLayer.InspectNamespace(orchestration.InspectNamespaceRequest{Context: request.Context})
+		if err != nil { layer.mu.Unlock(); return InspectResponse{}, fmt.Errorf("inspect Orchestration namespace: %w", err) }
+		result.NamespaceAvailable = true
+	} else { result.NamespaceError = "Orchestration layer is not initialized" }
+	layer.mu.Unlock()
 	for index, wwn := range layer.driveOrder {
 		if err := request.Context.Err(); err != nil {
 			return GetDetailedStatusResponse{}, err
@@ -229,6 +241,7 @@ func (layer *Management) Inspect(request InspectRequest) (InspectResponse, error
 			drive.IOMetricsError = "I/O metrics source is not configured for this drive"
 		}
 		result.Drives = append(result.Drives, drive)
+		if (!drive.DeviceIdentityAvailable || !drive.CapacityAvailable || !drive.IOMetricsAvailable) && result.Status.Level == StatusHealthy { result.Status.Level = StatusDegraded }
 	}
 	return result, nil
 }
