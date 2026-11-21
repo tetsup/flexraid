@@ -264,7 +264,6 @@ func TestPreserveUsesConfiguredMountpointRoot(t *testing.T) {
 	}
 }
 
-
 func TestPhysicalOperationsRecordAccess(t *testing.T) {
 	layer := newTestLayer(t, t.TempDir())
 	ctx := context.Background()
