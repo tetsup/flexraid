@@ -41,6 +41,9 @@ type DriveMonitoringStatus struct {
 	Root                        string
 	Mountpoint                  string
 	DevicePath                  string
+	Device                      physicalio.DeviceStatus
+	DeviceStatusAvailable       bool
+	DeviceStatusError           string
 	DeviceIdentityAvailable     bool
 	DeviceIdentityError         string
 	Capacity                    shared.Capacity
@@ -203,12 +206,20 @@ func (layer *Management) GetDetailedStatus(request GetDetailedStatusRequest) (re
 			drive.CleanupPermissions = permissionSnapshot.Drives[index]
 			drive.CleanupPermissionsAvailable = true
 		}
-		device, deviceErr := platform.ResolveDrive(platform.DriveRequest{Context: request.Context, WWN: wwn})
-		if deviceErr != nil {
-			drive.DeviceIdentityError = deviceErr.Error()
+		if index < len(layer.ios) && layer.ios[index] != nil {
+			device, deviceErr := layer.ios[index].GetDeviceStatus(physicalio.GetDeviceStatusRequest{Context: request.Context})
+			if deviceErr != nil {
+				drive.DeviceStatusError = deviceErr.Error()
+				drive.DeviceIdentityError = deviceErr.Error()
+			} else {
+				drive.Device = device.Status
+				drive.DeviceStatusAvailable = true
+				drive.DevicePath = device.Status.DevicePath
+				drive.DeviceIdentityAvailable = drive.DevicePath != ""
+			}
 		} else {
-			drive.DeviceIdentityAvailable = true
-			drive.DevicePath = device.Path
+			drive.DeviceStatusError = "I/O device status source is not configured for this drive"
+			drive.DeviceIdentityError = drive.DeviceStatusError
 		}
 		capacity, capacityErr := platform.GetCapacity(platform.CapacityRequest{Context: request.Context, Root: config.Root})
 		if capacityErr != nil {
@@ -312,12 +323,20 @@ func (layer *Management) Inspect(request InspectRequest) (response InspectRespon
 				drive.OrphanChunkCount++
 			}
 		}
-		device, deviceErr := platform.ResolveDrive(platform.DriveRequest{Context: request.Context, WWN: wwn})
-		if deviceErr != nil {
-			drive.DeviceIdentityError = deviceErr.Error()
+		if index < len(layer.ios) && layer.ios[index] != nil {
+			device, deviceErr := layer.ios[index].GetDeviceStatus(physicalio.GetDeviceStatusRequest{Context: request.Context})
+			if deviceErr != nil {
+				drive.DeviceStatusError = deviceErr.Error()
+				drive.DeviceIdentityError = deviceErr.Error()
+			} else {
+				drive.Device = device.Status
+				drive.DeviceStatusAvailable = true
+				drive.DevicePath = device.Status.DevicePath
+				drive.DeviceIdentityAvailable = drive.DevicePath != ""
+			}
 		} else {
-			drive.DeviceIdentityAvailable = true
-			drive.DevicePath = device.Path
+			drive.DeviceStatusError = "I/O device status source is not configured for this drive"
+			drive.DeviceIdentityError = drive.DeviceStatusError
 		}
 		capacity, capacityErr := platform.GetCapacity(platform.CapacityRequest{Context: request.Context, Root: config.Root})
 		if capacityErr != nil {
