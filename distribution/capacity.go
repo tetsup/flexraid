@@ -31,6 +31,10 @@ type CapacityResponse struct {
 func (d *Distribution) GetCapacity(request CapacityRequest) (response CapacityResponse, err error) {
 	started := time.Now()
 	defer func() { logOperation(d, "GetCapacity", started, err, "drives", len(d.ios)) }()
+	return d.getCapacity(request)
+}
+
+func (d *Distribution) getCapacity(request CapacityRequest) (response CapacityResponse, err error) {
 	blockSize := request.BlockSize
 	if blockSize == 0 {
 		blockSize = config.BlockSize
@@ -69,13 +73,11 @@ func (d *Distribution) GetCapacity(request CapacityRequest) (response CapacityRe
 		result.Capacities[index] = capacity.Capacity
 		availableBlocks = append(availableBlocks, capacity.Capacity.AvailableBytes/blockSize)
 	}
-
 	result.MirrorAvailableBlocks, result.ParityAvailableBlocks = estimateLogicalCapacityBlocks(
 		availableBlocks, blockSize, mirrorCopies, dataChunks, parityChunks,
 	)
 	return result, nil
 }
-
 // estimateLogicalCapacityBlocks estimates usable logical blocks from per-drive
 // available physical blocks. It uses the same complete-stripe placement model
 // for both current and post-cleanup capacity estimates.
