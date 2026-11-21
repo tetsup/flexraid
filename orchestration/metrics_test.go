@@ -89,7 +89,7 @@ func TestLogicalFileMissingStateUsesStripeRecoverability(t *testing.T) {
 			name: "current version missing one chunk but recoverable",
 			stripes: []distribution.StripeVersionMetrics{{
 				StripeID: 0, Current: true, Recoverable: true, Corrupted: true,
-				MissingChunkIndexes: []uint8{1},
+				ExpectedChunkCount: 2, PresentChunkCount: 1, MissingChunkIndexes: []uint8{1},
 			}},
 			wantMissing: true, wantRecoverable: true,
 		},
@@ -97,7 +97,7 @@ func TestLogicalFileMissingStateUsesStripeRecoverability(t *testing.T) {
 			name: "current version unrecoverable",
 			stripes: []distribution.StripeVersionMetrics{{
 				StripeID: 0, Current: true, Recoverable: false, Corrupted: true,
-				MissingChunkIndexes: []uint8{0, 1},
+				ExpectedChunkCount: 2, PresentChunkCount: 0, MissingChunkIndexes: []uint8{0, 1},
 			}},
 			wantMissing: true, wantRecoverable: false,
 		},
