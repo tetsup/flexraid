@@ -48,6 +48,7 @@ func (layer *IO) walkFiles(
 			return nil
 		}
 		count++
+		layer.recordAccess()
 		info, infoErr := entry.Info()
 		if infoErr != nil {
 			return infoErr
