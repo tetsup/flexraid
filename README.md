@@ -319,3 +319,14 @@ frcon
 - Cleanup の policy / run は、指定した論理ドライブの Worker に対する操作です。
 
 実装規約・プロセス分離・RPC 契約の詳細は `AGENTS.md` を参照してください。
+
+
+### Management の監視 API
+
+Management は用途別に3つの公開 API を提供します。
+
+- `GetStatus`: Lifecycle と Distribution の集約異常数だけを返す簡易確認。物理デバイスや容量の問い合わせは行いません。
+- `GetDetailedStatus`: Distribution の集約統計と、設定順の各物理ドライブについて I/O の `GetMetrics`、WWN 解決結果、Platform のファイルシステム容量を返します。個別取得に失敗した項目は、そのドライブの取得エラーとして返し、他ドライブの情報を隠しません。
+- `Inspect`: 詳細監視に加え、Distribution の Object / Stripe / Version / Orphan Chunk の物理配置情報と、Orchestration が保持する論理 Namespace / Object / 初期化時警告を返す監査 API です。
+
+物理ドライブ情報の取得に失敗した値は補完・推測しません。容量には取得元と取得時刻を付けます。これらの監視 API は standby デバイスを起こすための SpinUp を実行しません。I/O 統計は設定された Drive 順と I/O インスタンス順の対応で返します。
