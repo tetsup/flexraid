@@ -330,3 +330,5 @@ Management は用途別に3つの公開 API を提供します。
 - `Inspect`: 詳細監視に加え、Distribution の Object / Stripe / Version / Orphan Chunk の物理配置情報と、Orchestration が保持する論理 Namespace / Object / 初期化時警告、Cleanup worker の稼働状態、ドライブ別 Cleanup 許可設定、Orchestration が算出する現在の論理空き容量を返す監査 API です。
 
 物理ドライブ情報の取得に失敗した値は補完・推測しません。容量には取得元と取得時刻を付けます。これらの監視 API は standby デバイスを起こすための SpinUp を実行しません。I/O 統計は設定された Drive 順と I/O インスタンス順の対応で返します。
+
+簡易 Status は Distribution のメモリ上の異常カウンターと Lifecycle / Cleanup worker 状態のみを参照し、Stripe map の全走査を行いません。詳細 Status はドライブ別 Cleanup 許可設定、論理空き容量、物理容量と I/O の全体集計を返します。
