@@ -200,8 +200,14 @@ func TestGetMetricsReportsCleanupInventoryAndCapacityEstimate(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// Rebuild from the physical scan to verify file lengths survive startup
+	// inventory reconstruction rather than relying only on write-time values.
+	restarted, err := New(NewRequest{IOs: ios})
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	got, err := created.Layer.GetMetrics(GetMetricsRequest{Context: ctx})
+	got, err := restarted.Layer.GetMetrics(GetMetricsRequest{Context: ctx})
 	if err != nil {
 		t.Fatal(err)
 	}
