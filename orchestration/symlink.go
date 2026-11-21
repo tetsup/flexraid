@@ -27,6 +27,8 @@ type SymlinkResponse struct {
 // Symlink stores the target path as ordinary logical data and publishes the
 // namespace entry only after all target-data stripes have been persisted.
 func (layer *Orchestration) SymlinkLocked(request SymlinkRequest) (response SymlinkResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Symlink", started, err) }()
 	return layer.symlinkLocked(request)
 }
 
