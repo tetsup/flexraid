@@ -3,6 +3,7 @@ package io
 import (
 	"log/slog"
 	"os"
+	"sync/atomic"
 
 	"github.com/tetsup/flexraid/storage"
 )
@@ -12,6 +13,7 @@ type IO struct {
 	preservationRoot string
 	logger           *slog.Logger
 	metrics          *metricsCollector
+	lastAccess       atomic.Int64
 }
 
 type ScanEntry struct {
