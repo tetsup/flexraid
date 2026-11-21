@@ -1,6 +1,7 @@
 package orchestration
 
 import (
+	"time"
 	"context"
 	"fmt"
 	"log/slog"
@@ -27,7 +28,9 @@ type StatFsResponse struct {
 
 // StatFs reports physical totals/free space and the logical space that can be
 // newly placed using the configured Mirror and Parity layouts.
-func (layer *Orchestration) StatFsLocked(request StatFsRequest) (StatFsResponse, error) {
+func (layer *Orchestration) StatFsLocked(request StatFsRequest) (response StatFsResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("StatFs", started, err) }()
 	return layer.statFsLocked(request)
 }
 
