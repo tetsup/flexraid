@@ -57,8 +57,8 @@ func probeDevice(ctx context.Context, config DeviceConfig) (DeviceStatus, error)
 	} else {
 		// Device-level SMART support is discovered on the first active-I/O window.
 		// Initialization only checks tool availability and static sysfs capabilities.
-		status.Capabilities.SMARTHealth = true
-		status.Capabilities.Temperature = true
+		status.Capabilities.SMARTHealthProbeAvailable = true
+		status.Capabilities.TemperatureProbeAvailable = true
 	}
 	return status, nil
 }
@@ -69,7 +69,7 @@ func refreshDevicePassive(ctx context.Context, config DeviceConfig, status *Devi
 }
 
 func refreshDeviceActive(ctx context.Context, config DeviceConfig, status *DeviceStatus, now time.Time, interval time.Duration) {
-	if status.Capabilities.SMARTHealth && due(status.SMARTHealth.UpdatedAt, now, interval) {
+	if status.Capabilities.SMARTHealthProbeAvailable && due(status.SMARTHealth.UpdatedAt, now, interval) {
 		output, err := exec.CommandContext(ctx, "smartctl", "-H", status.DevicePath).CombinedOutput()
 		text := string(output)
 		switch {
@@ -83,7 +83,7 @@ func refreshDeviceActive(ctx context.Context, config DeviceConfig, status *Devic
 			status.SMARTHealth = DeviceValue[string]{State: ObservationUnsupported, Source: "smartctl -H", UpdatedAt: now}
 		}
 	}
-	if status.Capabilities.Temperature && due(status.TemperatureC.UpdatedAt, now, interval) {
+	if status.Capabilities.TemperatureProbeAvailable && due(status.TemperatureC.UpdatedAt, now, interval) {
 		output, err := exec.CommandContext(ctx, "smartctl", "-l", "scttempsts", status.DevicePath).CombinedOutput()
 		if err != nil {
 			status.TemperatureC = DeviceValue[float64]{State: ObservationUnavailable, Source: "smartctl -l scttempsts", UpdatedAt: now, Error: fmt.Sprintf("%v: %s", err, strings.TrimSpace(string(output)))}
