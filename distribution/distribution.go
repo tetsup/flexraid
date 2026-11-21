@@ -98,6 +98,7 @@ func New(request NewRequest) (NewResponse, error) {
 	for index, layer := range d.ios {
 		scanResult, err := layer.ListChunks(physicalio.ListChunksRequest{Context: ctx, Callback: func(entry physicalio.ScanEntry) error {
 			if entry.Error != nil {
+				d.recordIntegrityError()
 				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key})
 				return nil
 			}
@@ -178,6 +179,7 @@ func New(request NewRequest) (NewResponse, error) {
 				continue
 			}
 			version.recoverable = true
+			if len(version.chunks) < len(expectedChunkNos(version.method)) { d.recordIntegrityError() }
 			if selectedInfo == nil || versionNo > selected {
 				selected, selectedInfo = versionNo, version
 			}
