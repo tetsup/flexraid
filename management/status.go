@@ -123,7 +123,9 @@ func statusFromMetrics(phase LifecyclePhase, metrics distribution.GetMetricsResp
 
 // GetStatus provides a compact health summary. It deliberately avoids per-drive
 // device and capacity probes; those belong to GetDetailedStatus.
-func (layer *Management) GetStatus(request GetStatusRequest) (GetStatusResponse, error) {
+func (layer *Management) GetStatus(request GetStatusRequest) (response GetStatusResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("GetStatus", started, err) }()
 	if err := validateMonitoringContext(request.Context); err != nil {
 		return GetStatusResponse{}, err
 	}
@@ -150,7 +152,9 @@ func (layer *Management) GetStatus(request GetStatusRequest) (GetStatusResponse,
 
 // GetDetailedStatus gathers a current snapshot from each layer. A failure to
 // observe one drive is represented on that drive and does not hide other drives.
-func (layer *Management) GetDetailedStatus(request GetDetailedStatusRequest) (GetDetailedStatusResponse, error) {
+func (layer *Management) GetDetailedStatus(request GetDetailedStatusRequest) (response GetDetailedStatusResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("GetDetailedStatus", started, err) }()
 	if err := validateMonitoringContext(request.Context); err != nil {
 		return GetDetailedStatusResponse{}, err
 	}
@@ -239,7 +243,9 @@ func (layer *Management) GetDetailedStatus(request GetDetailedStatusRequest) (Ge
 
 // Inspect performs the detailed monitoring collection and includes the
 // Distribution-owned physical inventory. It does not wake standby drives.
-func (layer *Management) Inspect(request InspectRequest) (InspectResponse, error) {
+func (layer *Management) Inspect(request InspectRequest) (response InspectResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Inspect", started, err) }()
 	if err := validateMonitoringContext(request.Context); err != nil {
 		return InspectResponse{}, err
 	}
