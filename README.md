@@ -296,7 +296,7 @@ frcon
 - `drive status <drive_name>` は簡易ヘルスチェックです。論理ドライブ全体として問題がないかを短時間で確認します。
 - `drive status <drive_name> --detail` は運用監視用の詳細状態です。全体集計に加えて、物理ドライブごとの生死・接続・電源状態、容量、I/O 統計、整合性情報を分けて返します。
 - `drive inspect <drive_name>` は監査用の完全な情報取得です。構成、Namespace、Stripe / Version / Chunk、Cleanup 対象とサイズ、現在および Cleanup 後の論理空き容量、履歴・統計などを網羅します。必要に応じてストレージ走査を伴います。
-- 起動後に変化しない物理デバイス情報は Initialization 中に取得し、Ready になる前に snapshot として確定します。取得にデバイスの起動が必要な情報は Initialization の SpinUp 処理と連携し、非侵襲的に取得できる情報のために不要な SpinUp は行いません。稼働中に変化する情報は実際の操作・I/O・SpinUp / SpinDown に伴って更新します。status の照会だけを理由に Standby 中のデバイスを起こしません。取得元・取得時刻・取得状態を保持し、取得不能・未取得・古い snapshot を区別します。
+- 起動後に変化しない物理デバイス情報は Initialization 中に取得し、Ready になる前に snapshot として確定します。取得にデバイスの起動が必要な情報は Initialization の SpinUp 処理と連携し、非侵襲的に取得できる情報のために不要な SpinUp は行いません。I/O 回数・転送量・レイテンシ・I/O エラー・最終アクセス時刻などは、実際の読み込み・書き込みのたびに物理ドライブ別と全体集計を更新します。OS から低コストかつ非侵襲的に取得できる接続・電源状態は status 照会ごとに再取得し、コストの高い情報は項目ごとに定めた更新間隔で再取得します。取得元・最終取得時刻・更新間隔・取得状態を保持します。status の照会だけを理由に Standby 中のデバイスを起こしません。
 - Cleanup Schedule は `drive status --detail` の Cleanup 情報内に、状態・Policy などと同列の項目として表示し、`drive inspect` にも監査情報として含めます。独立した公開関数・RPC・CLI コマンドは設けません。
 - `system start/stop` は Controller の常駐 RPC サーバーを対象とし、Worker 群を一括起動・停止する意味ではありません。
 - `drive start/stop` は指定した論理ドライブの Worker だけを対象とします。
