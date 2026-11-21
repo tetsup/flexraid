@@ -11,7 +11,7 @@ import (
 func (d *Distribution) NotifyCleanupPermissionsChanged() {
 	started := time.Now()
 	d.wakeCleanupWorker()
-	d.metrics.recordOperation("NotifyCleanupPermissionsChanged", time.Since(started), nil)
+	logOperation(d, "NotifyCleanupPermissionsChanged", started, nil)
 }
 
 // StartCleanupWorker starts Distribution's autonomous cleanup loop. Calling it
