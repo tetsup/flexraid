@@ -5,6 +5,8 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"github.com/tetsup/flexraid/pkg/shared"
 )
 
 const recentOperationLimit = 1000
@@ -139,7 +141,7 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 	response.Operations, response.IntegrityErrorCount, response.RecoveryCount, response.RecoveryFailureCount = d.metrics.snapshot()
 	d.mapMu.Lock()
 	defer d.mapMu.Unlock()
-	objects := make(map[interface{}]struct{})
+	objects := make(map[shared.ObjectID]struct{})
 	stripes := make(map[stripeIDKey]struct{})
 	for objectID, entries := range d.objects {
 		objects[objectID] = struct{}{}
