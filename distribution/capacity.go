@@ -78,6 +78,7 @@ func (d *Distribution) getCapacity(request CapacityRequest) (response CapacityRe
 	)
 	return result, nil
 }
+
 // estimateLogicalCapacityBlocks estimates usable logical blocks from per-drive
 // available physical blocks. It uses the same complete-stripe placement model
 // for both current and post-cleanup capacity estimates.
