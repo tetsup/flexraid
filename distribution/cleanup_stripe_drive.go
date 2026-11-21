@@ -141,6 +141,7 @@ func (d *Distribution) removeCleanupLocationLocked(candidate cleanupCandidateKey
 		for no, existing := range version.chunks {
 			if existing.ioIndex == location.ioIndex && existing.key == location.key {
 				delete(version.chunks, no)
+				delete(version.missing, no)
 			}
 		}
 		if len(version.chunks) == 0 {
