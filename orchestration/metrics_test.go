@@ -3,6 +3,7 @@ package orchestration
 import (
 	"context"
 	"errors"
+	"os"
 	"testing"
 
 	"github.com/tetsup/flexraid/distribution"
@@ -23,7 +24,7 @@ func TestGetMetricsTracksLogicalOperationsAndReadErrors(t *testing.T) {
 	if _, err := layer.LookupLocked(LookupRequest{ParentID: createdRoot.RootID, Name: "metrics-file"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := layer.LookupLocked(LookupRequest{ParentID: createdRoot.RootID, Name: "missing"}); !errors.Is(err, context.Canceled) && err == nil {
+	if _, err := layer.LookupLocked(LookupRequest{ParentID: createdRoot.RootID, Name: "missing"}); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("missing Lookup unexpectedly succeeded")
 	}
 
