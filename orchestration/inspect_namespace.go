@@ -11,22 +11,22 @@ import (
 
 // NamespaceObjectInspection is a detached view of one persisted logical object.
 type NamespaceObjectInspection struct {
-	ObjectID      shared.ObjectID
-	ParentID      *shared.ObjectID
-	TargetID      *shared.ObjectID
-	Kind          shared.ObjectKind
-	Name          string
-	Mode          uint32
-	UID           uint32
-	GID           uint32
-	Size          uint64
-	Deleted       bool
-	Atime time.Time
-	Mtime time.Time
-	Ctime time.Time
-	OpenCount     uint64
-	Reachable     bool
-	Protected     bool
+	ObjectID  shared.ObjectID
+	ParentID  *shared.ObjectID
+	TargetID  *shared.ObjectID
+	Kind      shared.ObjectKind
+	Name      string
+	Mode      uint32
+	UID       uint32
+	GID       uint32
+	Size      uint64
+	Deleted   bool
+	Atime     time.Time
+	Mtime     time.Time
+	Ctime     time.Time
+	OpenCount uint64
+	Reachable bool
+	Protected bool
 }
 
 // NamespaceInspectionWarning describes an inconsistency detected during startup.
@@ -66,12 +66,20 @@ func (layer *Orchestration) InspectNamespace(request InspectNamespaceRequest) (I
 	for len(queue) > 0 {
 		current := queue[0]
 		queue = queue[1:]
-		if current == nil { continue }
+		if current == nil {
+			continue
+		}
 		id := current.header.ObjectID
-		if _, exists := reachable[id]; exists { continue }
+		if _, exists := reachable[id]; exists {
+			continue
+		}
 		reachable[id] = struct{}{}
-		if current.header.Kind == objectKindHardLink && current.file != nil { reachableFiles[current.file.objectID] = struct{}{} }
-		for _, child := range current.children { queue = append(queue, child) }
+		if current.header.Kind == objectKindHardLink && current.file != nil {
+			reachableFiles[current.file.objectID] = struct{}{}
+		}
+		for _, child := range current.children {
+			queue = append(queue, child)
+		}
 	}
 	for id, object := range layer.objects {
 		if err := request.Context.Err(); err != nil {
