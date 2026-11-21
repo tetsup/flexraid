@@ -26,11 +26,11 @@ type GetStatusRequest struct{ Context context.Context }
 
 // GetStatusResponse contains only lifecycle and aggregate health indicators.
 type GetStatusResponse struct {
-	Level                    StatusLevel
-	Lifecycle                LifecyclePhase
-	IntegrityErrorCount      uint64
-	RecoveryFailureCount     uint64
-	CleanupWorkersStarted    bool
+	Level                 StatusLevel
+	Lifecycle             LifecyclePhase
+	IntegrityErrorCount   uint64
+	RecoveryFailureCount  uint64
+	CleanupWorkersStarted bool
 }
 
 // DriveMonitoringStatus identifies the configured physical drive and reports
@@ -107,8 +107,8 @@ func validateMonitoringContext(ctx context.Context) error {
 func statusFromMetrics(phase LifecyclePhase, metrics distribution.GetMetricsResponse) GetStatusResponse {
 	result := GetStatusResponse{
 		Lifecycle: phase, Level: StatusHealthy,
-		IntegrityErrorCount:      metrics.IntegrityErrorCount,
-		RecoveryFailureCount:     metrics.RecoveryFailureCount,
+		IntegrityErrorCount:  metrics.IntegrityErrorCount,
+		RecoveryFailureCount: metrics.RecoveryFailureCount,
 	}
 	if phase == LifecycleFailed {
 		result.Level = StatusFailed
