@@ -9,7 +9,7 @@ import (
 
 func TestGetMetricsTracksPublicOperationResults(t *testing.T) {
 	layer, err := New(NewRequest{
-		Config: Config{Disks: []DriveConfig{{Root: t.TempDir(), Mountpoint: t.TempDir(), WWN: "wwn-metrics"}}},
+		Config:         Config{Disks: []DriveConfig{{Root: t.TempDir(), Mountpoint: t.TempDir(), WWN: "wwn-metrics"}}},
 		Initialization: InitializationTaskFunc(func(context.Context) (bool, error) { return true, nil }),
 	})
 	if err != nil {
@@ -44,7 +44,7 @@ func TestGetMetricsTracksPublicOperationResults(t *testing.T) {
 
 func TestGetMetricsRequiresLiveContext(t *testing.T) {
 	layer, err := New(NewRequest{
-		Config: Config{Disks: []DriveConfig{{Root: t.TempDir(), Mountpoint: t.TempDir(), WWN: "wwn-metrics"}}},
+		Config:         Config{Disks: []DriveConfig{{Root: t.TempDir(), Mountpoint: t.TempDir(), WWN: "wwn-metrics"}}},
 		Initialization: InitializationTaskFunc(func(context.Context) (bool, error) { return true, nil }),
 	})
 	if err != nil {
