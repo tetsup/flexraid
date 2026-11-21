@@ -50,7 +50,7 @@ type OpenResponse struct {
 	Handle *FileHandle
 }
 
-func (layer *Orchestration) OpenLocked(request OpenRequest) (response OpenResponse, err error)) {
+func (layer *Orchestration) OpenLocked(request OpenRequest) (response OpenResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("Open", started, err) }()
 	return layer.openLocked(request)
