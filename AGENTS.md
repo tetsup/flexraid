@@ -20,8 +20,8 @@
 - `management/`: 外部 API、レイヤー横断の操作調整・排他制御、管理タスク、監視
 - `orchestration/`: Header、論理 Object、Namespace、ファイル offset、配置方針
 - `distribution/`: ストライプ、チャンク、冗長化、復旧、物理配置
-- `io/`: Go の標準 API を中心とした基本的な物理ファイル操作
-- `platform/`: OS・実行環境に依存するファイルシステム情報、デバイス情報の取得およびデバイス制御
+- `platform/`: 物理ドライブ操作・監視および OS・実行環境依存機能を提供する唯一の公開窓口
+- `platform/internal/driveio/`: Platform だけが利用する raw な物理ファイル操作の内部実装
 - `fuse/`: go-fuse と Management のアダプター
 - `pkg/shared/`: レイヤー間で共有する型・定数
 - `storage/`: 物理保存形式の共通型
@@ -124,7 +124,7 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - Cleanup、Recovery、Scrub 等のレイヤー横断の管理ワークフローでは、必要な論理判断を Orchestration に依頼し、物理ストライプ処理を Distribution に依頼する。意味上 Orchestration を通すべき通常データ操作を、Management から Distribution へ迂回させない。
 - Orchestration / Distribution の内部状態を直接変更しない。各レイヤーが公開する API を通じて操作し、状態の所有者と排他制御の所有者を分離する。
 - Foreground / Background / Exclusive / Initialization / Stop のすべてに共通する、Management 唯一の実行ロック機構を所有する。Management の実行単位は同時に一つだけ実行し、各単位が共通ロックを取得して直列実行する。ObjectID などの対象別ロック、複数対象ロック、別系統のメンテナンスロックは設けない。ロックは復旧可能な最小実行単位の開始時に取得し、その単位の完了・状態確定後に必ず解放する。次の単位へ進む前に実行権を譲り、Lifecycle と Scheduler が実行種別ごとの受付・優先順位・drain を調停する。これはロック粒度を Object や Stripe に広げることを意味しない。
-- Management 自身の操作メトリクスは Management が所有・集計する。監視 API の応答を構成するときは、Orchestration・Distribution・I/O がそれぞれ所有するメトリクス snapshot を各層の公開取得 API から直接取得する。下位層のメトリクスを別の下位層へ渡して再集計させない。Management は表示・集約の窓口であり、各層の統計の所有者にはならない。
+- Management 自身の操作メトリクスは Management が所有・集計する。監視 API の応答を構成するときは、Orchestration・Distribution・Platform がそれぞれ所有するメトリクス snapshot を各層の公開取得 API から直接取得する。下位層のメトリクスを別の下位層へ渡して再集計させない。Management は表示・集約の窓口であり、各層の統計の所有者にはならない。
 - Management が Scheduler / MaintenanceExecutor を通じて実行する Background 作業は、Foreground との優先順位を Management の共通実行ロックで調停する。一方、Distribution の自律 Cleanup は Management の Background WorkItem として実行しない。Management は Distribution の物理 Cleanup ループと Orchestration の論理削除 Object Cleanup ループの起動・停止、および Drive ごとの許可情報更新を行う。各ループの処理判断と候補管理は所有レイヤーが行う。Orchestration worker は Management の公開 Cleanup 経路を通じて実行し、Management の操作排他を迂回しない。Cleanup の進捗は永続化せず、起動時・再開時に各所有レイヤーが状態から候補を再構築する。
 
 #### Maintenance Policy / Executor
@@ -206,26 +206,21 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - Queue Mutex の保持中に他の Distribution 状態ロックを取得する設計、または逆順で取得する設計を混在させない。ロック順序を固定し、キュー操作と Stripe 処理の間でデッドロックを発生させない。
 - 自律 Cleanup は旧 Version、不正・復元不能 Version、未完了チャンク、孤立チャンク等の Distribution 所有の物理データを対象とする。最新の復元可能 Version は削除対象にしない。最新 Version の欠損がある Stripe は上記のとおり保留する。Stripe 0 を特別扱いする削除順序制約は設けない。Stripe 0 を最後にする制約は、論理削除 Object の全 Stripe 削除にのみ適用する。
 - 配置ポリシーは決定せず、Orchestration から渡された配置方針を実際のチャンク配置に反映する。
-- Distribution は Stripe / Chunk の読み書き、Version 選択、復旧、欠損・破損判定、Cleanup など、Distribution 自身の公開操作と内部処理で発生した事象を Distribution の統計として保持・集計する。物理ファイル単位の I/O 成否・エラー回数・物理ドライブ別 I/O 統計は I/O の所有物であり、Distribution に渡して再集計させない。Distribution の統計取得 API は Distribution 自身の統計だけを snapshot として返す。
+- Distribution は Stripe / Chunk の読み書き、Version 選択、復旧、欠損・破損判定、Cleanup など、Distribution 自身の公開操作と内部処理で発生した事象を Distribution の統計として保持・集計する。物理ファイル単位の I/O 成否・エラー回数・物理ドライブ別 I/O 統計は Platform の所有物であり、Distribution に渡して再集計させない。Distribution の統計取得 API は Distribution 自身の統計だけを snapshot として返す。
 - Distribution の `GetMetrics` は Cleanup 候補を Method（DeleteOldVersion / PreserveAbnormal）と IOIndex ごとに集計し、候補件数・物理ファイル長合計・削除による解放見込みサイズを返す。最新有効 Version を確定できない Stripe は候補に含めない。Cleanup 後の物理空き容量は Drive ごとの現在 AvailableBytes に削除候補のファイル長を加算した概算とし、その Drive 別見込み値を既定 Mirror / Parity 配置計算へ渡して論理空き容量を推定する。PreserveAbnormal は削除ではないため解放見込みに含めない。ファイル長はファイルシステムの実割当ブロック数を保証しない。
-
-### I/O
-
-- 指定された物理 root 上で物理ファイルの読み書き・同期・削除・列挙を行う。
-- I/O は物理ドライブ単位の実体として生成し、そのインスタンス内で物理ファイル操作の成功・失敗・所要時間、読み取りエラー発生回数、FileKey のエラーユニーク数、直近 1,000 処理を操作別に保持・集計する。複数ドライブの集計は Management が各 I/O インスタンスの snapshot を drive_name と対応付けて行う。
-- I/O の監視統計を取得する公開 API は `GetMetrics` 一つとし、操作別の統計 snapshot を返す。物理ファイルの統計を Distribution へ渡さない。`GetMetrics` 自身の呼び出しは集計対象の操作カウンターに含めない。
-- Header の解析、チャンクやストライプの意味解釈、配置方針、パリティ計算、復旧判断を行わない。
-- `ScanHeaders` は StripeID 0 の物理ファイル列挙、`ListChunks` は全ストライプの物理ファイル列挙を行う。どちらも Header / Chunk の意味を解析しない。
-- ディスクの電源状態やスピンダウン・スピンアップを判断するポリシー、Cleanup のスケジューリングを持たない。必要な物理操作を実行し、その結果を上位層へ返す。
 
 ### Platform
 
-- OS・実行環境ごとの差異を吸収し、FlexRAID が必要とする環境情報の取得およびデバイス制御 API を提供する。
-- ファイルシステム容量など OS 固有 API を必要とする情報、物理ドライブの識別・対応付け、ドライブの電源状態取得、スピンアップ / スピンダウン要求などを担当する。
-- Go の標準 API で実現できる基本的な物理ファイルの読み書き・同期・削除・列挙は担当せず、I/O パッケージの代替やラッパーにはならない。
-- I/O と Platform は独立した兄弟コンポーネントとし、相互に依存しない。Platform から I/O を呼び出さず、I/O から Platform を呼び出さない。
-- Platform は状態取得・デバイス制御の機構を提供する。Management はドライブ単位の Cleanup 許可レベルを管理し、Distribution はその許可と Platform のデバイス状態・制御 API を利用して自律 Cleanup を実行する。スピンダウンなど Cleanup 以外の電源運用ポリシーは Management が担当する。
-- Platform は OS 固有実装を隔離する境界とする。OS ごとの差異は Platform 内の実装で吸収し、上位層には共通 API と共通の結果型を提供する。
+- Platform は物理ドライブ単位の実体を所有し、WWN・物理ファイルシステムの mountpoint・FlexRAID の storage root を対応付ける。物理ドライブへのアクセスは、読み書き・列挙・同期・削除・保全退避を含め、必ず Platform の公開 API を通す。
+- raw な物理ファイル操作の実装は `platform/internal/driveio/` に置き、Platform パッケージだけが import する。Distribution・Management・Orchestration その他の外部パッケージから内部実装を直接参照してはならない。
+- 内部 drive I/O は物理ファイルの読み書き・同期・削除・列挙などだけを行う。Header 解析、Chunk / Stripe の意味解釈、配置方針、パリティ計算、復旧判断、ドライブ監視・電源制御を行わない。
+- Platform は `Read` / `Write` / `Delete` / `ScanHeaders` / `ListChunks` / `Preserve` / `Sync` などの物理操作をドライブ単位で公開し、内部 I/O の結果とエラーを上位層へ返す。Distribution は内部 I/O や物理 root に直接アクセスしない。
+- 物理ファイル操作の成功・失敗・所要時間、読み取りエラー発生回数、FileKey のエラーユニーク数、直近 1,000 処理はドライブ別・操作別に Platform が集計する。Platform の監視統計を取得する公開 API は `GetMetrics` 一つとし、独立した snapshot を返す。GetMetrics 自身は物理操作カウンターに含めない。
+- OS・実行環境ごとの差異を吸収し、ファイルシステム容量、物理ドライブ識別・対応付け、デバイス能力・状態の取得、スピンアップ / スピンダウン要求などを共通 API として提供する。OS 固有 API は Platform 内に閉じ込める。
+- デバイス能力・監視項目の対応可否は Initialization 時に一度プローブして確定する。SSD / 回転媒体の種別、スピンドルの有無、SMART 対応、SMART 全体ヘルス判定、温度取得可否、スピン状態・電源状態など、実際に判別できる情報だけを保持する。取得できない情報を推測で補完しない。SMART はデバイス自身の全体ヘルス判定と温度だけを対象とし、SMART 属性一覧・閾値・エラーログは収集しない。
+- 監視値は取得特性に応じて扱う。要求時に低コストかつ非侵襲的に取得できる値はその都度取得する。ドライブが稼働中でなければ取得できない値は、通常の物理 I/O によりドライブが稼働した機会に取得する。Platform は I/O 活動を把握し、前回取得から 1 分以上経過した対象値を稼働中に更新する監視ループを管理する。監視のために電源状態を先に問い合わせて稼働可否を判定したり、監視だけを目的にスリープ中のドライブへアクセスして起動させたりしない。
+- 監視値には取得元・最終取得時刻・取得状態を付け、未対応・取得不能・未取得を区別する。スピン状態や電源状態を取得できない場合も推測しない。
+- Platform はデバイス状態取得・デバイス制御・物理 I/O の機構を提供する。Cleanup の候補選定・許可判断は Distribution / Management の責務とし、Platform はそれらのポリシーを持たない。スピンダウンなど Cleanup 以外の電源運用ポリシーは Management が担当する。
 
 ### FUSE
 
@@ -248,14 +243,14 @@ Management -> Orchestration
 Management -> Distribution
 Management -> Platform
 Orchestration -> Distribution
-Distribution -> I/O
 Distribution -> Platform
+Platform -> platform/internal/driveio (private implementation)
 ```
 
-- Management は Orchestration と Distribution の双方を統括するが、Orchestration と Distribution の親子関係は維持する。通常のファイルシステム操作は Management -> Orchestration -> Distribution -> I/O の経路を通る。
-- Platform は I/O と同列の独立コンポーネントであり、Management と Distribution など必要な上位コンポーネントから利用する。I/O と Platform の間に依存関係を設けない。
+- Management は Orchestration と Distribution の双方を統括するが、Orchestration と Distribution の親子関係は維持する。通常のファイルシステム操作は Management -> Orchestration -> Distribution -> Platform -> platform/internal/driveio の経路を通る。
+- Platform は物理ドライブ操作の唯一の公開窓口であり、Distribution と Management は Platform に依存する。内部 driveio は Platform の実装詳細であり、他レイヤーから見えない。
 - Distribution は Platform から OS 固有のファイルシステム容量・デバイス情報を取得できる。Management は Platform を通じてドライブ状態の観測・制御を行う。Platform はそれらの判断ポリシーを持たない。
-- 現行の `io.GetCapacity` は `unix.Statfs` で容量を取得している。目標構成では、このような OS 固有の環境情報取得を Platform に分離し、I/O は Go の標準 API を中心とした基本ファイル操作に専念させる。
+- ファイルシステム容量の取得を含む OS 固有処理は Platform に集約する。物理ファイル操作も Platform の公開 API に統一し、その raw 実装だけを `platform/internal/driveio/` に隔離する。
 - Management から Distribution への直接呼び出しは、管理タスク・監視など、論理ファイル操作を必要としない責務に限る。通常のファイルデータ操作を Orchestration 経由から迂回させない。
 - 下位層は上位層の型・状態・実装を参照しない。下位層から上位層への callback で依存グラフに逆向きの辺を作らない。結果・統計は下位層の公開 API を通じて上位層が取得する。
 - 依存関係は DAG とし、循環依存を作らない。
@@ -299,7 +294,7 @@ Distribution -> Platform
 - 削除候補は実行時に map Mutex の保護下で最新有効 Version と照合し、無効な FileKey であることを再検証する。物理 I/O はすべての Distribution 状態ロックを解放してから実行する。
 - 論理削除 Object の削除では Orchestration が削除可能な ObjectID を選び、Distribution が ObjectID 単位で物理削除する。Distribution は ObjectID の処理中に Management の実行ロックや Foreground の Stripe ロックを取得しない。ObjectID の削除完了後に Orchestration が論理 Object のメモリ状態を確定する。
 - Distribution の Stripe ロック取得中に Management の実行ロックを要求する逆方向の依存を作らない。Management は Distribution の内部ロックを直接操作しない。
-- I/O は物理ファイル操作を実行する。上位層の Object / Stripe の意味に基づくロックを持たず、必要性が実証された物理ファイル単位の排他だけを内部実装として持つ。
+- Platform は物理ファイル操作を実行する。上位層の Object / Stripe の意味に基づくロックを持たず、必要性が実証された物理ファイル単位の排他だけを内部実装として持つ。
 
 ## 8. ログ
 
@@ -401,20 +396,20 @@ Distribution -> Platform
 
 ### レイヤー別メトリクス API と所有権
 
-- Management / Orchestration / Distribution / I/O の各レイヤーは、監視統計を取得する公開関数を一つだけ提供し、関数名は `GetMetrics` とする。Request / Response 型は各レイヤー固有とし、取得結果は内部状態を共有しない整合した snapshot とする。個別統計ごとの公開 getter を増やさず、追加項目は同じ `GetMetrics` Response に含める。
+- Management / Orchestration / Distribution / Platform の各レイヤーは、監視統計を取得する公開関数を一つだけ提供し、関数名は `GetMetrics` とする。Request / Response 型は各レイヤー固有とし、取得結果は内部状態を共有しない整合した snapshot とする。個別統計ごとの公開 getter を増やさず、追加項目は同じ `GetMetrics` Response に含める。
 - 各レイヤーの統計は、その事象が発生したレイヤー自身が保持・集計する。下位レイヤーの物理ファイル統計やエラー履歴を上位レイヤーへ渡して再集計させない。上位レイヤーの操作結果と下位レイヤーの操作結果は、それぞれ独立した操作結果として記録する。
-- Management は各レイヤーの `GetMetrics` を直接呼び出して snapshot を取得し、監視応答としてまとめる。Management は統計の所有者ではなく、他レイヤーの内部 map / slice を直接参照しない。I/O 統計は各 I/O インスタンスから取得し、Management が設定上の drive_name と対応付ける。Distribution を経由して I/O 統計を取得したり、Distribution に I/O 統計を転送したりしない。
-- I/O は物理ドライブ上で実行した物理ファイル操作の統計を所有する。Distribution は Stripe / Chunk の操作・復旧・欠損判定等、Distribution 内で発生した事象の統計を所有する。Orchestration は Object / 論理ファイル単位の操作・欠損判定等の統計を所有する。Management は Management 自身の公開操作の統計を所有する。
+- Management は各レイヤーの `GetMetrics` を直接呼び出して snapshot を取得し、監視応答としてまとめる。Management は統計の所有者ではなく、他レイヤーの内部 map / slice を直接参照しない。物理 I/O 統計は Platform の GetMetrics から取得し、Management が設定上の drive_name と対応付ける。Distribution を経由して 物理 I/O 統計を取得したり、Distribution に物理 I/O 統計を転送したりしない。
+- Platform は物理ドライブ上で実行した物理ファイル操作の統計を所有する。Distribution は Stripe / Chunk の操作・復旧・欠損判定等、Distribution 内で発生した事象の統計を所有する。Orchestration は Object / 論理ファイル単位の操作・欠損判定等の統計を所有する。Management は Management 自身の公開操作の統計を所有する。
 - 既存の個別統計取得 API は `GetMetrics` に統合する。特定レイヤーの統計を別のレイヤーの統計として再公開しない。
 
 ### 実行統計・欠損状態・エラー観測
 
 - 各レイヤーは、自身が公開する各操作（コマンド/API）について成功数・失敗数を個別に集計する。操作名とレイヤーを集計キーに含め、異なる操作やレイヤーの結果を一つの総数へ潰さない。Management は自身の操作統計を所有し、下位レイヤーの統計は各所有レイヤーから snapshot として取得・集約する。
-- I/O レイヤーの操作統計・エラー統計は物理ドライブごと、かつ I/O 操作ごとに集計する。Distribution / Orchestration / Management はそれぞれ自身の操作ごとに成功数・失敗数を持つ。上位操作の失敗と下位操作の失敗は別々の事象として記録し、単純加算して同じ失敗として扱わない。
-- 読み取りエラーは発生回数とユニーク対象数を分離する。物理層では物理ファイル（FileKey）単位で、ドライブごと・I/O 操作ごとにエラー対象のユニーク数と発生回数を記録する。同じ物理ファイルへの再試行はユニーク数を増やさず、発生回数だけを増やす。
+- Platform の物理操作統計・エラー統計は物理ドライブごと、かつ操作ごとに集計する。Distribution / Orchestration / Management はそれぞれ自身の操作ごとに成功数・失敗数を持つ。上位操作の失敗と下位操作の失敗は別々の事象として記録し、単純加算して同じ失敗として扱わない。
+- 読み取りエラーは発生回数とユニーク対象数を分離する。物理層では物理ファイル（FileKey）単位で、ドライブごと・Platform 操作ごとにエラー対象のユニーク数と発生回数を記録する。同じ物理ファイルへの再試行はユニーク数を増やさず、発生回数だけを増やす。
 - 物理ファイルの欠損状態は FileKey を識別子とするメモリ上の状態リストで保持し、ドライブごとに復旧可能な欠損ファイルと復旧不可能な欠損ファイルのユニーク数を分けて集計する。読み取りエラーが発生したことだけで欠損と断定せず、確認された欠損状態・復旧判定を別に保持する。
 - 論理層では ObjectID 単位で、読み取りエラーのユニーク数・発生回数、復旧可能な欠損を持つ論理ファイル数、復旧不可能な欠損を持つ論理ファイル数を分けて集計する。論理ファイルの復旧可能性は Stripe / Chunk の物理状態から論理ファイルとして判定し、物理ファイルの件数を単純合算しない。 `Orchestration.GetMetrics` は論理操作別の成功・失敗数、累積所要時間、直近 1,000 件の成功・失敗・所要時間・エラー種別を返す。ObjectID ごとの読み取りエラー発生数・ユニーク数と直近 1,000 件の発生数・ユニーク数・エラー種別も返す。論理欠損対象は ObjectID のメモリ上の集合として保持し、起動時および `GetMetrics` 時に Distribution の詳細 Stripe / Version snapshot から再構築する。読み取りエラー履歴・累積カウンターは再起動後に復元しない。Context のキャンセル・期限切れはデータ読み取りエラー対象に含めない。
-- 各レイヤー・各操作について、累積の成功数・失敗数・エラー発生回数に加え、直近 1,000 処理の成功数・失敗数・エラー発生回数を保持する。直近 1,000 処理は操作単位で独立した固定長履歴とし、I/O はさらに物理ドライブごとに分ける。処理が 1,000 件未満の場合は存在する全件を対象とし、分母となる実処理数も返す。
+- 各レイヤー・各操作について、累積の成功数・失敗数・エラー発生回数に加え、直近 1,000 処理の成功数・失敗数・エラー発生回数を保持する。直近 1,000 処理は操作単位で独立した固定長履歴とし、Platform はさらに物理ドライブごとに分ける。処理が 1,000 件未満の場合は存在する全件を対象とし、分母となる実処理数も返す。
 - 欠損対象リスト、ユニークエラー対象リスト、累積カウンター、直近 1,000 処理の履歴はメモリ上だけに保持する。再起動後の復元・永続化は行わず、起動時にストレージ状態から再構築できる欠損状態のみ再構築する。読み取りエラーの過去履歴やカウンターをストレージ走査から推測・復元しない。
 - 必要な監視カウンターは外部の監視側が Status / Inspect 等の取得 API を定期的に呼び出して保存する。FlexRAID 自身は監視カウンターを永続化しない。詳細な個別事象の履歴が必要な場合はログを使用し、集計カウンターの代わりに無制限のイベント履歴をメモリ保持しない。
 - ログには調査に必要な操作名、レイヤー、対象識別子（物理ファイル・ドライブ・Object 等、該当する範囲）、結果、エラー、および所要時間を記録する。ログは詳細履歴の参照手段であり、監視用カウンターはログを再解析して生成する設計にしない。
@@ -424,14 +419,14 @@ Distribution -> Platform
 
 - Management の公開監視 API は `GetStatus` / `GetDetailedStatus` / `Inspect` の3種類に分ける。これらはそれぞれ簡易ヘルスチェック、運用監視 snapshot、完全監査 snapshot であり、一つの API のフラグで用途を切り替えない。
 - `GetStatus` は Lifecycle とメモリ上の累積異常カウンターを用いる低コストな要約とし、物理デバイス照会・容量照会・ストレージ全走査を行わない。
-- `GetDetailedStatus` は Distribution と各 I/O インスタンスの `GetMetrics` snapshot、および Platform のデバイス識別・容量情報を drive_name / WWN ごとに返す。I/O インスタンスの順序は設定ドライブ順と一致させ、Distribution が設定されている場合は件数不一致を初期化時に拒否する。
+- `GetDetailedStatus` は Distribution と各 Platform の `GetMetrics` snapshot、および Platform のデバイス識別・容量情報を drive_name / WWN ごとに返す。Platform の Drive 順序は設定ドライブ順と一致させ、Distribution が設定されている場合は件数不一致を初期化時に拒否する。
 - `Inspect` は詳細監視に加えて Distribution の物理 Object / Stripe / Version / Chunk / Orphan 情報と Orchestration の論理 Namespace / Object / 初期化警告を含める。詳細状態 API の単なる別名にしない。
 - 物理情報の取得失敗は項目ごとに取得不能として返し、他ドライブの情報を捨てない。値を推測で埋めず、取得元・最終取得時刻を明示する。監視・監査のためだけに standby デバイスを SpinUp しない。 詳細状態は取得できた I/O 統計・物理容量のドライブ別内訳と全体集計、Cleanup worker 稼働状態、Drive ごとの Cleanup 許可設定、Orchestration が算出する現在の論理空き容量も含める。Cleanup 候補サイズと Cleanup 後の容量見積もりは Distribution の `GetMetrics` が返す。サイズは I/O の走査結果または書き込み時に取得した物理ファイル長であり、ファイルシステムの実割当ブロック数とは区別する。物理デバイス属性など未実装・未取得の情報はゼロや推測値で代用しない。
 
 - `status` の通常表示は、Lifecycle、Worker の生存、Controller との接続、物理ドライブの基本的な到達可能性などから、論理ドライブ全体の正常性を簡潔に判定する。高コストな全ストレージ走査を実行しない。
 - `status --detail` は運用監視用 snapshot とする。論理ドライブ全体の集計値に加え、各物理ドライブを識別できる独立した要素として返す。I/O・整合性・容量について、ドライブ別に観測可能な値は全体値とドライブ別値の両方を返す。
 - `status --detail` の物理ドライブ情報には、WWN、デバイスパス、モデル、シリアル、接続方式、物理容量、ファイルシステム、mountpoint、Storage Root、生存・接続状態、電源状態、I/O エラー、最終アクセス時刻などを含める。起動時から変化しない情報は Ready 前に取得した snapshot を使用し、稼働中に変化する情報は次の更新規則に従う。I/O 回数・転送量・レイテンシ・I/O エラー・最終アクセス時刻などの実績値は、読み込み・書き込みなど実際の I/O のたびに、対象物理ドライブと全体集計の両方を更新する。物理デバイスの接続・電源状態など OS が提供する低コストな状態値は、status 照会のたびに再取得して snapshot を更新する。照会コストが高い値は個別の更新間隔を定め、その間はキャッシュを返す。更新間隔・最終取得時刻・取得元を明示し、古い値を最新値として扱わない。取得できない値は不明として表現し、推測で補完しない。
-- 物理デバイス情報の取得は Platform が担当する。起動後に変化しない識別・構成情報（WWN、デバイスパス、モデル、シリアル、接続方式、物理容量など）は、Initialization 中、Lifecycle が Ready へ遷移する前に取得して snapshot として保持する。取得にデバイスの起動が必要な項目は、Initialization の所定の SpinUp 処理と連携して取得する。OS の非侵襲的な情報源から取得できる項目は、不要な SpinUp を行わず取得する。起動時に取得できなかった値は推測で補完せず、取得不能または未取得として理由を保持する。稼働中の更新規則は情報の性質と取得コストに応じて分ける。I/O 回数・転送量・レイテンシ・I/O エラー・最終アクセス時刻など実際の操作で得られる実績値は、読み込み・書き込みなど各 I/O の完了時に対象物理ドライブ別および全体集計を更新する。OS の sysfs 等から低コストかつ非侵襲的に取得できる接続・電源状態は status 照会のたびに再取得する。照会コストが高い値は項目ごとに更新間隔を定め、間隔内はキャッシュを使用する。取得元・最終取得時刻・更新間隔・取得状態を保持し、古い値を最新値として扱わない。通常の status 照会だけを理由にデバイスへ I/O を発行して SpinUp させない。Standby 中はデバイスへのアクセスを伴わずに取得できる値と、最後に実際の I/O で確認した状態を区別して返す。
+- 物理デバイス情報の取得は Platform が担当する。起動後に変化しない識別・構成情報（WWN、デバイスパス、モデル、シリアル、接続方式、物理容量など）は、Initialization 中、Lifecycle が Ready へ遷移する前に取得して snapshot として保持する。取得にデバイスの起動が必要な項目は、Initialization 中の通常の SpinUp 処理と連携して取得する。監視値の定期更新では別途 SpinUp せず、通常 I/O による稼働機会を利用する。OS の非侵襲的な情報源から取得できる項目は、不要な SpinUp を行わず取得する。起動時に取得できなかった値は推測で補完せず、取得不能または未取得として理由を保持する。稼働中の更新規則は情報の性質と取得コストに応じて分ける。I/O 回数・転送量・レイテンシ・I/O エラー・最終アクセス時刻など実際の操作で得られる実績値は、読み込み・書き込みなど各 I/O の完了時に対象物理ドライブ別および全体集計を更新する。OS の sysfs 等から低コストかつ非侵襲的に取得できる値は要求時に取得する。ドライブが稼働中でなければ取得できない値は、通常の物理 I/O でドライブが稼働した機会に、前回取得から 1 分以上経過していれば Platform の監視ループが更新する。電源状態を先に問い合わせて稼働可否を判定する方式にはせず、監視だけを目的に Standby 中のデバイスへアクセスして SpinUp させない。取得元・最終取得時刻・更新間隔・取得状態を保持し、古い値を最新値として扱わない。
 - 物理ドライブの生存状態は、Worker の生存状態や論理ドライブの Lifecycle と別に表現する。少なくとも OS からのデバイス認識状態と、最後に確認できた I/O 成否を区別し、単なるデバイスノードの存在だけで物理媒体の正常動作を断定しない。Standby 中など現在の応答性を確認できない場合は、最終確認時刻とともに Unknown / LastKnown として返す。物理デバイス単位の状態を全体の単一状態に潰さない。
 - Cleanup 対象は Deprecated Versions / Abnormal Data / Deleted Logical Objects など対象種別ごとに件数とサイズを返す。物理ドライブ別に算出できる対象サイズもドライブごとに返す。
 - 容量は物理容量・物理使用量・物理空き容量と、冗長化・配置制約を反映した論理使用量・現在の残論理空き容量を区別する。Cleanup による物理解放見込みと、Cleanup 後に見込まれる残論理空き容量も別項目とする。
