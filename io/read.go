@@ -38,6 +38,7 @@ func (layer *IO) Read(request ReadRequest) (response ReadResponse, err error) {
 		err = pathErr
 		return response, err
 	}
+	layer.recordAccess()
 	response.Data, err = os.ReadFile(path)
 	if err != nil {
 		readErrors++
