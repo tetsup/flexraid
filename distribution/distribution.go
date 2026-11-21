@@ -88,7 +88,7 @@ func New(request NewRequest) (NewResponse, error) {
 	d := &Distribution{stripeLocks: make(map[stripeIDKey]*sync.Mutex), ios: append([]*physicalio.IO(nil), request.IOs...), logger: logger,
 		objects:  make(map[shared.ObjectID]map[storage.StripeID]*stripeInfo),
 		versions: make(map[stripeIDKey]map[storage.StripeVersion]*versionInfo),
-		metrics: newMetricsCollector(), orphans: make(map[shared.ObjectID][]chunkLocation), cleanupQueue: newCleanupQueue(), cleanupPermissionStore: request.CleanupPermissions, cleanupWake: make(chan struct{}, 1)}
+		metrics:  newMetricsCollector(), orphans: make(map[shared.ObjectID][]chunkLocation), cleanupQueue: newCleanupQueue(), cleanupPermissionStore: request.CleanupPermissions, cleanupWake: make(chan struct{}, 1)}
 	if d.cleanupPermissionStore == nil {
 		d.cleanupPermissionStore = shared.NewCleanupPermissionStore(make([]shared.DriveCleanupPermission, len(request.IOs)))
 	}
