@@ -40,6 +40,7 @@ func (layer *IO) Sync(request SyncRequest) (response SyncResponse, err error) {
 		return response, err
 	}
 	layer.recordAccess()
+	defer layer.recordAccess()
 	file, openErr := os.OpenFile(path, os.O_WRONLY, 0)
 	if openErr != nil {
 		err = openErr
