@@ -287,13 +287,17 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 		objects[key.objectID] = struct{}{}
 		stripes[key] = struct{}{}
 	}
+	driveOrphans := make(map[int]uint64)
 	for objectID, locations := range d.orphans {
 		objects[objectID] = struct{}{}
 		response.Stripes.OrphanChunkCount += uint64(len(locations))
+		for _, location := range locations { driveOrphans[location.ioIndex]++ }
 		for _, location := range locations {
 			stripes[stripeIDKey{objectID: objectID, stripeID: location.key.StripeID}] = struct{}{}
 		}
 	}
+	for driveIndex, count := range driveOrphans { response.OrphanChunksByDrive = append(response.OrphanChunksByDrive, DriveOrphanMetrics{DriveIndex:driveIndex,OrphanChunkCount:count}) }
+	sort.Slice(response.OrphanChunksByDrive,func(i,j int)bool{return response.OrphanChunksByDrive[i].DriveIndex<response.OrphanChunksByDrive[j].DriveIndex})
 	if request.IncludeDetails {
 		objectIDs := make([]shared.ObjectID, 0, len(objects))
 		for id := range objects {
