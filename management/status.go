@@ -172,6 +172,7 @@ func (layer *Management) GetDetailedStatus(request GetDetailedStatusRequest) (Ge
 	}
 	layer.mu.Lock()
 	result.CleanupWorkersStarted = layer.backgroundProcessesStarted
+	result.Status.CleanupWorkersStarted = result.CleanupWorkersStarted
 	orchestrationLayer := layer.orchestration
 	if orchestrationLayer != nil {
 		statfs, statErr := orchestrationLayer.StatFsLocked(orchestration.StatFsRequest{Context: request.Context})
@@ -192,6 +193,7 @@ func (layer *Management) GetDetailedStatus(request GetDetailedStatusRequest) (Ge
 		}
 		config := layer.drives[wwn]
 		drive := DriveMonitoringStatus{WWN: wwn, Root: config.Root, Mountpoint: config.Mountpoint}
+for _, orphan := range result.Distribution.OrphanChunksByDrive { if orphan.DriveIndex == index { drive.OrphanChunkCount = orphan.OrphanChunkCount; break } }
 		if index < len(permissionSnapshot.Drives) {
 			drive.CleanupPermissions = permissionSnapshot.Drives[index]
 			drive.CleanupPermissionsAvailable = true
@@ -254,6 +256,7 @@ func (layer *Management) Inspect(request InspectRequest) (InspectResponse, error
 	}
 	layer.mu.Lock()
 	result.CleanupWorkersStarted = layer.backgroundProcessesStarted
+	result.Status.CleanupWorkersStarted = result.CleanupWorkersStarted
 	permissionSnapshot := layer.cleanupPermissionStore.Snapshot()
 	orchestrationLayer := layer.orchestration
 	if orchestrationLayer != nil {
@@ -287,6 +290,7 @@ func (layer *Management) Inspect(request InspectRequest) (InspectResponse, error
 		}
 		config := layer.drives[wwn]
 		drive := DriveMonitoringStatus{WWN: wwn, Root: config.Root, Mountpoint: config.Mountpoint}
+for _, orphan := range result.Distribution.OrphanChunksByDrive { if orphan.DriveIndex == index { drive.OrphanChunkCount = orphan.OrphanChunkCount; break } }
 		if index < len(permissionSnapshot.Drives) {
 			drive.CleanupPermissions = permissionSnapshot.Drives[index]
 			drive.CleanupPermissionsAvailable = true
