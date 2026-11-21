@@ -307,9 +307,9 @@ frcon
 - Orchestration：`GetMetrics` で Object / 論理ファイル単位の操作成功・失敗数と所要時間、ObjectID ごとの読み取りエラー発生数・ユニーク数、直近 1,000 件の結果、および復旧可能・復旧不可能な論理ファイル欠損数を返します。欠損状態は Distribution の詳細 Stripe / Version snapshot から論理 Object 単位で判定し、起動時にメモリ上へ再構築します。読み取りエラー履歴・カウンターは永続化しません。物理ファイルの欠損数を単純合算して論理ファイルの復旧可能性とはしません。
 - Management：Management 自身の公開操作結果を `GetMetrics` で集計し、他レイヤーの snapshot と合わせて監視応答を構成します。
 
-各レイヤーは監視統計を取得する公開関数を一つだけ持ち、関数名は `GetMetrics` とします。Management はこの関数を各層に対して呼び出します。I/O は物理ドライブごとのインスタンスから取得し、Management が設定上の drive_name と対応付けます。
+各レイヤーは監視統計を取得する公開関数を一つだけ持ち、関数名は `GetMetrics` とします。Management はこの関数を各層に対して呼び出します。Platform の GetMetrics から Drive ごとの物理操作統計を取得し、Management が設定上の drive_name と対応付けます。
 
-成功数・失敗数・エラー発生回数は累積値に加え、直近 1,000 処理の値も表示します。直近履歴はレイヤー・操作ごとに独立し、I/O は物理ドライブごとにも分けます。1,000 件に満たない場合は実際に保持している処理数を併せて表示します。
+成功数・失敗数・エラー発生回数は累積値に加え、直近 1,000 処理の値も表示します。直近履歴はレイヤー・操作ごとに独立し、Platform は物理ドライブごとにも分けます。1,000 件に満たない場合は実際に保持している処理数を併せて表示します。
 
 欠損状態リスト、ユニーク対象リスト、カウンター、直近 1,000 処理の履歴は FlexRAID プロセス内のメモリだけで保持し、再起動後に復元・永続化しません。欠損状態のうちストレージ状態から判定できるものは起動時に再構築しますが、過去の読み取りエラー回数は復元しません。監視カウンターを保存したい場合は、外部監視側が各レイヤーの `GetMetrics` を通じて取得・保存します。個々の事象の詳細履歴はログに出力します。
 
@@ -325,9 +325,9 @@ frcon
 Management は用途別に3つの公開 API を提供します。
 
 - `GetStatus`: Lifecycle と Distribution の集約異常数だけを返す簡易確認。物理デバイスや容量の問い合わせは行いません。
-- `GetDetailedStatus`: Distribution の集約統計と、設定順の各物理ドライブについて I/O の `GetMetrics`、WWN 解決結果、Platform のファイルシステム容量を返します。個別取得に失敗した項目は、そのドライブの取得エラーとして返し、他ドライブの情報を隠しません。
+- `GetDetailedStatus`: Distribution の集約統計と、Platform が保持する設定順の各物理ドライブの物理操作統計、WWN 解決結果、ファイルシステム容量を返します。個別取得に失敗した項目は、そのドライブの取得エラーとして返し、他ドライブの情報を隠しません。
 - `Inspect`: 詳細監視に加え、Distribution の Object / Stripe / Version / Orphan Chunk の物理配置情報と、Orchestration が保持する論理 Namespace / Object / 初期化時警告、Cleanup worker の稼働状態、ドライブ別 Cleanup 許可設定、Orchestration が算出する現在の論理空き容量を返す監査 API です。
 
-物理ドライブ情報の取得に失敗した値は補完・推測しません。容量には取得元と取得時刻を付けます。これらの監視 API は standby デバイスを起こすための SpinUp を実行しません。I/O 統計は設定された Drive 順と I/O インスタンス順の対応で返します。 `GetStatus` は Distribution の累積異常カウンターを使うため Stripe map を走査せず、Stripe 数などの inventory は含めません。`GetDetailedStatus` は全体 I/O / 容量集計とドライブ別 Cleanup 許可・Orphan Chunk 数・現在の論理空き容量を含みます。`Inspect` は Distribution のメモリ上の物理配置 snapshot と Orchestration の Namespace snapshot を返します。 Orphan Chunk は Distribution が識別できる物理ドライブ別件数も含みます。Namespace の到達可能性は root からの探索と HardLink 参照を考慮します。Distribution の Cleanup 候補件数・物理ファイルサイズは種別別・ドライブ別に集計し、削除候補のファイルサイズを加算した物理空き容量と、その容量を使った Mirror / Parity の論理空き容量を見積もります。この容量見積もりはファイル長に基づく概算であり、ファイルシステムの実割当ブロック数を保証するものではありません。
+物理ドライブ情報の取得に失敗した値は補完・推測しません。容量には取得元と取得時刻を付けます。これらの監視 API は standby デバイスを起こすための SpinUp を実行しません。物理操作統計は Platform が保持する Drive 順で返します。 `GetStatus` は Distribution の累積異常カウンターを使うため Stripe map を走査せず、Stripe 数などの inventory は含めません。`GetDetailedStatus` は全体 I/O / 容量集計とドライブ別 Cleanup 許可・Orphan Chunk 数・現在の論理空き容量を含みます。`Inspect` は Distribution のメモリ上の物理配置 snapshot と Orchestration の Namespace snapshot を返します。 Orphan Chunk は Distribution が識別できる物理ドライブ別件数も含みます。Namespace の到達可能性は root からの探索と HardLink 参照を考慮します。Distribution の Cleanup 候補件数・物理ファイルサイズは種別別・ドライブ別に集計し、削除候補のファイルサイズを加算した物理空き容量と、その容量を使った Mirror / Parity の論理空き容量を見積もります。この容量見積もりはファイル長に基づく概算であり、ファイルシステムの実割当ブロック数を保証するものではありません。
 
 簡易 Status は Distribution のメモリ上の異常カウンターと Lifecycle / Cleanup worker 状態のみを参照し、Stripe map の全走査を行いません。詳細 Status はドライブ別 Cleanup 許可設定、論理空き容量、物理容量と I/O の全体集計を返します。
