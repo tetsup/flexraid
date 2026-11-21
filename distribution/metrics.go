@@ -53,6 +53,7 @@ type ChunkMetrics struct {
 type GetMetricsRequest struct{ Context context.Context }
 type GetMetricsResponse struct {
 	Operations           map[string]OperationMetrics
+	Chunks               ChunkMetrics
 	Stripes              StripeMetrics
 	IntegrityErrorCount  uint64
 	RecoveryCount        uint64
