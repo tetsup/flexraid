@@ -124,6 +124,22 @@ func (layer *Management) startBackgroundProcesses(ctx context.Context) error {
 			return fmt.Errorf("start Orchestration cleanup worker: %w", err)
 		}
 	}
+	for index, device := range layer.ios {
+		if err := device.StartMonitoring(); err != nil {
+			for stopped := index - 1; stopped >= 0; stopped-- {
+				stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				_ = layer.ios[stopped].StopMonitoring(stopCtx)
+				cancel()
+			}
+			stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if layer.orchestration != nil {
+				_ = layer.orchestration.StopCleanupWorker(stopCtx)
+			}
+			_ = layer.distribution.StopCleanupWorker(stopCtx)
+			return fmt.Errorf("start device monitoring for drive %d: %w", index+1, err)
+		}
+	}
 	layer.backgroundProcessesStarted = true
 	return nil
 }
@@ -149,6 +165,11 @@ func (layer *Management) StopBackgroundProcesses(ctx context.Context) error {
 	if distributed != nil {
 		if err := distributed.StopCleanupWorker(ctx); err != nil {
 			stopErr = errors.Join(stopErr, fmt.Errorf("stop Distribution cleanup worker: %w", err))
+		}
+	}
+	for index, device := range layer.ios {
+		if err := device.StopMonitoring(ctx); err != nil {
+			stopErr = errors.Join(stopErr, fmt.Errorf("stop device monitoring for drive %d: %w", index+1, err))
 		}
 	}
 	layer.mu.Lock()
