@@ -224,6 +224,7 @@ func TestBackgroundProcessesStartOnlyAfterReady(t *testing.T) {
 	layer, err := New(NewRequest{
 		Orchestration: created.Layer,
 		Distribution:  distributed.Layer,
+		IOs:           ioLayers,
 		Config: Config{Disks: []DriveConfig{
 			{Root: t.TempDir(), Mountpoint: t.TempDir(), WWN: "wwn-test-1"},
 			{Root: t.TempDir(), Mountpoint: t.TempDir(), WWN: "wwn-test-2"},
