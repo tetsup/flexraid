@@ -1,6 +1,7 @@
 package orchestration
 
 import (
+	"time"
 	"context"
 	"fmt"
 	"log/slog"
@@ -22,7 +23,9 @@ type ReadLinkResponse struct {
 
 // ReadLink returns the target path stored in a symlink without resolving it.
 // The target is loaded during initialization, so this operation performs no I/O.
-func (layer *Orchestration) ReadLinkLocked(request ReadLinkRequest) (ReadLinkResponse, error) {
+func (layer *Orchestration) ReadLinkLocked(request ReadLinkRequest) (response ReadLinkResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("ReadLink", started, err) }()
 	return layer.readLinkLocked(request)
 }
 
