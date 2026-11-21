@@ -90,12 +90,16 @@ type metricsCollector struct {
 	readErrorSamples     [recentMetricsLimit]readErrorSample
 	readErrorNext        int
 	readErrorCount       int
+	recoverableMissingFiles map[shared.ObjectID]struct{}
+	unrecoverableMissingFiles map[shared.ObjectID]struct{}
 }
 
 func newMetricsCollector() *metricsCollector {
 	collector := &metricsCollector{
 		operations:       make(map[string]*operationMetricState),
 		readErrorObjects: make(map[shared.ObjectID]uint64),
+		recoverableMissingFiles: make(map[shared.ObjectID]struct{}),
+		unrecoverableMissingFiles: make(map[shared.ObjectID]struct{}),
 	}
 	for _, name := range []string{
 		"Create", "Mkdir", "Symlink", "Link", "Unlink", "Rmdir", "Rename",
@@ -143,6 +147,9 @@ func (layer *Orchestration) recordReadError(objectID shared.ObjectID, err error)
 	collector := layer.metrics
 	collector.mu.Lock()
 	defer collector.mu.Unlock()
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return
+	}
 	collector.readErrorOccurrences++
 	collector.readErrorObjects[objectID]++
 	collector.readErrorSamples[collector.readErrorNext] = readErrorSample{objectID: objectID, errorType: metricErrorType(err)}
@@ -242,9 +249,6 @@ func (layer *Orchestration) GetMetrics(request GetMetricsRequest) (response GetM
 	if err = request.Context.Err(); err != nil {
 		return response, err
 	}
-	operations, readErrors := layer.metrics.snapshot()
-	response.Operations, response.ReadErrors = operations, readErrors
-
 	distributionMetrics, err := layer.distribution.GetMetrics(distribution.GetMetricsRequest{
 		Context: request.Context, IncludeDetails: true,
 	})
@@ -258,14 +262,20 @@ func (layer *Orchestration) GetMetrics(request GetMetricsRequest) (response GetM
 	for _, object := range distributionMetrics.Objects {
 		objectMetrics[object.ObjectID] = object
 	}
-	layer.countMissingLogicalFiles(objectMetrics, &response)
+	layer.rebuildMissingLogicalFileStates(objectMetrics)
+	response.Operations, response.ReadErrors = layer.metrics.snapshot()
+	layer.metrics.mu.RLock()
+	response.RecoverableMissingFileCount = uint64(len(layer.metrics.recoverableMissingFiles))
+	response.UnrecoverableMissingFileCount = uint64(len(layer.metrics.unrecoverableMissingFiles))
+	layer.metrics.mu.RUnlock()
 	return response, nil
 }
 
-func (layer *Orchestration) countMissingLogicalFiles(
+func (layer *Orchestration) rebuildMissingLogicalFileStates(
 	distributionObjects map[shared.ObjectID]distribution.ObjectMetrics,
-	response *GetMetricsResponse,
 ) {
+	recoverableFiles := make(map[shared.ObjectID]struct{})
+	unrecoverableFiles := make(map[shared.ObjectID]struct{})
 	reachableFiles := make(map[shared.ObjectID]struct{})
 	queue := []*runtimeObject{layer.root}
 	visited := make(map[shared.ObjectID]struct{})
@@ -303,11 +313,15 @@ func (layer *Orchestration) countMissingLogicalFiles(
 			continue
 		}
 		if recoverable {
-			response.RecoverableMissingFileCount++
+			recoverableFiles[objectID] = struct{}{}
 		} else {
-			response.UnrecoverableMissingFileCount++
+			unrecoverableFiles[objectID] = struct{}{}
 		}
 	}
+	layer.metrics.mu.Lock()
+	layer.metrics.recoverableMissingFiles = recoverableFiles
+	layer.metrics.unrecoverableMissingFiles = unrecoverableFiles
+	layer.metrics.mu.Unlock()
 }
 
 func logicalFileMissingState(fileHeader header, metrics distribution.ObjectMetrics) (missing, recoverable bool) {
