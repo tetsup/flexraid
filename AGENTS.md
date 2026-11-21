@@ -421,6 +421,12 @@ Distribution -> Platform
 
 ### Status / Inspect の情報契約
 
+- Management の公開監視 API は `GetStatus` / `GetDetailedStatus` / `Inspect` の3種類に分ける。これらはそれぞれ簡易ヘルスチェック、運用監視 snapshot、完全監査 snapshot であり、一つの API のフラグで用途を切り替えない。
+- `GetStatus` は Lifecycle とメモリ上の累積異常カウンターを用いる低コストな要約とし、物理デバイス照会・容量照会・ストレージ全走査を行わない。
+- `GetDetailedStatus` は Distribution と各 I/O インスタンスの `GetMetrics` snapshot、および Platform のデバイス識別・容量情報を drive_name / WWN ごとに返す。I/O インスタンスの順序は設定ドライブ順と一致させ、Distribution が設定されている場合は件数不一致を初期化時に拒否する。
+- `Inspect` は詳細監視に加えて Distribution の物理 Object / Stripe / Version / Chunk / Orphan 情報と Orchestration の論理 Namespace / Object / 初期化警告を含める。詳細状態 API の単なる別名にしない。
+- 物理情報の取得失敗は項目ごとに取得不能として返し、他ドライブの情報を捨てない。値を推測で埋めず、取得元・最終取得時刻を明示する。監視・監査のためだけに standby デバイスを SpinUp しない。
+
 - `status` の通常表示は、Lifecycle、Worker の生存、Controller との接続、物理ドライブの基本的な到達可能性などから、論理ドライブ全体の正常性を簡潔に判定する。高コストな全ストレージ走査を実行しない。
 - `status --detail` は運用監視用 snapshot とする。論理ドライブ全体の集計値に加え、各物理ドライブを識別できる独立した要素として返す。I/O・整合性・容量について、ドライブ別に観測可能な値は全体値とドライブ別値の両方を返す。
 - `status --detail` の物理ドライブ情報には、WWN、デバイスパス、モデル、シリアル、接続方式、物理容量、ファイルシステム、mountpoint、Storage Root、生存・接続状態、電源状態、I/O エラー、最終アクセス時刻などを含める。起動時から変化しない情報は Ready 前に取得した snapshot を使用し、稼働中に変化する情報は次の更新規則に従う。I/O 回数・転送量・レイテンシ・I/O エラー・最終アクセス時刻などの実績値は、読み込み・書き込みなど実際の I/O のたびに、対象物理ドライブと全体集計の両方を更新する。物理デバイスの接続・電源状態など OS が提供する低コストな状態値は、status 照会のたびに再取得して snapshot を更新する。照会コストが高い値は個別の更新間隔を定め、その間はキャッシュを返す。更新間隔・最終取得時刻・取得元を明示し、古い値を最新値として扱わない。取得できない値は不明として表現し、推測で補完しない。
