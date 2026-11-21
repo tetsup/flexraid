@@ -204,9 +204,9 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 	if err = request.Context.Err(); err != nil {
 		return response, err
 	}
-	response.Operations, response.Chunks, response.IntegrityErrorCount, response.RecoveryCount, response.RecoveryFailureCount = d.metrics.snapshot()
 	d.mapMu.Lock()
 	defer d.mapMu.Unlock()
+	response.Operations, response.Chunks, response.IntegrityErrorCount, response.RecoveryCount, response.RecoveryFailureCount = d.metrics.snapshot()
 	objects := make(map[shared.ObjectID]struct{})
 	stripes := make(map[stripeIDKey]struct{})
 	for objectID, entries := range d.objects {
