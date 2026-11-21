@@ -175,7 +175,7 @@ func (layer *Management) GetDetailedStatus(request GetDetailedStatusRequest) (Ge
 			result.LogicalFreeBytes = statfs.Bavail * statfs.Bsize
 			result.LogicalCapacityAvailable = true
 		}
-	}
+	} else { result.LogicalCapacityError = "Orchestration layer is not initialized" }
 	permissionSnapshot := layer.cleanupPermissionStore.Snapshot()
 	layer.mu.Unlock()
 	for index, wwn := range layer.driveOrder {
@@ -265,6 +265,7 @@ func (layer *Management) Inspect(request InspectRequest) (InspectResponse, error
 		}
 	} else {
 		result.NamespaceError = "Orchestration layer is not initialized"
+		result.LogicalCapacityError = result.NamespaceError
 	}
 	layer.mu.Unlock()
 	for _, orphan := range result.Distribution.OrphanChunks {
