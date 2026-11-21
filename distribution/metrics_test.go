@@ -36,6 +36,9 @@ func TestGetMetricsTracksOperationsAndState(t *testing.T) {
 	if write.SuccessCount != 1 || write.FailureCount != 0 || write.Recent.ProcessedCount != 1 {
 		t.Fatalf("write metrics: %+v", write)
 	}
+	if got.Chunks.Write.SuccessCount != 2 || got.Chunks.Write.RecentProcessedCount != 2 {
+		t.Fatalf("chunk write metrics: %+v", got.Chunks.Write)
+	}
 	readMetrics := got.Operations["ReadStripe"]
 	if readMetrics.SuccessCount != 1 || readMetrics.FailureCount != 1 || readMetrics.Recent.ProcessedCount != 2 {
 		t.Fatalf("read metrics: %+v", readMetrics)
