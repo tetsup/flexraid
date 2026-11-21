@@ -165,6 +165,8 @@ func probePowerState(ctx context.Context, status *DeviceStatus, now time.Time) {
 		}
 		return
 	}
+	status.Capabilities.PowerStateProbeAvailable = true
+	status.Capabilities.SpinStateProbeAvailable = status.HasSpindle.State == ObservationSupported && status.HasSpindle.Value
 	output, err := exec.CommandContext(ctx, hdparm, "-C", status.DevicePath).CombinedOutput()
 	text := string(output)
 	if err != nil {
@@ -177,8 +179,11 @@ func probePowerState(ctx context.Context, status *DeviceStatus, now time.Time) {
 	state := parsePowerState(text)
 	if state == "" {
 		status.PowerState = DeviceValue[string]{State: ObservationUnsupported, Source: "hdparm -C", UpdatedAt: now}
+		status.Capabilities.PowerStateProbeAvailable = false
 		if status.HasSpindle.State == ObservationSupported && status.HasSpindle.Value {
+			status.Capabilities.SpinStateProbeAvailable = false
 			status.SpinState = DeviceValue[string]{State: ObservationUnsupported, Source: "hdparm -C", UpdatedAt: now}
+			status.Capabilities.SpinStateProbeAvailable = false
 		}
 		return
 	}
