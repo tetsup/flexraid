@@ -175,7 +175,9 @@ func (layer *Management) GetDetailedStatus(request GetDetailedStatusRequest) (Ge
 			result.LogicalFreeBytes = statfs.Bavail * statfs.Bsize
 			result.LogicalCapacityAvailable = true
 		}
-	} else { result.LogicalCapacityError = "Orchestration layer is not initialized" }
+	} else {
+		result.LogicalCapacityError = "Orchestration layer is not initialized"
+	}
 	permissionSnapshot := layer.cleanupPermissionStore.Snapshot()
 	layer.mu.Unlock()
 	for index, wwn := range layer.driveOrder {

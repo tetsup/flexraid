@@ -351,8 +351,12 @@ func TestInspectIncludesLogicalNamespaceSnapshot(t *testing.T) {
 	if !audit.NamespaceAvailable {
 		t.Fatalf("namespace snapshot unavailable: %s", audit.NamespaceError)
 	}
-	if !audit.LogicalCapacityAvailable { t.Fatalf("logical capacity unavailable: %s", audit.LogicalCapacityError) }
-	if !audit.Drives[0].CleanupPermissionsAvailable { t.Fatalf("cleanup policy unavailable: %+v", audit.Drives[0]) }
+	if !audit.LogicalCapacityAvailable {
+		t.Fatalf("logical capacity unavailable: %s", audit.LogicalCapacityError)
+	}
+	if !audit.Drives[0].CleanupPermissionsAvailable {
+		t.Fatalf("cleanup policy unavailable: %+v", audit.Drives[0])
+	}
 	if audit.Namespace.RootID != root.RootID || len(audit.Namespace.Objects) != 1 {
 		t.Fatalf("namespace audit: %+v", audit.Namespace)
 	}
