@@ -9,7 +9,6 @@ import (
 
 	"github.com/tetsup/flexraid/distribution"
 	physicalio "github.com/tetsup/flexraid/io"
-	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/orchestration"
 )
 
@@ -261,33 +260,57 @@ func TestBackgroundProcessesStartOnlyAfterReady(t *testing.T) {
 func TestMonitoringAPIsSeparateSummaryDetailsAndAudit(t *testing.T) {
 	ctx := context.Background()
 	ioLayers := []*physicalio.IO{
-		physicalio.New(physicalio.NewRequest{Root:t.TempDir()}).Layer,
-		physicalio.New(physicalio.NewRequest{Root:t.TempDir()}).Layer,
+		physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer,
+		physicalio.New(physicalio.NewRequest{Root: t.TempDir()}).Layer,
 	}
-	distributed, err := distribution.New(distribution.NewRequest{IOs:ioLayers})
-	if err != nil { t.Fatal(err) }
+	distributed, err := distribution.New(distribution.NewRequest{IOs: ioLayers})
+	if err != nil {
+		t.Fatal(err)
+	}
 	disks := []DriveConfig{
-		{Root:ioLayers[0].RootPath(),Mountpoint:t.TempDir(),WWN:"wwn-test-1"},
-		{Root:ioLayers[1].RootPath(),Mountpoint:t.TempDir(),WWN:"wwn-test-2"},
+		{Root: ioLayers[0].RootPath(), Mountpoint: t.TempDir(), WWN: "wwn-test-1"},
+		{Root: ioLayers[1].RootPath(), Mountpoint: t.TempDir(), WWN: "wwn-test-2"},
 	}
-	layer, err := New(NewRequest{Distribution:distributed.Layer,IOs:ioLayers,Config:Config{Disks:disks},Initialization:InitializationTaskFunc(func(context.Context)(bool,error){return true,nil})})
-	if err != nil { t.Fatal(err) }
+	layer, err := New(NewRequest{Distribution: distributed.Layer, IOs: ioLayers, Config: Config{Disks: disks}, Initialization: InitializationTaskFunc(func(context.Context) (bool, error) { return true, nil })})
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	status, err := layer.GetStatus(GetStatusRequest{Context:ctx})
-	if err != nil { t.Fatal(err) }
-	if status.Lifecycle != LifecycleInitializing || status.Level != StatusDegraded { t.Fatalf("summary status: %+v",status) }
+	status, err := layer.GetStatus(GetStatusRequest{Context: ctx})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Lifecycle != LifecycleInitializing || status.Level != StatusDegraded {
+		t.Fatalf("summary status: %+v", status)
+	}
 
-	detailed, err := layer.GetDetailedStatus(GetDetailedStatusRequest{Context:ctx})
-	if err != nil { t.Fatal(err) }
-	if len(detailed.Drives)!=2 { t.Fatalf("detailed drive count = %d",len(detailed.Drives)) }
+	detailed, err := layer.GetDetailedStatus(GetDetailedStatusRequest{Context: ctx})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detailed.Drives) != 2 {
+		t.Fatalf("detailed drive count = %d", len(detailed.Drives))
+	}
 	for i, drive := range detailed.Drives {
-		if drive.WWN != disks[i].WWN || !drive.IOMetricsAvailable { t.Fatalf("drive %d metrics: %+v",i,drive) }
-		if !drive.CapacityAvailable { t.Fatalf("drive %d capacity unavailable: %s",i,drive.CapacityError) }
+		if drive.WWN != disks[i].WWN || !drive.IOMetricsAvailable {
+			t.Fatalf("drive %d metrics: %+v", i, drive)
+		}
+		if !drive.CapacityAvailable {
+			t.Fatalf("drive %d capacity unavailable: %s", i, drive.CapacityError)
+		}
 	}
 
-	audit, err := layer.Inspect(InspectRequest{Context:ctx})
-	if err != nil { t.Fatal(err) }
-	if len(audit.Distribution.Objects)!=0 { t.Fatalf("empty Distribution audit returned objects: %+v",audit.Distribution.Objects) }
-	if audit.NamespaceAvailable || audit.NamespaceError=="" { t.Fatalf("namespace availability: %+v",audit) }
-	if len(audit.Drives)!=2 { t.Fatalf("audit drive count = %d",len(audit.Drives)) }
+	audit, err := layer.Inspect(InspectRequest{Context: ctx})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(audit.Distribution.Objects) != 0 {
+		t.Fatalf("empty Distribution audit returned objects: %+v", audit.Distribution.Objects)
+	}
+	if audit.NamespaceAvailable || audit.NamespaceError == "" {
+		t.Fatalf("namespace availability: %+v", audit)
+	}
+	if len(audit.Drives) != 2 {
+		t.Fatalf("audit drive count = %d", len(audit.Drives))
+	}
 }
