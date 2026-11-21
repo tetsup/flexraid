@@ -63,6 +63,7 @@ type chunkLocation struct {
 	key         storage.FileKey
 	data        []byte
 	totalLength uint64
+	sizeBytes   uint64
 }
 
 func New(request NewRequest) (NewResponse, error) {
@@ -99,7 +100,7 @@ func New(request NewRequest) (NewResponse, error) {
 		scanResult, err := layer.ListChunks(physicalio.ListChunksRequest{Context: ctx, Callback: func(entry physicalio.ScanEntry) error {
 			if entry.Error != nil {
 				d.recordIntegrityError()
-				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key})
+				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key, sizeBytes: entry.SizeBytes})
 				return nil
 			}
 			method, no, methodErr := methodFromLayout(entry.Key.LayoutID)
@@ -137,7 +138,7 @@ func New(request NewRequest) (NewResponse, error) {
 				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key})
 				return nil
 			}
-			version.chunks[no] = chunkLocation{ioIndex: index, key: entry.Key, data: payload, totalLength: total}
+			version.chunks[no] = chunkLocation{ioIndex: index, key: entry.Key, data: payload, totalLength: total, sizeBytes: entry.SizeBytes}
 			if method.distributionType == distributionParity {
 				if version.chunkSize == 0 {
 					version.chunkSize = uint32(len(payload))
