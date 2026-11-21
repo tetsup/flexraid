@@ -29,9 +29,7 @@ type Distribution struct {
 	logger                 *slog.Logger
 	objects                map[shared.ObjectID]map[storage.StripeID]*stripeInfo
 	versions               map[stripeIDKey]map[storage.StripeVersion]*versionInfo
-	ioErrors               []uint64
-	totalErrors            uint64
-	ioFailures             []error
+	metrics                *metricsCollector
 	orphans                map[shared.ObjectID][]chunkLocation
 	cleanupQueue           *cleanupQueue
 	cleanupPermissionStore *shared.CleanupPermissionStore
@@ -90,7 +88,7 @@ func New(request NewRequest) (NewResponse, error) {
 	d := &Distribution{stripeLocks: make(map[stripeIDKey]*sync.Mutex), ios: append([]*physicalio.IO(nil), request.IOs...), logger: logger,
 		objects:  make(map[shared.ObjectID]map[storage.StripeID]*stripeInfo),
 		versions: make(map[stripeIDKey]map[storage.StripeVersion]*versionInfo),
-		ioErrors: make([]uint64, len(request.IOs)), ioFailures: make([]error, len(request.IOs)), orphans: make(map[shared.ObjectID][]chunkLocation), cleanupQueue: newCleanupQueue(), cleanupPermissionStore: request.CleanupPermissions, cleanupWake: make(chan struct{}, 1)}
+		metrics: newMetricsCollector(), orphans: make(map[shared.ObjectID][]chunkLocation), cleanupQueue: newCleanupQueue(), cleanupPermissionStore: request.CleanupPermissions, cleanupWake: make(chan struct{}, 1)}
 	if d.cleanupPermissionStore == nil {
 		d.cleanupPermissionStore = shared.NewCleanupPermissionStore(make([]shared.DriveCleanupPermission, len(request.IOs)))
 	}
@@ -98,19 +96,18 @@ func New(request NewRequest) (NewResponse, error) {
 	for index, layer := range d.ios {
 		scanResult, err := layer.ListChunks(physicalio.ListChunksRequest{Context: ctx, Callback: func(entry physicalio.ScanEntry) error {
 			if entry.Error != nil {
-				d.recordIOError(index, entry.Error)
 				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key})
 				return nil
 			}
 			method, no, methodErr := methodFromLayout(entry.Key.LayoutID)
 			if methodErr != nil {
-				d.recordIOError(index, methodErr)
+				d.recordIntegrityError()
 				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key})
 				return nil
 			}
 			total, payload, decodeErr := decodeChunk(entry.Data)
 			if decodeErr != nil {
-				d.recordIOError(index, decodeErr)
+				d.recordIntegrityError()
 				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key})
 				return nil
 			}
@@ -127,13 +124,13 @@ func New(request NewRequest) (NewResponse, error) {
 			}
 			if version.method != method {
 				version.invalid = true
-				d.recordIOError(index, errInvalidChunk)
+				d.recordIntegrityError()
 				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key})
 				return nil
 			}
 			if _, exists := version.chunks[no]; exists {
 				version.invalid = true
-				d.recordIOError(index, fmt.Errorf("%w: duplicate chunk", errInvalidChunk))
+				d.recordIntegrityError()
 				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key})
 				return nil
 			}
@@ -143,7 +140,7 @@ func New(request NewRequest) (NewResponse, error) {
 					version.chunkSize = uint32(len(payload))
 				} else if version.chunkSize != uint32(len(payload)) {
 					version.invalid = true
-					d.recordIOError(index, errInvalidChunk)
+					d.recordIntegrityError()
 					return nil
 				}
 			}
@@ -153,8 +150,6 @@ func New(request NewRequest) (NewResponse, error) {
 			return NewResponse{}, ctx.Err()
 		}
 		if err != nil {
-			d.ioFailures[index] = err
-			d.recordIOError(index, err)
 			if scanResult.Entries > 0 {
 				usable++
 			}
@@ -263,19 +258,6 @@ func cloneChunks(source map[chunkNo]chunkLocation) map[chunkNo]chunkLocation {
 		result[no] = loc
 	}
 	return result
-}
-func (d *Distribution) recordIOError(index int, err error) {
-	d.mapMu.Lock()
-	defer d.mapMu.Unlock()
-	d.recordIOErrorLocked(index, err)
-}
-
-func (d *Distribution) recordIOErrorLocked(index int, err error) {
-	if index >= 0 && index < len(d.ioErrors) {
-		d.ioErrors[index]++
-	}
-	d.totalErrors++
-	d.logger.Warn("distribution I/O error", "io_index", index, "error", err)
 }
 func (d *Distribution) nextVersion(key stripeIDKey) storage.StripeVersion {
 	var max storage.StripeVersion
