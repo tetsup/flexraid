@@ -39,6 +39,9 @@ type StripeMetrics struct {
 type ChunkOperationMetrics struct {
 	SuccessCount uint64
 	FailureCount uint64
+	RecentProcessedCount uint64
+	RecentSuccessCount uint64
+	RecentFailureCount uint64
 }
 type ChunkMetrics struct {
 	Read     ChunkOperationMetrics
@@ -73,11 +76,13 @@ type metricsCollector struct {
 	integrityErrorCount  uint64
 	recoveryCount        uint64
 	recoveryFailureCount uint64
-	chunks               map[string]*ChunkOperationMetrics
+	chunks               map[string]*chunkMetricState
 }
 
+type chunkMetricState struct { metrics ChunkOperationMetrics; samples [recentOperationLimit]bool; next int; count int }
+
 func newMetricsCollector() *metricsCollector {
-	return &metricsCollector{operations: make(map[string]*operationMetricState), chunks: make(map[string]*ChunkOperationMetrics)}
+	return &metricsCollector{operations: make(map[string]*operationMetricState), chunks: make(map[string]*chunkMetricState)}
 }
 func (c *metricsCollector) recordOperation(name string, duration time.Duration, err error) {
 	c.mu.Lock()
@@ -103,15 +108,11 @@ func (d *Distribution) recordChunkOperation(kind string, err error) {
 	d.metrics.mu.Lock()
 	defer d.metrics.mu.Unlock()
 	value := d.metrics.chunks[kind]
-	if value == nil {
-		value = &ChunkOperationMetrics{}
-		d.metrics.chunks[kind] = value
-	}
-	if err != nil {
-		value.FailureCount++
-	} else {
-		value.SuccessCount++
-	}
+	if value == nil { value = &chunkMetricState{}; d.metrics.chunks[kind] = value }
+	if err != nil { value.metrics.FailureCount++ } else { value.metrics.SuccessCount++ }
+	value.samples[value.next] = err == nil
+	value.next = (value.next+1)%recentOperationLimit
+	if value.count < recentOperationLimit { value.count++ }
 }
 func (d *Distribution) recordIntegrityError() {
 	d.metrics.mu.Lock()
@@ -151,17 +152,18 @@ func (c *metricsCollector) snapshot() (map[string]OperationMetrics, ChunkMetrics
 	}
 	chunks := ChunkMetrics{}
 	for kind, value := range c.chunks {
+		for i:=0; i<value.count; i++ { index:=(value.next-value.count+i+recentOperationLimit)%recentOperationLimit; value.metrics.RecentProcessedCount++; if value.samples[index] { value.metrics.RecentSuccessCount++ } else { value.metrics.RecentFailureCount++ } }
 		switch kind {
 		case "Read":
-			chunks.Read = *value
+			chunks.Read = value.metrics
 		case "Write":
-			chunks.Write = *value
+			chunks.Write = value.metrics
 		case "Delete":
-			chunks.Delete = *value
+			chunks.Delete = value.metrics
 		case "Preserve":
-			chunks.Preserve = *value
+			chunks.Preserve = value.metrics
 		case "Sync":
-			chunks.Sync = *value
+			chunks.Sync = value.metrics
 		}
 	}
 	return operations, chunks, c.integrityErrorCount, c.recoveryCount, c.recoveryFailureCount
@@ -206,8 +208,10 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 	for key := range stripes {
 		versions := d.versions[key]
 		for _, version := range versions {
-			if len(version.chunks) < len(expectedChunkNos(version.method)) {
+			expectedChunks := len(expectedChunkNos(version.method))
+			if len(version.chunks) < expectedChunks {
 				response.Stripes.IncompleteVersionCount++
+				response.Stripes.MissingChunkCount += uint64(expectedChunks-len(version.chunks))
 			}
 			if version.recoverable {
 				response.Stripes.RecoverableVersionCount++
@@ -228,12 +232,6 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 		}
 		if current.corrupted {
 			response.Stripes.CorruptedStripeCount++
-		}
-		if selected != nil {
-			expected := len(expectedChunkNos(selected.method))
-			if expected > len(selected.chunks) {
-				response.Stripes.MissingChunkCount += uint64(expected - len(selected.chunks))
-			}
 		}
 	}
 	return response, nil
