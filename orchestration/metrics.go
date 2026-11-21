@@ -238,6 +238,27 @@ func (c *metricsCollector) snapshot() (map[string]OperationMetrics, ReadErrorMet
 	return operations, readErrors
 }
 
+// refreshMissingFileStates rebuilds the non-persistent logical missing-file index
+// from the Distribution-owned physical Stripe/Version snapshot.
+func (layer *Orchestration) refreshMissingFileStates(ctx context.Context) error {
+	if ctx == nil {
+		return fmt.Errorf("context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	metrics, err := layer.distribution.GetMetrics(distribution.GetMetricsRequest{Context: ctx, IncludeDetails: true})
+	if err != nil {
+		return fmt.Errorf("get Distribution metrics: %w", err)
+	}
+	objects := make(map[shared.ObjectID]distribution.ObjectMetrics, len(metrics.Objects))
+	for _, object := range metrics.Objects {
+		objects[object.ObjectID] = object
+	}
+	layer.rebuildMissingLogicalFileStates(objects)
+	return nil
+}
+
 // GetMetrics returns Orchestration-owned logical operation and availability metrics.
 // Logical missing-file state is derived from Distribution's Stripe/Version snapshot.
 func (layer *Orchestration) GetMetrics(request GetMetricsRequest) (response GetMetricsResponse, err error) {
