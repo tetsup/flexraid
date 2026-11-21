@@ -106,7 +106,7 @@ func (layer *IO) StartMonitoring() error {
 	layer.monitorWake = make(chan struct{}, 1)
 	layer.monitorStop = make(chan struct{})
 	layer.monitorDone = make(chan struct{})
-	go layer.monitorDevice()
+	go layer.monitorDevice(layer.monitorWake, layer.monitorStop, layer.monitorDone)
 	return nil
 }
 
@@ -160,13 +160,13 @@ type GetDeviceStatusResponse struct {
 	Status DeviceStatus
 }
 
-func (layer *IO) monitorDevice() {
-	defer close(layer.monitorDone)
+func (layer *IO) monitorDevice(wake <-chan struct{}, stop <-chan struct{}, done chan<- struct{}) {
+	defer close(done)
 	for {
 		select {
-		case <-layer.monitorStop:
+		case <-stop:
 			return
-		case <-layer.monitorWake:
+		case <-wake:
 			if layer.device == nil {
 				continue
 			}
