@@ -23,7 +23,9 @@ type ObjectDriveIndexesResponse struct {
 
 func (d *Distribution) ObjectDriveIndexes(request ObjectDriveIndexesRequest) (response ObjectDriveIndexesResponse, err error) {
 	started := time.Now()
-	defer func(){ logOperation(d, "ObjectDriveIndexes", started, err, "object_id", request.ObjectID.String(), "drives", len(response.IOIndexes)) }()
+	defer func() {
+		logOperation(d, "ObjectDriveIndexes", started, err, "object_id", request.ObjectID.String(), "drives", len(response.IOIndexes))
+	}()
 	ctx := request.Context
 	if ctx == nil {
 		ctx = context.Background()
