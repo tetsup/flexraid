@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/tetsup/flexraid/distribution"
 	"github.com/tetsup/flexraid/pkg/shared"
@@ -32,7 +33,9 @@ func TestGetMetricsTracksLogicalOperationsAndReadErrors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, objectID := range []shared.ObjectID{file.ObjectID, file.ObjectID, testID("42345678-9abc-4def-8abc-1234567890ab")} {
+	missingID := testID("42345678-9abc-4def-8abc-1234567890ab")
+	otherMissingID := testID("52345678-9abc-4def-8abc-1234567890ab")
+	for _, objectID := range []shared.ObjectID{missingID, missingID, otherMissingID} {
 		if _, readErr := layer.readStripeValidated(context.Background(), objectID, layer.objects[file.ObjectID].file.header, firstGeometry); !errors.Is(readErr, distribution.ErrStripeNotFound) {
 			t.Fatalf("readStripeValidated(%s) = %v, want ErrStripeNotFound", objectID, readErr)
 		}
@@ -136,5 +139,32 @@ func TestGetMetricsRequiresLiveContext(t *testing.T) {
 	cancel()
 	if _, err := created.Layer.GetMetrics(GetMetricsRequest{Context: ctx}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("GetMetrics with canceled context = %v, want context.Canceled", err)
+	}
+}
+
+func TestOrchestrationMetricsRecentWindowIsBounded(t *testing.T) {
+	collector := newMetricsCollector()
+	layer := &Orchestration{metrics: collector}
+	objectA := testID("32345678-9abc-4def-8abc-1234567890ab")
+	objectB := testID("42345678-9abc-4def-8abc-1234567890ab")
+	for i := 0; i < recentMetricsLimit+5; i++ {
+		var err error
+		if i%2 == 0 {
+			err = distribution.ErrStripeNotFound
+		}
+		collector.recordOperation("Read", time.Duration(i), err)
+		if i%2 == 0 {
+			layer.recordReadError(objectA, err)
+		} else {
+			layer.recordReadError(objectB, distribution.ErrDataCorrupted)
+		}
+	}
+	operations, readErrors := collector.snapshot()
+	recent := operations["Read"].Recent
+	if recent.ProcessedCount != recentMetricsLimit || recent.SuccessCount != 500 || recent.FailureCount != 500 {
+		t.Fatalf("recent operation window = %+v", recent)
+	}
+	if readErrors.Recent.OccurrenceCount != recentMetricsLimit || readErrors.Recent.UniqueObjectCount != 2 {
+		t.Fatalf("recent read-error window = %+v", readErrors.Recent)
 	}
 }
