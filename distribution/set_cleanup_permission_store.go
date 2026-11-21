@@ -11,7 +11,7 @@ import (
 // state used by both autonomous and Object-level cleanup.
 func (d *Distribution) SetCleanupPermissionStore(store *shared.CleanupPermissionStore) (resultErr error) {
 	started := time.Now()
-	defer func(){ logOperation(d, "SetCleanupPermissionStore", started, resultErr) }()
+	defer func() { logOperation(d, "SetCleanupPermissionStore", started, resultErr) }()
 	if store == nil {
 		return fmt.Errorf("cleanup permission store is required")
 	}

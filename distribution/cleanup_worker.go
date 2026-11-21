@@ -16,7 +16,7 @@ func (d *Distribution) NotifyCleanupPermissionsChanged() {
 // while the worker is running is harmless.
 func (d *Distribution) StartCleanupWorker(parent context.Context) (resultErr error) {
 	started := time.Now()
-	defer func(){ logOperation(d, "StartCleanupWorker", started, resultErr) }()
+	defer func() { logOperation(d, "StartCleanupWorker", started, resultErr) }()
 	if parent == nil {
 		resultErr = errors.New("cleanup worker context is required")
 		return resultErr
@@ -38,7 +38,7 @@ func (d *Distribution) StartCleanupWorker(parent context.Context) (resultErr err
 // file operation to finish. It is safe to call when the worker is not running.
 func (d *Distribution) StopCleanupWorker(ctx context.Context) (resultErr error) {
 	started := time.Now()
-	defer func(){ logOperation(d, "StopCleanupWorker", started, resultErr) }()
+	defer func() { logOperation(d, "StopCleanupWorker", started, resultErr) }()
 	if ctx == nil {
 		resultErr = errors.New("cleanup worker stop context is required")
 		return resultErr
