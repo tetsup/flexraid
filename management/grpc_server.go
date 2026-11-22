@@ -8,6 +8,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"syscall"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -331,7 +333,17 @@ func (layer *Management) startGRPCServer(ctx context.Context) error {
 		if info.Mode()&os.ModeSocket == 0 {
 			return fmt.Errorf("Worker gRPC socket path %q exists and is not a socket", layer.grpcSocketPath)
 		}
-		return fmt.Errorf("Worker gRPC socket path %q already exists; refusing to remove an unverified socket", layer.grpcSocketPath)
+		connection, dialErr := net.DialTimeout("unix", layer.grpcSocketPath, 250*time.Millisecond)
+		if dialErr == nil {
+			_ = connection.Close()
+			return fmt.Errorf("Worker gRPC socket %q is already accepting connections", layer.grpcSocketPath)
+		}
+		if !errors.Is(dialErr, syscall.ECONNREFUSED) && !errors.Is(dialErr, os.ErrNotExist) {
+			return fmt.Errorf("check existing Worker gRPC socket %q: %w", layer.grpcSocketPath, dialErr)
+		}
+		if err := os.Remove(layer.grpcSocketPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove stale Worker gRPC socket %q: %w", layer.grpcSocketPath, err)
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("inspect Worker gRPC socket path: %w", err)
 	}
