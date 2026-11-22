@@ -104,6 +104,10 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - FUSE および将来の管理 API に対する、ファイルシステム全体の公開窓口となる。FUSE からの通常操作は Management を経由し、FUSE から Orchestration / Distribution を直接呼び出さない。
 - ファイルシステム操作 API、管理操作 API、監視 API、制御 API を提供する。ファイルシステム操作は同期的な結果・エラーを返し、長時間の Cleanup / Recovery 等はタスクの開始・進捗確認・キャンセルを扱える形にする。
 - **システム全体の実行状態を所有する唯一のレイヤー**となる。Lifecycle は Initializing / Ready / Draining / Maintenance / Failed の5状態とする。停止専用の状態は設けず、Stop は最優先の Exclusive 要求として安全単位の境界で実行する。
+- Worker の通常 gRPC サーバーは Management のライフサイクルに組み込み、Management が起動・停止を所有する。サーバーの受付処理は Management の公開 API へ要求を渡し、Orchestration / Distribution / I/O を直接操作しない。
+- gRPC サーバーの起動は Management の初期化・起動手順の一部として行い、外部要求を受け付ける前に RPC リスナーの準備を完了する。停止時は新規要求の受付を止め、受付済み要求を安全に終了させてから GracefulStop し、期限内に終了しない場合のみ強制停止へ移行する。
+- WorkerService の gRPC transport / handler 実装は Management パッケージ内部に閉じる。外部に公開する契約は Protocol Buffers の service / message 定義と Management の公開 API とし、gRPC 用 handler を Management の別の公開操作層として露出させない。
+- gRPC handler は認証・RPC メッセージと Management Request / Response の変換を担い、操作の受付可否・排他・Lifecycle 判定・実行優先順位は Management の既存 Scheduler / admission 経路に従う。handler から下位レイヤーを直接呼び出さない。
 
 #### Lifecycle StateMachine / State Hooks
 
