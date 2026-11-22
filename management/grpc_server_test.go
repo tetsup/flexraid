@@ -52,7 +52,7 @@ func TestWorkerGRPCServerFollowsManagementLifecycle(t *testing.T) {
 	if err := connection.Invoke(ctx, "/flexraid.worker.v1.WorkerService/GetStatus", &emptypb.Empty{}, response); err != nil {
 		t.Fatalf("GetStatus RPC: %v", err)
 	}
-	if response.Fields["level"].GetStringValue() != string(StatusFailed) {
+	if response.Fields["Level"].GetStringValue() != string(StatusFailed) {
 		t.Fatalf("status level = %v, want %q", response.Fields["level"], StatusFailed)
 	}
 
