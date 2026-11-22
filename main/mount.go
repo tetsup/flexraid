@@ -16,6 +16,11 @@ import (
 	"github.com/tetsup/flexraid/pkg/shared"
 )
 
+type mountedFilesystem struct {
+	server     *gofuse.Server
+	management *management.Management
+}
+
 type filesystemInitialization struct {
 	config                 mountConfig
 	managed                *management.Management
@@ -145,7 +150,7 @@ func (task *filesystemInitialization) Next(ctx context.Context) (bool, error) {
 	}
 }
 
-func mountFilesystem(config mountConfig) (*gofuse.Server, error) {
+func mountFilesystem(config mountConfig) (*mountedFilesystem, error) {
 	rootID := shared.ObjectID{}
 	initialization := &filesystemInitialization{config: config, rootID: &rootID}
 	managed, err := management.New(management.NewRequest{Config: config, Initialization: initialization})
@@ -185,7 +190,7 @@ func mountFilesystem(config mountConfig) (*gofuse.Server, error) {
 		stopManagement(managed)
 		return nil, fmt.Errorf("mount at %s: %w", mountpoint, err)
 	}
-	return server, nil
+	return &mountedFilesystem{server: server, management: managed}, nil
 }
 
 func stopManagement(managed *management.Management) {
