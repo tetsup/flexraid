@@ -143,7 +143,9 @@ func probeTemperature(ctx context.Context, smartctl string, status *DeviceStatus
 		if nvme, lookErr := exec.LookPath("nvme"); lookErr == nil {
 			nvmeOutput, nvmeErr := exec.CommandContext(ctx, nvme, "smart-log", "--output-format=json", status.DevicePath).CombinedOutput()
 			if nvmeErr == nil {
-				var log struct { Temperature float64 `json:"temperature"` }
+				var log struct {
+					Temperature float64 `json:"temperature"`
+				}
 				if jsonErr := json.Unmarshal(nvmeOutput, &log); jsonErr == nil {
 					status.TemperatureC = DeviceValue[float64]{Value: log.Temperature, State: ObservationSupported, Source: "nvme smart-log", UpdatedAt: now}
 					return
