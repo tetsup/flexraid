@@ -103,6 +103,7 @@ jobs:
               cleanup_preserve_abnormal_data_allowed: $preserve_abnormal
               cleanup_delete_logical_objects_allowed: $delete_objects
           mountpoint: "$root/mount"
+          grpc_socket_path: "$root/worker.sock"
           EOF
           sudo chmod 0777 "$root" "$root/mount" "$root/logs" "$root/results"
 
