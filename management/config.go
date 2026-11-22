@@ -130,9 +130,6 @@ func LoadConfig(path string) (Config, error) {
 	if result.Mountpoint == "" {
 		return Config{}, fmt.Errorf("mountpoint is required")
 	}
-	if result.GRPCSocketPath == "" {
-		return Config{}, fmt.Errorf("grpc_socket_path is required")
-	}
 	if _, err := validateDriveConfig(result.Disks); err != nil {
 		return Config{}, err
 	}
@@ -140,6 +137,9 @@ func LoadConfig(path string) (Config, error) {
 		if disk.Root == result.Mountpoint || disk.Mountpoint == result.Mountpoint {
 			return Config{}, fmt.Errorf("filesystem mountpoint must not equal disk %d root or physical mountpoint", index+1)
 		}
+	}
+	if result.GRPCSocketPath == "" {
+		return Config{}, fmt.Errorf("grpc_socket_path is required")
 	}
 	return result, nil
 }
