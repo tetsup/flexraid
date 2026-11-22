@@ -191,34 +191,46 @@ POSIX の基本操作は pjdfstest を用いて検証します。FlexRAID v1 で
 
 詳細な実装規約は `AGENTS.md` を参照してください。
 
-## 管理コマンドとプロセス構成（設計方針）
+## Worker 管理 gRPC API
 
-管理コマンドと Web UI は `frcon` を入口とし、論理ドライブごとの Worker（実行ファイル名 `flexraid`）へ gRPC で接続します。通常の gRPC サーバーは Worker が持ち、Unix Domain Socket と Protocol Buffers を使用します。`frcon` は Worker の gRPC クライアントであり、Web UI 向けに gRPC-Web を HTTPS で提供するゲートウェイです。
+Worker は Management が所有する通常の gRPC サーバーを提供します。通信には Unix Domain Socket と Protocol Buffers を使用します。サーバーはファイルシステムの初期化完了を待たずに Management の起動時に開始し、Management の停止時に終了します。Lifecycle Phase（Initializing / Ready / Draining / Maintenance / Failed）とは独立して接続でき、状態照会では現在の Phase を返します。監視情報の一部が取得できなくても RPC 全体をエラーにはせず、同じ Response の中で取得できた項目を返します。取得できない項目は値を未設定（Go の Response 型ではゼロ値）とし、対応する Available フラグを false、Error フィールドに取得失敗の理由を設定します。
 
-- **Worker**（実行ファイル名 `flexraid`）は論理ドライブごとに一つ起動する独立プロセスです。各 Worker が担当ドライブの Management と下位レイヤーの状態を所有し、通常の gRPC サーバーとして WorkerService を提供します。Worker は `frcon` を介さず単独起動することもできます。
-- WorkerService の gRPC サーバーは Management が所有し、`Start()` で起動、`Stop()` で停止します。Lifecycle Phase とは独立して常時 RPC を受け付け、初期化中や Failed の状態でも Phase を照会できます。RPC handler は Management の公開 API に要求を渡し、下位レイヤーを直接操作しません。
-- Management の `GRPCSocketPath` に Worker 専用 Unix Domain Socket のパスを設定します。gRPC サーバーは Lifecycle の Ready 遷移とは独立して Management の起動・停止に追従します。ソケットは所有者のみが接続できる `0600` で作成します。 起動時に既存 Socket へ接続できる場合は二重起動を拒否し、接続拒否を確認した stale Socket のみを削除して再作成します。
-- **frcon / Controller** は CLI クライアントと Web ゲートウェイを担います。単発 CLI コマンドでは Worker の gRPC サーバーへ接続し、常駐モード（`frcon serve`）ではブラウザからの gRPC-Web 要求を通常の gRPC 呼び出しへ変換して Worker へ中継します。
-- `frcon` は Worker の親・監督プロセスではありません。Controller が終了しても Worker は動作を継続し、Worker の停止は対象 Worker への明示的な操作で行います。
-- Web UI は `frcon` の HTTPS エンドポイントに接続します。Worker の UDS や通常の gRPC サーバーへブラウザから直接接続しません。
+Socket は `grpc_socket_path` で指定し、権限 `0600` で作成します。起動時に同じパスの Socket へ接続できる場合は二重起動を拒否し、接続できない stale Socket のみを削除して再作成します。通常ファイルやシンボリックリンクは stale Socket として扱いません。
 
-### Web UI の認証と通信
+### プロセスと通信の役割
 
-- `frcon serve` が HTTPS と gRPC-Web の受付を担当し、Worker は通常の gRPC サーバーのままです。
-- Web UI のログインパスワードは統合 `config.yaml` の `controller.web.password_hash` に Argon2id ハッシュとして設定します。平文パスワードは設定ファイルへ保存しません。
-- ログイン成功後はサーバー側セッションを発行し、HttpOnly / Secure / SameSite Cookie で管理します。ログアウトと有効期限切れに対応します。
-- クライアント証明書による mTLS は使用せず、HTTPS のサーバー認証とパスワード認証を使用します。
-- 認証済み Web UI は CLI と同じ管理操作を利用できます。API は状態監視・診断・メンテナンス用であり、ファイルの作成・削除・内容変更などユーザーデータを直接操作する API は提供しません。
-- SNMP は Web UI / gRPC-Web とは独立した監視インターフェースとし、SNMPv3 の読み取り専用アクセスを前提とします。
+- **Worker**（実行ファイル名 `flexraid`）は論理ドライブごとに一つ起動する独立プロセスです。各 Worker が担当ドライブの Management と下位レイヤーの状態を所有し、WorkerService を通常の gRPC サーバーとして提供します。
+- **frcon** は WorkerService の gRPC クライアントです。CLI コマンドを受け付け、対象 Worker に接続して管理操作を実行します。複数 Worker がある場合は Worker 名で対象を選択します。
+- Worker と frcon のローカル通信には Unix Domain Socket 上の gRPC、メッセージ形式には Protocol Buffers を使用します。
+- Worker は frcon を介さず単独起動できます。Worker 自身が gRPC サーバーを持つため、frcon は Worker の起動・停止・生存期間を所有しません。frcon の終了・再起動は Worker の動作に影響しません。
+- frcon は必要に応じて Worker の独立起動コマンドを実行できますが、Worker の親・監督プロセスにはなりません。Worker の停止は対象 Worker への明示的な停止要求で行います。
+- frcon の単発 CLI モードと常駐モードは、同じ WorkerService 契約を使用します。常駐モードは CLI / Web UI からの接続を受け付けるゲートウェイとして動作します。
+- Worker API と外部向け Web API の役割を混同しません。WorkerService は Worker が提供し、gRPC-Web の受付と Web 認証は frcon が提供します。
+
+### CLI・Web UI・SNMP の接続経路
+
+| クライアント | 接続先 | 通信・認証 |
+|---|---|---|
+| frcon CLI | Worker | Unix Domain Socket 上の gRPC |
+| Web UI | frcon | HTTPS 上の gRPC-Web、パスワードログイン後のセッション Cookie |
+| SNMP Manager | Worker の SNMP Agent | SNMPv3、読み取り専用 |
+
+- **CLI**：frcon が対象 Worker の UDS に gRPC 接続し、状態照会・メンテナンス操作を行います。
+- **Web UI**：frcon の Web ゲートウェイに HTTPS で接続します。ログイン後は gRPC-Web で管理 API を利用し、frcon が WorkerService へ通常の gRPC で中継します。ブラウザから Worker の UDS や WorkerService に直接接続させません。
+- **Web 認証**：パスワードは統合 `config.yaml` の Controller / Web 設定に保持します。パスワードそのものではなく Argon2id 等でハッシュ化した値を設定します。ログイン成功後は有効期限付きセッションを発行し、HttpOnly / Secure / SameSite Cookie で管理します。HTTPS を必須とし、CSRF 対策とログイン試行制限を設けます。Web UI の認証・セッション処理は frcon に置きます。
+- **SNMP**：Worker 側に読み取り専用の SNMP Agent を設け、状態監視情報を公開します。SNMPv3 を使用し、SET による操作は提供しません。状態取得は I/O が保持する観測 snapshot を利用し、SNMP の GET を理由に Standby デバイスを起こしません。通知は状態変化を基に送信し、詳細監査のような高コスト処理をポーリングごとに実行しません。
+- 管理 API は状態監視とメンテナンスを対象とし、ファイルの作成・削除・内容変更などの通常のファイルシステム操作は公開しません。データ消失につながる操作を管理 API の対象にしません。SNMP は読み取り専用です。
 
 ### 統合設定ファイルと読み込み規則
 
-Controller と全 Worker の設定は、単一の YAML 設定ファイルにまとめます。トップレベルに `controller` と `workers` を定義し、各 Worker は `name` で識別します。Worker 名は設定ファイル内で一意でなければなりません。
+frcon と全 Worker の設定は、単一の YAML 設定ファイルにまとめます。トップレベルに `controller` と `workers` を定義し、各 Worker は `name` で識別します。Worker 名は設定ファイル内で一意でなければなりません。
 
 ```yaml
 version: 1
 
 controller:
+  socket_path: /run/flexraid/controller.sock
+  log_level: info
   web:
     enabled: true
     listen: "0.0.0.0:8443"
@@ -250,7 +262,9 @@ workers:
       - uuid: "..."
 ```
 
-設定ファイルの選択規則は Controller / Worker で共通とし、次の優先順位で決定します。
+上記は設定構造の設計例です。TLS 証明書の配備方法、Web パスワードハッシュの生成・更新 CLI、SNMP のユーザー・通知先など、未確定の設定項目やコマンド詳細は実装時に定義します。Web を無効にする場合は `controller.web.enabled: false` とします。
+
+設定ファイルの選択規則は frcon / Worker で共通とし、次の優先順位で決定します。
 
 1. `--config <path>` が指定されている場合は、そのファイルを使用します。
 2. `--config` が指定されていない場合は、まず `/etc/flexraid/config.yaml` を確認します。
@@ -259,16 +273,16 @@ workers:
 
 `--config` で明示されたファイルが存在しない、または読み込めない場合はエラーとし、既定パスへフォールバックしません。相対パスはカレントディレクトリを基準に解決します。
 
-Controller は統合設定ファイルから Controller 自身の設定と Worker 一覧を読み込みます。Worker を単独起動する場合は、起動引数で `--name <worker-name>` を必須指定し、同じ設定ファイル内から名前が一致する Worker の設定を一つだけ選択して起動します。一致する Worker がない場合や名前が重複している場合は起動エラーにします。
+frcon は統合設定ファイルから自身の設定と Worker 一覧を読み込みます。Worker を単独起動する場合は、起動引数で `--name <worker-name>` を必須指定し、同じ設定ファイル内から名前が一致する Worker の設定を一つだけ選択して起動します。一致する Worker がない場合や名前が重複している場合は起動エラーにします。
 
 ```sh
-# 設定ファイルを自動選択して Controller を起動
+# 常駐 frcon / Web ゲートウェイを起動
 frcon serve
 
-# 設定ファイルを明示して Controller を起動
+# 設定ファイルを明示して frcon を起動
 frcon serve --config ./production.yaml
 
-# Worker を単独起動（自動選択された設定ファイルから main を選択）
+# Worker を単独起動
 flexraid --name main
 
 # Worker を単独起動（設定ファイルを明示）
@@ -310,27 +324,58 @@ frcon
 - 起動後に変化しない物理デバイス情報は Initialization 中に取得し、Ready になる前に snapshot として確定します。取得にデバイスの起動が必要な情報は Initialization の SpinUp 処理と連携し、非侵襲的に取得できる情報のために不要な SpinUp は行いません。I/O 回数・転送量・レイテンシ・I/O エラー・最終アクセス時刻などは、実際の読み込み・書き込みのたびに物理ドライブ別と全体集計を更新します。OS から低コストかつ非侵襲的に取得できる接続・電源状態は status 照会ごとに再取得し、コストの高い情報は項目ごとに定めた更新間隔で再取得します。取得元・最終取得時刻・更新間隔・取得状態を保持します。status の照会だけを理由に Standby 中のデバイスを起こしません。
 - Cleanup Schedule は `drive status --detail` の Cleanup 情報内に、状態・Policy などと同列の項目として表示し、`drive inspect` にも監査情報として含めます。独立した公開関数・RPC・CLI コマンドは設けません。
 
-### 監視カウンターと欠損情報
-
-監視統計は各レイヤーが自分の責務で発生した事象を保持・集計します。Management は各レイヤーの統計取得 API から snapshot を取得して監視応答にまとめます。統計をレイヤー間で受け渡して、別のレイヤーに再集計させることはありません。
-
-- I/O：物理ドライブごとに、物理ファイル操作のコマンド別成功数・失敗数・所要時間、読み取りエラー発生回数、エラーが発生した FileKey のユニーク数を集計します。直近 1,000 処理もコマンド別に保持します。
-- Distribution：Stripe / Chunk の読み書き、Version 選択、復旧、欠損・破損判定、Cleanup など、Distribution 自身の操作・内部処理で発生した事象を集計します。I/O の物理ファイル別・ドライブ別統計は保持せず、I/O から受け取って再集計もしません。 `GetMetrics` は操作別の成功・失敗・累積所要時間・直近 1,000 件の結果に加え、Chunk Read / Write / Delete / Preserve / Sync の成功・失敗数と直近 1,000 件、Integrity error と Recovery の成功・失敗回数、Object / Stripe / Version の復元可能性、破損 Stripe、Incomplete Version、Missing Chunk、Orphan Chunk の現在数を返します。さらに Cleanup 候補を DeleteOldVersion / PreserveAbnormal と物理ドライブ別に集計し、ファイル件数・ファイル長合計・削除による解放見込みサイズ、Cleanup 後のドライブ別物理空き容量と Mirror / Parity の論理空き容量を見積もります。容量見積もりは物理ファイル長に基づく概算です。
-- Orchestration：`GetMetrics` で Object / 論理ファイル単位の操作成功・失敗数と所要時間、ObjectID ごとの読み取りエラー発生数・ユニーク数、直近 1,000 件の結果、および復旧可能・復旧不可能な論理ファイル欠損数を返します。欠損状態は Distribution の詳細 Stripe / Version snapshot から論理 Object 単位で判定し、起動時にメモリ上へ再構築します。読み取りエラー履歴・カウンターは永続化しません。物理ファイルの欠損数を単純合算して論理ファイルの復旧可能性とはしません。
-- Management：Management 自身の公開操作結果を `GetMetrics` で集計し、他レイヤーの snapshot と合わせて監視応答を構成します。
-
-各レイヤーは監視統計を取得する公開関数を一つだけ持ち、関数名は `GetMetrics` とします。Management はこの関数を各層に対して呼び出します。I/O の GetMetrics から Drive ごとの物理操作統計を取得し、Management が設定上の drive_name と対応付けます。
-
-成功数・失敗数・エラー発生回数は累積値に加え、直近 1,000 処理の値も表示します。直近履歴はレイヤー・操作ごとに独立し、I/O は物理ドライブごとにも分けます。1,000 件に満たない場合は実際に保持している処理数を併せて表示します。
-
-欠損状態リスト、ユニーク対象リスト、カウンター、直近 1,000 処理の履歴は FlexRAID プロセス内のメモリだけで保持し、再起動後に復元・永続化しません。欠損状態のうちストレージ状態から判定できるものは起動時に再構築しますが、過去の読み取りエラー回数は復元しません。監視カウンターを保存したい場合は、外部監視側が各レイヤーの `GetMetrics` を通じて取得・保存します。個々の事象の詳細履歴はログに出力します。
-
-- `system start/stop` は Controller の常駐 RPC サーバーを対象とし、Worker 群を一括起動・停止する意味ではありません。
+- `system start/stop` は frcon の常駐 RPC / gRPC-Web ゲートウェイを対象とし、Worker 群を一括起動・停止する意味ではありません。
 - `drive start/stop` は指定した論理ドライブの Worker だけを対象とします。
-- Cleanup の policy / run は、指定した論理ドライブの Worker に対する操作です。
+- Cleanup の policy / run は、指定した論理ドライブの Worker に対するメンテナンス操作です。
 
 実装規約・プロセス分離・RPC 契約の詳細は `AGENTS.md` を参照してください。
 
+
+### 提供する RPC
+
+Protocol Buffers の `WorkerService` は、単一 Worker（論理ドライブ）の監視・メンテナンス操作を提供します。
+
+- `GetStatus`: Lifecycle Phase と簡易状態
+- `GetDetailedStatus`: ドライブ別の詳細状態
+- `Inspect`: 詳細な監査情報
+- `SpinUp` / `SpinDown`: WWN を指定した物理ドライブの電源制御
+- `GetDriveCleanupPermissions`: ドライブ単位の Cleanup 許可設定の取得
+- `SetDriveDeprecatedVersionDeletionPermission`
+- `SetDriveAbnormalDataPreservationPermission`
+- `SetDriveLogicalObjectDeletionPermission`
+
+ファイルや Namespace の作成・削除・内容変更など、ユーザーデータを直接操作する RPC は提供しません。gRPC の transport と handler は Management パッケージ内にあり、Management の公開 API を通じて処理します。
+
+### Worker の設定
+
+Worker の設定ファイルは YAML です。現在読み込まれる項目は次のとおりです。
+
+```yaml
+disks:
+  - root: /data/disk1
+    mountpoint: /mnt/disk1
+    wwn: "0x5000000000000001"
+    cleanup_delete_deprecated_versions_allowed: true
+    cleanup_preserve_abnormal_data_allowed: false
+    cleanup_delete_logical_objects_allowed: false
+  - root: /data/disk2
+    mountpoint: /mnt/disk2
+    wwn: "0x5000000000000002"
+  - root: /data/disk3
+    mountpoint: /mnt/disk3
+    wwn: "0x5000000000000003"
+  - root: /data/disk4
+    mountpoint: /mnt/disk4
+    wwn: "0x5000000000000004"
+
+mountpoint: /mnt/flexraid
+grpc_socket_path: /run/flexraid/worker.sock
+```
+
+- `disks` には4台以上を指定し、各ディスクに `root`、物理 `mountpoint`、一意な `wwn` を設定します。
+- Cleanup 許可設定は省略時に false です。
+- `mountpoint` は FlexRAID の FUSE マウント先です。ディスクの root / 物理 mountpoint と同じパスにはできません。
+- `grpc_socket_path` は必須です。
 
 ### Management の監視 API
 
