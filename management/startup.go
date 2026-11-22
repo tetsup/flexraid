@@ -194,17 +194,13 @@ func (layer *Management) lifecycleHooks() StateHookRegistry {
 				layer.mu.Lock()
 				hasDistribution := layer.distribution != nil
 				layer.mu.Unlock()
-				if hasDistribution {
-					if err := layer.startBackgroundProcesses(ctx); err != nil {
-						return err
-					}
+				if !hasDistribution {
+					return nil
 				}
-				return layer.startGRPCServer(ctx)
+				return layer.startBackgroundProcesses(ctx)
 			},
 			OnExit: func(ctx context.Context) error {
-				grpcErr := layer.stopGRPCServer(ctx)
-				backgroundErr := layer.StopBackgroundProcesses(ctx)
-				return errors.Join(grpcErr, backgroundErr)
+				return layer.StopBackgroundProcesses(ctx)
 			},
 		},
 	}
