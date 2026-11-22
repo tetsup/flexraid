@@ -24,6 +24,9 @@ type Management struct {
 	backgroundProcessesStarted bool
 	scheduler                  *Scheduler
 	metrics                    *metricsCollector
+	grpcMu                     sync.Mutex
+	grpcServer                 grpcServer
+	grpcSocketPath             string
 }
 
 func New(request NewRequest) (*Management, error) {
@@ -56,6 +59,7 @@ func New(request NewRequest) (*Management, error) {
 		drives:                 drives,
 		cleanupPermissionStore: permissionStore,
 		metrics:                newMetricsCollector(),
+		grpcSocketPath:         request.Config.GRPCSocketPath,
 	}
 	if receiver, ok := request.Initialization.(cleanupPermissionStoreReceiver); ok {
 		receiver.SetCleanupPermissionStore(permissionStore)
