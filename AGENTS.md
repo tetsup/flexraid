@@ -107,7 +107,7 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - Worker の通常 gRPC サーバーは Management のライフサイクルに組み込み、Management が起動・停止を所有する。サーバーの受付処理は Management の公開 API へ要求を渡し、Orchestration / Distribution / I/O を直接操作しない。
 - gRPC サーバーの起動は Management の初期化・起動手順の一部として行い、外部要求を受け付ける前に RPC リスナーの準備を完了する。停止時は新規要求の受付を止め、受付済み要求を安全に終了させてから GracefulStop し、期限内に終了しない場合のみ強制停止へ移行する。
 - WorkerService の gRPC transport / handler 実装は Management パッケージ内部に閉じる。外部に公開する契約は Protocol Buffers の service / message 定義と Management の公開 API とし、gRPC 用 handler を Management の別の公開操作層として露出させない。
-- gRPC handler は認証・RPC メッセージと Management Request / Response の変換を担い、操作の受付可否・排他・Lifecycle 判定・実行優先順位は Management の既存 Scheduler / admission 経路に従う。handler から下位レイヤーを直接呼び出さない。
+- gRPC handler は RPC メッセージと Management Request / Response の変換・入力検証を担い、操作の受付可否・排他・Lifecycle 判定・実行優先順位は Management の既存 Scheduler / admission 経路に従う。handler から下位レイヤーを直接呼び出さない。Worker の UDS は OS のソケットファイル権限で接続元を制限し、Web 認証・セッション認証は frcon が担当する。
 
 #### Lifecycle StateMachine / State Hooks
 
@@ -359,10 +359,10 @@ Distribution -> I/O
 
 - Worker は Unix Domain Socket 上で通常の gRPC サーバーを提供する。CLI の `frcon` と常駐 `frcon serve` は gRPC クライアントとして WorkerService を呼び出す。
 - RPC のメッセージ形式には Protocol Buffers を使用する。RPC 契約は Protocol Buffers の service / message 定義を正とし、Go の RPC コードは定義から生成する。生成コードを手編集しない。
-- WorkerService は状態監視・診断・メンテナンス・Worker 制御の管理 API を提供する。ファイルの作成・削除・内容変更など、ユーザーデータを直接操作する API は公開しない。
+- WorkerService は `GetStatus` / `GetDetailedStatus` / `Inspect` による状態監視・診断、`SpinUp` / `SpinDown` によるドライブ電源制御、Drive ごとの Cleanup 許可情報の取得・更新を提供する。ファイルの作成・削除・内容変更など、ユーザーデータを直接操作する API は公開しない。
 - Status と Inspect は用途を分けた RPC とする。簡易状態、詳細状態、完全監査の情報を一つの RPC のフラグで切り替えない。
 - `frcon` は Worker 名から接続先 UDS を解決し、対象 Worker の WorkerService を呼び出す。Worker の UDS は内部 RPC 用であり、Web ブラウザから直接接続させない。
-- Socket の配置、権限、所有者、起動時の stale socket 処理、Worker の識別・再発見方法は実装時に定義する。PID ファイルの存在だけで Worker の稼働を断定しない。
+- Worker の UDS パスは Management の `GRPCSocketPath` で指定する。親ディレクトリは必要に応じて作成し、Socket は `0600` で作成する。起動時に同じパスの Socket が存在する場合は接続を試み、接続可能なら既存 Worker として起動を拒否する。接続拒否を確認できた stale Socket だけを削除して再作成する。通常ファイルやシンボリックリンクは削除しない。PID ファイルの存在だけで Worker の稼働を断定しない。
 
 ### frcon gRPC-Web / Web 認証
 
