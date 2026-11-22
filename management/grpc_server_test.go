@@ -60,6 +60,25 @@ func TestWorkerGRPCServerRemainsAvailableAcrossLifecyclePhases(t *testing.T) {
 		t.Fatalf("initial lifecycle phase = %v, want %d", got, LifecycleInitializing)
 	}
 
+	detailedResponse := new(structpb.Struct)
+	if err := connection.Invoke(ctx, "/flexraid.worker.v1.WorkerService/GetDetailedStatus", &emptypb.Empty{}, detailedResponse); err != nil {
+		t.Fatalf("GetDetailedStatus RPC during initialization: %v", err)
+	}
+	if got := detailedResponse.Fields["Status"].GetStructValue().Fields["Lifecycle"].GetNumberValue(); got != float64(LifecycleInitializing) {
+		t.Fatalf("detailed status lifecycle phase = %v, want %d", got, LifecycleInitializing)
+	}
+	if detailedResponse.Fields["DistributionAvailable"].GetBoolValue() {
+		t.Fatal("Distribution should be unavailable during initialization")
+	}
+
+	inspectResponse := new(structpb.Struct)
+	if err := connection.Invoke(ctx, "/flexraid.worker.v1.WorkerService/Inspect", &emptypb.Empty{}, inspectResponse); err != nil {
+		t.Fatalf("Inspect RPC during initialization: %v", err)
+	}
+	if got := inspectResponse.Fields["Status"].GetStructValue().Fields["Lifecycle"].GetNumberValue(); got != float64(LifecycleInitializing) {
+		t.Fatalf("inspect lifecycle phase = %v, want %d", got, LifecycleInitializing)
+	}
+
 	close(initializationGate)
 	if err := layer.WaitReady(ctx); err != nil {
 		t.Fatal(err)
