@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"sort"
+	"time"
 
 	"github.com/tetsup/flexraid/pkg/shared"
 )
@@ -24,7 +25,9 @@ type DirectoryEntry struct {
 type ReadDirResponse struct{ Entries []DirectoryEntry }
 
 // ReadDir returns the immediate children of a directory in name order.
-func (layer *Orchestration) ReadDirLocked(request ReadDirRequest) (ReadDirResponse, error) {
+func (layer *Orchestration) ReadDirLocked(request ReadDirRequest) (response ReadDirResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("ReadDir", started, err) }()
 	return layer.readDirLocked(request)
 }
 

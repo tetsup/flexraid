@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/tetsup/flexraid/distribution"
 )
@@ -15,7 +16,9 @@ type FlushRequest struct {
 }
 type FlushResponse struct{ PersistedStripes uint32 }
 
-func (o *Orchestration) FlushLocked(r FlushRequest) (FlushResponse, error) {
+func (o *Orchestration) FlushLocked(r FlushRequest) (response FlushResponse, err error) {
+	started := time.Now()
+	defer func() { o.recordOperation("Flush", started, err) }()
 	return o.flushLocked(r)
 }
 
@@ -55,7 +58,9 @@ type FsyncRequest struct {
 }
 type FsyncResponse struct{ PersistedStripes uint32 }
 
-func (o *Orchestration) FsyncLocked(r FsyncRequest) (FsyncResponse, error) {
+func (o *Orchestration) FsyncLocked(r FsyncRequest) (response FsyncResponse, err error) {
+	started := time.Now()
+	defer func() { o.recordOperation("Fsync", started, err) }()
 	return o.fsyncLocked(r)
 }
 

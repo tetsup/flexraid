@@ -29,6 +29,7 @@ type PreserveResponse struct {
 func (layer *IO) Preserve(request PreserveRequest) (response PreserveResponse, err error) {
 	started := operationStarted()
 	defer func() {
+		layer.recordOperation(OperationPreserve, started, err, 0)
 		logResult(layer.logger, "Preserve", err,
 			"key", request.Key, "duration", time.Since(started), "moved", response.Moved)
 	}()
@@ -47,6 +48,8 @@ func (layer *IO) Preserve(request PreserveRequest) (response PreserveResponse, e
 	if err != nil {
 		return response, err
 	}
+	layer.recordAccess()
+	defer layer.recordAccess()
 	rootInfo, statErr := os.Stat(layer.preservationRoot)
 	if statErr != nil {
 		return response, fmt.Errorf("stat preservation root %q: %w", layer.preservationRoot, statErr)

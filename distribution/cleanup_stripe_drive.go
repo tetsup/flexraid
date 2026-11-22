@@ -36,7 +36,7 @@ func (d *Distribution) CleanupStripeDrive(request CleanupStripeDriveRequest) (re
 		ctx = context.Background()
 	}
 	defer func() {
-		logOperation(d.logger, "CleanupStripeDrive", started, err,
+		logOperation(d, "CleanupStripeDrive", started, err,
 			"io_index", request.IOIndex, "object_id", request.ObjectID.String(),
 			"stripe_id", request.StripeID, "method", request.Method,
 			"files_processed", response.FilesProcessed)
@@ -72,11 +72,13 @@ func (d *Distribution) CleanupStripeDrive(request CleanupStripeDriveRequest) (re
 	switch request.Method {
 	case CleanupMethodDeleteOldVersion:
 		_, err = d.ios[request.IOIndex].Delete(physicalio.DeleteRequest{Context: ctx, Key: location.key})
+		d.recordChunkOperation("Delete", err)
 		if errors.Is(err, os.ErrNotExist) {
 			err = nil
 		}
 	case CleanupMethodPreserveAbnormal:
 		_, err = d.ios[request.IOIndex].Preserve(physicalio.PreserveRequest{Context: ctx, Key: location.key})
+		d.recordChunkOperation("Preserve", err)
 	}
 	if err != nil {
 		return response, err
@@ -139,6 +141,7 @@ func (d *Distribution) removeCleanupLocationLocked(candidate cleanupCandidateKey
 		for no, existing := range version.chunks {
 			if existing.ioIndex == location.ioIndex && existing.key == location.key {
 				delete(version.chunks, no)
+				delete(version.missing, no)
 			}
 		}
 		if len(version.chunks) == 0 {

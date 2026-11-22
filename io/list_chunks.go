@@ -3,8 +3,9 @@ package io
 import (
 	"context"
 	"errors"
-	"github.com/tetsup/flexraid/storage"
 	"time"
+
+	"github.com/tetsup/flexraid/storage"
 )
 
 type ListChunksRequest struct {
@@ -16,7 +17,9 @@ type ListChunksResponse struct{ Entries int }
 // ListChunks enumerates all physical chunk files without interpreting their contents.
 func (layer *IO) ListChunks(request ListChunksRequest) (response ListChunksResponse, err error) {
 	started := operationStarted()
+	var readErrors uint64
 	defer func() {
+		layer.recordOperation(OperationListChunks, started, err, readErrors)
 		logResult(layer.logger, "ListChunks", err, "duration", time.Since(started), "entries", response.Entries)
 	}()
 	if request.Callback == nil {
@@ -25,6 +28,16 @@ func (layer *IO) ListChunks(request ListChunksRequest) (response ListChunksRespo
 	if err = request.Context.Err(); err != nil {
 		return response, err
 	}
-	response.Entries, err = layer.walkFiles(request.Context, func(storage.FileKey) bool { return true }, request.Callback)
+	layer.recordAccess()
+	defer layer.recordAccess()
+	response.Entries, err = layer.walkFiles(
+		request.Context,
+		func(storage.FileKey) bool { return true },
+		request.Callback,
+		func(key storage.FileKey) {
+			readErrors++
+			layer.recordReadErrorFile(OperationListChunks, key)
+		},
+	)
 	return response, err
 }

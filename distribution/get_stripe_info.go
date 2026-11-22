@@ -3,6 +3,7 @@ package distribution
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/tetsup/flexraid/pkg/shared"
 	"github.com/tetsup/flexraid/storage"
@@ -21,7 +22,11 @@ type GetStripeInfoResponse struct {
 }
 
 // GetStripeInfo returns the newest recoverable version's persisted layout metadata.
-func (d *Distribution) GetStripeInfo(request GetStripeInfoRequest) (GetStripeInfoResponse, error) {
+func (d *Distribution) GetStripeInfo(request GetStripeInfoRequest) (response GetStripeInfoResponse, err error) {
+	started := time.Now()
+	defer func() {
+		logOperation(d, "GetStripeInfo", started, err, "object_id", request.ObjectID.String(), "stripe_id", request.StripeID)
+	}()
 	ctx := request.Context
 	if ctx == nil {
 		ctx = context.Background()
@@ -29,19 +34,21 @@ func (d *Distribution) GetStripeInfo(request GetStripeInfoRequest) (GetStripeInf
 	key := stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}
 	unlockStripe, unlockMap := d.lockStripe(key)
 	defer unlockStripe()
-	if err := d.cacheStripeLocked(ctx, key); err != nil {
+	if err = d.cacheStripeLocked(ctx, key); err != nil {
 		unlockMap()
 		return GetStripeInfoResponse{}, err
 	}
 	stripes := d.objects[request.ObjectID]
 	if stripes == nil || stripes[request.StripeID] == nil {
 		unlockMap()
-		return GetStripeInfoResponse{}, ErrStripeNotFound
+		err = ErrStripeNotFound
+		return GetStripeInfoResponse{}, err
 	}
 	info := stripes[request.StripeID]
 	if info == nil {
 		unlockMap()
-		return GetStripeInfoResponse{}, fmt.Errorf("stripe %d has no selected version: %w", request.StripeID, ErrStripeNotFound)
+		err = fmt.Errorf("stripe %d has no selected version: %w", request.StripeID, ErrStripeNotFound)
+		return GetStripeInfoResponse{}, err
 	}
 	result := GetStripeInfoResponse{
 		Version:   info.version,

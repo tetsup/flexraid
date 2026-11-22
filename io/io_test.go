@@ -263,3 +263,53 @@ func TestPreserveUsesConfiguredMountpointRoot(t *testing.T) {
 		t.Fatalf("preservation directory was created under storage root: %v", err)
 	}
 }
+
+func TestPhysicalOperationsRecordAccess(t *testing.T) {
+	layer := newTestLayer(t, t.TempDir())
+	ctx := context.Background()
+	key := testFileKey(0)
+
+	assertRecorded := func(name string, operation func() error) {
+		t.Helper()
+		layer.lastAccess.Store(0)
+		if err := operation(); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got := layer.lastAccessTime(); got.IsZero() {
+			t.Fatalf("%s did not record physical access", name)
+		}
+	}
+
+	assertRecorded("Write", func() error {
+		_, err := layer.Write(WriteRequest{Context: ctx, Key: key, Data: []byte("activity")})
+		return err
+	})
+	assertRecorded("Read", func() error {
+		_, err := layer.Read(ReadRequest{Context: ctx, Key: key})
+		return err
+	})
+	assertRecorded("Sync", func() error {
+		_, err := layer.Sync(SyncRequest{Context: ctx, Key: key})
+		return err
+	})
+	assertRecorded("ListChunks", func() error {
+		_, err := layer.ListChunks(ListChunksRequest{Context: ctx, Callback: func(ScanEntry) error { return nil }})
+		return err
+	})
+	assertRecorded("ScanHeaders", func() error {
+		_, err := layer.ScanHeaders(ScanHeadersRequest{Context: ctx, Callback: func(ScanEntry) error { return nil }})
+		return err
+	})
+	assertRecorded("Preserve", func() error {
+		_, err := layer.Preserve(PreserveRequest{Context: ctx, Key: key})
+		return err
+	})
+	assertRecorded("Write before Delete", func() error {
+		_, err := layer.Write(WriteRequest{Context: ctx, Key: key, Data: []byte("delete me")})
+		return err
+	})
+	assertRecorded("Delete", func() error {
+		_, err := layer.Delete(DeleteRequest{Context: ctx, Key: key})
+		return err
+	})
+}

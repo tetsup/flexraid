@@ -26,7 +26,7 @@ func (d *Distribution) SyncObject(request SyncObjectRequest) (response SyncObjec
 		ctx = context.Background()
 	}
 	defer func() {
-		logOperation(d.logger, "SyncObject", started, err, "object_id", request.ObjectID.String(), "synced_chunks", response.SyncedChunks)
+		logOperation(d, "SyncObject", started, err, "object_id", request.ObjectID.String(), "synced_chunks", response.SyncedChunks)
 	}()
 	if err = ctx.Err(); err != nil {
 		return response, err
@@ -69,8 +69,9 @@ func (d *Distribution) SyncObject(request SyncObjectRequest) (response SyncObjec
 				unlockStripe()
 				return response, fmt.Errorf("stripe %d has invalid I/O index %d", rawID, location.ioIndex)
 			}
-			if _, err = d.ios[location.ioIndex].Sync(physicalio.SyncRequest{Context: ctx, Key: location.key}); err != nil {
-				d.recordIOError(location.ioIndex, err)
+			_, syncErr := d.ios[location.ioIndex].Sync(physicalio.SyncRequest{Context: ctx, Key: location.key})
+			d.recordChunkOperation("Sync", syncErr)
+			if err = syncErr; err != nil {
 				unlockStripe()
 				return response, fmt.Errorf("sync stripe %d on I/O %d: %w", rawID, location.ioIndex, err)
 			}

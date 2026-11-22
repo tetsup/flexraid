@@ -57,7 +57,14 @@ func (task *filesystemInitialization) Next(ctx context.Context) (bool, error) {
 			if err := os.MkdirAll(disk.Root, 0700); err != nil {
 				return false, fmt.Errorf("create disk root %d: %w", task.disk+1, err)
 			}
-			task.ioLayers = append(task.ioLayers, physicalio.New(physicalio.NewRequest{Root: disk.Root, PreservationRoot: disk.Mountpoint}).Layer)
+			layer := physicalio.New(physicalio.NewRequest{Root: disk.Root, PreservationRoot: disk.Mountpoint}).Layer
+			if _, err := layer.InitializeDevice(physicalio.InitializeDeviceRequest{
+				Context: ctx,
+				Config:  physicalio.DeviceConfig{Mountpoint: disk.Mountpoint, WWN: disk.WWN},
+			}); err != nil {
+				return false, fmt.Errorf("initialize physical drive %d: %w", task.disk+1, err)
+			}
+			task.ioLayers = append(task.ioLayers, layer)
 			task.disk++
 			return false, nil
 		}
@@ -65,6 +72,9 @@ func (task *filesystemInitialization) Next(ctx context.Context) (bool, error) {
 		return false, nil
 
 	case 2:
+		if err := task.managed.SetIOs(task.ioLayers); err != nil {
+			return false, fmt.Errorf("publish initialized I/O layers: %w", err)
+		}
 		result, err := distribution.New(distribution.NewRequest{Context: ctx, IOs: task.ioLayers, CleanupPermissions: task.cleanupPermissionStore})
 		if err != nil {
 			return false, fmt.Errorf("initialize Distribution: %w", err)

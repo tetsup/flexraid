@@ -51,6 +51,8 @@ type OpenResponse struct {
 }
 
 func (layer *Orchestration) OpenLocked(request OpenRequest) (response OpenResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Open", started, err) }()
 	return layer.openLocked(request)
 }
 
@@ -133,6 +135,8 @@ type ReleaseRequest struct {
 type ReleaseResponse struct{}
 
 func (layer *Orchestration) ReleaseLocked(request ReleaseRequest) (response ReleaseResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Release", started, err) }()
 	return layer.releaseLocked(request)
 }
 

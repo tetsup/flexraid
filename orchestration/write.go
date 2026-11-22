@@ -26,6 +26,8 @@ type WriteResponse struct {
 
 // Write updates logical file content in the shared stripe cache.
 func (layer *Orchestration) WriteLocked(request WriteRequest) (response WriteResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Write", started, err) }()
 	return layer.writeLocked(request)
 }
 

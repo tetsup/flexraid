@@ -25,6 +25,8 @@ type CreateResponse struct {
 // Create creates an empty regular file and publishes it in the parent
 // directory only after its initial data and Header have been persisted.
 func (layer *Orchestration) CreateLocked(request CreateRequest) (response CreateResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Create", started, err) }()
 	return layer.createLocked(request)
 }
 

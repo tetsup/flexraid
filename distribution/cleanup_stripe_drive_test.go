@@ -108,6 +108,17 @@ func TestCleanupStripeDrivePreservesOneAbnormalUnreadableChunk(t *testing.T) {
 	if len(candidates) != 1 || candidates[0].ioIndex != 0 || candidates[0].method != CleanupMethodPreserveAbnormal {
 		t.Fatalf("startup cleanup candidates = %+v; orphans = %+v", candidates, created.Layer.orphans[id])
 	}
+	metrics, err := created.Layer.GetMetrics(GetMetricsRequest{Context: ctx})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(metrics.CleanupCandidates) != 1 ||
+		metrics.CleanupCandidates[0].Method != CleanupMethodPreserveAbnormal ||
+		metrics.CleanupCandidates[0].FileCount != 1 ||
+		metrics.CleanupCandidates[0].FileBytes == 0 ||
+		metrics.CleanupCandidates[0].ReclaimableBytes != 0 {
+		t.Fatalf("abnormal cleanup metrics = %+v", metrics.CleanupCandidates)
+	}
 	result, err := created.Layer.CleanupStripeDrive(CleanupStripeDriveRequest{
 		Context: ctx, IOIndex: 0, ObjectID: id, StripeID: 9, Method: CleanupMethodPreserveAbnormal,
 	})

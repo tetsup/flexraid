@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/tetsup/flexraid/pkg/shared"
 	"github.com/tetsup/flexraid/pkg/shared/config"
@@ -27,7 +28,13 @@ type CapacityResponse struct {
 // GetCapacity returns physical capacities for all I/O layers in index order,
 // and estimates logical capacity for Mirror and Parity layouts. The estimate
 // counts complete stripes first and subtracts the minimum header overhead last.
-func (d *Distribution) GetCapacity(request CapacityRequest) (CapacityResponse, error) {
+func (d *Distribution) GetCapacity(request CapacityRequest) (response CapacityResponse, err error) {
+	started := time.Now()
+	defer func() { logOperation(d, "GetCapacity", started, err, "drives", len(d.ios)) }()
+	return d.getCapacity(request)
+}
+
+func (d *Distribution) getCapacity(request CapacityRequest) (response CapacityResponse, err error) {
 	blockSize := request.BlockSize
 	if blockSize == 0 {
 		blockSize = config.BlockSize
@@ -55,22 +62,31 @@ func (d *Distribution) GetCapacity(request CapacityRequest) (CapacityResponse, e
 	result := CapacityResponse{Capacities: make([]shared.Capacity, len(d.ios))}
 	availableBlocks := make([]uint64, 0, len(d.ios))
 	for index := range d.ios {
-		if err := ctx.Err(); err != nil {
+		if err = ctx.Err(); err != nil {
 			return CapacityResponse{}, err
 		}
-		capacity, err := platform.GetCapacity(platform.CapacityRequest{Context: ctx, Root: d.ios[index].RootPath()})
-		if err != nil {
-			return CapacityResponse{}, fmt.Errorf("get capacity for I/O %d: %w", index, err)
+		capacity, capacityErr := platform.GetCapacity(platform.CapacityRequest{Context: ctx, Root: d.ios[index].RootPath()})
+		if capacityErr != nil {
+			err = fmt.Errorf("get capacity for I/O %d: %w", index, capacityErr)
+			return CapacityResponse{}, err
 		}
 		result.Capacities[index] = capacity.Capacity
 		availableBlocks = append(availableBlocks, capacity.Capacity.AvailableBytes/blockSize)
 	}
+	result.MirrorAvailableBlocks, result.ParityAvailableBlocks = estimateLogicalCapacityBlocks(
+		availableBlocks, blockSize, mirrorCopies, dataChunks, parityChunks,
+	)
+	return result, nil
+}
 
+// estimateLogicalCapacityBlocks estimates usable logical blocks from per-drive
+// available physical blocks. It uses the same complete-stripe placement model
+// for both current and post-cleanup capacity estimates.
+func estimateLogicalCapacityBlocks(availableBlocks []uint64, blockSize uint64, mirrorCopies, dataChunks, parityChunks int) (uint64, uint64) {
 	mirrorStripes := maxStripeCount(availableBlocks, mirrorCopies)
 	mirrorRawBytes := saturatingMul(mirrorStripes, blockSize)
 	mirrorHeaders := saturatingMul(mirrorStripes, config.HeaderReservedSize)
 	mirrorBytes := subtractFloor(mirrorRawBytes, mirrorHeaders)
-	result.MirrorAvailableBlocks = mirrorBytes / blockSize
 
 	parityStripes := maxStripeCount(availableBlocks, dataChunks+parityChunks)
 	parityRawBytes := saturatingMul(saturatingMul(parityStripes, uint64(dataChunks)), blockSize)
@@ -80,9 +96,7 @@ func (d *Distribution) GetCapacity(request CapacityRequest) (CapacityResponse, e
 		parityHeaders = config.HeaderReservedSize
 	}
 	parityBytes := subtractFloor(parityRawBytes, parityHeaders)
-	result.ParityAvailableBlocks = parityBytes / blockSize
-
-	return result, nil
+	return mirrorBytes / blockSize, parityBytes / blockSize
 }
 
 // maxStripeCount computes the maximum number of complete stripes that can be

@@ -10,7 +10,9 @@ import (
 // StartCleanupWorker starts Orchestration's logical-deletion cleanup loop.
 // The callback must enter through Management so its lifecycle and operation
 // serialization remain authoritative.
-func (layer *Orchestration) StartCleanupWorker(parent context.Context, cleanup func(context.Context) error) error {
+func (layer *Orchestration) StartCleanupWorker(parent context.Context, cleanup func(context.Context) error) (err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("StartCleanupWorker", started, err) }()
 	if parent == nil {
 		return fmt.Errorf("cleanup worker context is required")
 	}
@@ -32,7 +34,9 @@ func (layer *Orchestration) StartCleanupWorker(parent context.Context, cleanup f
 
 // StopCleanupWorker stops the logical-deletion cleanup loop and waits for its
 // current Management cleanup request to return.
-func (layer *Orchestration) StopCleanupWorker(ctx context.Context) error {
+func (layer *Orchestration) StopCleanupWorker(ctx context.Context) (err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("StopCleanupWorker", started, err) }()
 	if ctx == nil {
 		return fmt.Errorf("cleanup worker stop context is required")
 	}

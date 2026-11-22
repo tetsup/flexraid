@@ -2,15 +2,20 @@ package io
 
 import (
 	"context"
-	"github.com/tetsup/flexraid/storage"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/tetsup/flexraid/pkg/shared/config"
+	"github.com/tetsup/flexraid/storage"
 )
 
-func (layer *IO) walkFiles(ctx context.Context, include func(storage.FileKey) bool, callback func(ScanEntry) error) (int, error) {
+func (layer *IO) walkFiles(
+	ctx context.Context,
+	include func(storage.FileKey) bool,
+	callback func(ScanEntry) error,
+	onReadError func(storage.FileKey),
+) (int, error) {
 	count := 0
 	err := filepath.WalkDir(layer.root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -43,14 +48,23 @@ func (layer *IO) walkFiles(ctx context.Context, include func(storage.FileKey) bo
 			return nil
 		}
 		count++
+		layer.recordAccess()
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			return infoErr
+		}
+		sizeBytes := uint64(info.Size())
 		data, readErr := os.ReadFile(path)
 		if readErr != nil {
-			if callbackErr := callback(ScanEntry{Key: key, Error: readErr}); callbackErr != nil {
+			if onReadError != nil {
+				onReadError(key)
+			}
+			if callbackErr := callback(ScanEntry{Key: key, SizeBytes: sizeBytes, Error: readErr}); callbackErr != nil {
 				return callbackErr
 			}
 			return nil
 		}
-		if err := callback(ScanEntry{Key: key, Data: data}); err != nil {
+		if err := callback(ScanEntry{Key: key, Data: data, SizeBytes: sizeBytes}); err != nil {
 			return err
 		}
 		return nil

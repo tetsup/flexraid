@@ -26,6 +26,8 @@ type LinkResponse struct {
 
 // Link creates a namespace entry that directly references the source File data object.
 func (layer *Orchestration) LinkLocked(request LinkRequest) (response LinkResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Link", started, err) }()
 	response, err = layer.linkLocked(request)
 	if err != nil {
 		return response, err

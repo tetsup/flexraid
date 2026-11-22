@@ -1,20 +1,34 @@
 package io
 
 import (
-	"github.com/tetsup/flexraid/storage"
+	"context"
 	"log/slog"
 	"os"
+	"sync"
+	"sync/atomic"
+
+	"github.com/tetsup/flexraid/storage"
 )
 
 type IO struct {
 	root             string
 	preservationRoot string
 	logger           *slog.Logger
+	metrics          *metricsCollector
+	lastAccess       atomic.Int64
+	device           *deviceState
+	monitorMu        sync.Mutex
+	monitorWake      chan struct{}
+	monitorStop      chan struct{}
+	monitorDone      chan struct{}
+	monitorCancel    context.CancelFunc
 }
+
 type ScanEntry struct {
-	Key   storage.FileKey
-	Data  []byte
-	Error error
+	Key       storage.FileKey
+	Data      []byte
+	SizeBytes uint64
+	Error     error
 }
 
 func newLogger(level slog.Level) *slog.Logger {

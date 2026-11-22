@@ -4,8 +4,10 @@ package management
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/tetsup/flexraid/distribution"
+	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/orchestration"
 	"github.com/tetsup/flexraid/pkg/shared"
 )
@@ -15,11 +17,13 @@ type Management struct {
 	cleanupPermissionUpdateMu  sync.Mutex
 	orchestration              *orchestration.Orchestration
 	distribution               *distribution.Distribution
+	ios                        []*physicalio.IO
 	driveOrder                 []string
 	drives                     map[string]DriveConfig
 	cleanupPermissionStore     *shared.CleanupPermissionStore
 	backgroundProcessesStarted bool
 	scheduler                  *Scheduler
+	metrics                    *metricsCollector
 }
 
 func New(request NewRequest) (*Management, error) {
@@ -31,6 +35,9 @@ func New(request NewRequest) (*Management, error) {
 		return nil, err
 	}
 	driveOrder := configuredDriveOrder(request.Config.Disks)
+	if request.Distribution != nil && len(request.IOs) != len(driveOrder) {
+		return nil, fmt.Errorf("I/O metrics source count %d does not match configured drive count %d", len(request.IOs), len(driveOrder))
+	}
 	sharedPermissions := make([]shared.DriveCleanupPermission, len(driveOrder))
 	for index, drive := range request.Config.Disks {
 		sharedPermissions[index] = shared.DriveCleanupPermission{DeleteDeprecatedVersionsAllowed: drive.CleanupDeleteDeprecatedVersionsAllowed, PreserveAbnormalDataAllowed: drive.CleanupPreserveAbnormalDataAllowed, DeleteLogicalObjectsAllowed: drive.CleanupDeleteLogicalObjectsAllowed}
@@ -44,9 +51,11 @@ func New(request NewRequest) (*Management, error) {
 	layer := &Management{
 		orchestration:          request.Orchestration,
 		distribution:           request.Distribution,
+		ios:                    append([]*physicalio.IO(nil), request.IOs...),
 		driveOrder:             driveOrder,
 		drives:                 drives,
 		cleanupPermissionStore: permissionStore,
+		metrics:                newMetricsCollector(),
 	}
 	if receiver, ok := request.Initialization.(cleanupPermissionStoreReceiver); ok {
 		receiver.SetCleanupPermissionStore(permissionStore)
@@ -68,127 +77,169 @@ func New(request NewRequest) (*Management, error) {
 	return layer, nil
 }
 
-func (layer *Management) Cleanup(request orchestration.CleanupRequest) (orchestration.CleanupResponse, error) {
+func (layer *Management) Cleanup(request orchestration.CleanupRequest) (response orchestration.CleanupResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Cleanup", started, err) }()
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
 	return layer.orchestration.CleanupLocked(request)
 }
 
-func (layer *Management) Create(request orchestration.CreateRequest) (orchestration.CreateResponse, error) {
+func (layer *Management) Create(request orchestration.CreateRequest) (response orchestration.CreateResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Create", started, err) }()
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
 	return layer.orchestration.CreateLocked(request)
 }
 
-func (layer *Management) Flush(request orchestration.FlushRequest) (orchestration.FlushResponse, error) {
+func (layer *Management) Flush(request orchestration.FlushRequest) (response orchestration.FlushResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Flush", started, err) }()
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
 	return layer.orchestration.FlushLocked(request)
 }
 
-func (layer *Management) Fsync(request orchestration.FsyncRequest) (orchestration.FsyncResponse, error) {
+func (layer *Management) Fsync(request orchestration.FsyncRequest) (response orchestration.FsyncResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Fsync", started, err) }()
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
 	return layer.orchestration.FsyncLocked(request)
 }
 
-func (layer *Management) GetAttr(request orchestration.GetAttrRequest) (orchestration.GetAttrResponse, error) {
+func (layer *Management) GetAttr(request orchestration.GetAttrRequest) (response orchestration.GetAttrResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("GetAttr", started, err) }()
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
 	return layer.orchestration.GetAttrLocked(request)
 }
 
-func (layer *Management) Link(request orchestration.LinkRequest) (orchestration.LinkResponse, error) {
+func (layer *Management) Link(request orchestration.LinkRequest) (response orchestration.LinkResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Link", started, err) }()
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
 	return layer.orchestration.LinkLocked(request)
 }
 
-func (layer *Management) Lookup(request orchestration.LookupRequest) (orchestration.LookupResponse, error) {
+func (layer *Management) Lookup(request orchestration.LookupRequest) (response orchestration.LookupResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Lookup", started, err) }()
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
 	return layer.orchestration.LookupLocked(request)
 }
 
-func (layer *Management) Mkdir(request orchestration.MkdirRequest) (orchestration.MkdirResponse, error) {
+func (layer *Management) Mkdir(request orchestration.MkdirRequest) (response orchestration.MkdirResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Mkdir", started, err) }()
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
 	return layer.orchestration.MkdirLocked(request)
 }
 
-func (layer *Management) Open(request orchestration.OpenRequest) (orchestration.OpenResponse, error) {
+func (layer *Management) Open(request orchestration.OpenRequest) (response orchestration.OpenResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Open", started, err) }()
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
 	return layer.orchestration.OpenLocked(request)
 }
 
-func (layer *Management) Release(request orchestration.ReleaseRequest) (orchestration.ReleaseResponse, error) {
+func (layer *Management) Release(request orchestration.ReleaseRequest) (response orchestration.ReleaseResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Release", started, err) }()
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
 	return layer.orchestration.ReleaseLocked(request)
 }
 
-func (layer *Management) Read(request orchestration.ReadRequest) (orchestration.ReadResponse, error) {
+func (layer *Management) Read(request orchestration.ReadRequest) (response orchestration.ReadResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Read", started, err) }()
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
 	return layer.orchestration.ReadLocked(request)
 }
 
-func (layer *Management) ReadDir(request orchestration.ReadDirRequest) (orchestration.ReadDirResponse, error) {
+func (layer *Management) ReadDir(request orchestration.ReadDirRequest) (response orchestration.ReadDirResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("ReadDir", started, err) }()
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
 	return layer.orchestration.ReadDirLocked(request)
 }
 
-func (layer *Management) ReadLink(request orchestration.ReadLinkRequest) (orchestration.ReadLinkResponse, error) {
+func (layer *Management) ReadLink(request orchestration.ReadLinkRequest) (response orchestration.ReadLinkResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("ReadLink", started, err) }()
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
 	return layer.orchestration.ReadLinkLocked(request)
 }
 
-func (layer *Management) Rename(request orchestration.RenameRequest) (orchestration.RenameResponse, error) {
+func (layer *Management) Rename(request orchestration.RenameRequest) (response orchestration.RenameResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Rename", started, err) }()
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
 	return layer.orchestration.RenameLocked(request)
 }
 
-func (layer *Management) Rmdir(request orchestration.RmdirRequest) (orchestration.RmdirResponse, error) {
+func (layer *Management) Rmdir(request orchestration.RmdirRequest) (response orchestration.RmdirResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Rmdir", started, err) }()
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
 	return layer.orchestration.RmdirLocked(request)
 }
 
-func (layer *Management) SetAttr(request orchestration.SetAttrRequest) (orchestration.SetAttrResponse, error) {
+func (layer *Management) SetAttr(request orchestration.SetAttrRequest) (response orchestration.SetAttrResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("SetAttr", started, err) }()
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
 	return layer.orchestration.SetAttrLocked(request)
 }
 
-func (layer *Management) StatFs(request orchestration.StatFsRequest) (orchestration.StatFsResponse, error) {
+func (layer *Management) StatFs(request orchestration.StatFsRequest) (response orchestration.StatFsResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("StatFs", started, err) }()
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
 	return layer.orchestration.StatFsLocked(request)
 }
 
-func (layer *Management) Symlink(request orchestration.SymlinkRequest) (orchestration.SymlinkResponse, error) {
+func (layer *Management) Symlink(request orchestration.SymlinkRequest) (response orchestration.SymlinkResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Symlink", started, err) }()
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
 	return layer.orchestration.SymlinkLocked(request)
 }
 
-func (layer *Management) Truncate(request orchestration.TruncateRequest) (orchestration.TruncateResponse, error) {
+func (layer *Management) Truncate(request orchestration.TruncateRequest) (response orchestration.TruncateResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Truncate", started, err) }()
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
 	return layer.orchestration.TruncateLocked(request)
 }
 
-func (layer *Management) Unlink(request orchestration.UnlinkRequest) (orchestration.UnlinkResponse, error) {
+func (layer *Management) Unlink(request orchestration.UnlinkRequest) (response orchestration.UnlinkResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Unlink", started, err) }()
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
 	return layer.orchestration.UnlinkLocked(request)
 }
 
-func (layer *Management) Write(request orchestration.WriteRequest) (orchestration.WriteResponse, error) {
+func (layer *Management) Write(request orchestration.WriteRequest) (response orchestration.WriteResponse, err error) {
+	started := time.Now()
+	defer func() { layer.recordOperation("Write", started, err) }()
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
 	return layer.orchestration.WriteLocked(request)

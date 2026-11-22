@@ -27,6 +27,7 @@ type WriteResponse struct {
 func (layer *IO) Write(request WriteRequest) (response WriteResponse, err error) {
 	started := operationStarted()
 	defer func() {
+		layer.recordOperation(OperationWrite, started, err, 0)
 		logResult(layer.logger, "Write", err,
 			"key", request.Key, "duration", time.Since(started),
 			"bytes", response.BytesWritten)
@@ -40,6 +41,8 @@ func (layer *IO) Write(request WriteRequest) (response WriteResponse, err error)
 		err = pathErr
 		return response, err
 	}
+	layer.recordAccess()
+	defer layer.recordAccess()
 	if err = os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return response, err
 	}
