@@ -12,14 +12,12 @@ import (
 
 // Config is the startup configuration owned and loaded by Management.
 type Config struct {
-	Disks      []DriveConfig
-	Mountpoint string
+	Disks          []DriveConfig
+	Mountpoint     string
+	GRPCSocketPath string
 }
 
 // LoadConfig reads and validates the structural contents of the Management configuration.
-// The caller must resolve every configured WWN with ValidateDriveMappings before initializing storage.
-// LoadConfig deliberately performs no device I/O so callers can validate before creating storage roots.
-// The startup path resolves WWNs before constructing any layer that can create disk data.
 func LoadConfig(path string) (Config, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -101,6 +99,21 @@ func LoadConfig(path string) (Config, error) {
 			}
 			inDisks = false
 			result.Mountpoint = unquoteConfig(strings.TrimSpace(strings.TrimPrefix(line, "mountpoint:")))
+			continue
+		}
+		if indent == 0 && strings.HasPrefix(line, "grpc_socket_path:") {
+			if result.GRPCSocketPath != "" {
+				return Config{}, fmt.Errorf("line %d: duplicate grpc_socket_path key", lineNo)
+			}
+			if current != nil {
+				result.Disks = append(result.Disks, *current)
+				current = nil
+			}
+			inDisks = false
+			result.GRPCSocketPath = unquoteConfig(strings.TrimSpace(strings.TrimPrefix(line, "grpc_socket_path:")))
+			if result.GRPCSocketPath == "" {
+				return Config{}, fmt.Errorf("line %d: empty grpc_socket_path", lineNo)
+			}
 			continue
 		}
 		return Config{}, fmt.Errorf("line %d: unsupported YAML entry %q", lineNo, line)
