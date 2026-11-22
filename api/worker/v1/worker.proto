@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package flexraid.worker.v1;
+
+option go_package = "github.com/tetsup/flexraid/api/worker/v1;workerv1";
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/wrappers.proto";
+
+// WorkerService exposes management and monitoring operations for one logical drive.
+// Responses contain the JSON representation of the corresponding Management API response.
+// File and namespace mutation operations are intentionally not part of this service.
+service WorkerService {
+  rpc GetStatus(google.protobuf.Empty) returns (google.protobuf.StringValue);
+  rpc GetDetailedStatus(google.protobuf.Empty) returns (google.protobuf.StringValue);
+  rpc Inspect(google.protobuf.Empty) returns (google.protobuf.StringValue);
+}
