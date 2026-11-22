@@ -185,11 +185,10 @@ func (layer *Management) lifecycleHooks() StateHookRegistry {
 				layer.mu.Lock()
 				hasDistribution := layer.distribution != nil
 				layer.mu.Unlock()
-				if !hasDistribution {
-					return nil
-				}
-				if err := layer.startBackgroundProcesses(ctx); err != nil {
-					return err
+				if hasDistribution {
+					if err := layer.startBackgroundProcesses(ctx); err != nil {
+						return err
+					}
 				}
 				return layer.startGRPCServer(ctx)
 			},
