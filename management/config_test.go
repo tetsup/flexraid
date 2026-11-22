@@ -92,7 +92,6 @@ func TestLoadConfigRejectsInvalidCleanupPermission(t *testing.T) {
 	}
 }
 
-
 func TestLoadConfigRequiresGRPCSocketPath(t *testing.T) {
 	yaml := "disks:\n" +
 		"  - root: /data/disk1\n    mountpoint: /mnt/disk1\n    wwn: w1\n" +
