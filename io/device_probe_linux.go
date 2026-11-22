@@ -88,7 +88,7 @@ func refreshDeviceActive(ctx context.Context, config DeviceConfig, status *Devic
 			}
 		}
 	}
-	if due(status.PowerState.UpdatedAt, now, interval) || due(status.SpinState.UpdatedAt, now, interval) {
+	if status.Capabilities.PowerStateProbeAvailable && due(status.PowerState.UpdatedAt, now, interval) {
 		probePowerState(ctx, status, now)
 	}
 }
@@ -198,7 +198,6 @@ func probePowerState(ctx context.Context, status *DeviceStatus, now time.Time) {
 		if status.HasSpindle.State == ObservationSupported && status.HasSpindle.Value {
 			status.Capabilities.SpinStateProbeAvailable = false
 			status.SpinState = DeviceValue[string]{State: ObservationUnsupported, Source: "hdparm -C", UpdatedAt: now}
-			status.Capabilities.SpinStateProbeAvailable = false
 		}
 		return
 	}
