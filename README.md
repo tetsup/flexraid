@@ -197,7 +197,7 @@ POSIX の基本操作は pjdfstest を用いて検証します。FlexRAID v1 で
 
 - **Worker**（実行ファイル名 `flexraid`）は論理ドライブごとに一つ起動する独立プロセスです。各 Worker が担当ドライブの Management と下位レイヤーの状態を所有し、通常の gRPC サーバーとして WorkerService を提供します。Worker は `frcon` を介さず単独起動することもできます。
 - WorkerService の gRPC サーバーは Management のライフサイクルに組み込まれ、Management が起動・停止を管理します。RPC handler は Management の公開 API に要求を渡し、下位レイヤーを直接操作しません。
-- Management の `GRPCSocketPath` に Worker 専用 Unix Domain Socket のパスを渡すと、Lifecycle が Ready へ入る際に gRPC サーバーを起動し、Ready を離れる際に新規受付を停止して GracefulStop します。ソケットは所有者のみが接続できる `0600` で作成します。
+- Management の `GRPCSocketPath` に Worker 専用 Unix Domain Socket のパスを渡すと、Lifecycle が Ready へ入る際に gRPC サーバーを起動し、Ready を離れる際に新規受付を停止して GracefulStop します。ソケットは所有者のみが接続できる `0600` で作成します。 起動時に既存 Socket へ接続できる場合は二重起動を拒否し、接続拒否を確認した stale Socket のみを削除して再作成します。
 - **frcon / Controller** は CLI クライアントと Web ゲートウェイを担います。単発 CLI コマンドでは Worker の gRPC サーバーへ接続し、常駐モード（`frcon serve`）ではブラウザからの gRPC-Web 要求を通常の gRPC 呼び出しへ変換して Worker へ中継します。
 - `frcon` は Worker の親・監督プロセスではありません。Controller が終了しても Worker は動作を継続し、Worker の停止は対象 Worker への明示的な操作で行います。
 - Web UI は `frcon` の HTTPS エンドポイントに接続します。Worker の UDS や通常の gRPC サーバーへブラウザから直接接続しません。
