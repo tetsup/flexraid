@@ -102,6 +102,8 @@ type InspectResponse struct {
 	NamespaceError           string
 	Status                   GetStatusResponse
 	Distribution             distribution.GetMetricsResponse
+	DistributionAvailable    bool
+	DistributionError        string
 	Drives                   []DriveMonitoringStatus
 	CollectedAt              time.Time
 }
@@ -188,6 +190,8 @@ func (layer *Management) GetDetailedStatus(request GetDetailedStatusRequest) (re
 	layer.mu.Lock()
 	result.CleanupWorkersStarted = layer.backgroundProcessesStarted
 	result.Status.CleanupWorkersStarted = result.CleanupWorkersStarted
+	result.Status.DistributionAvailable = result.DistributionAvailable
+	result.Status.DistributionError = result.DistributionError
 	if layer.Phase() == LifecycleReady && (!result.CleanupWorkersStarted || !result.DistributionAvailable) {
 		result.Status.Level = StatusDegraded
 	}
@@ -292,6 +296,8 @@ func (layer *Management) Inspect(request InspectRequest) (response InspectRespon
 	layer.mu.Lock()
 	result.CleanupWorkersStarted = layer.backgroundProcessesStarted
 	result.Status.CleanupWorkersStarted = result.CleanupWorkersStarted
+	result.Status.DistributionAvailable = result.DistributionAvailable
+	result.Status.DistributionError = result.DistributionError
 	if layer.Phase() == LifecycleReady && (!result.CleanupWorkersStarted || !result.DistributionAvailable) {
 		result.Status.Level = StatusDegraded
 	}
