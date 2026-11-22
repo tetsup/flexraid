@@ -104,8 +104,8 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - FUSE および将来の管理 API に対する、ファイルシステム全体の公開窓口となる。FUSE からの通常操作は Management を経由し、FUSE から Orchestration / Distribution を直接呼び出さない。
 - ファイルシステム操作 API、管理操作 API、監視 API、制御 API を提供する。ファイルシステム操作は同期的な結果・エラーを返し、長時間の Cleanup / Recovery 等はタスクの開始・進捗確認・キャンセルを扱える形にする。
 - **システム全体の実行状態を所有する唯一のレイヤー**となる。Lifecycle は Initializing / Ready / Draining / Maintenance / Failed の5状態とする。停止専用の状態は設けず、Stop は最優先の Exclusive 要求として安全単位の境界で実行する。
-- Worker の通常 gRPC サーバーは Management のライフサイクルに組み込み、Management が起動・停止を所有する。サーバーの受付処理は Management の公開 API へ要求を渡し、Orchestration / Distribution / I/O を直接操作しない。
-- gRPC サーバーの起動は Management の初期化・起動手順の一部として行い、外部要求を受け付ける前に RPC リスナーの準備を完了する。停止時は新規要求の受付を止め、受付済み要求を安全に終了させてから GracefulStop し、期限内に終了しない場合のみ強制停止へ移行する。
+- Worker の通常 gRPC サーバーは Management が所有し、Management の `Start()` で起動、`Stop()` で停止する。Lifecycle Phase とは独立して常時 RPC を受け付け、Initializing / Ready / Draining / Maintenance / Failed のどの Phase でも接続可能とする。
+- gRPC サーバーはファイルシステム初期化の完了を待たずに起動する。停止時は新規要求の受付を止め、受付済み要求を安全に終了させてから GracefulStop し、期限内に終了しない場合のみ強制停止へ移行する。
 - WorkerService の gRPC transport / handler 実装は Management パッケージ内部に閉じる。外部に公開する契約は Protocol Buffers の service / message 定義と Management の公開 API とし、gRPC 用 handler を Management の別の公開操作層として露出させない。
 - gRPC handler は RPC メッセージと Management Request / Response の変換・入力検証を担い、操作の受付可否・排他・Lifecycle 判定・実行優先順位は Management の既存 Scheduler / admission 経路に従う。handler から下位レイヤーを直接呼び出さない。Worker の UDS は OS のソケットファイル権限で接続元を制限し、Web 認証・セッション認証は frcon が担当する。
 
@@ -119,7 +119,7 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - `OnExit` が失敗した場合は遷移先へ進まず、遷移失敗として扱う。終了処理が一部だけ成功した可能性を考慮し、状態と実プロセスの不一致を黙って通常運用へ戻さない。必要な復旧または Failed への遷移は、明示的なエラー処理として行う。
 - 同じ状態に留まる要求では Hook を実行しない。実際の状態変更一回につき各 Hook は一度だけ実行し、並行する遷移要求による二重実行を防ぐ。Hook 実行中に同じ StateMachine の別遷移を並行実行しない。
 - Hook は StateMachine 内部の状態 Mutex を保持したまま実行しない。遷移の直列化は別の仕組みで保証し、Hook から Lifecycle / Management API を呼び出しても状態 Mutex の自己デッドロックを起こさないようにする。
-- Ready に依存する worker は Ready の `OnEnter` で起動し、Ready の `OnExit` で停止する。初期化処理は Ready への遷移前に完了させる。main や FUSE mount 処理に worker の個別起動・停止順序を重複して持たせず、main は Management の Lifecycle 開始・停止 API を呼び出す。
+- Ready に依存する worker は Ready の `OnEnter` で起動し、Ready の `OnExit` で停止する。gRPC サーバーは Ready 依存 worker ではなく、Lifecycle Hook で起動・停止しない。初期化処理は Ready への遷移前に完了させる。main や FUSE mount 処理に worker の個別起動・停止順序を重複して持たせず、main は Management の Lifecycle 開始・停止 API を呼び出す。
 
 - 通常の FUSE / POSIX 操作は Ready でのみ受け付ける。Initializing / Draining / Maintenance では EBUSY、Failed では EIO で拒否する。状態照会は全状態で受け付ける。Release / Releasedir / Forget / Interrupt など、kernel bookkeeping と handle teardown に必要な処理は状態にかかわらず受け付ける。Flush は Release と同一視せず、通常操作として扱う。
 - 操作受付と状態遷移の競合を防ぐため、admission 登録と Lifecycle 遷移を原子的に調停する。実行権の取得待ちを含め、受付済み操作の開始・完了を追跡し、drain 時には新規受付を止めて必要な実行単位の完了を待つ。
@@ -512,9 +512,9 @@ frcon
 ### Status / Inspect の情報契約
 
 - Management の公開監視 API は `GetStatus` / `GetDetailedStatus` / `Inspect` の3種類に分ける。これらはそれぞれ簡易ヘルスチェック、運用監視 snapshot、完全監査 snapshot であり、一つの API のフラグで用途を切り替えない。
-- `GetStatus` は Lifecycle とメモリ上の累積異常カウンターを用いる低コストな要約とし、物理デバイス照会・容量照会・ストレージ全走査を行わない。
-- `GetDetailedStatus` は Distribution と I/O の `GetMetrics` snapshot、および I/O のデバイス識別・容量情報を drive_name / WWN ごとに返す。I/O の Drive 順序は設定ドライブ順と一致させ、Distribution が設定されている場合は件数不一致を初期化時に拒否する。
-- `Inspect` は詳細監視に加えて Distribution の物理 Object / Stripe / Version / Chunk / Orphan 情報と Orchestration の論理 Namespace / Object / 初期化警告を含める。詳細状態 API の単なる別名にしない。
+- `GetStatus` は Lifecycle Phase を常に返す。初期化前・初期化中・Failed 等で下位レイヤーの情報を取得できない場合も RPC 自体は成功させ、取得できた情報だけを返す。各情報の取得可否と理由を明示し、未取得値をゼロや正常値として偽装しない。Lifecycle とメモリ上の累積異常カウンターを用いる低コストな要約とし、物理デバイス照会・容量照会・ストレージ全走査を行わない。
+- `GetDetailedStatus` は Lifecycle Phase を必ず返し、Distribution と I/O の `GetMetrics` snapshot、および I/O のデバイス識別・容量情報を取得できた範囲で drive_name / WWN ごとに返す。レイヤー未初期化・取得失敗は項目単位の unavailable / error とし、他項目の情報を捨てない。I/O の Drive 順序は設定ドライブ順と一致させ、Distribution が設定されている場合は件数不一致を初期化時に拒否する。
+- `Inspect` は Lifecycle Phase を必ず返し、詳細監視に加えて取得可能な Distribution の物理 Object / Stripe / Version / Chunk / Orphan 情報と Orchestration の論理 Namespace / Object / 初期化警告を含める。未初期化・取得失敗の項目は理由を明示し、取得可能な情報は返す。詳細状態 API の単なる別名にしない。
 - 物理情報の取得失敗は項目ごとに取得不能として返し、他ドライブの情報を捨てない。値を推測で埋めず、取得元・最終取得時刻を明示する。監視・監査のためだけに standby デバイスを SpinUp しない。 詳細状態は取得できた I/O の物理操作統計・物理容量のドライブ別内訳と全体集計、Cleanup worker 稼働状態、Drive ごとの Cleanup 許可設定、Orchestration が算出する現在の論理空き容量も含める。Cleanup 候補サイズと Cleanup 後の容量見積もりは Distribution の `GetMetrics` が返す。サイズは I/O の走査結果または書き込み時に取得した物理ファイル長であり、ファイルシステムの実割当ブロック数とは区別する。物理デバイス属性など未実装・未取得の情報はゼロや推測値で代用しない。
 
 - `status` の通常表示は、Lifecycle、Worker の生存、Controller との接続、物理ドライブの基本的な到達可能性などから、論理ドライブ全体の正常性を簡潔に判定する。高コストな全ストレージ走査を実行しない。
