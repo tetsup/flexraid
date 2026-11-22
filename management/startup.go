@@ -20,6 +20,9 @@ func (layer *Management) Start() error {
 		return nil
 	}
 	if err := layer.scheduler.Start(); err != nil {
+		if errors.Is(err, ErrSchedulerAlreadyStarted) {
+			return err
+		}
 		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		return errors.Join(err, layer.stopGRPCServer(stopCtx))
