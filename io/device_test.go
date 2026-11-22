@@ -48,3 +48,24 @@ func TestDeviceStatusSnapshotIsValueCopy(t *testing.T) {
 		t.Fatal("snapshot mutation changed the original device status")
 	}
 }
+
+func TestParsePowerState(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want string
+	}{
+		{name: "active", text: "drive state is: active/idle", want: "active"},
+		{name: "standby", text: "drive state is: standby", want: "standby"},
+		{name: "sleeping", text: "drive state is: sleeping", want: "sleeping"},
+		{name: "unknown", text: "drive state is: unknown", want: "unknown"},
+		{name: "unrecognized", text: "no state reported"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := parsePowerState(test.text); got != test.want {
+				t.Fatalf("parsePowerState() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
