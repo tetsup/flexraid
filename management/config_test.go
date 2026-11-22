@@ -91,3 +91,17 @@ func TestLoadConfigRejectsInvalidCleanupPermission(t *testing.T) {
 		t.Fatal("LoadConfig succeeded with invalid cleanup permission")
 	}
 }
+
+
+func TestLoadConfigRequiresGRPCSocketPath(t *testing.T) {
+	yaml := "disks:\n" +
+		"  - root: /data/disk1\n    mountpoint: /mnt/disk1\n    wwn: w1\n" +
+		"  - root: /data/disk2\n    mountpoint: /mnt/disk2\n    wwn: w2\n" +
+		"  - root: /data/disk3\n    mountpoint: /mnt/disk3\n    wwn: w3\n" +
+		"  - root: /data/disk4\n    mountpoint: /mnt/disk4\n    wwn: w4\n" +
+		"mountpoint: /mnt/flexraid\n"
+	if _, err := LoadConfig(writeManagementConfig(t, yaml)); err == nil ||
+		!strings.Contains(err.Error(), "grpc_socket_path is required") {
+		t.Fatalf("LoadConfig error = %v, want required gRPC socket path error", err)
+	}
+}
