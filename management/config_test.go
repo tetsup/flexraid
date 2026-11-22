@@ -22,7 +22,8 @@ func TestLoadConfig(t *testing.T) {
 		"  - root: /data/disk2\n    mountpoint: /mnt/disk2\n    wwn: 0x5000000000000002\n" +
 		"  - root: /data/disk3\n    mountpoint: /mnt/disk3\n    wwn: 0x5000000000000003\n" +
 		"  - root: /data/disk4\n    mountpoint: /mnt/disk4\n    wwn: 0x5000000000000004\n" +
-		"mountpoint: /mnt/flexraid\n"
+		"mountpoint: /mnt/flexraid\n" +
+		"grpc_socket_path: /run/flexraid/worker.sock\n"
 	got, err := LoadConfig(writeManagementConfig(t, yaml))
 	if err != nil {
 		t.Fatal(err)
@@ -33,6 +34,9 @@ func TestLoadConfig(t *testing.T) {
 	}
 	if !got.Disks[0].CleanupDeleteDeprecatedVersionsAllowed || got.Disks[0].CleanupPreserveAbnormalDataAllowed || !got.Disks[0].CleanupDeleteLogicalObjectsAllowed {
 		t.Fatalf("unexpected cleanup permissions: %+v", got.Disks[0])
+	}
+	if got.GRPCSocketPath != "/run/flexraid/worker.sock" {
+		t.Fatalf("gRPC socket path = %q", got.GRPCSocketPath)
 	}
 	if got.Mountpoint != "/mnt/flexraid" {
 		t.Fatalf("filesystem mountpoint = %q", got.Mountpoint)
