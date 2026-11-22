@@ -157,7 +157,7 @@ func (layer *Management) GetStatus(request GetStatusRequest) (response GetStatus
 	layer.mu.Lock()
 	result.CleanupWorkersStarted = layer.backgroundProcessesStarted
 	layer.mu.Unlock()
-	if layer.Phase() == LifecycleReady && !result.CleanupWorkersStarted {
+	if layer.Phase() == LifecycleReady && (!result.CleanupWorkersStarted || !result.DistributionAvailable) {
 		result.Level = StatusDegraded
 	}
 	return result, nil
@@ -188,6 +188,9 @@ func (layer *Management) GetDetailedStatus(request GetDetailedStatusRequest) (re
 	layer.mu.Lock()
 	result.CleanupWorkersStarted = layer.backgroundProcessesStarted
 	result.Status.CleanupWorkersStarted = result.CleanupWorkersStarted
+	if layer.Phase() == LifecycleReady && (!result.CleanupWorkersStarted || !result.DistributionAvailable) {
+		result.Status.Level = StatusDegraded
+	}
 	orchestrationLayer := layer.orchestration
 	if orchestrationLayer != nil {
 		statfs, statErr := orchestrationLayer.StatFsLocked(orchestration.StatFsRequest{Context: request.Context})
@@ -289,6 +292,9 @@ func (layer *Management) Inspect(request InspectRequest) (response InspectRespon
 	layer.mu.Lock()
 	result.CleanupWorkersStarted = layer.backgroundProcessesStarted
 	result.Status.CleanupWorkersStarted = result.CleanupWorkersStarted
+	if layer.Phase() == LifecycleReady && (!result.CleanupWorkersStarted || !result.DistributionAvailable) {
+		result.Status.Level = StatusDegraded
+	}
 	permissionSnapshot := layer.cleanupPermissionStore.Snapshot()
 	orchestrationLayer := layer.orchestration
 	if orchestrationLayer != nil {
