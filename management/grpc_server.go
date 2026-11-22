@@ -27,6 +27,12 @@ type workerServiceServer interface {
 	GetStatus(context.Context, *emptypb.Empty) (*structpb.Struct, error)
 	GetDetailedStatus(context.Context, *emptypb.Empty) (*structpb.Struct, error)
 	Inspect(context.Context, *emptypb.Empty) (*structpb.Struct, error)
+	SpinUp(context.Context, *structpb.Struct) (*structpb.Struct, error)
+	SpinDown(context.Context, *structpb.Struct) (*structpb.Struct, error)
+	GetDriveCleanupPermissions(context.Context, *structpb.Struct) (*structpb.Struct, error)
+	SetDriveDeprecatedVersionDeletionPermission(context.Context, *structpb.Struct) (*structpb.Struct, error)
+	SetDriveAbnormalDataPreservationPermission(context.Context, *structpb.Struct) (*structpb.Struct, error)
+	SetDriveLogicalObjectDeletionPermission(context.Context, *structpb.Struct) (*structpb.Struct, error)
 }
 
 type workerService struct {
@@ -55,6 +61,76 @@ func (service *workerService) Inspect(ctx context.Context, _ *emptypb.Empty) (*s
 		return nil, managementRPCError(err)
 	}
 	return encodeWorkerResponse(response)
+}
+
+func (service *workerService) SpinUp(ctx context.Context, request *structpb.Struct) (*structpb.Struct, error) {
+	wwn, err := requiredString(request, "wwn")
+	if err != nil { return nil, err }
+	response, err := service.management.SpinUp(SpinUpRequest{Context: ctx, WWN: wwn})
+	if err != nil { return nil, managementRPCError(err) }
+	return encodeWorkerResponse(response)
+}
+
+func (service *workerService) SpinDown(ctx context.Context, request *structpb.Struct) (*structpb.Struct, error) {
+	wwn, err := requiredString(request, "wwn")
+	if err != nil { return nil, err }
+	response, err := service.management.SpinDown(SpinDownRequest{Context: ctx, WWN: wwn})
+	if err != nil { return nil, managementRPCError(err) }
+	return encodeWorkerResponse(response)
+}
+
+func (service *workerService) GetDriveCleanupPermissions(ctx context.Context, request *structpb.Struct) (*structpb.Struct, error) {
+	wwn, err := requiredString(request, "wwn")
+	if err != nil { return nil, err }
+	response, err := service.management.GetDriveCleanupPermissions(GetDriveCleanupPermissionsRequest{Context: ctx, WWN: wwn})
+	if err != nil { return nil, managementRPCError(err) }
+	return encodeWorkerResponse(response)
+}
+
+func (service *workerService) SetDriveDeprecatedVersionDeletionPermission(ctx context.Context, request *structpb.Struct) (*structpb.Struct, error) {
+	wwn, allowed, err := drivePermissionInput(request)
+	if err != nil { return nil, err }
+	response, err := service.management.SetDriveDeprecatedVersionDeletionPermission(SetDriveDeprecatedVersionDeletionPermissionRequest{Context: ctx, WWN: wwn, Allowed: allowed})
+	if err != nil { return nil, managementRPCError(err) }
+	return encodeWorkerResponse(response)
+}
+
+func (service *workerService) SetDriveAbnormalDataPreservationPermission(ctx context.Context, request *structpb.Struct) (*structpb.Struct, error) {
+	wwn, allowed, err := drivePermissionInput(request)
+	if err != nil { return nil, err }
+	response, err := service.management.SetDriveAbnormalDataPreservationPermission(SetDriveAbnormalDataPreservationPermissionRequest{Context: ctx, WWN: wwn, Allowed: allowed})
+	if err != nil { return nil, managementRPCError(err) }
+	return encodeWorkerResponse(response)
+}
+
+func (service *workerService) SetDriveLogicalObjectDeletionPermission(ctx context.Context, request *structpb.Struct) (*structpb.Struct, error) {
+	wwn, allowed, err := drivePermissionInput(request)
+	if err != nil { return nil, err }
+	response, err := service.management.SetDriveLogicalObjectDeletionPermission(SetDriveLogicalObjectDeletionPermissionRequest{Context: ctx, WWN: wwn, Allowed: allowed})
+	if err != nil { return nil, managementRPCError(err) }
+	return encodeWorkerResponse(response)
+}
+
+func requiredString(request *structpb.Struct, key string) (string, error) {
+	if request == nil { return "", status.Errorf(codes.InvalidArgument, "%s is required", key) }
+	value := request.Fields[key]
+	if value == nil || value.GetStringValue() == "" {
+		return "", status.Errorf(codes.InvalidArgument, "%s is required", key)
+	}
+	return value.GetStringValue(), nil
+}
+
+func drivePermissionInput(request *structpb.Struct) (string, bool, error) {
+	wwn, err := requiredString(request, "wwn")
+	if err != nil { return "", false, err }
+	allowed := request.Fields["allowed"]
+	if allowed == nil || allowed.Kind == nil {
+		return "", false, status.Error(codes.InvalidArgument, "allowed is required")
+	}
+	if _, ok := allowed.Kind.(*structpb.Value_BoolValue); !ok {
+		return "", false, status.Error(codes.InvalidArgument, "allowed must be a boolean")
+	}
+	return wwn, allowed.GetBoolValue(), nil
 }
 
 func encodeWorkerResponse(value any) (*structpb.Struct, error) {
@@ -130,6 +206,45 @@ func workerInspectHandler(server any, ctx context.Context, decoder func(any) err
 	return interceptor(ctx, in, &grpc.UnaryServerInfo{Server: server, FullMethod: "/flexraid.worker.v1.WorkerService/Inspect"}, handler)
 }
 
+func workerSpinUpHandler(server any, ctx context.Context, decoder func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+	return workerStructHandler(server, ctx, decoder, interceptor, "SpinUp", func(ctx context.Context, service workerServiceServer, request *structpb.Struct) (any, error) { return service.SpinUp(ctx, request) })
+}
+
+func workerSpinDownHandler(server any, ctx context.Context, decoder func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+	return workerStructHandler(server, ctx, decoder, interceptor, "SpinDown", func(ctx context.Context, service workerServiceServer, request *structpb.Struct) (any, error) { return service.SpinDown(ctx, request) })
+}
+
+func workerGetDriveCleanupPermissionsHandler(server any, ctx context.Context, decoder func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+	return workerStructHandler(server, ctx, decoder, interceptor, "GetDriveCleanupPermissions", func(ctx context.Context, service workerServiceServer, request *structpb.Struct) (any, error) { return service.GetDriveCleanupPermissions(ctx, request) })
+}
+
+func workerSetDriveDeprecatedVersionDeletionPermissionHandler(server any, ctx context.Context, decoder func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+	return workerStructHandler(server, ctx, decoder, interceptor, "SetDriveDeprecatedVersionDeletionPermission", func(ctx context.Context, service workerServiceServer, request *structpb.Struct) (any, error) { return service.SetDriveDeprecatedVersionDeletionPermission(ctx, request) })
+}
+
+func workerSetDriveAbnormalDataPreservationPermissionHandler(server any, ctx context.Context, decoder func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+	return workerStructHandler(server, ctx, decoder, interceptor, "SetDriveAbnormalDataPreservationPermission", func(ctx context.Context, service workerServiceServer, request *structpb.Struct) (any, error) { return service.SetDriveAbnormalDataPreservationPermission(ctx, request) })
+}
+
+func workerSetDriveLogicalObjectDeletionPermissionHandler(server any, ctx context.Context, decoder func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+	return workerStructHandler(server, ctx, decoder, interceptor, "SetDriveLogicalObjectDeletionPermission", func(ctx context.Context, service workerServiceServer, request *structpb.Struct) (any, error) { return service.SetDriveLogicalObjectDeletionPermission(ctx, request) })
+}
+
+func workerStructHandler(
+	server any,
+	ctx context.Context,
+	decoder func(any) error,
+	interceptor grpc.UnaryServerInterceptor,
+	method string,
+	call func(context.Context, workerServiceServer, *structpb.Struct) (any, error),
+) (any, error) {
+	in := new(structpb.Struct)
+	if err := decoder(in); err != nil { return nil, err }
+	handler := func(ctx context.Context, request any) (any, error) { return call(ctx, server.(workerServiceServer), request.(*structpb.Struct)) }
+	if interceptor == nil { return handler(ctx, in) }
+	return interceptor(ctx, in, &grpc.UnaryServerInfo{Server: server, FullMethod: "/flexraid.worker.v1.WorkerService/" + method}, handler)
+}
+
 var workerServiceDescription = grpc.ServiceDesc{
 	ServiceName: "flexraid.worker.v1.WorkerService",
 	HandlerType: (*workerServiceServer)(nil),
@@ -137,6 +252,12 @@ var workerServiceDescription = grpc.ServiceDesc{
 		{MethodName: "GetStatus", Handler: workerGetStatusHandler},
 		{MethodName: "GetDetailedStatus", Handler: workerGetDetailedStatusHandler},
 		{MethodName: "Inspect", Handler: workerInspectHandler},
+		{MethodName: "SpinUp", Handler: workerSpinUpHandler},
+		{MethodName: "SpinDown", Handler: workerSpinDownHandler},
+		{MethodName: "GetDriveCleanupPermissions", Handler: workerGetDriveCleanupPermissionsHandler},
+		{MethodName: "SetDriveDeprecatedVersionDeletionPermission", Handler: workerSetDriveDeprecatedVersionDeletionPermissionHandler},
+		{MethodName: "SetDriveAbnormalDataPreservationPermission", Handler: workerSetDriveAbnormalDataPreservationPermissionHandler},
+		{MethodName: "SetDriveLogicalObjectDeletionPermission", Handler: workerSetDriveLogicalObjectDeletionPermissionHandler},
 	},
 	Metadata: "api/worker/v1/worker.proto",
 }
