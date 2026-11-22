@@ -77,6 +77,27 @@ func TestWorkerGRPCServerFollowsManagementLifecycle(t *testing.T) {
 		t.Fatalf("cleanup permissions response = %v", permissionResponse)
 	}
 
+	permissionRequest, err := structpb.NewStruct(map[string]any{"wwn": "wwn-grpc-test", "allowed": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	permissionResponse := new(structpb.Struct)
+	if err := connection.Invoke(ctx, "/flexraid.worker.v1.WorkerService/SetDriveDeprecatedVersionDeletionPermission", permissionRequest, permissionResponse); err != nil {
+		t.Fatalf("SetDriveDeprecatedVersionDeletionPermission RPC: %v", err)
+	}
+	getPermissionRequest, err := structpb.NewStruct(map[string]any{"wwn": "wwn-grpc-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	permissionResponse = new(structpb.Struct)
+	if err := connection.Invoke(ctx, "/flexraid.worker.v1.WorkerService/GetDriveCleanupPermissions", getPermissionRequest, permissionResponse); err != nil {
+		t.Fatalf("GetDriveCleanupPermissions RPC: %v", err)
+	}
+	permissions := permissionResponse.Fields["Permissions"].GetStructValue()
+	if permissions == nil || !permissions.Fields["DeleteDeprecatedVersionsAllowed"].GetBoolValue() {
+		t.Fatalf("cleanup permissions response = %v", permissionResponse)
+	}
+
 	if err := layer.Stop(ctx); err != nil {
 		t.Fatalf("Management Stop: %v", err)
 	}
