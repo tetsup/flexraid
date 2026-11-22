@@ -8,14 +8,12 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"sync"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
-	"google.golang.org/protobuf/types/known/wrapperspb"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 type grpcServer struct {
@@ -26,16 +24,16 @@ type grpcServer struct {
 }
 
 type workerServiceServer interface {
-	GetStatus(context.Context, *emptypb.Empty) (*wrapperspb.StringValue, error)
-	GetDetailedStatus(context.Context, *emptypb.Empty) (*wrapperspb.StringValue, error)
-	Inspect(context.Context, *emptypb.Empty) (*wrapperspb.StringValue, error)
+	GetStatus(context.Context, *emptypb.Empty) (*structpb.Struct, error)
+	GetDetailedStatus(context.Context, *emptypb.Empty) (*structpb.Struct, error)
+	Inspect(context.Context, *emptypb.Empty) (*structpb.Struct, error)
 }
 
 type workerService struct {
 	management *Management
 }
 
-func (service *workerService) GetStatus(ctx context.Context, _ *emptypb.Empty) (*wrapperspb.StringValue, error) {
+func (service *workerService) GetStatus(ctx context.Context, _ *emptypb.Empty) (*structpb.Struct, error) {
 	response, err := service.management.GetStatus(GetStatusRequest{Context: ctx})
 	if err != nil {
 		return nil, managementRPCError(err)
@@ -43,7 +41,7 @@ func (service *workerService) GetStatus(ctx context.Context, _ *emptypb.Empty) (
 	return encodeWorkerResponse(response)
 }
 
-func (service *workerService) GetDetailedStatus(ctx context.Context, _ *emptypb.Empty) (*wrapperspb.StringValue, error) {
+func (service *workerService) GetDetailedStatus(ctx context.Context, _ *emptypb.Empty) (*structpb.Struct, error) {
 	response, err := service.management.GetDetailedStatus(GetDetailedStatusRequest{Context: ctx})
 	if err != nil {
 		return nil, managementRPCError(err)
@@ -51,7 +49,7 @@ func (service *workerService) GetDetailedStatus(ctx context.Context, _ *emptypb.
 	return encodeWorkerResponse(response)
 }
 
-func (service *workerService) Inspect(ctx context.Context, _ *emptypb.Empty) (*wrapperspb.StringValue, error) {
+func (service *workerService) Inspect(ctx context.Context, _ *emptypb.Empty) (*structpb.Struct, error) {
 	response, err := service.management.Inspect(InspectRequest{Context: ctx})
 	if err != nil {
 		return nil, managementRPCError(err)
@@ -59,48 +57,77 @@ func (service *workerService) Inspect(ctx context.Context, _ *emptypb.Empty) (*w
 	return encodeWorkerResponse(response)
 }
 
-func encodeWorkerResponse(value any) (*wrapperspb.StringValue, error) {
+func encodeWorkerResponse(value any) (*structpb.Struct, error) {
 	encoded, err := json.Marshal(value)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "encode WorkerService response: %v", err)
 	}
-	return wrapperspb.String(string(encoded)), nil
+	var fields map[string]any
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		return nil, status.Errorf(codes.Internal, "decode WorkerService response: %v", err)
+	}
+	result, err := structpb.NewStruct(fields)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "convert WorkerService response: %v", err)
+	}
+	return result, nil
 }
 
 func managementRPCError(err error) error {
-	if errors.Is(err, context.Canceled) {
+	switch {
+	case errors.Is(err, context.Canceled):
 		return status.Error(codes.Canceled, err.Error())
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
+	case errors.Is(err, context.DeadlineExceeded):
 		return status.Error(codes.DeadlineExceeded, err.Error())
+	default:
+		return status.Error(codes.Internal, err.Error())
 	}
-	return status.Error(codes.Internal, err.Error())
 }
 
 func registerWorkerServiceServer(server *grpc.Server, service workerServiceServer) {
 	server.RegisterService(&workerServiceDescription, service)
 }
 
-func workerServiceHandler[Request any](
-	ctx context.Context,
-	server any,
-	decoder func(any) error,
-	interceptor grpc.UnaryServerInterceptor,
-	method string,
-	in Request,
-	call func(context.Context, workerServiceServer, Request) (any, error),
-) (any, error) {
-	if err := decoder(&in); err != nil {
+func workerGetStatusHandler(server any, ctx context.Context, decoder func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+	in := new(emptypb.Empty)
+	if err := decoder(in); err != nil {
 		return nil, err
 	}
 	handler := func(ctx context.Context, request any) (any, error) {
-		return call(ctx, server.(workerServiceServer), request.(Request))
+		return server.(workerServiceServer).GetStatus(ctx, request.(*emptypb.Empty))
 	}
 	if interceptor == nil {
 		return handler(ctx, in)
 	}
-	info := &grpc.UnaryServerInfo{Server: server, FullMethod: "/flexraid.worker.v1.WorkerService/" + method}
-	return interceptor(ctx, in, info, handler)
+	return interceptor(ctx, in, &grpc.UnaryServerInfo{Server: server, FullMethod: "/flexraid.worker.v1.WorkerService/GetStatus"}, handler)
+}
+
+func workerGetDetailedStatusHandler(server any, ctx context.Context, decoder func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+	in := new(emptypb.Empty)
+	if err := decoder(in); err != nil {
+		return nil, err
+	}
+	handler := func(ctx context.Context, request any) (any, error) {
+		return server.(workerServiceServer).GetDetailedStatus(ctx, request.(*emptypb.Empty))
+	}
+	if interceptor == nil {
+		return handler(ctx, in)
+	}
+	return interceptor(ctx, in, &grpc.UnaryServerInfo{Server: server, FullMethod: "/flexraid.worker.v1.WorkerService/GetDetailedStatus"}, handler)
+}
+
+func workerInspectHandler(server any, ctx context.Context, decoder func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+	in := new(emptypb.Empty)
+	if err := decoder(in); err != nil {
+		return nil, err
+	}
+	handler := func(ctx context.Context, request any) (any, error) {
+		return server.(workerServiceServer).Inspect(ctx, request.(*emptypb.Empty))
+	}
+	if interceptor == nil {
+		return handler(ctx, in)
+	}
+	return interceptor(ctx, in, &grpc.UnaryServerInfo{Server: server, FullMethod: "/flexraid.worker.v1.WorkerService/Inspect"}, handler)
 }
 
 var workerServiceDescription = grpc.ServiceDesc{
@@ -112,24 +139,6 @@ var workerServiceDescription = grpc.ServiceDesc{
 		{MethodName: "Inspect", Handler: workerInspectHandler},
 	},
 	Metadata: "api/worker/v1/worker.proto",
-}
-
-func workerGetStatusHandler(server any, ctx context.Context, decoder func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
-	return workerServiceHandler(ctx, server, decoder, interceptor, "GetStatus", &emptypb.Empty{}, func(ctx context.Context, service workerServiceServer, _ *emptypb.Empty) (any, error) {
-		return service.GetStatus(ctx, &emptypb.Empty{})
-	})
-}
-
-func workerGetDetailedStatusHandler(server any, ctx context.Context, decoder func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
-	return workerServiceHandler(ctx, server, decoder, interceptor, "GetDetailedStatus", &emptypb.Empty{}, func(ctx context.Context, service workerServiceServer, _ *emptypb.Empty) (any, error) {
-		return service.GetDetailedStatus(ctx, &emptypb.Empty{})
-	})
-}
-
-func workerInspectHandler(server any, ctx context.Context, decoder func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
-	return workerServiceHandler(ctx, server, decoder, interceptor, "Inspect", &emptypb.Empty{}, func(ctx context.Context, service workerServiceServer, _ *emptypb.Empty) (any, error) {
-		return service.Inspect(ctx, &emptypb.Empty{})
-	})
 }
 
 func (layer *Management) startGRPCServer(ctx context.Context) error {
@@ -151,6 +160,15 @@ func (layer *Management) startGRPCServer(ctx context.Context) error {
 	if err := os.MkdirAll(filepath.Dir(layer.grpcSocketPath), 0750); err != nil {
 		return fmt.Errorf("create Worker gRPC socket directory: %w", err)
 	}
+	if info, err := os.Lstat(layer.grpcSocketPath); err == nil {
+		if info.Mode()&os.ModeSocket == 0 {
+			return fmt.Errorf("Worker gRPC socket path %q exists and is not a socket", layer.grpcSocketPath)
+		}
+		return fmt.Errorf("Worker gRPC socket path %q already exists; refusing to remove an unverified socket", layer.grpcSocketPath)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect Worker gRPC socket path: %w", err)
+	}
+
 	listener, err := net.Listen("unix", layer.grpcSocketPath)
 	if err != nil {
 		return fmt.Errorf("listen on Worker gRPC socket %q: %w", layer.grpcSocketPath, err)
@@ -210,6 +228,3 @@ func (layer *Management) stopGRPCServer(ctx context.Context) error {
 	}
 	return stopErr
 }
-
-var _ = sync.Mutex{}
-var _ = insecure.NewCredentials
