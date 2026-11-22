@@ -193,13 +193,21 @@ POSIX の基本操作は pjdfstest を用いて検証します。FlexRAID v1 で
 
 ## 管理コマンドとプロセス構成（設計方針）
 
-外部からの管理操作は `frcon` を入口とし、Controller と論理ドライブごとの Worker（実行ファイル名 `flexraid`）がローカル RPC で連携する構成を目標とします。プロセス間通信には Unix Domain Socket 上の gRPC、メッセージ形式には Protocol Buffers を使用します。
+管理コマンドと Web UI は `frcon` を入口とし、論理ドライブごとの Worker（実行ファイル名 `flexraid`）へ gRPC で接続します。通常の gRPC サーバーは Worker が持ち、Unix Domain Socket と Protocol Buffers を使用します。`frcon` は Worker の gRPC クライアントであり、Web UI 向けに gRPC-Web を HTTPS で提供するゲートウェイです。
 
-- **Controller** は外部コマンドを受け付け、対象 Worker へ操作を中継します。常駐 RPC サーバーモード（`frcon serve`）と、単発コマンドを実行して終了するモードを持ちます。
-- **Worker**（実行ファイル名 `flexraid`）は論理ドライブごとに一つ起動する独立プロセスです。各 Worker が担当ドライブの Management と下位レイヤーの状態を所有し、複数 Worker は互いに独立して動作します。Worker は Controller を介さず単独起動することもできます。
-- Controller は Worker を起動できますが、Worker の親・監督プロセスにはなりません。Controller が終了しても Worker は動作を継続し、Worker は Controller を介さず単独起動することもできます。
-- Controller の停止は Worker の停止を意味しません。Worker の停止は対象ドライブを指定した明示的な操作で行います。
-- Controller 再起動後も既存 Worker を再発見して接続できる構成とします。
+- **Worker**（実行ファイル名 `flexraid`）は論理ドライブごとに一つ起動する独立プロセスです。各 Worker が担当ドライブの Management と下位レイヤーの状態を所有し、通常の gRPC サーバーとして WorkerService を提供します。Worker は `frcon` を介さず単独起動することもできます。
+- **frcon / Controller** は CLI クライアントと Web ゲートウェイを担います。単発 CLI コマンドでは Worker の gRPC サーバーへ接続し、常駐モード（`frcon serve`）ではブラウザからの gRPC-Web 要求を通常の gRPC 呼び出しへ変換して Worker へ中継します。
+- `frcon` は Worker の親・監督プロセスではありません。Controller が終了しても Worker は動作を継続し、Worker の停止は対象 Worker への明示的な操作で行います。
+- Web UI は `frcon` の HTTPS エンドポイントに接続します。Worker の UDS や通常の gRPC サーバーへブラウザから直接接続しません。
+
+### Web UI の認証と通信
+
+- `frcon serve` が HTTPS と gRPC-Web の受付を担当し、Worker は通常の gRPC サーバーのままです。
+- Web UI のログインパスワードは統合 `config.yaml` の `controller.web.password_hash` に Argon2id ハッシュとして設定します。平文パスワードは設定ファイルへ保存しません。
+- ログイン成功後はサーバー側セッションを発行し、HttpOnly / Secure / SameSite Cookie で管理します。ログアウトと有効期限切れに対応します。
+- クライアント証明書による mTLS は使用せず、HTTPS のサーバー認証とパスワード認証を使用します。
+- 認証済み Web UI は CLI と同じ管理操作を利用できます。API は状態監視・診断・メンテナンス用であり、ファイルの作成・削除・内容変更などユーザーデータを直接操作する API は提供しません。
+- SNMP は Web UI / gRPC-Web とは独立した監視インターフェースとし、SNMPv3 の読み取り専用アクセスを前提とします。
 
 ### 統合設定ファイルと読み込み規則
 
@@ -209,8 +217,11 @@ Controller と全 Worker の設定は、単一の YAML 設定ファイルにま�
 version: 1
 
 controller:
-  socket_path: /run/flexraid/controller.sock
-  log_level: info
+  web:
+    enabled: true
+    listen: "0.0.0.0:8443"
+    password_hash: "$argon2id$..."
+    session_lifetime: 12h
 
 workers:
   - name: main
