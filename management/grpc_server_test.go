@@ -15,14 +15,22 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-func TestWorkerGRPCServerFollowsManagementLifecycle(t *testing.T) {
+func TestWorkerGRPCServerRemainsAvailableAcrossLifecyclePhases(t *testing.T) {
 	socketPath := filepath.Join(t.TempDir(), "worker.sock")
+	initializationGate := make(chan struct{})
 	layer, err := New(NewRequest{
 		Config: Config{
 			Disks:          []DriveConfig{{Root: t.TempDir(), Mountpoint: t.TempDir(), WWN: "wwn-grpc-test"}},
 			GRPCSocketPath: socketPath,
 		},
-		Initialization: InitializationTaskFunc(func(context.Context) (bool, error) { return true, nil }),
+		Initialization: InitializationTaskFunc(func(ctx context.Context) (bool, error) {
+			select {
+			case <-initializationGate:
+				return true, nil
+			case <-ctx.Done():
+				return false, ctx.Err()
+			}
+		}),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -32,10 +40,6 @@ func TestWorkerGRPCServerFollowsManagementLifecycle(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := layer.WaitReady(ctx); err != nil {
-		t.Fatal(err)
-	}
-
 	connection, err := grpc.NewClient(
 		"passthrough:///worker",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -52,8 +56,20 @@ func TestWorkerGRPCServerFollowsManagementLifecycle(t *testing.T) {
 	if err := connection.Invoke(ctx, "/flexraid.worker.v1.WorkerService/GetStatus", &emptypb.Empty{}, response); err != nil {
 		t.Fatalf("GetStatus RPC: %v", err)
 	}
-	if response.Fields["Level"].GetStringValue() != string(StatusFailed) {
-		t.Fatalf("status level = %v, want %q", response.Fields["Level"], StatusFailed)
+	if got := response.Fields["Lifecycle"].GetNumberValue(); got != float64(LifecycleInitializing) {
+		t.Fatalf("initial lifecycle phase = %v, want %d", got, LifecycleInitializing)
+	}
+
+	close(initializationGate)
+	if err := layer.WaitReady(ctx); err != nil {
+		t.Fatal(err)
+	}
+	response = new(structpb.Struct)
+	if err := connection.Invoke(ctx, "/flexraid.worker.v1.WorkerService/GetStatus", &emptypb.Empty{}, response); err != nil {
+		t.Fatalf("GetStatus RPC in Ready: %v", err)
+	}
+	if got := response.Fields["Lifecycle"].GetNumberValue(); got != float64(LifecycleReady) {
+		t.Fatalf("ready lifecycle phase = %v, want %d", got, LifecycleReady)
 	}
 
 	permissionRequest, err := structpb.NewStruct(map[string]any{"wwn": "wwn-grpc-test", "allowed": true})
