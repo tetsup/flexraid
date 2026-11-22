@@ -130,6 +130,9 @@ func LoadConfig(path string) (Config, error) {
 	if result.Mountpoint == "" {
 		return Config{}, fmt.Errorf("mountpoint is required")
 	}
+	if result.GRPCSocketPath == "" {
+		return Config{}, fmt.Errorf("grpc_socket_path is required")
+	}
 	if _, err := validateDriveConfig(result.Disks); err != nil {
 		return Config{}, err
 	}
