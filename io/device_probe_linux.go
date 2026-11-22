@@ -2,6 +2,7 @@ package io
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -138,6 +139,18 @@ func probeSMARTHealth(ctx context.Context, smartctl string, status *DeviceStatus
 func probeTemperature(ctx context.Context, smartctl string, status *DeviceStatus, now time.Time) {
 	output, err := exec.CommandContext(ctx, smartctl, "-l", "scttempsts", status.DevicePath).CombinedOutput()
 	text := string(output)
+	if err != nil && strings.HasPrefix(status.DevicePath, "/dev/nvme") {
+		if nvme, lookErr := exec.LookPath("nvme"); lookErr == nil {
+			nvmeOutput, nvmeErr := exec.CommandContext(ctx, nvme, "smart-log", "--output-format=json", status.DevicePath).CombinedOutput()
+			if nvmeErr == nil {
+				var log struct { Temperature float64 `json:"temperature"` }
+				if jsonErr := json.Unmarshal(nvmeOutput, &log); jsonErr == nil {
+					status.TemperatureC = DeviceValue[float64]{Value: log.Temperature, State: ObservationSupported, Source: "nvme smart-log", UpdatedAt: now}
+					return
+				}
+			}
+		}
+	}
 	if err != nil {
 		status.TemperatureC = DeviceValue[float64]{State: ObservationUnavailable, Source: "smartctl -l scttempsts", UpdatedAt: now, Error: fmt.Sprintf("%v: %s", err, strings.TrimSpace(text))}
 		return
