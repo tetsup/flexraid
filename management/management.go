@@ -2,6 +2,7 @@
 package management
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -24,10 +25,13 @@ type Management struct {
 	backgroundProcessesStarted bool
 	scheduler                  *Scheduler
 	metrics                    *metricsCollector
+	grpcMu                     sync.Mutex
+	grpcServer                 grpcServer
+	grpcSocketPath             string
 }
 
 func New(request NewRequest) (*Management, error) {
-	if request.Orchestration == nil && request.Initialization == nil {
+	if request.Orchestration == nil && request.Initialization == nil && request.Config.GRPCSocketPath == "" {
 		return nil, fmt.Errorf("Orchestration layer or initialization task is required")
 	}
 	drives, err := validateDriveConfig(request.Config.Disks)
@@ -56,6 +60,7 @@ func New(request NewRequest) (*Management, error) {
 		drives:                 drives,
 		cleanupPermissionStore: permissionStore,
 		metrics:                newMetricsCollector(),
+		grpcSocketPath:         request.Config.GRPCSocketPath,
 	}
 	if receiver, ok := request.Initialization.(cleanupPermissionStoreReceiver); ok {
 		receiver.SetCleanupPermissionStore(permissionStore)
@@ -70,8 +75,12 @@ func New(request NewRequest) (*Management, error) {
 			return nil, err
 		}
 	}
-	if request.Initialization != nil {
-		layer.scheduler = NewSchedulerWithLifecycleHooks(request.Initialization, nil, layer.lifecycleHooks())
+	initialization := request.Initialization
+	if initialization == nil && request.Config.GRPCSocketPath != "" {
+		initialization = InitializationTaskFunc(func(context.Context) (bool, error) { return true, nil })
+	}
+	if initialization != nil {
+		layer.scheduler = NewSchedulerWithLifecycleHooks(initialization, nil, layer.lifecycleHooks())
 	}
 
 	return layer, nil

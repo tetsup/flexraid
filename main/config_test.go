@@ -17,7 +17,7 @@ func writeConfig(t *testing.T, yaml string) string {
 }
 
 func validConfig(disks string) string {
-	return "disks:\n" + disks + "mountpoint: /mnt/flexraid\n"
+	return "disks:\n" + disks + "mountpoint: /mnt/flexraid\n" + "grpc_socket_path: /run/flexraid/worker.sock\n"
 }
 
 func TestLoadConfig(t *testing.T) {
@@ -35,6 +35,9 @@ func TestLoadConfig(t *testing.T) {
 	}
 	if config.Mountpoint != "/mnt/flexraid" {
 		t.Errorf("mountpoint = %q, want /mnt/flexraid", config.Mountpoint)
+	}
+	if config.GRPCSocketPath != "/run/flexraid/worker.sock" {
+		t.Errorf("gRPC socket path = %q, want /run/flexraid/worker.sock", config.GRPCSocketPath)
 	}
 }
 

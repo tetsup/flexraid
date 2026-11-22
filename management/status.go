@@ -32,6 +32,8 @@ type GetStatusResponse struct {
 	RecoveryFailureCount  uint64
 	CleanupWorkersStarted bool
 	Operations            map[string]OperationMetrics
+	DistributionAvailable bool
+	DistributionError     string
 }
 
 // DriveMonitoringStatus identifies the configured physical drive and reports
@@ -75,6 +77,8 @@ type GetDetailedStatusResponse struct {
 	Operations               map[string]OperationMetrics
 	Status                   GetStatusResponse
 	Distribution             distribution.GetMetricsResponse
+	DistributionAvailable    bool
+	DistributionError        string
 	Drives                   []DriveMonitoringStatus
 	CollectedAt              time.Time
 }
@@ -98,6 +102,8 @@ type InspectResponse struct {
 	NamespaceError           string
 	Status                   GetStatusResponse
 	Distribution             distribution.GetMetricsResponse
+	DistributionAvailable    bool
+	DistributionError        string
 	Drives                   []DriveMonitoringStatus
 	CollectedAt              time.Time
 }
@@ -132,22 +138,28 @@ func (layer *Management) GetStatus(request GetStatusRequest) (response GetStatus
 	if err := validateMonitoringContext(request.Context); err != nil {
 		return GetStatusResponse{}, err
 	}
-	if layer.distribution == nil {
-		result := statusFromMetrics(layer.Phase(), distribution.GetMetricsResponse{})
-		result.Level = StatusFailed
-		result.Operations = layer.metrics.snapshot()
-		return result, nil
-	}
-	metrics, err := layer.distribution.GetMetrics(distribution.GetMetricsRequest{Context: request.Context, SummaryOnly: true})
-	if err != nil {
-		return GetStatusResponse{}, fmt.Errorf("get Distribution status: %w", err)
-	}
-	result := statusFromMetrics(layer.Phase(), metrics)
+	phase := layer.Phase()
+	result := statusFromMetrics(phase, distribution.GetMetricsResponse{})
 	result.Operations = layer.metrics.snapshot()
+	if layer.distribution == nil {
+		result.DistributionError = "Distribution layer is not initialized"
+	} else {
+		metrics, metricsErr := layer.distribution.GetMetrics(distribution.GetMetricsRequest{Context: request.Context, SummaryOnly: true})
+		if metricsErr != nil {
+			result.DistributionError = metricsErr.Error()
+		} else {
+			result.DistributionAvailable = true
+			result.IntegrityErrorCount = metrics.IntegrityErrorCount
+			result.RecoveryFailureCount = metrics.RecoveryFailureCount
+			result = statusFromMetrics(phase, metrics)
+			result.Operations = layer.metrics.snapshot()
+			result.DistributionAvailable = true
+		}
+	}
 	layer.mu.Lock()
 	result.CleanupWorkersStarted = layer.backgroundProcessesStarted
 	layer.mu.Unlock()
-	if layer.Phase() == LifecycleReady && !result.CleanupWorkersStarted {
+	if layer.Phase() == LifecycleReady && (!result.CleanupWorkersStarted || !result.DistributionAvailable) {
 		result.Level = StatusDegraded
 	}
 	return result, nil
@@ -162,20 +174,27 @@ func (layer *Management) GetDetailedStatus(request GetDetailedStatusRequest) (re
 		return GetDetailedStatusResponse{}, err
 	}
 	result := GetDetailedStatusResponse{CollectedAt: time.Now(), Drives: make([]DriveMonitoringStatus, 0, len(layer.driveOrder)), Operations: layer.metrics.snapshot()}
-	if layer.distribution != nil {
-		var err error
-		result.Distribution, err = layer.distribution.GetMetrics(distribution.GetMetricsRequest{Context: request.Context})
-		if err != nil {
-			return GetDetailedStatusResponse{}, fmt.Errorf("get Distribution metrics: %w", err)
-		}
-	}
-	result.Status = statusFromMetrics(layer.Phase(), result.Distribution)
+	result.Status = statusFromMetrics(layer.Phase(), distribution.GetMetricsResponse{})
 	if layer.distribution == nil {
-		result.Status.Level = StatusFailed
+		result.DistributionError = "Distribution layer is not initialized"
+	} else {
+		metrics, metricsErr := layer.distribution.GetMetrics(distribution.GetMetricsRequest{Context: request.Context})
+		if metricsErr != nil {
+			result.DistributionError = metricsErr.Error()
+		} else {
+			result.Distribution = metrics
+			result.DistributionAvailable = true
+			result.Status = statusFromMetrics(layer.Phase(), metrics)
+		}
 	}
 	layer.mu.Lock()
 	result.CleanupWorkersStarted = layer.backgroundProcessesStarted
 	result.Status.CleanupWorkersStarted = result.CleanupWorkersStarted
+	result.Status.DistributionAvailable = result.DistributionAvailable
+	result.Status.DistributionError = result.DistributionError
+	if layer.Phase() == LifecycleReady && (!result.CleanupWorkersStarted || !result.DistributionAvailable) {
+		result.Status.Level = StatusDegraded
+	}
 	orchestrationLayer := layer.orchestration
 	if orchestrationLayer != nil {
 		statfs, statErr := orchestrationLayer.StatFsLocked(orchestration.StatFsRequest{Context: request.Context})
@@ -261,30 +280,37 @@ func (layer *Management) Inspect(request InspectRequest) (response InspectRespon
 		return InspectResponse{}, err
 	}
 	result := InspectResponse{CollectedAt: time.Now(), Drives: make([]DriveMonitoringStatus, 0, len(layer.driveOrder)), Operations: layer.metrics.snapshot()}
-	if layer.distribution != nil {
-		var err error
-		result.Distribution, err = layer.distribution.GetMetrics(distribution.GetMetricsRequest{Context: request.Context, IncludeDetails: true})
-		if err != nil {
-			return InspectResponse{}, fmt.Errorf("inspect Distribution: %w", err)
-		}
-	}
-	result.Status = statusFromMetrics(layer.Phase(), result.Distribution)
+	result.Status = statusFromMetrics(layer.Phase(), distribution.GetMetricsResponse{})
 	if layer.distribution == nil {
-		result.Status.Level = StatusFailed
+		result.DistributionError = "Distribution layer is not initialized"
+	} else {
+		metrics, metricsErr := layer.distribution.GetMetrics(distribution.GetMetricsRequest{Context: request.Context, IncludeDetails: true})
+		if metricsErr != nil {
+			result.DistributionError = metricsErr.Error()
+		} else {
+			result.Distribution = metrics
+			result.DistributionAvailable = true
+			result.Status = statusFromMetrics(layer.Phase(), metrics)
+		}
 	}
 	layer.mu.Lock()
 	result.CleanupWorkersStarted = layer.backgroundProcessesStarted
 	result.Status.CleanupWorkersStarted = result.CleanupWorkersStarted
+	result.Status.DistributionAvailable = result.DistributionAvailable
+	result.Status.DistributionError = result.DistributionError
+	if layer.Phase() == LifecycleReady && (!result.CleanupWorkersStarted || !result.DistributionAvailable) {
+		result.Status.Level = StatusDegraded
+	}
 	permissionSnapshot := layer.cleanupPermissionStore.Snapshot()
 	orchestrationLayer := layer.orchestration
 	if orchestrationLayer != nil {
 		namespace, namespaceErr := orchestrationLayer.InspectNamespace(orchestration.InspectNamespaceRequest{Context: request.Context})
 		if namespaceErr != nil {
-			layer.mu.Unlock()
-			return InspectResponse{}, fmt.Errorf("inspect Orchestration namespace: %w", namespaceErr)
+			result.NamespaceError = namespaceErr.Error()
+		} else {
+			result.Namespace = namespace
+			result.NamespaceAvailable = true
 		}
-		result.Namespace = namespace
-		result.NamespaceAvailable = true
 		statfs, statErr := orchestrationLayer.StatFsLocked(orchestration.StatFsRequest{Context: request.Context})
 		if statErr != nil {
 			result.LogicalCapacityError = statErr.Error()

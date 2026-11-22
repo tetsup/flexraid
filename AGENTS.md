@@ -104,6 +104,10 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - FUSE および将来の管理 API に対する、ファイルシステム全体の公開窓口となる。FUSE からの通常操作は Management を経由し、FUSE から Orchestration / Distribution を直接呼び出さない。
 - ファイルシステム操作 API、管理操作 API、監視 API、制御 API を提供する。ファイルシステム操作は同期的な結果・エラーを返し、長時間の Cleanup / Recovery 等はタスクの開始・進捗確認・キャンセルを扱える形にする。
 - **システム全体の実行状態を所有する唯一のレイヤー**となる。Lifecycle は Initializing / Ready / Draining / Maintenance / Failed の5状態とする。停止専用の状態は設けず、Stop は最優先の Exclusive 要求として安全単位の境界で実行する。
+- Worker の通常 gRPC サーバーは Management が所有し、Management の `Start()` で起動、`Stop()` で停止する。Lifecycle Phase とは独立して常時 RPC を受け付け、Initializing / Ready / Draining / Maintenance / Failed のどの Phase でも接続可能とする。
+- gRPC サーバーはファイルシステム初期化の完了を待たずに起動する。停止時は新規要求の受付を止め、受付済み要求を安全に終了させてから GracefulStop し、期限内に終了しない場合のみ強制停止へ移行する。
+- WorkerService の gRPC transport / handler 実装は Management パッケージ内部に閉じる。外部に公開する契約は Protocol Buffers の service / message 定義と Management の公開 API とし、gRPC 用 handler を Management の別の公開操作層として露出させない。
+- gRPC handler は RPC メッセージと Management Request / Response の変換・入力検証を担い、操作の受付可否・排他・Lifecycle 判定・実行優先順位は Management の既存 Scheduler / admission 経路に従う。handler から下位レイヤーを直接呼び出さない。Worker の UDS は OS のソケットファイル権限で接続元を制限し、Web 認証・セッション認証は frcon が担当する。
 
 #### Lifecycle StateMachine / State Hooks
 
@@ -115,7 +119,7 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - `OnExit` が失敗した場合は遷移先へ進まず、遷移失敗として扱う。終了処理が一部だけ成功した可能性を考慮し、状態と実プロセスの不一致を黙って通常運用へ戻さない。必要な復旧または Failed への遷移は、明示的なエラー処理として行う。
 - 同じ状態に留まる要求では Hook を実行しない。実際の状態変更一回につき各 Hook は一度だけ実行し、並行する遷移要求による二重実行を防ぐ。Hook 実行中に同じ StateMachine の別遷移を並行実行しない。
 - Hook は StateMachine 内部の状態 Mutex を保持したまま実行しない。遷移の直列化は別の仕組みで保証し、Hook から Lifecycle / Management API を呼び出しても状態 Mutex の自己デッドロックを起こさないようにする。
-- Ready に依存する worker は Ready の `OnEnter` で起動し、Ready の `OnExit` で停止する。初期化処理は Ready への遷移前に完了させる。main や FUSE mount 処理に worker の個別起動・停止順序を重複して持たせず、main は Management の Lifecycle 開始・停止 API を呼び出す。
+- Ready に依存する worker は Ready の `OnEnter` で起動し、Ready の `OnExit` で停止する。gRPC サーバーは Ready 依存 worker ではなく、Lifecycle Hook で起動・停止しない。初期化処理は Ready への遷移前に完了させる。main や FUSE mount 処理に worker の個別起動・停止順序を重複して持たせず、main は Management の Lifecycle 開始・停止 API を呼び出す。
 
 - 通常の FUSE / POSIX 操作は Ready でのみ受け付ける。Initializing / Draining / Maintenance では EBUSY、Failed では EIO で拒否する。状態照会は全状態で受け付ける。Release / Releasedir / Forget / Interrupt など、kernel bookkeeping と handle teardown に必要な処理は状態にかかわらず受け付ける。Flush は Release と同一視せず、通常操作として扱う。
 - 操作受付と状態遷移の競合を防ぐため、admission 登録と Lifecycle 遷移を原子的に調停する。実行権の取得待ちを含め、受付済み操作の開始・完了を追跡し、drain 時には新規受付を止めて必要な実行単位の完了を待つ。
@@ -337,60 +341,152 @@ Distribution -> I/O
 
 ## 12. Controller / Worker と外部管理 API
 
-この節は、外部管理インターフェースとプロセス構成の確定した設計契約を定める。CLI コマンドの個別引数や RPC メッセージの詳細は、実装時に API 定義と合わせて決定する。
+この節は、外部管理インターフェースとプロセス構成の確定した設計契約を定める。Worker が通常の gRPC サーバーを提供し、`frcon` は Worker に接続する CLI クライアント兼 gRPC-Web ゲートウェイとする。
 
 ### プロセス構成
 
-- 外部コマンドの受付を担う Controller と、論理ドライブを実際に管理する Worker を分離する。
-- Worker は論理ドライブごとに独立した OS プロセスとして起動する。各 Worker プロセスは一つの論理ドライブを担当し、そのドライブに対応する Management と下位レイヤーの実行状態を所有する。
-- 複数の論理ドライブは、それぞれ独立した Worker プロセスとして並行稼働できる。一つの Worker の異常終了が、他の Worker や Controller のプロセス終了を引き起こしてはならない。
-- Controller は外部コマンドを受け付け、対象 Worker へ操作を中継する。Controller 自身は論理ドライブの Management 実行状態を所有しない。
-- Controller は常駐 RPC サーバーモードと、コマンドを一度実行して終了する単発モードを持つ。両モードは同じ RPC 契約を使用する。
-- 常駐 Controller が終了・強制終了しても Worker は動作を継続する。Controller は Worker の親プロセス／監督プロセスではなく、Worker の生存期間を所有しない。
-- Controller から Worker を起動する場合も、Worker の独立起動コマンドを起動する薄いラッパーとして扱う。Controller 終了時に起動した Worker を連動終了させない。Worker は Controller を介さず単独でも起動できる。
-- Worker の停止は対象 Worker への明示的な停止要求で行う。Controller 自身の停止と Worker の停止を同一視しない。
-- Controller 再起動後は、既存 Worker の接続先を再発見して再接続できる設計とする。Controller のメモリ上の登録状態だけを Worker の存在根拠にしない。
+- Worker（実行ファイル名 `flexraid`）は論理ドライブごとに独立した OS プロセスとして起動する。各 Worker は一つの論理ドライブを担当し、そのドライブに対応する Management と下位レイヤーの実行状態を所有する。
+- 各 Worker は通常の gRPC サーバーを持ち、Protocol Buffers で定義された WorkerService を提供する。Worker の gRPC リスナーは Unix Domain Socket とし、ローカルのプロセス間通信に使用する。
+- Worker は `frcon` を介さず単独起動できる。Worker は自身の生存期間と論理ドライブの実行状態を所有し、`frcon` の停止・異常終了によって停止してはならない。
+- Controller（実行ファイル名 `frcon`）は Worker の gRPC サーバーへ接続するクライアントであり、Worker の親・監督プロセスではない。Worker の起動・停止を要求できるが、Worker の生存期間を所有しない。
+- `frcon` は CLI コマンドを実行する単発モードと、Web UI 向けの gRPC-Web ゲートウェイを提供する常駐モード（`frcon serve`）を持つ。常駐モードは Worker の代わりにファイルシステムや Management の実行状態を所有せず、要求を対象 Worker へ中継する。
+- 複数の論理ドライブは、それぞれ独立した Worker プロセスとして並行稼働できる。一つの Worker の異常終了が、他の Worker や `frcon` のプロセス終了を引き起こしてはならない。
+- `frcon` が終了・強制終了しても Worker は動作を継続する。`frcon` 再起動後は、設定された Worker の UDS へ再接続できる構成とする。Controller のメモリ上の登録状態だけを Worker の存在根拠にしない。
+- Worker の停止は対象 Worker への明示的な停止要求で行う。`frcon` 自身の停止と Worker の停止を同一視しない。
 - プロセス分離はアプリケーションプロセス間の障害伝播を防ぐものであり、OS・カーネル・物理デバイスなど共有基盤の障害まで分離するものではない。
 
-### ローカル RPC
+### Worker gRPC
 
-- Controller と Worker、および外部コマンドと Controller のプロセス間通信には、Unix Domain Socket 上の gRPC を使用する。
-- RPC のメッセージ形式には Protocol Buffers を使用する。JSON を独自に重ねた RPC や独自バイナリプロトコルを追加しない。
-- RPC 契約は Protocol Buffers の service / message 定義を正とし、Go の RPC コードは定義から生成する。生成コードを手編集しない。
-- Controller API と Worker API は別の service 契約として定義する。Controller は drive_name に対応する Worker を特定し、Worker API を呼び出す。
-- 外部利用者向けの管理コマンドは Controller を入口とする。Worker の UDS は Controller から Worker への内部通信に使用し、通常の CLI 利用者に Worker の接続先を直接指定させない。
-- 単発 Controller コマンドは、常駐 Controller が利用可能なら Controller の UDS へ接続し、常駐 Controller がない場合も必要な Worker を特定して操作できる構成とする。単発モードと常駐モードで操作の意味や RPC 契約を変えない。
-- Socket の配置、権限、所有者、起動時の stale socket 処理、Worker の識別・再発見方法は実装時に定義する。PID ファイルの存在だけで Worker の稼働を断定しない。
+- Worker は Unix Domain Socket 上で通常の gRPC サーバーを提供する。CLI の `frcon` と常駐 `frcon serve` は gRPC クライアントとして WorkerService を呼び出す。
+- RPC のメッセージ形式には Protocol Buffers を使用する。RPC 契約は Protocol Buffers の service / message 定義を正とし、Go の RPC コードは定義から生成する。生成コードを手編集しない。
+- WorkerService は `GetStatus` / `GetDetailedStatus` / `Inspect` による状態監視・診断、`SpinUp` / `SpinDown` によるドライブ電源制御、Drive ごとの Cleanup 許可情報の取得・更新を提供する。ファイルの作成・削除・内容変更など、ユーザーデータを直接操作する API は公開しない。
+- Status と Inspect は用途を分けた RPC とする。簡易状態、詳細状態、完全監査の情報を一つの RPC のフラグで切り替えない。
+- `frcon` は Worker 名から接続先 UDS を解決し、対象 Worker の WorkerService を呼び出す。Worker の UDS は内部 RPC 用であり、Web ブラウザから直接接続させない。
+- Worker の UDS パスは必須設定 `grpc_socket_path` から Management の `GRPCSocketPath` に渡す。親ディレクトリは必要に応じて作成し、Socket は `0600` で作成する。起動時に同じパスの Socket が存在する場合は接続を試み、接続可能なら既存 Worker として起動を拒否する。接続拒否を確認できた stale Socket だけを削除して再作成する。通常ファイルやシンボリックリンクは削除しない。PID ファイルの存在だけで Worker の稼働を断定しない。
 
-### コマンド体系
+### frcon gRPC-Web / Web 認証
 
-以下は整備するコマンド領域の一覧であり、現時点で実装済みの CLI 契約を意味しない。引数・出力形式・終了コードは各コマンドの API 設計時に定義する。
+- `frcon serve` は Web UI 向け HTTPS エンドポイントを提供し、ブラウザからの gRPC-Web 要求を受け付けて、通常の gRPC クライアントとして WorkerService へ中継する。gRPC-Web の実装は `flexraid-worker` ではなく `frcon` に置く。
+- Worker は gRPC-Web、ブラウザセッション、Web パスワード認証を実装しない。Worker が提供する通常の gRPC / WorkerService は CLI と `frcon` の双方から利用する。
+- Web UI は `frcon` に接続し、Worker の UDS や gRPC サーバーへ直接接続しない。`frcon` は Worker 名を使って要求先を選択する。
+- Web UI の認証はパスワードログインとサーバー側セッションで行う。パスワード設定は統合 `config.yaml` の Controller 設定に置き、平文ではなく Argon2id のパスワードハッシュを保存する。
+- ログイン成功時に十分な乱数のセッション ID を発行し、HttpOnly / Secure / SameSite 属性を付けた Cookie で管理する。ログアウトと有効期限切れでセッションを無効化し、状態変更要求には CSRF 対策を行う。
+- Web エンドポイントは HTTPS とする。サーバー証明書による TLS を使用するが、クライアント証明書による mTLS は必須にしない。
+- 認証済み Web セッションには CLI と同じ管理操作範囲を許可する。管理 API は状態監視・診断・メンテナンスに限定し、ユーザーデータを直接操作する API は設けない。
+- gRPC-Web で利用する RPC はブラウザ実装の制約を考慮する。双方向ストリーミングを前提にせず、必要な監視更新は Unary RPC の反復呼び出しを基本とする。
 
-- `system status`: Controller および接続可能な Worker 群の状態を確認する。
-- `system start`: Controller の常駐 RPC サーバーを起動する。
-- `system stop`: Controller の常駐 RPC サーバーだけを停止する。Worker は停止しない。
+### 統合設定ファイルと読み込み規則
+
+Controller と全 Worker の設定は、単一の YAML 設定ファイルにまとめる。トップレベルに `controller` と `workers` を定義し、各 Worker は `name` で識別する。Worker 名は設定ファイル内で一意でなければならない。
+
+```yaml
+version: 1
+
+controller:
+  web:
+    enabled: true
+    listen: "0.0.0.0:8443"
+    password_hash: "$argon2id$..."
+    session_lifetime: 12h
+
+workers:
+  - name: main
+    socket_path: /run/flexraid/workers/main.sock
+    devices:
+      - uuid: "..."
+      - uuid: "..."
+      - uuid: "..."
+      - uuid: "..."
+    management:
+      cleanup:
+        execution: when_spun_up
+        policy:
+          delete_deprecated_versions_allowed: true
+          preserve_abnormal_data_allowed: false
+          delete_logical_objects_allowed: false
+
+  - name: backup
+    socket_path: /run/flexraid/workers/backup.sock
+    devices:
+      - uuid: "..."
+      - uuid: "..."
+      - uuid: "..."
+      - uuid: "..."
+```
+
+設定ファイルの選択規則は Controller / Worker で共通とし、次の優先順位で決定する。
+
+1. `--config <path>` が指定されている場合は、そのファイルを使用する。
+2. `--config` が指定されていない場合は、まず `/etc/flexraid/config.yaml` を確認する。
+3. そこにファイルが存在しない場合は、カレントディレクトリの `./config.yaml` を使用する。
+4. どちらも存在しない場合は起動エラーにする。
+
+`--config` で明示されたファイルが存在しない、または読み込めない場合はエラーとし、既定パスへフォールバックしない。相対パスはカレントディレクトリを基準に解決する。
+
+`frcon` は統合設定ファイルから Controller 自身の Web 設定と Worker 一覧を読み込む。Worker を単独起動する場合は、起動引数で `--name <worker-name>` を必須指定し、同じ設定ファイル内から名前が一致する Worker の設定を一つだけ選択して起動する。一致する Worker がない場合や名前が重複している場合は起動エラーにする。
+
+```sh
+# Web UI 向け gRPC-Web ゲートウェイを起動
+frcon serve
+
+# 設定ファイルを明示してゲートウェイを起動
+frcon serve --config ./production.yaml
+
+# Worker を単独起動（自動選択された設定ファイルから main を選択）
+flexraid --name main
+
+# Worker を単独起動（設定ファイルを明示）
+flexraid --config ./production.yaml --name main
+```
+
+### 管理コマンド体系
+
+以下は整備するコマンド領域の一覧であり、個別引数・出力形式・終了コードは各コマンドの API 設計時に定義する。
+
+```text
+frcon
+├── serve
+├── system
+│   ├── status
+│   ├── start
+│   └── stop
+├── drive
+│   ├── list
+│   ├── status <drive_name> [--detail]
+│   ├── inspect <drive_name>
+│   ├── start <drive_name>
+│   └── stop <drive_name>
+├── cleanup
+│   ├── status <drive_name>
+│   ├── policy
+│   │   ├── show <drive_name>
+│   │   └── set <drive_name> ...
+│   └── run <drive_name>
+└── config
+    ├── show
+    ├── validate
+    └── reload
+```
+
+- `system status`: Controller と接続可能な Worker 群の状態を確認する。
+- `system start`: `frcon serve` の常駐 gRPC-Web ゲートウェイを起動する。
+- `system stop`: 常駐 `frcon` だけを停止する。Worker は停止しない。
 - `drive list`: 管理対象の論理ドライブを列挙する。
-- `drive status <drive_name>`: 簡易ヘルスチェックを行い、論理ドライブ全体として問題があるかを短時間で確認する。全デバイスの詳細照会やストレージ全走査を前提としない。
-- `drive status <drive_name> --detail`: 運用監視用の詳細状態を取得する。物理ドライブごとの生存・接続・電源状態、容量、I/O 統計、整合性に関する実行時統計を、全体集計と併せて返す。ドライブ別の内訳を失わず、合計値だけに集約しない。
-- `drive inspect <drive_name>`: 監査用の完全な情報を取得する。構成、論理 Namespace、Stripe / Version / Chunk の状態、物理ドライブごとの情報、Cleanup 対象の種類別件数・サイズ、現在の残論理空き容量、Cleanup 実行後に見込まれる残論理空き容量、履歴・統計など監査に必要な情報を網羅する。必要なストレージ走査を行う場合があるため、軽量なヘルスチェックや定期監視用途とは区別する。
-- `drive start <drive_name>`: 指定論理ドライブの Worker を独立プロセスとして起動する。
-- `drive stop <drive_name>`: 指定 Worker に停止を要求する。
-- `cleanup status <drive_name>`: Cleanup の実行状態・進捗を取得する。Cleanup Schedule の情報は drive status --detail および drive inspect に含め、スケジュール専用 CLI コマンドは設けない。
-- `cleanup policy show <drive_name>`: Cleanup の実行ポリシーを取得する。
-- `cleanup policy set <drive_name> ...`: Cleanup の実行ポリシーを変更する。
+- `drive status <drive_name>`: 簡易ヘルスチェックを行う。
+- `drive status <drive_name> --detail`: 運用監視用の詳細状態を取得する。
+- `drive inspect <drive_name>`: 監査用の完全な情報を取得する。必要なストレージ走査を行う場合がある。
+- `drive start <drive_name>` / `drive stop <drive_name>`: 指定論理ドライブの Worker を起動・停止する。
+- `cleanup status <drive_name>`: Cleanup の実行状態・進捗を取得する。Cleanup Schedule は Status / Inspect に含め、独立した CLI コマンドは設けない。
+- `cleanup policy show <drive_name>` / `cleanup policy set <drive_name> ...`: Cleanup の実行ポリシーを取得・変更する。
 - `cleanup run <drive_name>`: 指定論理ドライブで Cleanup を手動実行する。
-- `config show`: Controller が扱う設定を表示する。
-- `config validate`: 設定の妥当性を検証する。
-- `config reload`: 設定を再読み込みする。
+- `config show` / `config validate` / `config reload`: Controller が扱う統合設定を表示・検証・再読み込みする。
 
 コマンド名と実行ファイル名は次のとおりとする。
 
-- Controller の実行ファイル名は `frcon` とする。常駐 RPC サーバーの起動は `frcon serve`、それ以外の管理操作は `frcon` の単発コマンドとして提供する。
-- Worker の実行ファイル名は `flexraid` とする。論理ドライブごとに一つの `flexraid` プロセスを起動し、Controller を介さない独立起動も可能にする。
+- Controller の実行ファイル名は `frcon` とする。常駐ゲートウェイの起動は `frcon serve`、それ以外の管理操作は単発コマンドとして提供する。
+- Worker の実行ファイル名は `flexraid` とする。論理ドライブごとに一つの `flexraid` プロセスを起動し、`frcon` を介さない独立起動も可能にする。
 - `frcon` と `flexraid` はそれぞれ正式な実行ファイル名とし、長い別名やシンボリックリンクによるエイリアスを前提にしない。
 - Go のコマンド配置は `cmd/frcon` と `cmd/flexraid` を基本とし、生成される実行ファイル名も各ディレクトリ名に合わせる。
-
-上記の階層・コマンド名は初期の整備対象であり、個別引数・出力形式・終了コードは実装時に既存設定・Management API と整合させて確定する。
 
 ### レイヤー別メトリクス API と所有権
 
@@ -416,9 +512,9 @@ Distribution -> I/O
 ### Status / Inspect の情報契約
 
 - Management の公開監視 API は `GetStatus` / `GetDetailedStatus` / `Inspect` の3種類に分ける。これらはそれぞれ簡易ヘルスチェック、運用監視 snapshot、完全監査 snapshot であり、一つの API のフラグで用途を切り替えない。
-- `GetStatus` は Lifecycle とメモリ上の累積異常カウンターを用いる低コストな要約とし、物理デバイス照会・容量照会・ストレージ全走査を行わない。
-- `GetDetailedStatus` は Distribution と I/O の `GetMetrics` snapshot、および I/O のデバイス識別・容量情報を drive_name / WWN ごとに返す。I/O の Drive 順序は設定ドライブ順と一致させ、Distribution が設定されている場合は件数不一致を初期化時に拒否する。
-- `Inspect` は詳細監視に加えて Distribution の物理 Object / Stripe / Version / Chunk / Orphan 情報と Orchestration の論理 Namespace / Object / 初期化警告を含める。詳細状態 API の単なる別名にしない。
+- `GetStatus` は Lifecycle Phase を常に返す。初期化前・初期化中・Failed 等で下位レイヤーの情報を取得できない場合も RPC 自体は成功させ、取得できた情報だけを返す。各情報の取得可否と理由を明示し、未取得値をゼロや正常値として偽装しない。Lifecycle とメモリ上の累積異常カウンターを用いる低コストな要約とし、物理デバイス照会・容量照会・ストレージ全走査を行わない。
+- `GetDetailedStatus` は Lifecycle Phase を必ず返し、Distribution と I/O の `GetMetrics` snapshot、および I/O のデバイス識別・容量情報を取得できた範囲で drive_name / WWN ごとに返す。レイヤー未初期化・取得失敗は項目単位の unavailable / error とし、他項目の情報を捨てない。I/O の Drive 順序は設定ドライブ順と一致させ、Distribution が設定されている場合は件数不一致を初期化時に拒否する。
+- `Inspect` は Lifecycle Phase を必ず返し、詳細監視に加えて取得可能な Distribution の物理 Object / Stripe / Version / Chunk / Orphan 情報と Orchestration の論理 Namespace / Object / 初期化警告を含める。未初期化・取得失敗の項目は理由を明示し、取得可能な情報は返す。詳細状態 API の単なる別名にしない。
 - 物理情報の取得失敗は項目ごとに取得不能として返し、他ドライブの情報を捨てない。値を推測で埋めず、取得元・最終取得時刻を明示する。監視・監査のためだけに standby デバイスを SpinUp しない。 詳細状態は取得できた I/O の物理操作統計・物理容量のドライブ別内訳と全体集計、Cleanup worker 稼働状態、Drive ごとの Cleanup 許可設定、Orchestration が算出する現在の論理空き容量も含める。Cleanup 候補サイズと Cleanup 後の容量見積もりは Distribution の `GetMetrics` が返す。サイズは I/O の走査結果または書き込み時に取得した物理ファイル長であり、ファイルシステムの実割当ブロック数とは区別する。物理デバイス属性など未実装・未取得の情報はゼロや推測値で代用しない。
 
 - `status` の通常表示は、Lifecycle、Worker の生存、Controller との接続、物理ドライブの基本的な到達可能性などから、論理ドライブ全体の正常性を簡潔に判定する。高コストな全ストレージ走査を実行しない。

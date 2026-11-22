@@ -22,7 +22,8 @@ func TestLoadConfig(t *testing.T) {
 		"  - root: /data/disk2\n    mountpoint: /mnt/disk2\n    wwn: 0x5000000000000002\n" +
 		"  - root: /data/disk3\n    mountpoint: /mnt/disk3\n    wwn: 0x5000000000000003\n" +
 		"  - root: /data/disk4\n    mountpoint: /mnt/disk4\n    wwn: 0x5000000000000004\n" +
-		"mountpoint: /mnt/flexraid\n"
+		"mountpoint: /mnt/flexraid\n" +
+		"grpc_socket_path: /run/flexraid/worker.sock\n"
 	got, err := LoadConfig(writeManagementConfig(t, yaml))
 	if err != nil {
 		t.Fatal(err)
@@ -33,6 +34,9 @@ func TestLoadConfig(t *testing.T) {
 	}
 	if !got.Disks[0].CleanupDeleteDeprecatedVersionsAllowed || got.Disks[0].CleanupPreserveAbnormalDataAllowed || !got.Disks[0].CleanupDeleteLogicalObjectsAllowed {
 		t.Fatalf("unexpected cleanup permissions: %+v", got.Disks[0])
+	}
+	if got.GRPCSocketPath != "/run/flexraid/worker.sock" {
+		t.Fatalf("gRPC socket path = %q", got.GRPCSocketPath)
 	}
 	if got.Mountpoint != "/mnt/flexraid" {
 		t.Fatalf("filesystem mountpoint = %q", got.Mountpoint)
@@ -85,5 +89,18 @@ func TestLoadConfigRejectsInvalidCleanupPermission(t *testing.T) {
 		"mountpoint: /mnt/flexraid\n"
 	if _, err := LoadConfig(writeManagementConfig(t, yaml)); err == nil {
 		t.Fatal("LoadConfig succeeded with invalid cleanup permission")
+	}
+}
+
+func TestLoadConfigRequiresGRPCSocketPath(t *testing.T) {
+	yaml := "disks:\n" +
+		"  - root: /data/disk1\n    mountpoint: /mnt/disk1\n    wwn: w1\n" +
+		"  - root: /data/disk2\n    mountpoint: /mnt/disk2\n    wwn: w2\n" +
+		"  - root: /data/disk3\n    mountpoint: /mnt/disk3\n    wwn: w3\n" +
+		"  - root: /data/disk4\n    mountpoint: /mnt/disk4\n    wwn: w4\n" +
+		"mountpoint: /mnt/flexraid\n"
+	if _, err := LoadConfig(writeManagementConfig(t, yaml)); err == nil ||
+		!strings.Contains(err.Error(), "grpc_socket_path is required") {
+		t.Fatalf("LoadConfig error = %v, want required gRPC socket path error", err)
 	}
 }

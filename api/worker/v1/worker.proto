@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package flexraid.worker.v1;
+
+option go_package = "github.com/tetsup/flexraid/api/worker/v1;workerv1";
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+
+// WorkerService exposes monitoring and maintenance operations for one logical drive.
+// It intentionally excludes file and namespace mutation operations.
+service WorkerService {
+  rpc GetStatus(google.protobuf.Empty) returns (google.protobuf.Struct);
+  rpc GetDetailedStatus(google.protobuf.Empty) returns (google.protobuf.Struct);
+  rpc Inspect(google.protobuf.Empty) returns (google.protobuf.Struct);
+  rpc SpinUp(google.protobuf.Struct) returns (google.protobuf.Struct);
+  rpc SpinDown(google.protobuf.Struct) returns (google.protobuf.Struct);
+  rpc GetDriveCleanupPermissions(google.protobuf.Struct) returns (google.protobuf.Struct);
+  rpc SetDriveDeprecatedVersionDeletionPermission(google.protobuf.Struct) returns (google.protobuf.Struct);
+  rpc SetDriveAbnormalDataPreservationPermission(google.protobuf.Struct) returns (google.protobuf.Struct);
+  rpc SetDriveLogicalObjectDeletionPermission(google.protobuf.Struct) returns (google.protobuf.Struct);
+}
