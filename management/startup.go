@@ -188,10 +188,15 @@ func (layer *Management) lifecycleHooks() StateHookRegistry {
 				if !hasDistribution {
 					return nil
 				}
-				return layer.startBackgroundProcesses(ctx)
+				if err := layer.startBackgroundProcesses(ctx); err != nil {
+					return err
+				}
+				return layer.startGRPCServer(ctx)
 			},
 			OnExit: func(ctx context.Context) error {
-				return layer.StopBackgroundProcesses(ctx)
+				grpcErr := layer.stopGRPCServer(ctx)
+				backgroundErr := layer.StopBackgroundProcesses(ctx)
+				return errors.Join(grpcErr, backgroundErr)
 			},
 		},
 	}
