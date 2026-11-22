@@ -19,7 +19,7 @@ func TestWorkerGRPCServerFollowsManagementLifecycle(t *testing.T) {
 	socketPath := filepath.Join(t.TempDir(), "worker.sock")
 	layer, err := New(NewRequest{
 		Config: Config{
-			Disks: []DriveConfig{{Root: t.TempDir(), Mountpoint: t.TempDir(), WWN: "wwn-grpc-test"}},
+			Disks:          []DriveConfig{{Root: t.TempDir(), Mountpoint: t.TempDir(), WWN: "wwn-grpc-test"}},
 			GRPCSocketPath: socketPath,
 		},
 		Initialization: InitializationTaskFunc(func(context.Context) (bool, error) { return true, nil }),
