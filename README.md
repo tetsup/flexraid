@@ -193,7 +193,7 @@ POSIX の基本操作は pjdfstest を用いて検証します。FlexRAID v1 で
 
 ## Worker 管理 gRPC API
 
-Worker は Management が所有する通常の gRPC サーバーを提供します。通信には Unix Domain Socket と Protocol Buffers を使用します。サーバーはファイルシステムの初期化完了を待たずに Management の起動時に開始し、Management の停止時に終了します。Lifecycle Phase（Initializing / Ready / Draining / Maintenance / Failed）とは独立して接続でき、状態照会では現在の Phase を返します。初期化前など取得できない監視項目は、取得可能な項目と分けて availability / error 情報として返します。
+Worker は Management が所有する通常の gRPC サーバーを提供します。通信には Unix Domain Socket と Protocol Buffers を使用します。サーバーはファイルシステムの初期化完了を待たずに Management の起動時に開始し、Management の停止時に終了します。Lifecycle Phase（Initializing / Ready / Draining / Maintenance / Failed）とは独立して接続でき、状態照会では現在の Phase を返します。監視情報の一部が取得できなくても RPC 全体をエラーにはせず、同じ Response の中で取得できた項目を返します。取得できない項目は値を未設定（Go の Response 型ではゼロ値）とし、対応する Available フラグを false、Error フィールドに取得失敗の理由を設定します。
 
 Socket は `grpc_socket_path` で指定し、権限 `0600` で作成します。起動時に同じパスの Socket へ接続できる場合は二重起動を拒否し、接続できない stale Socket のみを削除して再作成します。通常ファイルやシンボリックリンクは stale Socket として扱いません。
 
