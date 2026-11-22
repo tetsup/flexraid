@@ -362,7 +362,7 @@ Distribution -> I/O
 - WorkerService は `GetStatus` / `GetDetailedStatus` / `Inspect` による状態監視・診断、`SpinUp` / `SpinDown` によるドライブ電源制御、Drive ごとの Cleanup 許可情報の取得・更新を提供する。ファイルの作成・削除・内容変更など、ユーザーデータを直接操作する API は公開しない。
 - Status と Inspect は用途を分けた RPC とする。簡易状態、詳細状態、完全監査の情報を一つの RPC のフラグで切り替えない。
 - `frcon` は Worker 名から接続先 UDS を解決し、対象 Worker の WorkerService を呼び出す。Worker の UDS は内部 RPC 用であり、Web ブラウザから直接接続させない。
-- Worker の UDS パスは Management の `GRPCSocketPath` で指定する。親ディレクトリは必要に応じて作成し、Socket は `0600` で作成する。起動時に同じパスの Socket が存在する場合は接続を試み、接続可能なら既存 Worker として起動を拒否する。接続拒否を確認できた stale Socket だけを削除して再作成する。通常ファイルやシンボリックリンクは削除しない。PID ファイルの存在だけで Worker の稼働を断定しない。
+- Worker の UDS パスは必須設定 `grpc_socket_path` から Management の `GRPCSocketPath` に渡す。親ディレクトリは必要に応じて作成し、Socket は `0600` で作成する。起動時に同じパスの Socket が存在する場合は接続を試み、接続可能なら既存 Worker として起動を拒否する。接続拒否を確認できた stale Socket だけを削除して再作成する。通常ファイルやシンボリックリンクは削除しない。PID ファイルの存在だけで Worker の稼働を断定しない。
 
 ### frcon gRPC-Web / Web 認証
 
