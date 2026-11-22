@@ -23,6 +23,7 @@ func TestLoadConfig(t *testing.T) {
 		"  - root: /data/disk3\n    mountpoint: /mnt/disk3\n    wwn: 0x5000000000000003\n" +
 		"  - root: /data/disk4\n    mountpoint: /mnt/disk4\n    wwn: 0x5000000000000004\n" +
 		"mountpoint: /mnt/flexraid\n" +
+		"grpc_socket_path: /run/flexraid/worker.sock\n" +
 		"grpc_socket_path: /run/flexraid/worker.sock\n"
 	got, err := LoadConfig(writeManagementConfig(t, yaml))
 	if err != nil {
