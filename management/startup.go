@@ -13,10 +13,18 @@ import (
 // Start begins the Management lifecycle. Startup initialization runs before
 // the instance can be used by FUSE.
 func (layer *Management) Start() error {
-	if layer.scheduler == nil {
-		return fmt.Errorf("Management has no startup initialization task")
+	if err := layer.startGRPCServer(context.Background()); err != nil {
+		return fmt.Errorf("start Worker gRPC server: %w", err)
 	}
-	return layer.scheduler.Start()
+	if layer.scheduler == nil {
+		return nil
+	}
+	if err := layer.scheduler.Start(); err != nil {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return errors.Join(err, layer.stopGRPCServer(stopCtx))
+	}
+	return nil
 }
 
 // WaitReady waits until all startup initialization units have completed.
@@ -40,10 +48,11 @@ func (layer *Management) Stop(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("stop context is required")
 	}
-	if layer.scheduler == nil {
-		return nil
+	var stopErr error
+	if layer.scheduler != nil {
+		stopErr = layer.scheduler.Stop(ctx)
 	}
-	return layer.scheduler.Stop(ctx)
+	return errors.Join(stopErr, layer.stopGRPCServer(ctx))
 }
 
 // SetOrchestration publishes the fully initialized Orchestration layer.
