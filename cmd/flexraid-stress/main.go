@@ -374,6 +374,9 @@ func transferFileMeasured(mountpoint, name string, size int64, blockSize int) (t
 			length = remaining
 		}
 		chunk := buffer[:int(length)]
+		for index := range chunk {
+			chunk[index] = byte(((written + int64(index)) * 31 + 17) % 251)
+		}
 		n, writeErr := file.Write(chunk)
 		if writeErr != nil {
 			_ = file.Close()
