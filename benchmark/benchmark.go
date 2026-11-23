@@ -713,6 +713,7 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 	if err := dropCaches(); err != nil {
 		return sample{}, nil, fmt.Errorf("drop filesystem caches before %s: %w", direction, err)
 	}
+	fmt.Printf("Cache cleared before %s %s (sync + /proc/sys/vm/drop_caches=3)\n", filesystem, direction)
 	var bytes, operations int64
 	var elapsed time.Duration
 	var generated []string
@@ -854,26 +855,24 @@ func measureColdRead(paths []string, blockSize int64, limit time.Duration) (int6
 	start := time.Now()
 	deadline := start.Add(limit)
 	var totalBytes, totalOperations int64
-	for time.Now().Before(deadline) {
-		for _, path := range paths {
-			if !time.Now().Before(deadline) {
-				break
-			}
-			file, err := os.Open(path)
-			if err != nil {
-				return totalBytes, totalOperations, time.Since(start), fmt.Errorf("open benchmark file %s for read: %w", path, err)
-			}
-			n, readErr := io.ReadFull(file, buffer)
-			closeErr := file.Close()
-			if readErr != nil {
-				return totalBytes + int64(n), totalOperations, time.Since(start), fmt.Errorf("read benchmark file %s: %w", path, readErr)
-			}
-			if closeErr != nil {
-				return totalBytes + int64(n), totalOperations, time.Since(start), fmt.Errorf("close benchmark file %s after read: %w", path, closeErr)
-			}
-			totalBytes += int64(n)
-			totalOperations++
+	for _, path := range paths {
+		if !time.Now().Before(deadline) {
+			break
 		}
+		file, err := os.Open(path)
+		if err != nil {
+			return totalBytes, totalOperations, time.Since(start), fmt.Errorf("open benchmark file %s for read: %w", path, err)
+		}
+		n, readErr := io.ReadFull(file, buffer)
+		closeErr := file.Close()
+		if readErr != nil {
+			return totalBytes + int64(n), totalOperations, time.Since(start), fmt.Errorf("read benchmark file %s: %w", path, readErr)
+		}
+		if closeErr != nil {
+			return totalBytes + int64(n), totalOperations, time.Since(start), fmt.Errorf("close benchmark file %s after read: %w", path, closeErr)
+		}
+		totalBytes += int64(n)
+		totalOperations++
 	}
 	return totalBytes, totalOperations, time.Since(start), nil
 }
