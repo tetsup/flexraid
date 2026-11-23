@@ -477,6 +477,13 @@ func markdownReport(results []result) string {
 	return builder.String()
 }
 
+func rpcSuccessLabel(value result) string {
+	if value.RPCCalls == 0 {
+		return "n/a"
+	}
+	return fmt.Sprintf("%.2f%%", value.RPCSuccessRatePct)
+}
+
 func percentage(baseline, current float64) float64 {
 	if baseline == 0 {
 		return 0
