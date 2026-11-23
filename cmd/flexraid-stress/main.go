@@ -365,7 +365,7 @@ func unmount(mountpoint string) error {
 
 func printResult(value result) {
 	fmt.Printf("  %d FUSE clients, write %.2f MiB/s, read %.2f MiB/s, %.0f IOPS, verified=%t, RPC %d/%d errors\n",
-		value.Workers, value.WriteMiBPerSec, value.ReadMiBPerSec, value.IOPS, value.IntegrityVerified, value.RPCErrors, value.RPCCalls)
+		value.Workers, value.WriteMiBPerSec, value.ReadMiBPerSec, value.IOPS, value.IntegrityVerified, value.RPCCalls, value.RPCErrors)
 }
 
 func summarizeResults(samples []result) []result {
