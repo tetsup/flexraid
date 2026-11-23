@@ -195,7 +195,7 @@ func TestBenchmarkFileCountUsesReferenceAndMaximum(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.label, func(t *testing.T) {
-			if got := benchmarkFileCount(test.blockSize, 4<<30, 1024); got != test.want {
+			if got := benchmarkFileCount(test.blockSize, 60*64<<20, 1024); got != test.want {
 				t.Fatalf("benchmarkFileCount() = %d, want %d", got, test.want)
 			}
 		})
