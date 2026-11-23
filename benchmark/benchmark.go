@@ -388,8 +388,12 @@ func validateBenchmarkCapacity(disks []management.DriveConfig, totalBytes int64)
 	}
 	required += margin + (64 << 20)
 	for index, disk := range disks {
+		path, err := driveCapacityPath(disk)
+		if err != nil {
+			return fmt.Errorf("get capacity path for disk %d (%s): %w", index+1, disk.WWN, err)
+		}
 		var stats syscall.Statfs_t
-		if err := syscall.Statfs(disk.Mountpoint, &stats); err != nil {
+		if err := syscall.Statfs(path, &stats); err != nil {
 			return fmt.Errorf("get available capacity for disk %d (%s): %w", index+1, disk.WWN, err)
 		}
 		available := uint64(stats.Bavail) * uint64(stats.Bsize)
