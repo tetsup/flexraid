@@ -423,11 +423,11 @@ func startWorker(mountpoint, configPath, logPath string) (*workerProcess, error)
 	}
 	go func() {
 		err := command.Wait()
+		_ = logFile.Close()
 		process.waitMu.Lock()
 		process.waitErr = err
 		process.waitMu.Unlock()
 		close(process.done)
-		_ = logFile.Close()
 	}()
 	return process, nil
 }
