@@ -33,8 +33,8 @@ var ioSizes = []struct {
 	{"4KiB", 4 << 10},
 	{"4KiB+1B", (4 << 10) + 1},
 	{"64KiB", 64 << 10},
-	{"6MiB", 6 << 20},
-	{"6MiB+1B", (6 << 20) + 1},
+	{"8MiB", 8 << 20},
+	{"8MiB+1B", (8 << 20) + 1},
 	{"64MiB", 64 << 20},
 }
 
@@ -77,7 +77,7 @@ func Run(args []string) (runErr error) {
 	flags.StringVar(&opts.configPath, "config", "", "Worker YAML configuration")
 	flags.StringVar(&opts.outputDir, "output", "./flexraid-bench-results", "result directory")
 	flags.IntVar(&opts.maxFiles, "max-files", 1024, "maximum files per I/O size")
-	flags.Int64Var(&opts.referenceBytes, "reference-bytes", 4<<30, "logical byte target used to derive per-size file counts")
+	flags.Int64Var(&opts.referenceBytes, "reference-bytes", 60*64<<20, "logical byte target used to derive per-size file counts")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -434,7 +434,7 @@ func validateBenchmarkCapacity(disks []management.DriveConfig, perDiskRequired i
 	if perDiskRequired <= 0 {
 		return errors.New("required per-disk capacity must be positive")
 	}
-	required := uint64(perDiskRequired) + uint64(64<<20)
+	required := uint64(perDiskRequired) + uint64(perDiskRequired/5) + uint64(256<<20)
 	for index, disk := range disks {
 		path, err := driveCapacityPath(disk)
 		if err != nil {
