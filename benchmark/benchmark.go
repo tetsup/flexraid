@@ -77,7 +77,7 @@ func Run(args []string) (runErr error) {
 	flags.StringVar(&opts.configPath, "config", "", "Worker YAML configuration")
 	flags.StringVar(&opts.outputDir, "output", "./flexraid-bench-results", "result directory")
 	flags.IntVar(&opts.maxFiles, "max-files", 1024, "maximum files per I/O size")
-	flags.Int64Var(&opts.referenceBytes, "reference-bytes", 64<<20, "logical byte target used to derive per-size file counts")
+	flags.Int64Var(&opts.referenceBytes, "reference-bytes", 4<<30, "logical byte target used to derive per-size file counts")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -137,7 +137,8 @@ func Run(args []string) (runErr error) {
 	if err != nil {
 		return err
 	}
-	physicalBytesPerDisk := int64(opts.maxFiles) * (172 << 20) / 4
+	largestCaseFiles := benchmarkFileCount(ioSizes[len(ioSizes)-1].bytes, opts.referenceBytes, opts.maxFiles)
+	physicalBytesPerDisk := int64(largestCaseFiles) * (172 << 20) / 4
 	if err := validateBenchmarkCapacity(selected, physicalBytesPerDisk); err != nil {
 		return err
 	}
@@ -428,16 +429,11 @@ func selectBenchmarkDisks(disks []management.DriveConfig) ([]management.DriveCon
 	return selected, nil
 }
 
-func validateBenchmarkCapacity(disks []management.DriveConfig, totalBytes int64) error {
-	// Only one test dataset per mode is retained at a time. The largest
-	// physical allocation is the raw single-drive dataset, plus headroom.
-	maxUint := ^uint64(0)
-	size := uint64(totalBytes)
-	margin := uint64(64 << 20)
-	if size > maxUint-margin {
-		return fmt.Errorf("benchmark size %d is too large for capacity calculation", totalBytes)
+func validateBenchmarkCapacity(disks []management.DriveConfig, perDiskRequired int64) error {
+	if perDiskRequired <= 0 {
+		return errors.New("required per-disk capacity must be positive")
 	}
-	required := size + margin
+	required := uint64(perDiskRequired) + uint64(64<<20)
 	for index, disk := range disks {
 		path, err := driveCapacityPath(disk)
 		if err != nil {
