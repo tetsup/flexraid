@@ -97,6 +97,10 @@ func Run(args []string) (runErr error) {
 	if opts.totalBytes <= 0 {
 		return errors.New("--size must be positive")
 	}
+	minimumSize := ioSizes[len(ioSizes)-1].bytes * 4
+	if opts.totalBytes < minimumSize {
+		return fmt.Errorf("--size must be at least %d bytes so every raw parallel job can issue a full 64 MiB request", minimumSize)
+	}
 	if _, err := exec.LookPath(opts.fioPath); err != nil {
 		return fmt.Errorf("find fio executable: %w", err)
 	}
