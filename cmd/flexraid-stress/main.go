@@ -130,7 +130,11 @@ func runMode(opts options, template string, selected mode) (_ result, runErr err
 	if err != nil {
 		return result, err
 	}
+	storageCleanupSafe := true
 	defer func() {
+		if !storageCleanupSafe {
+			return
+		}
 		for _, root := range roots {
 			if err := os.RemoveAll(root); err != nil && runErr == nil {
 				runErr = fmt.Errorf("remove isolated storage root %s: %w", root, err)
@@ -166,7 +170,12 @@ func runMode(opts options, template string, selected mode) (_ result, runErr err
 	}()
 	defer func() {
 		if isMounted(mountpoint) {
-			_ = unmount(mountpoint)
+			if err := unmount(mountpoint); err != nil {
+				storageCleanupSafe = false
+				if runErr == nil {
+					runErr = fmt.Errorf("unmount test filesystem: %w", err)
+				}
+			}
 		}
 		select {
 		case <-waitDone:
