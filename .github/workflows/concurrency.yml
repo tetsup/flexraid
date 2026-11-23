@@ -35,7 +35,7 @@ jobs:
           mkdir -p benchmark-results
           go test ./management \
             -run '^$' \
-            -bench '^BenchmarkSchedulerForegroundCancellationWithGRPCMonitoring$' \
+            -bench '^BenchmarkManagementMutexWithGRPCMonitoring$' \
             -benchmem \
             -benchtime=3s \
             -count=3 | tee benchmark-results/scheduler-grpc-overhead.txt
