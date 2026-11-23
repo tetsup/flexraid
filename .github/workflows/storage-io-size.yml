@@ -36,7 +36,7 @@ jobs:
       - name: Install benchmark and FUSE tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends fuse3 e2fsprogs fio
+          sudo apt-get install -y --no-install-recommends fuse3 e2fsprogs
 
       - name: Build Worker
         run: |
@@ -108,7 +108,7 @@ jobs:
             --output "$GITHUB_WORKSPACE/benchmark-results/flexraid"
           sudo chown -R "$USER:$USER" benchmark-results
 
-      - name: Upload raw fio results and summary
+      - name: Upload benchmark results and summary
         uses: actions/upload-artifact@v6
         with:
           name: storage-io-size-comparison
