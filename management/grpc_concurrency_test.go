@@ -73,6 +73,7 @@ func TestWorkerGRPCMonitoringConcurrentWithCancelledForegroundOperations(t *test
 	defer stopMonitor()
 	var rpcCalls atomic.Int64
 	var rpcErrors atomic.Int64
+	var monitorReady atomic.Bool
 	firstRPC := make(chan struct{})
 	var firstRPCOnce sync.Once
 	monitorDone := make(chan struct{})
@@ -84,11 +85,14 @@ func TestWorkerGRPCMonitoringConcurrentWithCancelledForegroundOperations(t *test
 			callCtx, cancel := context.WithTimeout(monitorCtx, time.Second)
 			err := invokeGetStatus(callCtx, connection)
 			cancel()
-			rpcCalls.Add(1)
-			if err != nil {
+			if err == nil {
+				rpcCalls.Add(1)
+				if monitorReady.CompareAndSwap(false, true) {
+					firstRPCOnce.Do(func() { close(firstRPC) })
+				}
+			} else if monitorReady.Load() {
 				rpcErrors.Add(1)
 			}
-			firstRPCOnce.Do(func() { close(firstRPC) })
 			select {
 			case <-monitorCtx.Done():
 				return
