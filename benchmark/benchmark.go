@@ -921,14 +921,14 @@ func measureOverwrite(paths []string, blockSize int64, limit time.Duration) (int
 	close(errCh)
 	for err := range errCh {
 		if err != nil {
-			return 0, 0, err
+			return 0, 0, 0, err
 		}
 	}
-	elapsed := time.Since(start).Seconds()
+	elapsed := time.Since(start)
 	if elapsed <= 0 {
 		return 0, 0, 0, errors.New("overwrite measurement elapsed time is zero")
 	}
-	return float64(totalBytes.Load()) / elapsed, float64(totalOps.Load()) / elapsed, nil
+	return totalBytes.Load(), totalOps.Load(), elapsed, nil
 }
 
 func writeReports(outputDir string, samples []sample) error {
