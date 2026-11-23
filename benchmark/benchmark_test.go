@@ -183,9 +183,9 @@ func testConfig(root string) management.Config {
 
 func TestBenchmarkFileCountUsesReferenceAndMaximum(t *testing.T) {
 	tests := []struct {
-		label string
+		label     string
 		blockSize int64
-		want int
+		want      int
 	}{
 		{"4KiB capped", 4 << 10, 1024},
 		{"64KiB capped", 64 << 10, 1024},

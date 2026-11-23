@@ -39,8 +39,8 @@ var ioSizes = []struct {
 }
 
 type options struct {
-	configPath string
-	outputDir  string
+	configPath     string
+	outputDir      string
 	maxFiles       int
 	referenceBytes int64
 }
