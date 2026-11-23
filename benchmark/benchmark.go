@@ -235,22 +235,20 @@ func Run(args []string) (runErr error) {
 
 	var samples []sample
 	for _, block := range ioSizes {
-		if opts.totalBytes < block.bytes {
-			return fmt.Errorf("test size %d is smaller than I/O size %d", opts.totalBytes, block.bytes)
+		if opts.totalBytes < block.bytes*4 {
+			return fmt.Errorf("test size %d is too small for %s across four raw drives", opts.totalBytes, block.label)
 		}
-		for _, direction := range []string{"write", "read"} {
-			for _, mode := range modes {
-				fmt.Printf("Running %-10s %-5s %s ...\n", mode.name, direction, block.label)
+		for _, mode := range modes {
+			for _, direction := range []string{"write", "read"} {
+				fmt.Printf("Running %-10s %-5s %s ...\\n", mode.name, direction, block.label)
 				measured, err := runCase(opts, mode.name, mode.paths, block.bytes, block.label, direction)
 				if err != nil {
 					return fmt.Errorf("%s %s %s: %w", mode.name, direction, block.label, err)
 				}
 				samples = append(samples, measured)
-				if direction == "read" {
-					if err := removeModeFiles(mode.paths); err != nil {
-						return fmt.Errorf("remove %s benchmark files: %w", mode.name, err)
-					}
-				}
+			}
+			if err := removeModeFiles(mode.paths); err != nil {
+				return fmt.Errorf("remove %s benchmark files: %w", mode.name, err)
 			}
 		}
 	}
