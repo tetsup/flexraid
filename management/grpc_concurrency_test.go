@@ -148,7 +148,11 @@ func TestWorkerGRPCMonitoringConcurrentWithCancelledForegroundOperations(t *test
 		t.Fatalf("blocking operation: %v", err)
 	}
 	for index, request := range requests {
-		if err := request.handle.Wait(context.Background()); err != nil {
+		err := request.handle.Wait(context.Background())
+		if index%2 == 0 && err != context.Canceled {
+			t.Errorf("cancelled queued operation %d: error = %v, want context.Canceled", index, err)
+		}
+		if index%2 != 0 && err != nil {
 			t.Errorf("queued operation %d: %v", index, err)
 		}
 		request.cancel()
@@ -227,7 +231,12 @@ func BenchmarkSchedulerForegroundCancellationWithGRPCMonitoring(b *testing.B) {
 					cancel()
 					b.Fatal(err)
 				}
-				if err := handle.Wait(context.Background()); err != nil {
+				if err := handle.Wait(context.Background()); test.cancelled {
+					if err != context.Canceled {
+						cancel()
+						b.Fatalf("cancelled operation error = %v, want context.Canceled", err)
+					}
+				} else if err != nil {
 					cancel()
 					b.Fatal(err)
 				}
