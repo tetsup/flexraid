@@ -113,6 +113,9 @@ func Run(args []string) (runErr error) {
 			return fmt.Errorf("resolve disk %d mountpoint: %w", index+1, err)
 		}
 	}
+	if err := validatePhysicalRoots(config); err != nil {
+		return err
+	}
 	var filesystem syscall.Statfs_t
 	if err := syscall.Statfs(mountpoint, &filesystem); err != nil {
 		return fmt.Errorf("inspect FlexRAID mountpoint %s: %w", mountpoint, err)
@@ -167,6 +170,58 @@ func Run(args []string) (runErr error) {
 	}
 	fmt.Printf("Results: %s\n", opts.outputDir)
 	return nil
+}
+
+func validatePhysicalRoots(config management.Config) error {
+	mounts, err := readMountpoints()
+	if err != nil {
+		return fmt.Errorf("read mounted filesystems: %w", err)
+	}
+	for index, disk := range config.Disks {
+		mountpoint, err := filepath.EvalSymlinks(disk.Mountpoint)
+		if err != nil {
+			return fmt.Errorf("resolve physical mountpoint for disk %d: %w", index+1, err)
+		}
+		mountpoint = filepath.Clean(mountpoint)
+		if _, ok := mounts[mountpoint]; !ok {
+			return fmt.Errorf("physical mountpoint %s for disk %d is not mounted", mountpoint, index+1)
+		}
+		rootInfo, err := os.Stat(disk.Root)
+		if err != nil {
+			return fmt.Errorf("stat storage root for disk %d: %w", index+1, err)
+		}
+		mountInfo, err := os.Stat(mountpoint)
+		if err != nil {
+			return fmt.Errorf("stat physical mountpoint for disk %d: %w", index+1, err)
+		}
+		rootStat, rootOK := rootInfo.Sys().(*syscall.Stat_t)
+		mountStat, mountOK := mountInfo.Sys().(*syscall.Stat_t)
+		if !rootOK || !mountOK || rootStat.Dev != mountStat.Dev {
+			return fmt.Errorf("storage root %s for disk %d is not on the configured physical mount %s", disk.Root, index+1, mountpoint)
+		}
+	}
+	return nil
+}
+
+func readMountpoints() (map[string]struct{}, error) {
+	data, err := os.ReadFile("/proc/self/mountinfo")
+	if err != nil {
+		return nil, err
+	}
+	unescape := strings.NewReplacer(
+		"\\040", " ",
+		"\\011", "\t",
+		"\\012", "\n",
+		"\\134", "\\",
+	)
+	mounts := make(map[string]struct{})
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) > 4 {
+			mounts[filepath.Clean(unescape.Replace(fields[4]))] = struct{}{}
+		}
+	}
+	return mounts, nil
 }
 
 func validateOutputPath(output string, config management.Config) error {
