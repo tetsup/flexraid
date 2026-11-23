@@ -37,7 +37,6 @@ type options struct {
 	fioPath    string
 	totalBytes int64
 	runtime    time.Duration
-	direct     bool
 }
 
 type fioJob struct {
@@ -73,7 +72,6 @@ func Run(args []string) (runErr error) {
 	flags.StringVar(&opts.fioPath, "fio", "fio", "fio executable path")
 	flags.Int64Var(&opts.totalBytes, "size", 512<<20, "total logical bytes per test case")
 	flags.DurationVar(&opts.runtime, "runtime", 0, "optional time-based fio runtime (0 runs the full size)")
-	flags.BoolVar(&opts.direct, "direct", false, "use O_DIRECT (requires FUSE and filesystem support)")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -247,7 +245,7 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 	var builder strings.Builder
 	builder.WriteString("[global]\n")
 	builder.WriteString("ioengine=sync\n")
-	builder.WriteString(fmt.Sprintf("direct=%t\n", opts.direct))
+	builder.WriteString("direct=0\n")
 	builder.WriteString("rw=" + direction + "\n")
 	builder.WriteString("bs=" + strconv.FormatInt(blockSize, 10) + "\n")
 	builder.WriteString("fallocate=none\n")
