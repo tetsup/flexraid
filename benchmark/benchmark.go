@@ -312,6 +312,7 @@ func runRaw(args []string) error {
 	}
 	defer os.RemoveAll(workDir)
 	opts.duration = time.Duration(durationSeconds) * time.Second
+
 	var samples []sample
 	for _, block := range ioSizes {
 		for _, direction := range []string{"write", "overwrite", "read"} {
