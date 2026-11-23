@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -46,14 +47,7 @@ func (samples *latencySamples) summary() (time.Duration, time.Duration, time.Dur
 }
 
 func sortDurations(values []time.Duration) {
-	for i := 1; i < len(values); i++ {
-		value := values[i]
-		j := i - 1
-		for ; j >= 0 && values[j] > value; j-- {
-			values[j+1] = values[j]
-		}
-		values[j+1] = value
-	}
+	sort.Slice(values, func(i, j int) bool { return values[i] < values[j] })
 }
 
 func percentileDuration(sorted []time.Duration, percentile float64) time.Duration {
