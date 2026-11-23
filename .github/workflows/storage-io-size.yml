@@ -22,7 +22,7 @@ jobs:
   compare:
     name: Raw ext4 vs FlexRAID FUSE
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - name: Check out source
         uses: actions/checkout@v6
@@ -95,7 +95,7 @@ jobs:
 
           sudo ./bin/flexraid benchmark \
             --config "$worker_config" \
-            --size 536870912 \
+            --size 268435456 \
             --output "$GITHUB_WORKSPACE/benchmark-results"
           cat benchmark-results/summary.md
 
