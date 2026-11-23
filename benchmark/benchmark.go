@@ -225,7 +225,7 @@ func readMountpoints() (map[string]struct{}, error) {
 }
 
 func validateOutputPath(output string, config management.Config) error {
-	absolute, err := filepath.Abs(output)
+	absolute, err := resolvePath(output)
 	if err != nil {
 		return fmt.Errorf("resolve output directory: %w", err)
 	}
@@ -234,7 +234,7 @@ func validateOutputPath(output string, config management.Config) error {
 		protected = append(protected, disk.Root, disk.Mountpoint)
 	}
 	for _, path := range protected {
-		root, err := filepath.Abs(path)
+		root, err := resolvePath(path)
 		if err != nil {
 			return fmt.Errorf("resolve protected path %s: %w", path, err)
 		}
@@ -243,6 +243,38 @@ func validateOutputPath(output string, config management.Config) error {
 		}
 	}
 	return nil
+}
+
+func resolvePath(path string) (string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	current := absolute
+	var suffix []string
+	for {
+		_, err := os.Lstat(current)
+		if err == nil {
+			break
+		}
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", err
+		}
+		suffix = append(suffix, filepath.Base(current))
+		current = parent
+	}
+	resolved, err := filepath.EvalSymlinks(current)
+	if err != nil {
+		return "", err
+	}
+	for index := len(suffix) - 1; index >= 0; index-- {
+		resolved = filepath.Join(resolved, suffix[index])
+	}
+	return filepath.Clean(resolved), nil
 }
 
 func pathsOverlap(first, second string) bool {
