@@ -1,0 +1,49 @@
+name: Concurrency and gRPC Overhead
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lock-contention:
+    name: Lock and cancellation stress
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out pull request or dispatched ref
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run concurrent cancellation tests with race detector
+        run: go test -race ./management -run '^TestWorkerGRPCMonitoringConcurrentWithCancelledForegroundOperations$' -count=10
+
+      - name: Benchmark scheduler with and without monitoring RPCs
+        shell: bash
+        run: |
+          mkdir -p benchmark-results
+          go test ./management \
+            -run '^$' \
+            -bench '^BenchmarkSchedulerForegroundCancellationWithGRPCMonitoring$' \
+            -benchmem \
+            -benchtime=3s \
+            -count=3 | tee benchmark-results/scheduler-grpc-overhead.txt
+
+      - name: Upload benchmark report
+        uses: actions/upload-artifact@v6
+        with:
+          name: scheduler-grpc-overhead
+          path: benchmark-results/scheduler-grpc-overhead.txt
+          if-no-files-found: error
+          retention-days: 30
