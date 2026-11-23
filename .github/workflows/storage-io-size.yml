@@ -43,7 +43,7 @@ jobs:
           mkdir -p bin benchmark-results
           go build -o bin/flexraid ./main
 
-      - name: Create four ext4 loopback drives
+      - name: Create one ext4 loopback drive
         shell: bash
         run: |
           set -euo pipefail
@@ -53,11 +53,11 @@ jobs:
           : > "$RUNNER_TEMP/flexraid-bench-loops"
           : > "$RUNNER_TEMP/flexraid-bench-mounts"
           : > "$RUNNER_TEMP/flexraid-bench-links"
-          for index in 1 2 3 4; do
+          for index in 1; do
             image="$RUNNER_TEMP/flexraid-bench-disk-$index.img"
             mount="/mnt/flexraid-bench-disk-$index"
             link="/dev/disk/by-id/wwn-flexraid-bench-$index"
-            truncate -s 2G "$image"
+            truncate -s 4G "$image"
             loop="$(sudo losetup --find --show "$image")"
             echo "$loop" >> "$RUNNER_TEMP/flexraid-bench-loops"
             sudo mkfs.ext4 -F -q "$loop"
@@ -69,35 +69,43 @@ jobs:
             sudo mkdir -p "$mount/flexraid-data"
           done
 
-      - name: Run sequential I/O size comparison
+      - name: Run raw directory benchmark
+        run: |
+          sudo ./bin/flexraid benchmark raw \\
+            --directory /mnt/flexraid-bench-disk-1 \\
+            --size 268435456 \\
+            --output "$GITHUB_WORKSPACE/benchmark-results/raw"
+
+      - name: Run FlexRAID benchmark
         shell: bash
         run: |
           set -euo pipefail
           worker_config="$RUNNER_TEMP/flexraid-bench.yaml"
           cat > "$worker_config" <<YAML
           disks:
-            - root: /mnt/flexraid-bench-disk-1/flexraid-data
+            - root: /mnt/flexraid-bench-disk-1/flexraid-data-1
               mountpoint: /mnt/flexraid-bench-disk-1
               wwn: flexraid-bench-1
-            - root: /mnt/flexraid-bench-disk-2/flexraid-data
-              mountpoint: /mnt/flexraid-bench-disk-2
+            - root: /mnt/flexraid-bench-disk-1/flexraid-data-2
+              mountpoint: /mnt/flexraid-bench-disk-1
               wwn: flexraid-bench-2
-            - root: /mnt/flexraid-bench-disk-3/flexraid-data
-              mountpoint: /mnt/flexraid-bench-disk-3
+            - root: /mnt/flexraid-bench-disk-1/flexraid-data-3
+              mountpoint: /mnt/flexraid-bench-disk-1
               wwn: flexraid-bench-3
-            - root: /mnt/flexraid-bench-disk-4/flexraid-data
-              mountpoint: /mnt/flexraid-bench-disk-4
+            - root: /mnt/flexraid-bench-disk-1/flexraid-data-4
+              mountpoint: /mnt/flexraid-bench-disk-1
               wwn: flexraid-bench-4
           mountpoint: $RUNNER_TEMP/flexraid-production-mountpoint
           grpc_socket_path: $RUNNER_TEMP/flexraid-bench.sock
           grpc_enabled: false
           YAML
-
-          sudo ./bin/flexraid benchmark \
-            --config "$worker_config" \
-            --size 268435456 \
-            --output "$GITHUB_WORKSPACE/benchmark-results"
-          cat benchmark-results/summary.md
+          for index in 1 2 3 4; do
+            sudo mkdir -p "/mnt/flexraid-bench-disk-1/flexraid-data-$index"
+          done
+          sudo ./bin/flexraid benchmark \\
+            --config "$worker_config" \\
+            --size 268435456 \\
+            --output "$GITHUB_WORKSPACE/benchmark-results/flexraid"
 
       - name: Upload raw fio results and summary
         uses: actions/upload-artifact@v6
