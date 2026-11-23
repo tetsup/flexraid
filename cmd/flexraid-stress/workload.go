@@ -203,13 +203,25 @@ func runFilesystemPhase(mountpoint, dataPath, socket string, opts options, durat
 	}()
 
 	workerFiles := make([]*os.File, opts.workers)
+	readerFiles := make([]*os.File, opts.workers)
 	for workerID := range workerFiles {
 		workerFiles[workerID], err = os.OpenFile(dataPath, os.O_RDWR, 0600)
 		if err != nil {
 			for _, opened := range workerFiles[:workerID] {
 				_ = opened.Close()
 			}
-			return err
+			return fmt.Errorf("open worker %d write handle: %w", workerID, err)
+		}
+		readerFiles[workerID], err = os.Open(dataPath)
+		if err != nil {
+			_ = workerFiles[workerID].Close()
+			for _, opened := range workerFiles[:workerID] {
+				_ = opened.Close()
+			}
+			for _, opened := range readerFiles[:workerID] {
+				_ = opened.Close()
+			}
+			return fmt.Errorf("open worker %d read handle: %w", workerID, err)
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -219,21 +231,22 @@ func runFilesystemPhase(mountpoint, dataPath, socket string, opts options, durat
 	errCh := make(chan error, opts.workers)
 	var workers sync.WaitGroup
 	for workerID := 0; workerID < opts.workers; workerID++ {
-		workerFile := workerFiles[workerID]
+		workerFile, readerFile := workerFiles[workerID], readerFiles[workerID]
 		workers.Add(1)
-		go func(id int, handle *os.File) {
+		go func(id int, writeHandle, readHandle *os.File) {
 			defer workers.Done()
-			defer handle.Close()
+			defer writeHandle.Close()
+			defer readHandle.Close()
 			ready <- struct{}{}
 			<-start
-			if workerErr := runFilesystemWorker(ctx, id, handle, directories[id], regionSize, slots, opts.blockSize, &expected[id], metrics); workerErr != nil {
+			if workerErr := runFilesystemWorker(ctx, id, writeHandle, readHandle, directories[id], regionSize, slots, opts.blockSize, &expected[id], metrics); workerErr != nil {
 				select {
 				case errCh <- workerErr:
 				default:
 				}
 				cancel()
 			}
-		}(workerID, workerFile)
+		}(workerID, workerFile, readerFile)
 	}
 
 	var connections []*grpc.ClientConn
@@ -343,7 +356,7 @@ func runFilesystemPhase(mountpoint, dataPath, socket string, opts options, durat
 	return nil
 }
 
-func runFilesystemWorker(ctx context.Context, workerID int, file *os.File, directory string, regionSize int64, slots, blockSize int, expected *workerExpected, metrics *workloadMetrics) error {
+func runFilesystemWorker(ctx context.Context, workerID int, writeFile, readFile *os.File, directory string, regionSize int64, slots, blockSize int, expected *workerExpected, metrics *workloadMetrics) error {
 	scratchPath := filepath.Join(directory, "truncate.dat")
 	scratch, err := os.OpenFile(scratchPath, os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
@@ -381,7 +394,7 @@ func runFilesystemWorker(ctx context.Context, workerID int, file *os.File, direc
 		}
 		offset := int64(workerID)*regionSize + int64(slot*blockSize)
 		started := time.Now()
-		n, writeErr := file.WriteAt(payload, offset)
+		n, writeErr := writeFile.WriteAt(payload, offset)
 		if writeErr != nil {
 			return fmt.Errorf("worker %d WriteAt: %w", workerID, writeErr)
 		}
@@ -399,7 +412,7 @@ func runFilesystemWorker(ctx context.Context, workerID int, file *os.File, direc
 		// Force the write through FUSE Fsync before reading it back. This
 		// verifies persisted data rather than relying on a client-side cache.
 		started = time.Now()
-		if err := file.Sync(); err != nil {
+		if err := writeFile.Sync(); err != nil {
 			return fmt.Errorf("worker %d Sync after write: %w", workerID, err)
 		}
 		if metrics != nil {
@@ -408,7 +421,7 @@ func runFilesystemWorker(ctx context.Context, workerID int, file *os.File, direc
 		}
 
 		started = time.Now()
-		n, readErr := file.ReadAt(readback, offset)
+		n, readErr := readFile.ReadAt(readback, offset)
 		if readErr != nil {
 			return fmt.Errorf("worker %d ReadAt: %w", workerID, readErr)
 		}
