@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"strings"
 	"testing"
 )
@@ -41,7 +42,7 @@ func TestRenderConfigSelectsGRPCMode(t *testing.T) {
 }
 
 func TestPercentage(t *testing.T) {
-	if got := percentage(100, 95); got != -5 {
+	if got := percentage(100, 95); math.Abs(got+5) > 1e-9 {
 		t.Fatalf("percentage(100, 95) = %v, want -5", got)
 	}
 	if got := percentage(0, 95); got != 0 {
