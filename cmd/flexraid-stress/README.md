@@ -78,8 +78,8 @@ go build -o bin/flexraid-stress ./cmd/flexraid-stress
 sudo ./bin/flexraid-stress \
   --config ./stress-config.yaml \
   --worker ./bin/flexraid \
-  --size 256M \
-  --block-size 64K \
+  --size 268435456 \
+  --block-size 65536 \
   --workers 4 \
   --duration 30s \
   --warmup 3s \
@@ -92,8 +92,8 @@ sudo ./bin/flexraid-stress \
 
 | オプション | 既定値 | 説明 |
 |---|---:|---|
-| `--size` | 256 MiB | 同一ファイルの共有ワーキングセット |
-| `--block-size` | 64 KiB | 1回のランダムオフセット I/O サイズ |
+| `--size` | 268435456 bytes (256 MiB) | 同一ファイルの共有ワーキングセット |
+| `--block-size` | 65536 bytes (64 KiB) | 1回のランダムオフセット I/O サイズ |
 | `--workers` | 4 | 同時 FUSE クライアント数（2以上） |
 | `--duration` | 10s | 各条件の計測時間 |
 | `--warmup` | 2s | 各条件のウォームアップ時間 |
