@@ -11,7 +11,7 @@ Both commands report write, overwrite, and read measurements for the same I/O re
 
 ```sh
 go build -o ./bin/flexraid ./main
-sudo ./bin/flexraid benchmark --config /etc/flexraid/config.yaml --size 8589934592
+sudo ./bin/flexraid benchmark --config /etc/flexraid/config.yaml --reference-bytes 4026531840 --max-files 1024
 ```
 
 The configured physical filesystems must already be mounted, configured device identifiers must resolve, and the production FUSE mountpoint must be unmounted. The command creates temporary Storage Roots and starts a temporary Worker using those roots. It cleans up the temporary mount and storage after measurement. If unmounting fails, it preserves the storage roots and workspace for manual inspection.
@@ -23,7 +23,7 @@ The benchmark selects four configured drives with the most available capacity fo
 ```sh
 sudo ./bin/flexraid benchmark raw \
   --directory /mnt/disk/benchmark \
-  --reference-bytes 4294967296 \
+  --reference-bytes 4026531840 \
   --max-files 1024 \
   --output ./raw-bench-results
 ```
@@ -32,7 +32,7 @@ The directory must already exist and be writable. The command creates a uniquely
 
 ## Measurements
 
-The I/O request sizes are 4 KiB, 4 KiB+1 B, 64 KiB, 6 MiB, 6 MiB+1 B, and 64 MiB. `--reference-bytes` sets the logical-byte target used to derive each file count, and `--max-files` caps the count for every I/O size. The defaults are 4 GiB and 1024 files. Thus 64 MiB uses 64 files, 6 MiB uses 682 files, and small requests are capped at 1024 files. The actual logical bytes vary by request size; they are intentionally not normalized to a fixed total.
+The I/O request sizes are 4 KiB, 4 KiB+1 B, 64 KiB, 8 MiB, 8 MiB+1 B, and 64 MiB. The 8 MiB boundary represents four 2 MiB data chunks; 8 MiB+1 B deliberately crosses that boundary. `--reference-bytes` sets the logical-byte target used to derive each file count, and `--max-files` caps the count for every I/O size. The defaults are 60 × 64 MiB (3.75 GiB) and 1024 files. Thus 64 MiB uses 60 files, both 8 MiB cases use 480 files, and small requests are capped at 1024 files. The paired 8 MiB cases use the same file count.
 
 For each size:
 
@@ -40,7 +40,7 @@ For each size:
 - **Overwrite** clears the filesystem cache, then visits every generated file exactly once in creation order and overwrites its complete payload, including `fsync()` and `close()` for every file.
 - **Read** clears the filesystem cache, then reads every generated file exactly once in creation order. It never loops back to already-read files, so the result cannot turn into a page-cache benchmark.
 
-Before every measurement (including immediately before the read phase), the benchmark runs `sync` and clears Linux page caches through `/proc/sys/vm/drop_caches`; it logs this action and fails the measurement if either operation fails. Each file operation includes open/create, data transfer, and close; writes and overwrites also include `fsync()`. Every phase reports actual elapsed time, file-operation count, total bytes, bandwidth, and IOPS. Write, overwrite, and read therefore have identical operation counts and byte totals for each I/O size. Both benchmark modes use buffered I/O (no `O_DIRECT`), keeping unaligned +1 B request sizes valid and comparable. Results therefore measure normal POSIX buffered-I/O behavior while ensuring writes are timed through durable flush completion.
+Before every measurement (including immediately before the read phase), the benchmark runs `sync` and clears Linux page caches through `/proc/sys/vm/drop_caches`; it logs this action and fails the measurement if either operation fails. Each file operation includes open/create, data transfer, and close; writes and overwrites also include `fsync()`. Every phase reports actual elapsed time, file-operation count, total bytes, bandwidth, and IOPS. Write, overwrite, and read therefore have identical operation counts and byte totals for each I/O size. CI runs the complete workload five times. Each invocation creates a new isolated FlexRAID storage root (or a new raw temporary directory), removes it on completion, and runs `fstrim` before the next iteration to reclaim sparse loopback-image blocks. CI stores all five runs and calculates arithmetic means for elapsed time, bytes, operations, bandwidth, and IOPS in `average.csv` / `average.md`. Both benchmark modes use buffered I/O (no `O_DIRECT`), keeping unaligned +1 B request sizes valid and comparable. Results therefore measure normal POSIX buffered-I/O behavior while ensuring writes are timed through durable flush completion.
 
 ## Output
 
