@@ -2,12 +2,38 @@ package benchmark
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"os"
 	"testing"
 
 	"github.com/tetsup/flexraid/management"
 )
+
+func TestSelectBenchmarkDisksPreservesConfiguredOrderForEqualCapacity(t *testing.T) {
+	parent := t.TempDir()
+	disks := make([]management.DriveConfig, 5)
+	for index := range disks {
+		root := filepath.Join(parent, fmt.Sprintf("disk-%d", index))
+		if err := os.Mkdir(root, 0700); err != nil {
+			t.Fatal(err)
+		}
+		disks[index] = management.DriveConfig{Root: root, WWN: fmt.Sprintf("drive-%d", index)}
+	}
+	selected, err := selectBenchmarkDisks(disks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(selected) != 4 {
+		t.Fatalf("selected %d drives, want 4", len(selected))
+	}
+	for index := range selected {
+		if selected[index].WWN != disks[index].WWN {
+			t.Fatalf("selected drive %d = %s, want %s", index, selected[index].WWN, disks[index].WWN)
+		}
+	}
+}
 
 func TestFioReportDecodesBandwidth(t *testing.T) {
 	data := []byte(`{"jobs":[{"read":{"bw_bytes":1234,"iops":2},"write":{"bw_bytes":5678,"iops":3}}]}`)
