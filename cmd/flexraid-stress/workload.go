@@ -337,11 +337,23 @@ func runFilesystemPhase(mountpoint, dataPath, socket string, opts options, durat
 
 	// Verify the final contents of every block written by every concurrent
 	// worker. Workers own disjoint ranges of this same inode, not separate files.
-	verifyFile, err := os.Open(dataPath)
+	verifyFile, err := os.OpenFile(dataPath, os.O_RDWR, 0600)
 	if err != nil {
 		return err
 	}
 	defer verifyFile.Close()
+	// Flush once after all concurrent workers have stopped. This makes the
+	// final integrity pass observe durable data without contending multiple
+	// simultaneous fsync requests on the same logical Object.
+	syncStarted := time.Now()
+	if err := verifyFile.Sync(); err != nil {
+		return fmt.Errorf("final FUSE fsync: %w", err)
+	}
+	if metrics != nil {
+		metrics.syncLatency.add(time.Since(syncStarted))
+		metrics.syncOps.Add(1)
+		metrics.duration = time.Since(phaseStarted)
+	}
 	expectedHash, actualHash := sha256.New(), sha256.New()
 	verifiedBlocks := 0
 	for workerID := range expected {
@@ -415,15 +427,18 @@ func runFilesystemWorker(ctx context.Context, workerID int, writeFile, readFile 
 		expected.blocks[slot] = append(expected.blocks[slot][:0], payload...)
 		expected.written[slot] = true
 
-		// Force the write through FUSE Fsync before reading it back. This
-		// verifies persisted data rather than relying on a client-side cache.
-		started = time.Now()
-		if err := writeFile.Sync(); err != nil {
-			return fmt.Errorf("worker %d Sync after write: %w", workerID, err)
-		}
-		if metrics != nil {
-			metrics.syncLatency.add(time.Since(started))
-			metrics.syncOps.Add(1)
+		// Keep concurrent FUSE reads/writes independent. Fsync is deliberately
+		// batched: issuing one fsync per 64 KiB write makes the test primarily
+		// measure serialized durability barriers rather than RPC interference.
+		if sequence%16 == 15 {
+			started = time.Now()
+			if err := writeFile.Sync(); err != nil {
+				return fmt.Errorf("worker %d periodic Sync: %w", workerID, err)
+			}
+			if metrics != nil {
+				metrics.syncLatency.add(time.Since(started))
+				metrics.syncOps.Add(1)
+			}
 		}
 
 		started = time.Now()
