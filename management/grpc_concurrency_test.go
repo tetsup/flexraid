@@ -33,11 +33,9 @@ func newGRPCConcurrencyFixture(b testing.TB) (*Management, *grpc.ClientConn) {
 	if err := layer.Start(); err != nil {
 		b.Fatal(err)
 	}
-	readyCtx, readyCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer readyCancel()
-	if err := layer.WaitReady(readyCtx); err != nil {
-		b.Fatalf("wait for Management Ready: %v", err)
-	}
+	// This fixture intentionally has no Distribution or Orchestration layer.
+	// Management starts its gRPC listener before lifecycle initialization, and
+	// GetStatus remains callable while initialization is incomplete.
 	connection, err := grpc.NewClient(
 		"passthrough:///worker-concurrency-test",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
