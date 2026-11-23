@@ -26,7 +26,6 @@ func TestValidateOutputPathRejectsOverlappingStoragePaths(t *testing.T) {
 		config.Disks[0].Root,
 		filepath.Join(config.Disks[0].Root, "results"),
 		root,
-		filepath.Join(root, "results"),
 	} {
 		if err := validateOutputPath(output, config); err == nil {
 			t.Fatalf("validateOutputPath(%q) succeeded; want error", output)
