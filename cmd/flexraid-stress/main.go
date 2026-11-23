@@ -60,7 +60,6 @@ type options struct {
 	configPath     string
 	workerPath     string
 	size           int64
-	warmupSize     int64
 	blockSize      int
 	rpcEvery       time.Duration
 	reportPath     string
