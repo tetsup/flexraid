@@ -233,7 +233,7 @@ func Run(args []string) (runErr error) {
 	if err != nil {
 		return err
 	}
-\tvar samples []sample
+	var samples []sample
 	for _, block := range ioSizes {
 		for _, direction := range []string{"write", "overwrite", "read"} {
 			fmt.Printf("Running %-10s %-8s %s ...\\n", "flexraid", direction, block.label)
@@ -347,7 +347,7 @@ func readMountpoints() (map[string]struct{}, error) {
 	}
 	unescape := strings.NewReplacer(
 		"\\040", " ",
-		"\\011", "\t",
+		"\\011", "	",
 		"\\012", "\n",
 		"\\134", "\\",
 	)
@@ -918,10 +918,10 @@ func writeReports(outputDir string, samples []sample) error {
 		return fmt.Errorf("close CSV summary: %w", err)
 	}
 
-\tvar markdown strings.Builder
+	var markdown strings.Builder
 	markdown.WriteString("| Filesystem | I/O size | Direction | Bandwidth |\n")
 	markdown.WriteString("|---|---|---|---:|\n")
-\tfor _, value := range samples {
+	for _, value := range samples {
 		fmt.Fprintf(&markdown, "| %s | %s | %s | %.2f MiB/s |\n",
 			value.Filesystem, value.Label, value.Direction, value.BWBytes/(1024*1024))
 	}
