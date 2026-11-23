@@ -293,7 +293,7 @@ func runRaw(args []string) error {
 	var samples []sample
 	for _, block := range ioSizes {
 		fileCount := benchmarkFileCount(block.bytes, opts.referenceBytes, opts.maxFiles)
-		fmt.Printf("Benchmark workload %s: files=%d logical_bytes=%d\\n", block.label, fileCount, int64(fileCount)*block.bytes)
+		fmt.Printf("Benchmark workload %s: files=%d logical_bytes=%d\n", block.label, fileCount, int64(fileCount)*block.bytes)
 		var files []string
 		for _, direction := range []string{"write", "overwrite", "read"} {
 			fmt.Printf("Running %-10s %-8s %s ...\n", "raw", direction, block.label)
