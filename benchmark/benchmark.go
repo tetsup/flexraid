@@ -25,7 +25,7 @@ const (
 	fuseSuperMagic       = 0x65735546
 	workerStartupTimeout = 90 * time.Second
 	workerStopTimeout    = 10 * time.Second
-	caseRuntime          = 20 * time.Second
+	defaultCaseDuration  = 20 * time.Second
 )
 
 var ioSizes = []struct {
@@ -45,6 +45,7 @@ type options struct {
 	outputDir  string
 	fioPath    string
 	totalBytes int64
+	duration   time.Duration
 }
 
 type fioJob struct {
@@ -88,6 +89,8 @@ func Run(args []string) (runErr error) {
 	flags.StringVar(&opts.outputDir, "output", "./flexraid-bench-results", "result directory")
 	flags.StringVar(&opts.fioPath, "fio", "fio", "fio executable path")
 	flags.Int64Var(&opts.totalBytes, "size", 512<<20, "total logical bytes per test case")
+	var durationSeconds int
+	flags.IntVar(&durationSeconds, "duration-seconds", int(defaultCaseDuration/time.Second), "maximum duration of each I/O measurement in seconds")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -97,6 +100,10 @@ func Run(args []string) (runErr error) {
 	if opts.configPath == "" {
 		return errors.New("--config is required")
 	}
+	if durationSeconds <= 0 {
+		return errors.New("--duration-seconds must be positive")
+	}
+	opts.duration = time.Duration(durationSeconds) * time.Second
 	if opts.totalBytes <= 0 {
 		return errors.New("--size must be positive")
 	}
@@ -239,7 +246,7 @@ func Run(args []string) (runErr error) {
 			return fmt.Errorf("test size %d is too small for %s across four raw drives", opts.totalBytes, block.label)
 		}
 		for _, mode := range modes {
-			for _, direction := range []string{"write", "read"} {
+			for _, direction := range []string{"write", "overwrite", "read"} {
 				fmt.Printf("Running %-10s %-5s %s ...\n", mode.name, direction, block.label)
 				measured, err := runCase(opts, mode.name, mode.paths, block.bytes, block.label, direction)
 				if err != nil {
@@ -667,11 +674,17 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 	if perJob < blockSize {
 		return sample{}, fmt.Errorf("per-job size %d is smaller than block size %d", perJob, blockSize)
 	}
-	if direction == "read" {
+	if direction == "read" || direction == "overwrite" {
 		if err := dropCaches(); err != nil {
 			return sample{}, fmt.Errorf("drop filesystem caches before cold read: %w", err)
 		}
-		bw, iops, err := measureColdRead(paths, blockSize, caseRuntime)
+		var bw, iops float64
+		var err error
+		if direction == "overwrite" {
+			bw, iops, err = measureOverwrite(paths, blockSize, opts.duration)
+		} else {
+			bw, iops, err = measureColdRead(paths, blockSize, opts.duration)
+		}
 		if err != nil {
 			return sample{}, err
 		}
@@ -680,7 +693,7 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 
 	jobPath := filepath.Join(opts.outputDir, filesystem+"-"+label+"-"+direction+".fio")
 	resultPath := filepath.Join(opts.outputDir, filesystem+"-"+label+"-"+direction+".json")
-	jobConfig := buildFioJob(paths, blockSize, perJob, direction)
+	jobConfig := buildFioJob(paths, blockSize, perJob, direction, opts.duration)
 	if err := os.WriteFile(jobPath, []byte(jobConfig), 0600); err != nil {
 		return sample{}, fmt.Errorf("write fio job: %w", err)
 	}
@@ -706,7 +719,7 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 	return sample{Filesystem: filesystem, IOSize: blockSize, Label: label, Direction: direction, BWBytes: totalBW, IOPS: totalIOPS}, nil
 }
 
-func buildFioJob(paths []string, blockSize, perJob int64, direction string) string {
+func buildFioJob(paths []string, blockSize, perJob int64, direction string, duration time.Duration) string {
 	var builder strings.Builder
 	builder.WriteString("[global]\n")
 	builder.WriteString("ioengine=sync\n")
@@ -717,7 +730,7 @@ func buildFioJob(paths []string, blockSize, perJob int64, direction string) stri
 	builder.WriteString("group_reporting=1\n")
 	builder.WriteString("end_fsync=1\n")
 	builder.WriteString("invalidate=1\n")
-	builder.WriteString("runtime=" + strconv.Itoa(int(caseRuntime/time.Second)) + "\n")
+	builder.WriteString("runtime=" + strconv.Itoa(int(duration/time.Second)) + "\n")
 	if direction == "write" {
 		// Keep writing for the full measurement window, reusing this bounded
 		// file region if necessary. The subsequent read is deliberately one pass.
@@ -788,6 +801,69 @@ func measureColdRead(paths []string, blockSize int64, limit time.Duration) (floa
 	elapsed := time.Since(start).Seconds()
 	if elapsed <= 0 {
 		return 0, 0, errors.New("cold-read measurement elapsed time is zero")
+	}
+	return float64(totalBytes.Load()) / elapsed, float64(totalOps.Load()) / elapsed, nil
+}
+
+
+func measureOverwrite(paths []string, blockSize int64, limit time.Duration) (float64, float64, error) {
+	start := time.Now()
+	deadline := start.Add(limit)
+	var totalBytes atomic.Int64
+	var totalOps atomic.Int64
+	var wg sync.WaitGroup
+	errCh := make(chan error, len(paths))
+	for _, dir := range paths {
+		path := filepath.Join(dir, "data.bin")
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			file, err := os.OpenFile(path, os.O_WRONLY, 0)
+			if err != nil {
+				errCh <- fmt.Errorf("open existing file %s for overwrite: %w", path, err)
+				return
+			}
+			defer file.Close()
+			info, err := file.Stat()
+			if err != nil {
+				errCh <- fmt.Errorf("stat existing file %s: %w", path, err)
+				return
+			}
+			buffer := make([]byte, blockSize)
+			var offset int64
+			for offset < info.Size() && time.Now().Before(deadline) {
+				remaining := info.Size() - offset
+				chunk := buffer
+				if remaining < int64(len(chunk)) {
+					chunk = chunk[:remaining]
+				}
+				n, writeErr := file.Write(chunk)
+				if n > 0 {
+					offset += int64(n)
+					totalBytes.Add(int64(n))
+					totalOps.Add(1)
+				}
+				if writeErr != nil {
+					errCh <- fmt.Errorf("overwrite %s: %w", path, writeErr)
+					return
+				}
+				if n == 0 {
+					errCh <- fmt.Errorf("overwrite %s: %w", path, io.ErrShortWrite)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			return 0, 0, err
+		}
+	}
+	elapsed := time.Since(start).Seconds()
+	if elapsed <= 0 {
+		return 0, 0, errors.New("overwrite measurement elapsed time is zero")
 	}
 	return float64(totalBytes.Load()) / elapsed, float64(totalOps.Load()) / elapsed, nil
 }
