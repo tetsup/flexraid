@@ -5,10 +5,22 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/tetsup/flexraid/management"
 )
+
+func TestFioReportDecodesBandwidth(t *testing.T) {
+	data := []byte(`{"jobs":[{"read":{"bw_bytes":1234,"iops":2},"write":{"bw_bytes":5678,"iops":3}}]}`)
+	var report fioReport
+	if err := json.Unmarshal(data, &report); err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Jobs) != 1 || report.Jobs[0].Write.BWBytes != 5678 || report.Jobs[0].Read.IOPS != 2 {
+		t.Fatalf("unexpected report: %+v", report)
+	}
+}
 
 func TestSelectBenchmarkDisksPreservesConfiguredOrderForEqualCapacity(t *testing.T) {
 	parent := t.TempDir()
@@ -18,7 +30,9 @@ func TestSelectBenchmarkDisksPreservesConfiguredOrderForEqualCapacity(t *testing
 		if err := os.Mkdir(root, 0700); err != nil {
 			t.Fatal(err)
 		}
-		disks[index] = management.DriveConfig{Root: root, WWN: fmt.Sprintf("drive-%d", index)}
+		disks[index] = management.DriveConfig{
+			Root: root, Mountpoint: parent, WWN: fmt.Sprintf("drive-%d", index),
+		}
 	}
 	selected, err := selectBenchmarkDisks(disks)
 	if err != nil {
@@ -34,14 +48,32 @@ func TestSelectBenchmarkDisksPreservesConfiguredOrderForEqualCapacity(t *testing
 	}
 }
 
-func TestFioReportDecodesBandwidth(t *testing.T) {
-	data := []byte(`{"jobs":[{"read":{"bw_bytes":1234,"iops":2},"write":{"bw_bytes":5678,"iops":3}}]}`)
-	var report fioReport
-	if err := json.Unmarshal(data, &report); err != nil {
+func TestRenderWorkerConfigUsesIsolatedRootsAndDisablesGRPC(t *testing.T) {
+	disks := []management.DriveConfig{
+		{Root: "/original/disk1", Mountpoint: "/mnt/disk1", WWN: "drive-1"},
+		{Root: "/original/disk2", Mountpoint: "/mnt/disk2", WWN: "drive-2"},
+		{Root: "/original/disk3", Mountpoint: "/mnt/disk3", WWN: "drive-3"},
+		{Root: "/original/disk4", Mountpoint: "/mnt/disk4", WWN: "drive-4"},
+	}
+	roots := []string{"/mnt/disk1/temp", "/mnt/disk2/temp", "/mnt/disk3/temp", "/mnt/disk4/temp"}
+	config, err := renderWorkerConfig(disks, roots, "/tmp/fuse-mount", "/tmp/worker.sock")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Jobs) != 1 || report.Jobs[0].Write.BWBytes != 5678 || report.Jobs[0].Read.IOPS != 2 {
-		t.Fatalf("unexpected report: %+v", report)
+	for _, expected := range []string{
+		"root: /mnt/disk1/temp",
+		"mountpoint: /mnt/disk4",
+		"wwn: drive-4",
+		"mountpoint: /tmp/fuse-mount",
+		"grpc_socket_path: /tmp/worker.sock",
+		"grpc_enabled: false",
+	} {
+		if !strings.Contains(config, expected) {
+			t.Fatalf("generated config missing %q:\n%s", expected, config)
+		}
+	}
+	if strings.Contains(config, "/original/") {
+		t.Fatalf("generated config retained original storage roots:\n%s", config)
 	}
 }
 
@@ -82,7 +114,7 @@ func TestValidateOutputPathResolvesSymlinks(t *testing.T) {
 func testConfig(root string) management.Config {
 	parent := filepath.Dir(root)
 	return management.Config{
-		Disks:      []management.DriveConfig{{Root: root, Mountpoint: filepath.Join(parent, "physical")}},
+		Disks: []management.DriveConfig{{Root: root, Mountpoint: filepath.Join(parent, "physical")}},
 		Mountpoint: filepath.Join(parent, "fuse"),
 	}
 }
