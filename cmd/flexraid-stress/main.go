@@ -12,7 +12,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
 )
 
 type mode string
@@ -360,15 +359,21 @@ func printResult(value result) {
 
 func summarizeResults(samples []result) []result {
 	byMode := map[mode][]result{}
-	for _, sample := range samples { byMode[sample.Mode] = append(byMode[sample.Mode], sample) }
+	for _, sample := range samples {
+		byMode[sample.Mode] = append(byMode[sample.Mode], sample)
+	}
 	summary := make([]result, 0, 3)
 	for _, selected := range []mode{modeOff, modeIdle, modeActive} {
 		values := byMode[selected]
-		if len(values) == 0 { continue }
+		if len(values) == 0 {
+			continue
+		}
 		writeRates, readRates, iops := make([]float64, 0, len(values)), make([]float64, 0, len(values)), make([]float64, 0, len(values))
 		collectDuration := func(pick func(result) time.Duration) []int64 {
 			items := make([]int64, 0, len(values))
-			for _, value := range values { items = append(items, int64(pick(value))) }
+			for _, value := range values {
+				items = append(items, int64(pick(value)))
+			}
 			return items
 		}
 		rpcCounts, rpcErrors := make([]int64, 0, len(values)), make([]int64, 0, len(values))
@@ -382,28 +387,32 @@ func summarizeResults(samples []result) []result {
 		summary = append(summary, result{
 			Mode: selected, Bytes: values[0].Bytes, Workers: values[0].Workers,
 			IntegrityVerified: allIntegrityVerified(values),
-			WriteMiBPerSec: medianFloat64(writeRates), ReadMiBPerSec: medianFloat64(readRates), IOPS: medianFloat64(iops),
-			WriteLatencyP50: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.WriteLatencyP50 }))),
-			WriteLatencyP95: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.WriteLatencyP95 }))),
-			WriteLatencyP99: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.WriteLatencyP99 }))),
-			ReadLatencyP50: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.ReadLatencyP50 }))),
-			ReadLatencyP95: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.ReadLatencyP95 }))),
-			ReadLatencyP99: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.ReadLatencyP99 }))),
+			WriteMiBPerSec:    medianFloat64(writeRates), ReadMiBPerSec: medianFloat64(readRates), IOPS: medianFloat64(iops),
+			WriteLatencyP50:    time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.WriteLatencyP50 }))),
+			WriteLatencyP95:    time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.WriteLatencyP95 }))),
+			WriteLatencyP99:    time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.WriteLatencyP99 }))),
+			ReadLatencyP50:     time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.ReadLatencyP50 }))),
+			ReadLatencyP95:     time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.ReadLatencyP95 }))),
+			ReadLatencyP99:     time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.ReadLatencyP99 }))),
 			MetadataLatencyP50: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.MetadataLatencyP50 }))),
 			MetadataLatencyP95: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.MetadataLatencyP95 }))),
 			MetadataLatencyP99: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.MetadataLatencyP99 }))),
-			RPCCalls: uint64(medianInt64(rpcCounts)), RPCErrors: uint64(medianInt64(rpcErrors)),
+			RPCCalls:           uint64(medianInt64(rpcCounts)), RPCErrors: uint64(medianInt64(rpcErrors)),
 			AverageRPCLatency: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.AverageRPCLatency }))),
-			RPCLatencyP50: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.RPCLatencyP50 }))),
-			RPCLatencyP95: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.RPCLatencyP95 }))),
-			RPCLatencyP99: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.RPCLatencyP99 }))),
+			RPCLatencyP50:     time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.RPCLatencyP50 }))),
+			RPCLatencyP95:     time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.RPCLatencyP95 }))),
+			RPCLatencyP99:     time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.RPCLatencyP99 }))),
 		})
 	}
 	return summary
 }
 
 func allIntegrityVerified(values []result) bool {
-	for _, value := range values { if !value.IntegrityVerified { return false } }
+	for _, value := range values {
+		if !value.IntegrityVerified {
+			return false
+		}
+	}
 	return true
 }
 
