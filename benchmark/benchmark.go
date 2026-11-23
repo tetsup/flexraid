@@ -9,15 +9,21 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/tetsup/flexraid/management"
 )
 
-const fuseSuperMagic = 0x65735546
+const (
+	fuseSuperMagic = 0x65735546
+	workerStartupTimeout = 90 * time.Second
+	workerStopTimeout = 10 * time.Second
+)
 
 var ioSizes = []struct {
 	label string
@@ -62,7 +68,16 @@ type sample struct {
 	IOPS       float64
 }
 
-// Run executes the sequential storage benchmark against an already-running Worker.
+type workerProcess struct {
+	command   *exec.Cmd
+	mountpoint string
+	logPath   string
+	done      chan struct{}
+	waitErr   error
+	waitMu    sync.Mutex
+}
+
+// Run measures raw physical storage and an isolated temporary FlexRAID Worker.
 func Run(args []string) (runErr error) {
 	var opts options
 	flags := flag.NewFlagSet("flexraid benchmark", flag.ContinueOnError)
@@ -98,39 +113,23 @@ func Run(args []string) (runErr error) {
 	if err := management.ValidateDriveMappings(config.Disks); err != nil {
 		return fmt.Errorf("validate configured physical drives: %w", err)
 	}
-	mountpoint, err := filepath.Abs(config.Mountpoint)
+	config.Mountpoint, err = filepath.Abs(config.Mountpoint)
 	if err != nil {
-		return fmt.Errorf("resolve FlexRAID mountpoint: %w", err)
+		return fmt.Errorf("resolve configured FUSE mountpoint: %w", err)
 	}
-	config.Mountpoint = mountpoint
 	for index := range config.Disks {
-		config.Disks[index].Root, err = filepath.Abs(config.Disks[index].Root)
-		if err != nil {
-			return fmt.Errorf("resolve disk %d root: %w", index+1, err)
-		}
 		config.Disks[index].Mountpoint, err = filepath.Abs(config.Disks[index].Mountpoint)
 		if err != nil {
-			return fmt.Errorf("resolve disk %d mountpoint: %w", index+1, err)
+			return fmt.Errorf("resolve disk %d physical mountpoint: %w", index+1, err)
 		}
 	}
-	if err := validatePhysicalRoots(config); err != nil {
+	if mounted, err := isFUSEMountpoint(config.Mountpoint); err != nil {
+		return fmt.Errorf("inspect configured FUSE mountpoint: %w", err)
+	} else if mounted {
+		return fmt.Errorf("configured Worker is already mounted at %s; unmount it before running an isolated benchmark", config.Mountpoint)
+	}
+	if err := validatePhysicalMountpoints(config.Disks); err != nil {
 		return err
-	}
-	benchmarkDisks, err := selectBenchmarkDisks(config.Disks)
-	if err != nil {
-		return err
-	}
-	for index, disk := range benchmarkDisks {
-		fmt.Printf("Benchmark drive %d: WWN=%s root=%s\n", index+1, disk.WWN, disk.Root)
-	}
-	benchmarkConfig := config
-	benchmarkConfig.Disks = benchmarkDisks
-	var filesystem syscall.Statfs_t
-	if err := syscall.Statfs(mountpoint, &filesystem); err != nil {
-		return fmt.Errorf("inspect FlexRAID mountpoint %s: %w", mountpoint, err)
-	}
-	if uint64(filesystem.Type) != fuseSuperMagic {
-		return fmt.Errorf("%s is not a mounted FUSE filesystem", mountpoint)
 	}
 	if err := validateOutputPath(opts.outputDir, config); err != nil {
 		return err
@@ -139,16 +138,71 @@ func Run(args []string) (runErr error) {
 		return fmt.Errorf("create output directory: %w", err)
 	}
 
-	workDirs, err := createWorkDirs(benchmarkConfig)
+	selected, err := selectBenchmarkDisks(config.Disks)
 	if err != nil {
 		return err
 	}
+	for index, disk := range selected {
+		fmt.Printf("Benchmark drive %d: WWN=%s mountpoint=%s\n", index+1, disk.WWN, disk.Mountpoint)
+	}
+
+	temporaryDir, err := os.MkdirTemp("", "flexraid-bench-")
+	if err != nil {
+		return fmt.Errorf("create benchmark workspace: %w", err)
+	}
+	var storageRoots []string
+	var workDirs []string
+	var worker *workerProcess
 	defer func() {
 		if cleanupErr := removeWorkDirs(workDirs); cleanupErr != nil {
 			runErr = errors.Join(runErr, cleanupErr)
 		}
+		if worker != nil {
+			if stopErr := worker.stop(); stopErr != nil {
+				runErr = errors.Join(runErr, stopErr)
+			}
+		}
+		if cleanupErr := removeWorkDirs(storageRoots); cleanupErr != nil {
+			runErr = errors.Join(runErr, cleanupErr)
+		}
+		if cleanupErr := os.RemoveAll(temporaryDir); cleanupErr != nil {
+			runErr = errors.Join(runErr, fmt.Errorf("remove benchmark workspace %s: %w", temporaryDir, cleanupErr))
+		}
 	}()
 
+	storageRoots, err = createTemporaryStorageRoots(selected)
+	if err != nil {
+		return err
+	}
+	workerMountpoint := filepath.Join(temporaryDir, "mount")
+	socketPath := filepath.Join(temporaryDir, "worker.sock")
+	workerConfigPath := filepath.Join(temporaryDir, "worker.yaml")
+	workerLogPath := filepath.Join(temporaryDir, "worker.log")
+	if err := os.Mkdir(workerMountpoint, 0700); err != nil {
+		return fmt.Errorf("create temporary Worker mountpoint: %w", err)
+	}
+	workerConfig, err := renderWorkerConfig(selected, storageRoots, workerMountpoint, socketPath)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(workerConfigPath, []byte(workerConfig), 0600); err != nil {
+		return fmt.Errorf("write temporary Worker configuration: %w", err)
+	}
+	worker, err = startWorker(workerMountpoint, workerConfigPath, workerLogPath)
+	if err != nil {
+		return err
+	}
+	if err := worker.waitReady(workerStartupTimeout); err != nil {
+		return err
+	}
+
+	benchmarkConfig := config
+	benchmarkConfig.Disks = selected
+	benchmarkConfig.Mountpoint = workerMountpoint
+	workDirs, err = createWorkDirs(benchmarkConfig)
+	if err != nil {
+		return err
+	}
 	modes := []struct {
 		name  string
 		paths []string
@@ -158,6 +212,7 @@ func Run(args []string) (runErr error) {
 		{name: "raw-4drive", paths: workDirs[:4]},
 		{name: "flexraid", paths: workDirs[len(workDirs)-1:]},
 	}
+
 	var samples []sample
 	for _, block := range ioSizes {
 		if opts.totalBytes < block.bytes {
@@ -186,38 +241,12 @@ func Run(args []string) (runErr error) {
 	return nil
 }
 
-func selectBenchmarkDisks(disks []management.DriveConfig) ([]management.DriveConfig, error) {
-	type candidate struct {
-		drive management.DriveConfig
-		free  uint64
-	}
-	candidates := make([]candidate, 0, len(disks))
-	for index, disk := range disks {
-		var stats syscall.Statfs_t
-		if err := syscall.Statfs(disk.Root, &stats); err != nil {
-			return nil, fmt.Errorf("get available capacity for disk %d (%s): %w", index+1, disk.WWN, err)
-		}
-		candidates = append(candidates, candidate{
-			drive: disk,
-			free:  uint64(stats.Bavail) * uint64(stats.Bsize),
-		})
-	}
-	sort.SliceStable(candidates, func(i, j int) bool {
-		return candidates[i].free > candidates[j].free
-	})
-	selected := make([]management.DriveConfig, 4)
-	for index := range selected {
-		selected[index] = candidates[index].drive
-	}
-	return selected, nil
-}
-
-func validatePhysicalRoots(config management.Config) error {
+func validatePhysicalMountpoints(disks []management.DriveConfig) error {
 	mounts, err := readMountpoints()
 	if err != nil {
 		return fmt.Errorf("read mounted filesystems: %w", err)
 	}
-	for index, disk := range config.Disks {
+	for index, disk := range disks {
 		mountpoint, err := filepath.EvalSymlinks(disk.Mountpoint)
 		if err != nil {
 			return fmt.Errorf("resolve physical mountpoint for disk %d: %w", index+1, err)
@@ -226,18 +255,12 @@ func validatePhysicalRoots(config management.Config) error {
 		if _, ok := mounts[mountpoint]; !ok {
 			return fmt.Errorf("physical mountpoint %s for disk %d is not mounted", mountpoint, index+1)
 		}
-		rootInfo, err := os.Stat(disk.Root)
-		if err != nil {
-			return fmt.Errorf("stat storage root for disk %d: %w", index+1, err)
-		}
-		mountInfo, err := os.Stat(mountpoint)
+		info, err := os.Stat(mountpoint)
 		if err != nil {
 			return fmt.Errorf("stat physical mountpoint for disk %d: %w", index+1, err)
 		}
-		rootStat, rootOK := rootInfo.Sys().(*syscall.Stat_t)
-		mountStat, mountOK := mountInfo.Sys().(*syscall.Stat_t)
-		if !rootOK || !mountOK || rootStat.Dev != mountStat.Dev {
-			return fmt.Errorf("storage root %s for disk %d is not on the configured physical mount %s", disk.Root, index+1, mountpoint)
+		if !info.IsDir() {
+			return fmt.Errorf("physical mountpoint %s for disk %d is not a directory", mountpoint, index+1)
 		}
 	}
 	return nil
@@ -262,6 +285,185 @@ func readMountpoints() (map[string]struct{}, error) {
 		}
 	}
 	return mounts, nil
+}
+
+func isFUSEMountpoint(path string) (bool, error) {
+	var stats syscall.Statfs_t
+	if err := syscall.Statfs(path, &stats); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return uint64(stats.Type) == fuseSuperMagic, nil
+}
+
+func selectBenchmarkDisks(disks []management.DriveConfig) ([]management.DriveConfig, error) {
+	type candidate struct {
+		drive management.DriveConfig
+		free  uint64
+	}
+	candidates := make([]candidate, 0, len(disks))
+	for index, disk := range disks {
+		var stats syscall.Statfs_t
+		if err := syscall.Statfs(disk.Mountpoint, &stats); err != nil {
+			return nil, fmt.Errorf("get available capacity for disk %d (%s): %w", index+1, disk.WWN, err)
+		}
+		candidates = append(candidates, candidate{
+			drive: disk,
+			free:  uint64(stats.Bavail) * uint64(stats.Bsize),
+		})
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		return candidates[i].free > candidates[j].free
+	})
+	selected := make([]management.DriveConfig, 4)
+	for index := range selected {
+		selected[index] = candidates[index].drive
+	}
+	return selected, nil
+}
+
+func createTemporaryStorageRoots(disks []management.DriveConfig) ([]string, error) {
+	roots := make([]string, 0, len(disks))
+	for index, disk := range disks {
+		root, err := os.MkdirTemp(disk.Mountpoint, ".flexraid-bench-storage-")
+		if err != nil {
+			cleanupErr := removeWorkDirs(roots)
+			return nil, errors.Join(fmt.Errorf("create temporary storage root on disk %d: %w", index+1, err), cleanupErr)
+		}
+		roots = append(roots, root)
+	}
+	return roots, nil
+}
+
+func renderWorkerConfig(disks []management.DriveConfig, roots []string, mountpoint, socketPath string) (string, error) {
+	if len(disks) != len(roots) {
+		return "", fmt.Errorf("disk count %d does not match temporary storage root count %d", len(disks), len(roots))
+	}
+	var builder strings.Builder
+	builder.WriteString("disks:\n")
+	for index, disk := range disks {
+		for _, value := range []string{roots[index], disk.Mountpoint, disk.WWN} {
+			if strings.ContainsAny(value, "\r\n") {
+				return "", fmt.Errorf("disk %d configuration contains a newline", index+1)
+			}
+		}
+		fmt.Fprintf(&builder, "  - root: %s\n", roots[index])
+		fmt.Fprintf(&builder, "    mountpoint: %s\n", disk.Mountpoint)
+		fmt.Fprintf(&builder, "    wwn: %s\n", disk.WWN)
+	}
+	if strings.ContainsAny(mountpoint+socketPath, "\r\n") {
+		return "", errors.New("temporary Worker paths contain a newline")
+	}
+	fmt.Fprintf(&builder, "mountpoint: %s\n", mountpoint)
+	fmt.Fprintf(&builder, "grpc_socket_path: %s\n", socketPath)
+	builder.WriteString("grpc_enabled: false\n")
+	return builder.String(), nil
+}
+
+func startWorker(mountpoint, configPath, logPath string) (*workerProcess, error) {
+	executable, err := os.Executable()
+	if err != nil {
+		return nil, fmt.Errorf("resolve Worker executable: %w", err)
+	}
+	logFile, err := os.Create(logPath)
+	if err != nil {
+		return nil, fmt.Errorf("create temporary Worker log: %w", err)
+	}
+	command := exec.Command(executable, "--config", configPath)
+	command.Stdout = logFile
+	command.Stderr = logFile
+	if err := command.Start(); err != nil {
+		_ = logFile.Close()
+		return nil, fmt.Errorf("start temporary Worker: %w", err)
+	}
+	process := &workerProcess{
+		command: command,
+		mountpoint: mountpoint,
+		logPath: logPath,
+		done: make(chan struct{}),
+	}
+	go func() {
+		err := command.Wait()
+		process.waitMu.Lock()
+		process.waitErr = err
+		process.waitMu.Unlock()
+		close(process.done)
+		_ = logFile.Close()
+	}()
+	return process, nil
+}
+
+func (worker *workerProcess) waitReady(timeout time.Duration) error {
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if mounted, err := isFUSEMountpoint(worker.mountpoint); err == nil && mounted {
+			if _, err := os.ReadDir(worker.mountpoint); err == nil {
+				return nil
+			}
+		}
+		select {
+		case <-worker.done:
+			return fmt.Errorf("temporary Worker exited before becoming ready: %s", worker.logContents())
+		case <-deadline.C:
+			return fmt.Errorf("temporary Worker did not become ready within %s: %s", timeout, worker.logContents())
+		case <-ticker.C:
+		}
+	}
+}
+
+func (worker *workerProcess) stop() error {
+	var cleanupErr error
+	if mounted, err := isFUSEMountpoint(worker.mountpoint); err != nil {
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("inspect temporary Worker mount: %w", err))
+	} else if mounted {
+		if err := unmount(worker.mountpoint); err != nil {
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("unmount temporary Worker: %w", err))
+			_ = worker.command.Process.Kill()
+		}
+	} else {
+		select {
+		case <-worker.done:
+		default:
+			_ = worker.command.Process.Signal(syscall.SIGTERM)
+		}
+	}
+
+	timer := time.NewTimer(workerStopTimeout)
+	defer timer.Stop()
+	select {
+	case <-worker.done:
+	case <-timer.C:
+		_ = worker.command.Process.Kill()
+		<-worker.done
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("temporary Worker did not stop within %s", workerStopTimeout))
+	}
+	worker.waitMu.Lock()
+	waitErr := worker.waitErr
+	worker.waitMu.Unlock()
+	if waitErr != nil {
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("temporary Worker exited with error: %w: %s", waitErr, worker.logContents()))
+	}
+	return cleanupErr
+}
+
+func (worker *workerProcess) logContents() string {
+	data, err := os.ReadFile(worker.logPath)
+	if err != nil {
+		return fmt.Sprintf("unable to read Worker log: %v", err)
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func unmount(mountpoint string) error {
+	if err := exec.Command("fusermount3", "-u", mountpoint).Run(); err == nil {
+		return nil
+	}
+	return exec.Command("umount", mountpoint).Run()
 }
 
 func validateOutputPath(output string, config management.Config) error {
@@ -335,17 +537,17 @@ func pathsOverlap(first, second string) bool {
 func createWorkDirs(config management.Config) ([]string, error) {
 	paths := make([]string, 0, len(config.Disks)+1)
 	for i, disk := range config.Disks {
-		path, err := os.MkdirTemp(disk.Root, ".flexraid-bench-")
+		path, err := os.MkdirTemp(disk.Mountpoint, ".flexraid-bench-raw-")
 		if err != nil {
 			cleanupErr := removeWorkDirs(paths)
-			return nil, errors.Join(fmt.Errorf("create temporary directory on disk %d: %w", i+1, err), cleanupErr)
+			return nil, errors.Join(fmt.Errorf("create raw benchmark directory on disk %d: %w", i+1, err), cleanupErr)
 		}
 		paths = append(paths, path)
 	}
 	fusePath, err := os.MkdirTemp(config.Mountpoint, ".flexraid-bench-")
 	if err != nil {
 		cleanupErr := removeWorkDirs(paths)
-		return nil, errors.Join(fmt.Errorf("create temporary directory in FlexRAID mount: %w", err), cleanupErr)
+		return nil, errors.Join(fmt.Errorf("create benchmark directory in temporary FUSE mount: %w", err), cleanupErr)
 	}
 	paths = append(paths, fusePath)
 	return paths, nil
@@ -354,8 +556,9 @@ func createWorkDirs(config management.Config) ([]string, error) {
 func removeModeFiles(paths []string) error {
 	var cleanupErr error
 	for _, dir := range paths {
-		if err := os.Remove(filepath.Join(dir, "data.bin")); err != nil && !os.IsNotExist(err) {
-			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove %s: %w", filepath.Join(dir, "data.bin"), err))
+		path := filepath.Join(dir, "data.bin")
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove %s: %w", path, err))
 		}
 	}
 	return cleanupErr
