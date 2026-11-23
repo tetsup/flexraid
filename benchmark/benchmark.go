@@ -280,16 +280,17 @@ func validatePhysicalMountpoints(disks []management.DriveConfig) error {
 			return fmt.Errorf("physical mountpoint %s for disk %d is not a directory", mountpoint, index+1)
 		}
 		rootInfo, err := os.Stat(disk.Root)
-		if err != nil {
+		if err == nil {
+			if !rootInfo.IsDir() {
+				return fmt.Errorf("configured Storage Root %s for disk %d is not a directory", disk.Root, index+1)
+			}
+			rootStat, rootOK := rootInfo.Sys().(*syscall.Stat_t)
+			mountStat, mountOK := mountInfo.Sys().(*syscall.Stat_t)
+			if !rootOK || !mountOK || rootStat.Dev != mountStat.Dev {
+				return fmt.Errorf("configured Storage Root %s for disk %d is not on physical mountpoint %s", disk.Root, index+1, mountpoint)
+			}
+		} else if !os.IsNotExist(err) {
 			return fmt.Errorf("stat configured Storage Root for disk %d: %w", index+1, err)
-		}
-		if !rootInfo.IsDir() {
-			return fmt.Errorf("configured Storage Root %s for disk %d is not a directory", disk.Root, index+1)
-		}
-		rootStat, rootOK := rootInfo.Sys().(*syscall.Stat_t)
-		mountStat, mountOK := mountInfo.Sys().(*syscall.Stat_t)
-		if !rootOK || !mountOK || rootStat.Dev != mountStat.Dev {
-			return fmt.Errorf("configured Storage Root %s for disk %d is not on physical mountpoint %s", disk.Root, index+1, mountpoint)
 		}
 	}
 	return nil
@@ -327,6 +328,20 @@ func isFUSEMountpoint(path string) (bool, error) {
 	return uint64(stats.Type) == fuseSuperMagic, nil
 }
 
+func driveCapacityPath(disk management.DriveConfig) (string, error) {
+	info, err := os.Stat(disk.Root)
+	if err == nil {
+		if !info.IsDir() {
+			return "", fmt.Errorf("configured Storage Root %s is not a directory", disk.Root)
+		}
+		return disk.Root, nil
+	}
+	if os.IsNotExist(err) {
+		return disk.Mountpoint, nil
+	}
+	return "", fmt.Errorf("stat configured Storage Root %s: %w", disk.Root, err)
+}
+
 func selectBenchmarkDisks(disks []management.DriveConfig) ([]management.DriveConfig, error) {
 	type candidate struct {
 		drive management.DriveConfig
@@ -334,8 +349,12 @@ func selectBenchmarkDisks(disks []management.DriveConfig) ([]management.DriveCon
 	}
 	candidates := make([]candidate, 0, len(disks))
 	for index, disk := range disks {
+		path, err := driveCapacityPath(disk)
+		if err != nil {
+			return nil, fmt.Errorf("get capacity path for disk %d (%s): %w", index+1, disk.WWN, err)
+		}
 		var stats syscall.Statfs_t
-		if err := syscall.Statfs(disk.Root, &stats); err != nil {
+		if err := syscall.Statfs(path, &stats); err != nil {
 			return nil, fmt.Errorf("get available capacity for disk %d (%s): %w", index+1, disk.WWN, err)
 		}
 		candidates = append(candidates, candidate{
