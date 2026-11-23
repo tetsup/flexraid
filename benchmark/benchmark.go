@@ -82,6 +82,9 @@ type workerProcess struct {
 
 // Run measures raw physical storage and an isolated temporary FlexRAID Worker.
 func Run(args []string) (runErr error) {
+	if len(args) > 0 && args[0] == "raw" {
+		return runRaw(args[1:])
+	}
 	var opts options
 	flags := flag.NewFlagSet("flexraid benchmark", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
@@ -107,9 +110,9 @@ func Run(args []string) (runErr error) {
 	if opts.totalBytes <= 0 {
 		return errors.New("--size must be positive")
 	}
-	minimumSize := ioSizes[len(ioSizes)-1].bytes * 4
+	minimumSize := ioSizes[len(ioSizes)-1].bytes
 	if opts.totalBytes < minimumSize {
-		return fmt.Errorf("--size must be at least %d bytes so every raw parallel job can issue a full 64 MiB request", minimumSize)
+		return fmt.Errorf("--size must be at least %d bytes so every job can issue a full 64 MiB request", minimumSize)
 	}
 	if _, err := exec.LookPath(opts.fioPath); err != nil {
 		return fmt.Errorf("find fio executable: %w", err)
@@ -263,6 +266,46 @@ func Run(args []string) (runErr error) {
 		return err
 	}
 	fmt.Printf("Results: %s\n", opts.outputDir)
+	return nil
+}
+
+// runRaw measures one caller-selected directory without loading or consulting
+// FlexRAID configuration. It deliberately has no dependency on Worker setup.
+func runRaw(args []string) error {
+	var opts options
+	flags := flag.NewFlagSet("flexraid benchmark raw", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	var directory string
+	flags.StringVar(&directory, "directory", "", "directory on the physical filesystem to benchmark")
+	flags.StringVar(&opts.outputDir, "output", "./flexraid-raw-bench-results", "result directory")
+	flags.StringVar(&opts.fioPath, "fio", "fio", "fio executable path")
+	flags.Int64Var(&opts.totalBytes, "size", 512<<20, "total bytes per test case")
+	var durationSeconds int
+	flags.IntVar(&durationSeconds, "duration-seconds", int(defaultCaseDuration/time.Second), "maximum duration of each I/O measurement in seconds")
+	if err := flags.Parse(args); err != nil { return err }
+	if flags.NArg() != 0 { return fmt.Errorf("unexpected arguments: %s", strings.Join(flags.Args(), " ")) }
+	if directory == "" { return errors.New("--directory is required") }
+	if durationSeconds <= 0 { return errors.New("--duration-seconds must be positive") }
+	if opts.totalBytes < ioSizes[len(ioSizes)-1].bytes { return fmt.Errorf("--size must be at least %d bytes", ioSizes[len(ioSizes)-1].bytes) }
+	if _, err := exec.LookPath(opts.fioPath); err != nil { return fmt.Errorf("find fio executable: %w", err) }
+	absolute, err := filepath.Abs(directory)
+	if err != nil { return fmt.Errorf("resolve benchmark directory: %w", err) }
+	info, err := os.Stat(absolute)
+	if err != nil { return fmt.Errorf("stat benchmark directory: %w", err) }
+	if !info.IsDir() { return fmt.Errorf("benchmark path %s is not a directory", absolute) }
+	if err := os.MkdirAll(opts.outputDir, 0755); err != nil { return fmt.Errorf("create output directory: %w", err) }
+	opts.duration = time.Duration(durationSeconds) * time.Second
+	var samples []sample
+	for _, block := range ioSizes {
+		for _, direction := range []string{"write", "overwrite", "read"} {
+			fmt.Printf("Running %-10s %-8s %s ...\\n", "raw", direction, block.label)
+			measured, err := runCase(opts, "raw", []string{absolute}, block.bytes, block.label, direction)
+			if err != nil { return fmt.Errorf("raw %s %s: %w", direction, block.label, err) }
+			samples = append(samples, measured)
+		}
+		if err := removeModeFiles([]string{absolute}); err != nil { return fmt.Errorf("remove raw benchmark file: %w", err) }
+	}
+	if err := writeReports(opts.outputDir, samples); err != nil { return err }
 	return nil
 }
 
@@ -629,22 +672,11 @@ func pathsOverlap(first, second string) bool {
 }
 
 func createWorkDirs(config management.Config) ([]string, error) {
-	paths := make([]string, 0, len(config.Disks)+1)
-	for i, disk := range config.Disks {
-		path, err := os.MkdirTemp(disk.Mountpoint, ".flexraid-bench-raw-")
-		if err != nil {
-			cleanupErr := removeWorkDirs(paths)
-			return nil, errors.Join(fmt.Errorf("create raw benchmark directory on disk %d: %w", i+1, err), cleanupErr)
-		}
-		paths = append(paths, path)
-	}
 	fusePath, err := os.MkdirTemp(config.Mountpoint, ".flexraid-bench-")
 	if err != nil {
-		cleanupErr := removeWorkDirs(paths)
-		return nil, errors.Join(fmt.Errorf("create benchmark directory in temporary FUSE mount: %w", err), cleanupErr)
+		return nil, fmt.Errorf("create benchmark directory in temporary FUSE mount: %w", err)
 	}
-	paths = append(paths, fusePath)
-	return paths, nil
+	return []string{fusePath}, nil
 }
 
 func removeModeFiles(paths []string) error {
