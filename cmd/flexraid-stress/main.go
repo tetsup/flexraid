@@ -26,8 +26,8 @@ type result struct {
 	Mode               mode          `json:"mode"`
 	Repetition         int           `json:"repetition"`
 	Bytes              int64         `json:"bytes"`
-	WriteDuration      time.Duration `json:"write_duration_ns"`
-	ReadDuration       time.Duration `json:"read_duration_ns"`
+	AverageWriteLatency time.Duration `json:"average_write_latency_ns"`
+	AverageReadLatency  time.Duration `json:"average_read_latency_ns"`
 	WriteMiBPerSec     float64       `json:"write_mib_per_sec"`
 	ReadMiBPerSec      float64       `json:"read_mib_per_sec"`
 	WriteSHA256        string        `json:"write_sha256"`
@@ -393,6 +393,8 @@ func summarizeResults(samples []result) []result {
 			ReadLatencyP50:     time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.ReadLatencyP50 }))),
 			ReadLatencyP95:     time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.ReadLatencyP95 }))),
 			ReadLatencyP99:     time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.ReadLatencyP99 }))),
+			AverageWriteLatency: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.AverageWriteLatency }))),
+			AverageReadLatency:  time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.AverageReadLatency }))),
 			MetadataLatencyP50: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.MetadataLatencyP50 }))),
 			MetadataLatencyP95: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.MetadataLatencyP95 }))),
 			MetadataLatencyP99: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.MetadataLatencyP99 }))),
