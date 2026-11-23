@@ -25,7 +25,7 @@ func TestFioReportDecodesBandwidth(t *testing.T) {
 func TestDriveCapacityPathFallsBackToPhysicalMountpoint(t *testing.T) {
 	mountpoint := t.TempDir()
 	disk := management.DriveConfig{
-		Root: filepath.Join(mountpoint, "not-created-yet"),
+		Root:       filepath.Join(mountpoint, "not-created-yet"),
 		Mountpoint: mountpoint,
 	}
 	path, err := driveCapacityPath(disk)
