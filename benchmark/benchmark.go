@@ -291,7 +291,7 @@ func runRaw(args []string) error {
 	var samples []sample
 	for _, block := range ioSizes {
 		for _, direction := range []string{"write", "overwrite", "read"} {
-			fmt.Printf("Running %-10s %-8s %s ...\\n", "raw", direction, block.label)
+			fmt.Printf("Running %-10s %-8s %s ...\n", "raw", direction, block.label)
 			measured, err := runCase(opts, "raw", []string{workDir}, block.bytes, block.label, direction)
 			if err != nil { return fmt.Errorf("raw %s %s: %w", direction, block.label, err) }
 			samples = append(samples, measured)
