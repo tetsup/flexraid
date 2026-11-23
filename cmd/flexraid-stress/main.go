@@ -312,14 +312,14 @@ func waitForWorker(command *exec.Cmd, done <-chan struct{}, mountpoint, socket s
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		if isMounted(mountpoint) && (!grpcEnabled || socketReady(socket)) {
+		if isMounted(mountpoint) && fuseReady(mountpoint) && (!grpcEnabled || socketReady(socket)) {
 			return nil
 		}
 		select {
 		case <-done:
 			return fmt.Errorf("Worker exited before becoming ready: %v", command.ProcessState)
 		case <-deadline.C:
-			return fmt.Errorf("Worker did not become ready within %s (mount=%t, socket=%t)", timeout, isMounted(mountpoint), socketReady(socket))
+			return fmt.Errorf("Worker did not become ready within %s (mount=%t, FUSE-ready=%t, socket=%t)", timeout, isMounted(mountpoint), fuseReady(mountpoint), socketReady(socket))
 		case <-ticker.C:
 		}
 	}
@@ -337,6 +337,13 @@ func isMounted(mountpoint string) bool {
 		}
 	}
 	return false
+}
+
+func fuseReady(mountpoint string) bool {
+	// A mount is visible before Management finishes initialization. Readdir
+	// goes through the real FUSE callback and remains EBUSY until LifecycleReady.
+	_, err := os.ReadDir(mountpoint)
+	return err == nil
 }
 
 func socketReady(socket string) bool {
