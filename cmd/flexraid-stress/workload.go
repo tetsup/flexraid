@@ -59,8 +59,8 @@ func percentileDuration(sorted []time.Duration, percentile float64) time.Duratio
 }
 
 type workloadMetrics struct {
-	syncLatency latencySamples
-	syncOps atomic.Uint64
+	syncLatency     latencySamples
+	syncOps         atomic.Uint64
 	duration        time.Duration
 	writeHash       string
 	readHash        string
