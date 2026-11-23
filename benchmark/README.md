@@ -29,7 +29,7 @@ The output directory must not overlap any configured Storage Root, physical moun
 - `raw-4drive`: four parallel raw streams across all four selected drives.
 - `flexraid`: one sequential stream through the temporary FlexRAID FUSE mount.
 
-Each mode measures reads and writes using 4 KiB, 4 KiB+1 B, 64 KiB, 6 MiB, 6 MiB+1 B, and 64 MiB requests. All modes use the same total logical data size. The default is 512 MiB per case; increase `--size` beyond available memory for sustained storage measurements.
+Each mode measures reads and writes using 4 KiB, 4 KiB+1 B, 64 KiB, 6 MiB, 6 MiB+1 B, and 64 MiB requests. All modes use the same total logical data size. The default is 512 MiB per case; increase `--size` beyond available memory for sustained storage measurements. Before starting the temporary Worker, the command checks that every selected drive has enough free space for all six FlexRAID write cases, plus a safety margin. At the default size this is approximately 1.26 GiB per selected drive.
 
 Raw three-drive parallel is the closest payload-parallel reference for a 3+1 parity layout. Raw four-drive parallel shows the aggregate bandwidth across four physical drives. Neither ratio is a pure parity-cost measurement.
 
