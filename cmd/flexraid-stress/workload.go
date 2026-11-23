@@ -521,30 +521,33 @@ func runMetadataCycle(directory string, workerID int, sequence uint64, scratchPa
 }
 
 func writeAtRetry(file *os.File, data []byte, offset int64) (int, error) {
-	for {
+	for attempt := 0; attempt < 3; attempt++ {
 		n, err := file.WriteAt(data, offset)
-		if !errors.Is(err, syscall.EINTR) {
+		if !errors.Is(err, syscall.EINTR) || attempt == 2 {
 			return n, err
 		}
 	}
+	return 0, syscall.EINTR
 }
 
 func readAtRetry(file *os.File, data []byte, offset int64) (int, error) {
-	for {
+	for attempt := 0; attempt < 3; attempt++ {
 		n, err := file.ReadAt(data, offset)
-		if !errors.Is(err, syscall.EINTR) {
+		if !errors.Is(err, syscall.EINTR) || attempt == 2 {
 			return n, err
 		}
 	}
+	return 0, syscall.EINTR
 }
 
 func syncRetry(file *os.File) error {
-	for {
+	for attempt := 0; attempt < 3; attempt++ {
 		err := file.Sync()
-		if !errors.Is(err, syscall.EINTR) {
+		if !errors.Is(err, syscall.EINTR) || attempt == 2 {
 			return err
 		}
 	}
+	return syscall.EINTR
 }
 
 func runMonitoringPoller(ctx context.Context, start <-chan struct{}, ready chan<- struct{}, wait *sync.WaitGroup, connection *grpc.ClientConn, method string, interval time.Duration, metrics *workloadMetrics) {
