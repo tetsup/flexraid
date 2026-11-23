@@ -30,7 +30,9 @@ func (layer *Orchestration) LinkLocked(request LinkRequest) (response LinkRespon
 	defer func() {
 		layer.recordOperation("Link", started, err)
 		if err != nil {
-			layer.logger.Error("namespace link creation failed", "source_id", request.SourceID.String(), "parent_id", request.ParentID.String(), "name", request.Name, "error", err)
+			if layer.logger != nil {
+				layer.logger.Error("namespace link creation failed", "source_id", request.SourceID.String(), "parent_id", request.ParentID.String(), "name", request.Name, "error", err)
+			}
 		}
 	}()
 	response, err = layer.linkLocked(request)
