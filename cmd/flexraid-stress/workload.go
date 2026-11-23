@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"hash"
 	"net"
 	"os"
 	"path/filepath"
@@ -66,6 +65,8 @@ func percentileDuration(sorted []time.Duration, percentile float64) time.Duratio
 }
 
 type workloadMetrics struct {
+	writeHash string
+	readHash string
 	writeLatency    latencySamples
 	readLatency     latencySamples
 	metadataLatency latencySamples
@@ -146,6 +147,9 @@ func runConcurrentWorkload(mountpoint, socket string, opts options, measured *re
 	rpcCalls, rpcErrors := metrics.rpcCalls.Load(), metrics.rpcErrors.Load()
 
 	measured.Duration = elapsed
+	measured.WriteSHA256 = metrics.writeHash
+	measured.ReadSHA256 = metrics.readHash
+	measured.IntegrityVerified = metrics.writeHash != "" && metrics.writeHash == metrics.readHash
 	measured.Workers = opts.workers
 	measured.WriteOps, measured.ReadOps, measured.MetadataOps = writeOps, readOps, metaOps
 	measured.IOPS = float64(writeOps+readOps+metaOps) / elapsed.Seconds()
@@ -170,12 +174,6 @@ func runConcurrentWorkload(mountpoint, socket string, opts options, measured *re
 }
 
 func runFilesystemPhase(mountpoint, dataPath string, opts options, duration time.Duration, active bool, metrics *workloadMetrics) error {
-	sharedFile, err := os.OpenFile(dataPath, os.O_RDWR, 0600)
-	if err != nil {
-		return err
-	}
-	defer sharedFile.Close()
-
 	regionSize := (opts.size / int64(opts.workers) / int64(opts.blockSize)) * int64(opts.blockSize)
 	slots := int(regionSize / int64(opts.blockSize))
 	if slots < 1 {
@@ -189,6 +187,9 @@ func runFilesystemPhase(mountpoint, dataPath string, opts options, duration time
 	for index := range directories {
 		directories[index] = filepath.Join(mountpoint, fmt.Sprintf("concurrent-worker-%02d", index))
 		if err := os.Mkdir(directories[index], 0700); err != nil {
+			for _, created := range directories[:index] {
+				_ = os.RemoveAll(created)
+			}
 			return fmt.Errorf("create worker directory %d: %w", index, err)
 		}
 	}
@@ -198,6 +199,16 @@ func runFilesystemPhase(mountpoint, dataPath string, opts options, duration time
 		}
 	}()
 
+	workerFiles := make([]*os.File, opts.workers)
+	for workerID := range workerFiles {
+		workerFiles[workerID], err = os.OpenFile(dataPath, os.O_RDWR, 0600)
+		if err != nil {
+			for _, opened := range workerFiles[:workerID] {
+				_ = opened.Close()
+			}
+			return err
+		}
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	start := make(chan struct{})
@@ -205,10 +216,7 @@ func runFilesystemPhase(mountpoint, dataPath string, opts options, duration time
 	errCh := make(chan error, opts.workers)
 	var workers sync.WaitGroup
 	for workerID := 0; workerID < opts.workers; workerID++ {
-		workerFile, openErr := os.OpenFile(dataPath, os.O_RDWR, 0600)
-		if openErr != nil {
-			return openErr
-		}
+		workerFile := workerFiles[workerID]
 		workers.Add(1)
 		go func(id int, handle *os.File) {
 			defer workers.Done()
@@ -247,6 +255,7 @@ func runFilesystemPhase(mountpoint, dataPath string, opts options, duration time
 			)
 			if clientErr != nil {
 				cancel()
+				close(start)
 				workers.Wait()
 				return fmt.Errorf("create gRPC client: %w", clientErr)
 			}
@@ -267,7 +276,13 @@ func runFilesystemPhase(mountpoint, dataPath string, opts options, duration time
 	}
 	close(start)
 	timer := time.NewTimer(duration)
-	<-timer.C
+	select {
+	case <-timer.C:
+	case <-ctx.Done():
+		if !timer.Stop() {
+			<-timer.C
+		}
+	}
 	cancel()
 	workers.Wait()
 	pollers.Wait()
@@ -313,9 +328,8 @@ func runFilesystemPhase(mountpoint, dataPath string, opts options, duration time
 			hex.EncodeToString(expectedHash.Sum(nil)), hex.EncodeToString(actualHash.Sum(nil)))
 	}
 	if metrics != nil {
-		// Hashes are collected from the final shared-file state, after all
-		// writers have stopped and before the next comparison condition.
-		_ = hash.Hash(expectedHash)
+		metrics.writeHash = hex.EncodeToString(expectedHash.Sum(nil))
+		metrics.readHash = hex.EncodeToString(actualHash.Sum(nil))
 	}
 	return nil
 }
@@ -361,7 +375,7 @@ func runFilesystemWorker(ctx context.Context, workerID int, file *os.File, direc
 
 		started = time.Now()
 		n, readErr := file.ReadAt(readback, offset)
-		if readErr != nil && readErr.Error() != "EOF" {
+		if readErr != nil {
 			return fmt.Errorf("worker %d ReadAt: %w", workerID, readErr)
 		}
 		if n != len(readback) || !bytes.Equal(payload, readback) {
