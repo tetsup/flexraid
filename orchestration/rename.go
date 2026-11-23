@@ -33,7 +33,9 @@ func (layer *Orchestration) RenameLocked(request RenameRequest) (response Rename
 	defer func() {
 		layer.recordOperation("Rename", started, err)
 		if err != nil {
-			layer.logger.Error("namespace rename failed", "source_parent_id", request.SourceParentID.String(), "source_name", request.SourceName, "destination_parent_id", request.DestinationParentID.String(), "destination_name", request.DestinationName, "error", err)
+			if layer.logger != nil {
+				layer.logger.Error("namespace rename failed", "source_parent_id", request.SourceParentID.String(), "source_name", request.SourceName, "destination_parent_id", request.DestinationParentID.String(), "destination_name", request.DestinationName, "error", err)
+			}
 		}
 	}()
 	response, err = layer.renameLocked(request)
