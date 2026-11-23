@@ -66,7 +66,9 @@ func (layer *IO) Sync(request SyncRequest) (response SyncResponse, err error) {
 	}
 	if err = syncDirectory(filepath.Dir(path)); err != nil {
 		err = fmt.Errorf("sync physical chunk directory %q: %w", filepath.Dir(path), err)
-		layer.logger.Error("physical chunk directory synchronization failed", "path", filepath.Dir(path), "error", err)
+		if layer.logger != nil {
+			layer.logger.Error("physical chunk directory synchronization failed", "path", filepath.Dir(path), "error", err)
+		}
 		return response, err
 	}
 	response.Synced = true
