@@ -116,6 +116,15 @@ func Run(args []string) (runErr error) {
 	if err := validatePhysicalRoots(config); err != nil {
 		return err
 	}
+	benchmarkDisks, err := selectBenchmarkDisks(config.Disks)
+	if err != nil {
+		return err
+	}
+	for index, disk := range benchmarkDisks {
+		fmt.Printf("Benchmark drive %d: WWN=%s root=%s\n", index+1, disk.WWN, disk.Root)
+	}
+	benchmarkConfig := config
+	benchmarkConfig.Disks = benchmarkDisks
 	var filesystem syscall.Statfs_t
 	if err := syscall.Statfs(mountpoint, &filesystem); err != nil {
 		return fmt.Errorf("inspect FlexRAID mountpoint %s: %w", mountpoint, err)
@@ -130,7 +139,7 @@ func Run(args []string) (runErr error) {
 		return fmt.Errorf("create output directory: %w", err)
 	}
 
-	workDirs, err := createWorkDirs(config)
+	workDirs, err := createWorkDirs(benchmarkConfig)
 	if err != nil {
 		return err
 	}
@@ -162,6 +171,11 @@ func Run(args []string) (runErr error) {
 					return fmt.Errorf("%s %s %s: %w", mode.name, direction, block.label, err)
 				}
 				samples = append(samples, measured)
+				if direction == "read" {
+					if err := removeModeFiles(mode.paths); err != nil {
+						return fmt.Errorf("remove %s benchmark files: %w", mode.name, err)
+					}
+				}
 			}
 		}
 	}
@@ -170,6 +184,32 @@ func Run(args []string) (runErr error) {
 	}
 	fmt.Printf("Results: %s\n", opts.outputDir)
 	return nil
+}
+
+func selectBenchmarkDisks(disks []management.DriveConfig) ([]management.DriveConfig, error) {
+	type candidate struct {
+		drive management.DriveConfig
+		free  uint64
+	}
+	candidates := make([]candidate, 0, len(disks))
+	for index, disk := range disks {
+		var stats syscall.Statfs_t
+		if err := syscall.Statfs(disk.Root, &stats); err != nil {
+			return nil, fmt.Errorf("get available capacity for disk %d (%s): %w", index+1, disk.WWN, err)
+		}
+		candidates = append(candidates, candidate{
+			drive: disk,
+			free:  uint64(stats.Bavail) * uint64(stats.Bsize),
+		})
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		return candidates[i].free > candidates[j].free
+	})
+	selected := make([]management.DriveConfig, 4)
+	for index := range selected {
+		selected[index] = candidates[index].drive
+	}
+	return selected, nil
 }
 
 func validatePhysicalRoots(config management.Config) error {
@@ -309,6 +349,16 @@ func createWorkDirs(config management.Config) ([]string, error) {
 	}
 	paths = append(paths, fusePath)
 	return paths, nil
+}
+
+func removeModeFiles(paths []string) error {
+	var cleanupErr error
+	for _, dir := range paths {
+		if err := os.Remove(filepath.Join(dir, "data.bin")); err != nil && !os.IsNotExist(err) {
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove %s: %w", filepath.Join(dir, "data.bin"), err))
+		}
+	}
+	return cleanupErr
 }
 
 func removeWorkDirs(paths []string) error {
