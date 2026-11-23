@@ -761,9 +761,12 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 		}
 		command := exec.Command(opts.fioPath, jobPath, "--output-format=json", "--output="+resultPath)
 		command.Stdout, command.Stderr = os.Stdout, os.Stderr
+		measurementStart := time.Now()
 		if err := command.Run(); err != nil {
 			return sample{}, fmt.Errorf("run fio: %w", err)
 		}
+		// Include the complete fio lifecycle: open, write, end_fsync, and close.
+		fioElapsed := time.Since(measurementStart)
 		data, err := os.ReadFile(resultPath)
 		if err != nil {
 			return sample{}, fmt.Errorf("read fio result: %w", err)
@@ -773,18 +776,11 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 			return sample{}, fmt.Errorf("decode fio result: %w", err)
 		}
 		var totalBytes, totalOperations int64
-		var elapsed time.Duration
 		for _, job := range report.Jobs {
 			totalBytes += job.Write.IOBytes
 			totalOperations += job.Write.TotalIOs
-			if job.JobRuntime > 0 {
-				jobElapsed := time.Duration(job.JobRuntime) * time.Millisecond
-				if jobElapsed > elapsed {
-					elapsed = jobElapsed
-				}
-			}
 		}
-		result = sample{Bytes: totalBytes, Operations: totalOperations, Elapsed: elapsed}
+		result = sample{Bytes: totalBytes, Operations: totalOperations, Elapsed: fioElapsed}
 	}
 	if result.Elapsed <= 0 {
 		return sample{}, errors.New("measurement elapsed time is zero")
