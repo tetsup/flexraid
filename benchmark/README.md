@@ -19,11 +19,12 @@ Options:
 
 The command validates the configured WWN-to-device mappings and verifies that the configured mountpoint is a mounted FUSE filesystem before creating test data. It creates a random `.flexraid-bench-*` directory under each configured storage root and one under the FUSE mount, then removes only those directories on exit. A forced termination can leave these directories behind; inspect and remove only the exact benchmark directories manually.
 
-Each I/O size is measured sequentially for writes and reads: 4 KiB, 4 KiB+1 B, 64 KiB, 6 MiB, 6 MiB+1 B, and 64 MiB. The same total logical data size is used for each mode:
+Temporary data files are removed after each mode's read phase so raw baseline writes do not change the free-space ordering used when FlexRAID places its next stripe. Each I/O size is measured sequentially for writes and reads: 4 KiB, 4 KiB+1 B, 64 KiB, 6 MiB, 6 MiB+1 B, and 64 MiB. The same total logical data size is used for each mode:
 
-- `raw-1drive`: one raw stream on the first configured drive.
-- `raw-3drive`: three parallel raw streams across three drives.
-- `raw-4drive`: four parallel raw streams across four drives.
+- The benchmark selects the four configured drives with the most available capacity, using configuration order to break ties. This mirrors the placement preference for new stripes.
+- `raw-1drive`: one raw stream on the first selected drive.
+- `raw-3drive`: three parallel raw streams across the first three selected drives.
+- `raw-4drive`: four parallel raw streams across all four selected drives.
 - `flexraid`: one stream through the FlexRAID FUSE mount.
 
 The raw three-drive mode is the closest payload-parallel reference for a 3+1 parity layout. The four-drive mode shows the aggregate bandwidth across four physical drives. Neither ratio is a pure parity-cost measurement.
