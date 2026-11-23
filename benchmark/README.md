@@ -28,7 +28,7 @@ sudo ./bin/flexraid benchmark raw \
   --output ./raw-bench-results
 ```
 
-The directory must already exist and be writable. The command creates and removes only its own `data.bin` test file in that directory. It does not inspect or modify any FlexRAID configuration or storage roots. Run it separately for each directory you want to measure.
+The directory must already exist and be writable. The command creates a uniquely named temporary subdirectory there, uses its own `data.bin` test file, and removes the temporary subdirectory afterward. Existing files in the target directory are left untouched. It does not inspect or modify any FlexRAID configuration or storage roots. Run it separately for each directory you want to measure.
 
 ## Measurements
 
