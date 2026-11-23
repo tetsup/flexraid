@@ -731,6 +731,9 @@ func removeWorkDirs(paths []string) error {
 }
 
 func runCase(opts options, filesystem string, paths []string, blockSize int64, label, direction string) (sample, error) {
+	if err := dropCaches(); err != nil {
+		return sample{}, fmt.Errorf("drop filesystem caches before %s: %w", direction, err)
+	}
 	jobCount := len(paths)
 	perJob := opts.totalBytes / int64(jobCount)
 	if perJob < blockSize {
@@ -738,9 +741,6 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 	}
 	var result sample
 	if direction == "read" || direction == "overwrite" {
-		if err := dropCaches(); err != nil {
-			return sample{}, fmt.Errorf("drop filesystem caches before cold %s: %w", direction, err)
-		}
 		var bytes, operations int64
 		var elapsed time.Duration
 		var err error
@@ -778,7 +778,10 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 			totalBytes += job.Write.IOBytes
 			totalOperations += job.Write.TotalIOs
 			if job.JobRuntime > 0 {
-				elapsed = time.Duration(job.JobRuntime) * time.Millisecond
+				jobElapsed := time.Duration(job.JobRuntime) * time.Millisecond
+				if jobElapsed > elapsed {
+					elapsed = jobElapsed
+				}
 			}
 		}
 		result = sample{Bytes: totalBytes, Operations: totalOperations, Elapsed: elapsed}
@@ -926,6 +929,10 @@ func measureOverwrite(paths []string, blockSize int64, limit time.Duration) (int
 					errCh <- fmt.Errorf("overwrite %s: %w", path, io.ErrShortWrite)
 					return
 				}
+			}
+			if err := file.Sync(); err != nil {
+				errCh <- fmt.Errorf("sync overwritten file %s: %w", path, err)
+				return
 			}
 		}()
 	}
