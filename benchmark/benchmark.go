@@ -898,7 +898,7 @@ func writeReports(outputDir string, samples []sample) error {
 	markdown.WriteString("| I/O size | Direction | Raw 1 drive | Raw 3 drives | Raw 4 drives | FlexRAID | FlexRAID / raw 3-drive |\n")
 	markdown.WriteString("|---|---|---:|---:|---:|---:|---:|\n")
 	for _, block := range ioSizes {
-		for _, direction := range []string{"read", "write"} {
+		for _, direction := range []string{"read", "write", "overwrite"} {
 			values := map[string]float64{}
 			for _, value := range samples {
 				if value.IOSize == block.bytes && value.Direction == direction {
