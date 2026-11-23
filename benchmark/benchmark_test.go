@@ -12,6 +12,13 @@ import (
 	"github.com/tetsup/flexraid/management"
 )
 
+func TestRawBenchmarkRequiresOnlyDirectoryArgument(t *testing.T) {
+	err := runRaw(nil)
+	if err == nil || !strings.Contains(err.Error(), "--directory is required") {
+		t.Fatalf("runRaw error = %v, want missing directory error", err)
+	}
+}
+
 func TestFioReportDecodesBandwidth(t *testing.T) {
 	data := []byte(`{"jobs":[{"read":{"bw_bytes":1234,"iops":2},"write":{"bw_bytes":5678,"iops":3}}]}`)
 	var report fioReport
