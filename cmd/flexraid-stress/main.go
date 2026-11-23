@@ -1,15 +1,11 @@
 package main
 
 import (
-	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,10 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/protobuf/types/known/emptypb"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 type mode string
@@ -91,10 +83,9 @@ func run() error {
 	var opts options
 	flag.StringVar(&opts.configPath, "config", "", "isolated test Worker config template")
 	flag.StringVar(&opts.workerPath, "worker", "./bin/flexraid", "path to the flexraid Worker executable")
-	flag.Int64Var(&opts.size, "size", 256<<20, "measured file size in bytes")
-	flag.Int64Var(&opts.warmupSize, "warmup-size", 16<<20, "warm-up file size in bytes")
-	flag.IntVar(&opts.blockSize, "block-size", 1<<20, "sequential I/O block size in bytes")
-	flag.DurationVar(&opts.rpcEvery, "rpc-interval", 250*time.Millisecond, "on-active GetStatus interval")
+	flag.Int64Var(&opts.size, "size", 256<<20, "shared FUSE working-set size in bytes")
+	flag.IntVar(&opts.blockSize, "block-size", 64<<10, "random-offset I/O block size in bytes")
+	flag.DurationVar(&opts.rpcEvery, "rpc-interval", 100*time.Millisecond, "base interval for concurrent monitoring RPCs")
 	flag.StringVar(&opts.reportPath, "report", "flexraid-stress-report.json", "JSON report path")
 	flag.DurationVar(&opts.startup, "startup-timeout", 90*time.Second, "Worker startup timeout")
 	flag.IntVar(&opts.repetitions, "repetitions", 2, "number of alternating comparison rounds")
@@ -106,7 +97,7 @@ func run() error {
 	if opts.configPath == "" {
 		return errors.New("--config is required; use a dedicated test configuration with test-only storage roots")
 	}
-	if opts.size <= 0 || opts.warmupSize < 0 || opts.blockSize <= 0 || opts.rpcEvery <= 0 || opts.repetitions <= 0 ||
+	if opts.size <= 0 || opts.blockSize <= 0 || opts.rpcEvery <= 0 || opts.repetitions <= 0 ||
 		opts.workers < 2 || opts.duration <= 0 || opts.warmupDuration < 0 || opts.size < int64(opts.workers*opts.blockSize) {
 		return errors.New("size, block-size, rpc-interval, duration, and repetitions must be positive; workers >= 2; warmup >= 0; size >= workers*block-size")
 	}
@@ -362,143 +353,6 @@ func unmount(mountpoint string) error {
 	return exec.Command("umount", mountpoint).Run()
 }
 
-func runBenchmark(mountpoint string, opts options, measured *result) error {
-	if opts.warmupSize > 0 {
-		if err := transferFile(mountpoint, "warmup.dat", opts.warmupSize, opts.blockSize, false); err != nil {
-			return fmt.Errorf("warm-up: %w", err)
-		}
-		if err := os.Remove(filepath.Join(mountpoint, "warmup.dat")); err != nil {
-			return err
-		}
-	}
-	writeDuration, readDuration, writeHash, readHash, err := transferFileMeasured(mountpoint, "benchmark.dat", opts.size, opts.blockSize)
-	if err != nil {
-		return err
-	}
-	measured.WriteDuration, measured.ReadDuration = writeDuration, readDuration
-	measured.WriteSHA256, measured.ReadSHA256 = writeHash, readHash
-	measured.WriteMiBPerSec = float64(opts.size) / (1 << 20) / writeDuration.Seconds()
-	measured.ReadMiBPerSec = float64(opts.size) / (1 << 20) / readDuration.Seconds()
-	return nil
-}
-
-func transferFile(mountpoint, name string, size int64, blockSize int, _ bool) error {
-	_, _, _, _, err := transferFileMeasured(mountpoint, name, size, blockSize)
-	return err
-}
-
-func transferFileMeasured(mountpoint, name string, size int64, blockSize int) (time.Duration, time.Duration, string, string, error) {
-	path := filepath.Join(mountpoint, name)
-	buffer := make([]byte, blockSize)
-	for i := range buffer {
-		buffer[i] = byte((i*31 + 17) % 251)
-	}
-	file, err := os.Create(path)
-	if err != nil {
-		return 0, 0, "", "", fmt.Errorf("create benchmark file: %w", err)
-	}
-	writeHash := sha256.New()
-	started := time.Now()
-	var written int64
-	for written < size {
-		length := int64(len(buffer))
-		if remaining := size - written; remaining < length {
-			length = remaining
-		}
-		chunk := buffer[:int(length)]
-		for index := range chunk {
-			chunk[index] = byte(((written+int64(index))*31 + 17) % 251)
-		}
-		n, writeErr := file.Write(chunk)
-		if writeErr != nil {
-			_ = file.Close()
-			return 0, 0, "", "", fmt.Errorf("write benchmark file: %w", writeErr)
-		}
-		if n != len(chunk) {
-			_ = file.Close()
-			return 0, 0, "", "", io.ErrShortWrite
-		}
-		_, _ = writeHash.Write(chunk)
-		written += int64(n)
-	}
-	if err := file.Sync(); err != nil {
-		_ = file.Close()
-		return 0, 0, "", "", fmt.Errorf("sync benchmark file: %w", err)
-	}
-	writeDuration := time.Since(started)
-	if err := file.Close(); err != nil {
-		return 0, 0, "", "", err
-	}
-
-	readFile, err := os.Open(path)
-	if err != nil {
-		return 0, 0, "", "", fmt.Errorf("open benchmark file for read: %w", err)
-	}
-	readHash := sha256.New()
-	readStarted := time.Now()
-	if _, err := io.CopyBuffer(readHash, readFile, make([]byte, blockSize)); err != nil {
-		_ = readFile.Close()
-		return 0, 0, "", "", fmt.Errorf("read benchmark file: %w", err)
-	}
-	readDuration := time.Since(readStarted)
-	if err := readFile.Close(); err != nil {
-		return 0, 0, "", "", err
-	}
-	writeDigest := hex.EncodeToString(writeHash.Sum(nil))
-	readDigest := hex.EncodeToString(readHash.Sum(nil))
-	if writeDigest != readDigest {
-		return 0, 0, "", "", fmt.Errorf("data verification failed: write sha256 %s, read sha256 %s", writeDigest, readDigest)
-	}
-	return writeDuration, readDuration, writeDigest, readDigest, nil
-}
-
-func runBenchmarkWithMonitoring(mountpoint, socket string, opts options, measured *result) error {
-	connection, err := grpc.NewClient(
-		"passthrough:///flexraid-worker",
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
-			return (&net.Dialer{}).DialContext(ctx, "unix", socket)
-		}),
-	)
-	if err != nil {
-		return fmt.Errorf("create gRPC client: %w", err)
-	}
-	defer connection.Close()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan struct{})
-	var totalLatency time.Duration
-	go func() {
-		defer close(done)
-		ticker := time.NewTicker(opts.rpcEvery)
-		defer ticker.Stop()
-		for {
-			started := time.Now()
-			callCtx, callCancel := context.WithTimeout(ctx, 5*time.Second)
-			response := new(structpb.Struct)
-			err := connection.Invoke(callCtx, "/flexraid.worker.v1.WorkerService/GetStatus", &emptypb.Empty{}, response)
-			callCancel()
-			measured.RPCCalls++
-			totalLatency += time.Since(started)
-			if err != nil {
-				measured.RPCErrors++
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-			}
-		}
-	}()
-	err = runBenchmark(mountpoint, opts, measured)
-	cancel()
-	<-done
-	if measured.RPCCalls > 0 {
-		measured.AverageRPCLatency = totalLatency / time.Duration(measured.RPCCalls)
-	}
-	return err
-}
-
 func printResult(value result) {
 	fmt.Printf("  %d FUSE clients, write %.2f MiB/s, read %.2f MiB/s, %.0f IOPS, verified=%t, RPC %d/%d errors\n",
 		value.Workers, value.WriteMiBPerSec, value.ReadMiBPerSec, value.IOPS, value.IntegrityVerified, value.RPCErrors, value.RPCCalls)
@@ -506,44 +360,51 @@ func printResult(value result) {
 
 func summarizeResults(samples []result) []result {
 	byMode := map[mode][]result{}
-	for _, sample := range samples {
-		byMode[sample.Mode] = append(byMode[sample.Mode], sample)
-	}
+	for _, sample := range samples { byMode[sample.Mode] = append(byMode[sample.Mode], sample) }
 	summary := make([]result, 0, 3)
 	for _, selected := range []mode{modeOff, modeIdle, modeActive} {
 		values := byMode[selected]
-		if len(values) == 0 {
-			continue
+		if len(values) == 0 { continue }
+		writeRates, readRates, iops := make([]float64, 0, len(values)), make([]float64, 0, len(values)), make([]float64, 0, len(values))
+		collectDuration := func(pick func(result) time.Duration) []int64 {
+			items := make([]int64, 0, len(values))
+			for _, value := range values { items = append(items, int64(pick(value))) }
+			return items
 		}
-		writeRates := make([]float64, 0, len(values))
-		readRates := make([]float64, 0, len(values))
-		writeDurations := make([]int64, 0, len(values))
-		readDurations := make([]int64, 0, len(values))
-		rpcCounts := make([]int64, 0, len(values))
-		rpcErrors := make([]int64, 0, len(values))
-		rpcLatencies := make([]int64, 0, len(values))
+		rpcCounts, rpcErrors := make([]int64, 0, len(values)), make([]int64, 0, len(values))
 		for _, value := range values {
 			writeRates = append(writeRates, value.WriteMiBPerSec)
 			readRates = append(readRates, value.ReadMiBPerSec)
-			writeDurations = append(writeDurations, int64(value.WriteDuration))
-			readDurations = append(readDurations, int64(value.ReadDuration))
+			iops = append(iops, value.IOPS)
 			rpcCounts = append(rpcCounts, int64(value.RPCCalls))
 			rpcErrors = append(rpcErrors, int64(value.RPCErrors))
-			rpcLatencies = append(rpcLatencies, int64(value.AverageRPCLatency))
 		}
 		summary = append(summary, result{
-			Mode:              selected,
-			Bytes:             values[0].Bytes,
-			WriteDuration:     time.Duration(medianInt64(writeDurations)),
-			ReadDuration:      time.Duration(medianInt64(readDurations)),
-			WriteMiBPerSec:    medianFloat64(writeRates),
-			ReadMiBPerSec:     medianFloat64(readRates),
-			RPCCalls:          uint64(medianInt64(rpcCounts)),
-			RPCErrors:         uint64(medianInt64(rpcErrors)),
-			AverageRPCLatency: time.Duration(medianInt64(rpcLatencies)),
+			Mode: selected, Bytes: values[0].Bytes, Workers: values[0].Workers,
+			IntegrityVerified: allIntegrityVerified(values),
+			WriteMiBPerSec: medianFloat64(writeRates), ReadMiBPerSec: medianFloat64(readRates), IOPS: medianFloat64(iops),
+			WriteLatencyP50: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.WriteLatencyP50 }))),
+			WriteLatencyP95: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.WriteLatencyP95 }))),
+			WriteLatencyP99: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.WriteLatencyP99 }))),
+			ReadLatencyP50: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.ReadLatencyP50 }))),
+			ReadLatencyP95: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.ReadLatencyP95 }))),
+			ReadLatencyP99: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.ReadLatencyP99 }))),
+			MetadataLatencyP50: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.MetadataLatencyP50 }))),
+			MetadataLatencyP95: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.MetadataLatencyP95 }))),
+			MetadataLatencyP99: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.MetadataLatencyP99 }))),
+			RPCCalls: uint64(medianInt64(rpcCounts)), RPCErrors: uint64(medianInt64(rpcErrors)),
+			AverageRPCLatency: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.AverageRPCLatency }))),
+			RPCLatencyP50: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.RPCLatencyP50 }))),
+			RPCLatencyP95: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.RPCLatencyP95 }))),
+			RPCLatencyP99: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.RPCLatencyP99 }))),
 		})
 	}
 	return summary
+}
+
+func allIntegrityVerified(values []result) bool {
+	for _, value := range values { if !value.IntegrityVerified { return false } }
+	return true
 }
 
 func medianFloat64(values []float64) float64 {
