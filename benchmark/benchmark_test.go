@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/tetsup/flexraid/management"
 )
@@ -20,7 +19,7 @@ func TestRawBenchmarkRequiresOnlyDirectoryArgument(t *testing.T) {
 
 func TestCreateBenchmarkFilesCreatesDistinctRandomFiles(t *testing.T) {
 	root := t.TempDir()
-	files, bytesWritten, operations, elapsed, err := createBenchmarkFiles([]string{root}, 4096, 4096*8, 5*time.Second)
+	files, bytesWritten, operations, elapsed, err := createBenchmarkFiles([]string{root}, 4096, 8)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,20 +42,20 @@ func TestCreateBenchmarkFilesCreatesDistinctRandomFiles(t *testing.T) {
 	}
 }
 
-func TestOverwriteLoopsAndColdReadReadsEachGeneratedFileOnce(t *testing.T) {
+func TestOverwriteAndColdReadProcessEachGeneratedFileOnce(t *testing.T) {
 	root := t.TempDir()
-	files, _, _, _, err := createBenchmarkFiles([]string{root}, 4096, 4096*4, time.Second)
+	files, _, _, _, err := createBenchmarkFiles([]string{root}, 4096, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
-	bytesWritten, writes, elapsed, err := measureOverwrite(files, 4096, 2*time.Second)
+	bytesWritten, writes, elapsed, err := measureOverwrite(files, 4096)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if writes < int64(len(files)) || bytesWritten != writes*4096 || elapsed < 2*time.Second {
+	if writes != int64(len(files)) || bytesWritten != writes*4096 || elapsed <= 0 {
 		t.Fatalf("overwrite bytes=%d operations=%d elapsed=%s", bytesWritten, writes, elapsed)
 	}
-	bytesRead, reads, readElapsed, err := measureColdRead(files, 4096, time.Second)
+	bytesRead, reads, readElapsed, err := measureColdRead(files, 4096)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,5 +178,36 @@ func testConfig(root string) management.Config {
 	return management.Config{
 		Disks:      []management.DriveConfig{{Root: root, Mountpoint: filepath.Join(parent, "physical")}},
 		Mountpoint: filepath.Join(parent, "fuse"),
+	}
+}
+
+func TestBenchmarkFileCountUsesReferenceAndMaximum(t *testing.T) {
+	tests := []struct {
+		label string
+		blockSize int64
+		want int
+	}{
+		{"4KiB capped", 4 << 10, 1024},
+		{"64KiB capped", 64 << 10, 1024},
+		{"6MiB", 6 << 20, 682},
+		{"64MiB reference", 64 << 20, 64},
+	}
+	for _, test := range tests {
+		t.Run(test.label, func(t *testing.T) {
+			if got := benchmarkFileCount(test.blockSize, 4<<30, 1024); got != test.want {
+				t.Fatalf("benchmarkFileCount() = %d, want %d", got, test.want)
+			}
+		})
+	}
+}
+
+func TestCreateBenchmarkFilesCreatesExactlyRequestedCount(t *testing.T) {
+	root := t.TempDir()
+	files, bytesWritten, operations, elapsed, err := createBenchmarkFiles([]string{root}, 4096, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 3 || bytesWritten != 3*4096 || operations != 3 || elapsed <= 0 {
+		t.Fatalf("files=%d bytes=%d operations=%d elapsed=%s", len(files), bytesWritten, operations, elapsed)
 	}
 }
