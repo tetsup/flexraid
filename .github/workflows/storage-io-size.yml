@@ -22,7 +22,7 @@ jobs:
   compare:
     name: Raw ext4 vs FlexRAID FUSE
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 45
     steps:
       - name: Check out source
         uses: actions/checkout@v6
