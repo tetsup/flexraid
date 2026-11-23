@@ -53,21 +53,21 @@ jobs:
           : > "$RUNNER_TEMP/flexraid-bench-loops"
           : > "$RUNNER_TEMP/flexraid-bench-mounts"
           : > "$RUNNER_TEMP/flexraid-bench-links"
-          for index in 1; do
-            image="$RUNNER_TEMP/flexraid-bench-disk-$index.img"
+          image="$RUNNER_TEMP/flexraid-bench-disk.img"
+          truncate -s 4G "$image"
+          loop="$(sudo losetup --find --show "$image")"
+          echo "$loop" >> "$RUNNER_TEMP/flexraid-bench-loops"
+          sudo mkfs.ext4 -F -q "$loop"
+          for index in 1 2 3 4; do
             mount="/mnt/flexraid-bench-disk-$index"
             link="/dev/disk/by-id/wwn-flexraid-bench-$index"
-            truncate -s 4G "$image"
-            loop="$(sudo losetup --find --show "$image")"
-            echo "$loop" >> "$RUNNER_TEMP/flexraid-bench-loops"
-            sudo mkfs.ext4 -F -q "$loop"
             sudo mkdir -p "$mount"
             sudo mount "$loop" "$mount"
             echo "$mount" >> "$RUNNER_TEMP/flexraid-bench-mounts"
             sudo ln -s "$loop" "$link"
             echo "$link" >> "$RUNNER_TEMP/flexraid-bench-links"
-            sudo mkdir -p "$mount/flexraid-data"
           done
+          sudo mkdir -p /mnt/flexraid-bench-disk-1/flexraid-data
 
       - name: Run raw directory benchmark
         run: |
