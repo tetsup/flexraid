@@ -37,7 +37,7 @@ func TestValidateOutputPathAllowsSibling(t *testing.T) {
 
 func testConfig(root string) management.Config {
 	return management.Config{
-		Disks: []management.DriveConfig{{Root: root}},
+		Disks:      []management.DriveConfig{{Root: root}},
 		Mountpoint: filepath.Join(root, "fuse"),
 	}
 }
