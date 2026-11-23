@@ -36,11 +36,11 @@ The I/O request sizes are 4 KiB, 4 KiB+1 B, 64 KiB, 6 MiB, 6 MiB+1 B, and 64 MiB
 
 For each size:
 
-- **Write** creates/writes a bounded data file for the configured time limit.
-- **Overwrite** cold-starts the filesystem cache, then overwrites the existing file from its beginning until the file is fully overwritten or the time limit expires. It does not truncate the file.
-- **Read** cold-starts the filesystem cache and reads the generated file once, stopping at EOF or the time limit. It does not loop over the same file and count page-cache hits.
+- **Write** creates/writes a bounded data file for the configured time limit and includes fio's final `fsync()`.
+- **Overwrite** clears the filesystem cache, then measures `open()`, writes from the beginning until the file is fully overwritten or the time limit expires, `fsync()`, and `close()`. It does not truncate the file.
+- **Read** clears the filesystem cache and measures `open()`, one sequential read of the generated file, and `close()`. It stops at EOF or the time limit and does not loop over the same file to count page-cache hits.
 
-The overwrite and read measurements require permission to run `sync` and write `/proc/sys/vm/drop_caches`; run the command with suitable privileges. fio uses buffered I/O so the unaligned +1 B request sizes remain comparable. Results include Linux page-cache effects.
+Before every measurement, the benchmark runs `sync` and clears Linux page caches through `/proc/sys/vm/drop_caches`. Write and overwrite elapsed time includes the complete open/write/fsync/close lifecycle; read elapsed time includes open/read/close. Both benchmark modes use buffered I/O (no `O_DIRECT`), keeping unaligned +1 B request sizes valid and comparable. Results therefore measure normal POSIX buffered-I/O behavior while ensuring writes are timed through durable flush completion.
 
 ## Output
 
