@@ -278,17 +278,25 @@ func runRaw(args []string) error {
 	info, err := os.Stat(absolute)
 	if err != nil { return fmt.Errorf("stat benchmark directory: %w", err) }
 	if !info.IsDir() { return fmt.Errorf("benchmark path %s is not a directory", absolute) }
+	outputPath, err := resolvePath(opts.outputDir)
+	if err != nil { return fmt.Errorf("resolve output directory: %w", err) }
+	if pathsOverlap(outputPath, absolute) {
+		return fmt.Errorf("output directory %s must not overlap benchmark directory %s", outputPath, absolute)
+	}
 	if err := os.MkdirAll(opts.outputDir, 0755); err != nil { return fmt.Errorf("create output directory: %w", err) }
+	workDir, err := os.MkdirTemp(absolute, ".flexraid-raw-bench-")
+	if err != nil { return fmt.Errorf("create temporary raw benchmark directory: %w", err) }
+	defer os.RemoveAll(workDir)
 	opts.duration = time.Duration(durationSeconds) * time.Second
 	var samples []sample
 	for _, block := range ioSizes {
 		for _, direction := range []string{"write", "overwrite", "read"} {
 			fmt.Printf("Running %-10s %-8s %s ...\\n", "raw", direction, block.label)
-			measured, err := runCase(opts, "raw", []string{absolute}, block.bytes, block.label, direction)
+			measured, err := runCase(opts, "raw", []string{workDir}, block.bytes, block.label, direction)
 			if err != nil { return fmt.Errorf("raw %s %s: %w", direction, block.label, err) }
 			samples = append(samples, measured)
 		}
-		if err := removeModeFiles([]string{absolute}); err != nil { return fmt.Errorf("remove raw benchmark file: %w", err) }
+		if err := removeModeFiles([]string{workDir}); err != nil { return fmt.Errorf("remove raw benchmark file: %w", err) }
 	}
 	if err := writeReports(opts.outputDir, samples); err != nil { return err }
 	return nil
