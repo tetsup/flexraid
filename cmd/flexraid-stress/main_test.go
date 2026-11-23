@@ -49,3 +49,22 @@ func TestPercentage(t *testing.T) {
 		t.Fatalf("percentage(0, 95) = %v, want 0", got)
 	}
 }
+
+func TestSummarizeResultsUsesMedian(t *testing.T) {
+	samples := []result{
+		{Mode: modeOff, WriteMiBPerSec: 100, ReadMiBPerSec: 200},
+		{Mode: modeOff, WriteMiBPerSec: 300, ReadMiBPerSec: 400},
+		{Mode: modeOff, WriteMiBPerSec: 200, ReadMiBPerSec: 300},
+		{Mode: modeIdle, WriteMiBPerSec: 90, ReadMiBPerSec: 180},
+	}
+	got := summarizeResults(samples)
+	if len(got) != 2 {
+		t.Fatalf("summary length = %d, want 2", len(got))
+	}
+	if got[0].Mode != modeOff || got[0].WriteMiBPerSec != 200 || got[0].ReadMiBPerSec != 300 {
+		t.Fatalf("off median = %+v", got[0])
+	}
+	if got[1].Mode != modeIdle || got[1].WriteMiBPerSec != 90 {
+		t.Fatalf("idle summary = %+v", got[1])
+	}
+}
