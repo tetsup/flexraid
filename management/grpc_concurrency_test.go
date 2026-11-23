@@ -90,7 +90,7 @@ func TestWorkerGRPCMonitoringConcurrentWithCancelledForegroundOperations(t *test
 				if monitorReady.CompareAndSwap(false, true) {
 					firstRPCOnce.Do(func() { close(firstRPC) })
 				}
-			} else if monitorReady.Load() {
+			} else if monitorReady.Load() && monitorCtx.Err() == nil {
 				rpcErrors.Add(1)
 			}
 			select {
