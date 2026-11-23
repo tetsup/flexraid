@@ -341,6 +341,9 @@ func runFilesystemWorker(ctx context.Context, workerID int, file *os.File, direc
 		return err
 	}
 	_ = scratch.Close()
+	if err := runMetadataCycle(directory, workerID, 0, scratchPath, metrics); err != nil {
+		return fmt.Errorf("worker %d initial metadata workload: %w", workerID, err)
+	}
 	payload := make([]byte, blockSize)
 	readback := make([]byte, blockSize)
 	var sequence uint64
