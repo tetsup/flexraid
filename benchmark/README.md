@@ -1,32 +1,40 @@
 # flexraid benchmark
 
-The Worker binary includes a benchmark subcommand. It runs against an already-mounted and Ready Worker; it does not start, stop, or reconfigure the Worker.
+The Worker binary includes an isolated storage benchmark subcommand. It uses the configured physical drives but does not write into the configured production Storage Roots or require the production Worker to be running.
+
+## Usage
 
 ```sh
 go build -o ./bin/flexraid ./main
-sudo ./bin/flexraid benchmark --config /etc/flexraid/config.yaml
+sudo ./bin/flexraid benchmark --config /etc/flexraid/config.yaml --size 8589934592
 ```
 
-Options:
+The configured physical filesystems must already be mounted, and each configured WWN must resolve through `/dev/disk/by-id/wwn-<WWN>`. The configured production FUSE mountpoint must be unmounted. The command refuses to run if it detects a FUSE mount there, preventing concurrent access by the production Worker.
 
-| Option | Default | Description |
-|---|---:|---|
-| `--config` | required | Worker YAML configuration |
-| `--size` | 512 MiB | Total logical bytes per test case and mode |
-| `--runtime` | 0 | Optional time-based fio run; zero processes the full configured size |
-| `--fio` | `fio` | fio executable |
-| `--output` | `./flexraid-bench-results` | Result directory, which must be outside all storage roots and the FUSE mount |
+## Isolation and cleanup
 
-The command validates the configured WWN-to-device mappings and verifies that the configured mountpoint is a mounted FUSE filesystem before creating test data. It creates a random `.flexraid-bench-*` directory under each configured storage root and one under the FUSE mount, then removes only those directories on exit. A forced termination can leave these directories behind; inspect and remove only the exact benchmark directories manually.
+The command selects the four configured drives with the most available capacity (configuration order breaks ties). On each selected physical mountpoint it creates a uniquely named temporary Storage Root. It then launches a temporary Worker using a generated configuration that points only to those isolated roots and to a temporary FUSE mountpoint.
 
-Temporary data files are removed after each mode's read phase so raw baseline writes do not change the free-space ordering used when FlexRAID places its next stripe. Each I/O size is measured sequentially for writes and reads: 4 KiB, 4 KiB+1 B, 64 KiB, 6 MiB, 6 MiB+1 B, and 64 MiB. The same total logical data size is used for each mode:
+Raw ext4 tests write under separate random temporary directories on the physical filesystems. FlexRAID tests write through the temporary Worker mount. After the test, the FUSE test directory is removed, the temporary Worker is unmounted and stopped, and the temporary Storage Roots are removed directly from their physical filesystems. This removes all benchmark chunks even though FlexRAID normally retains deleted physical versions for asynchronous cleanup.
 
-- The benchmark selects the four configured drives with the most available capacity, using configuration order to break ties. This mirrors the placement preference for new stripes.
-- `raw-1drive`: one raw stream on the first selected drive.
+If the Worker cannot be unmounted cleanly, the command preserves its temporary Storage Roots and workspace rather than deleting storage that might still be mounted. It reports the paths for manual inspection. A forced process termination can also leave `.flexraid-bench-*` directories behind; inspect and remove only the exact benchmark directories manually.
+
+The output directory must not overlap any configured Storage Root, physical mountpoint, or production FUSE mountpoint. Symlinks are resolved before this check.
+
+## Measurement modes
+
+- The four selected drives are ordered by available capacity, matching the placement preference for new stripes.
+- `raw-1drive`: one sequential raw stream on the first selected drive.
 - `raw-3drive`: three parallel raw streams across the first three selected drives.
 - `raw-4drive`: four parallel raw streams across all four selected drives.
-- `flexraid`: one stream through the FlexRAID FUSE mount.
+- `flexraid`: one sequential stream through the temporary FlexRAID FUSE mount.
 
-The raw three-drive mode is the closest payload-parallel reference for a 3+1 parity layout. The four-drive mode shows the aggregate bandwidth across four physical drives. Neither ratio is a pure parity-cost measurement.
+Each mode measures reads and writes using 4 KiB, 4 KiB+1 B, 64 KiB, 6 MiB, 6 MiB+1 B, and 64 MiB requests. All modes use the same total logical data size. The default is 512 MiB per case; increase `--size` beyond available memory for sustained storage measurements.
 
-fio uses buffered I/O for all cases so the unaligned `+1 B` request sizes remain comparable. Results therefore include Linux page-cache effects; increase `--size` beyond available memory to measure sustained storage throughput. O_DIRECT is intentionally not used because the unaligned cases cannot satisfy its alignment requirements. The command writes per-case fio JSON and job files plus CSV and Markdown summaries.
+Raw three-drive parallel is the closest payload-parallel reference for a 3+1 parity layout. Raw four-drive parallel shows the aggregate bandwidth across four physical drives. Neither ratio is a pure parity-cost measurement.
+
+fio uses buffered I/O for all cases so the unaligned `+1 B` request sizes remain comparable. Results include Linux page-cache effects. An optional `--runtime` enables time-based fio runs; without it, each case processes the full configured data size.
+
+## Output
+
+The output directory contains per-case fio JSON and job files plus `summary.csv` and `summary.md`.
