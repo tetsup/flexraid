@@ -142,8 +142,8 @@ jobs:
           sudo ./bin/flexraid-stress \
             --config "$RUNNER_TEMP/flexraid-ci.yaml" \
             --worker "$GITHUB_WORKSPACE/bin/flexraid" \
-            --size 64M \
-            --block-size 64K \
+            --size 67108864 \
+            --block-size 65536 \
             --workers 4 \
             --duration 8s \
             --warmup 1s \
