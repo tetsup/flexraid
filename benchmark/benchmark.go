@@ -64,7 +64,7 @@ type sample struct {
 }
 
 // Run executes the sequential storage benchmark against an already-running Worker.
-func Run(args []string) error {
+func Run(args []string) (runErr error) {
 	var opts options
 	flags := flag.NewFlagSet("flexraid benchmark", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
@@ -104,6 +104,17 @@ func Run(args []string) error {
 	if err != nil {
 		return fmt.Errorf("resolve FlexRAID mountpoint: %w", err)
 	}
+	config.Mountpoint = mountpoint
+	for index := range config.Disks {
+		config.Disks[index].Root, err = filepath.Abs(config.Disks[index].Root)
+		if err != nil {
+			return fmt.Errorf("resolve disk %d root: %w", index+1, err)
+		}
+		config.Disks[index].Mountpoint, err = filepath.Abs(config.Disks[index].Mountpoint)
+		if err != nil {
+			return fmt.Errorf("resolve disk %d mountpoint: %w", index+1, err)
+		}
+	}
 	var filesystem syscall.Statfs_t
 	if err := syscall.Statfs(mountpoint, &filesystem); err != nil {
 		return fmt.Errorf("inspect FlexRAID mountpoint %s: %w", mountpoint, err)
@@ -123,10 +134,8 @@ func Run(args []string) error {
 		return err
 	}
 	defer func() {
-		for _, path := range workDirs {
-			if removeErr := os.RemoveAll(path); removeErr != nil {
-				fmt.Fprintf(os.Stderr, "warning: remove benchmark directory %s: %v\n", path, removeErr)
-			}
+		if cleanupErr := removeWorkDirs(workDirs); cleanupErr != nil {
+			runErr = errors.Join(runErr, cleanupErr)
 		}
 	}()
 
@@ -203,26 +212,28 @@ func createWorkDirs(config management.Config) ([]string, error) {
 	for i, disk := range config.Disks {
 		path, err := os.MkdirTemp(disk.Root, ".flexraid-bench-")
 		if err != nil {
-			removeWorkDirs(paths)
-			return nil, fmt.Errorf("create temporary directory on disk %d: %w", i+1, err)
+			cleanupErr := removeWorkDirs(paths)
+			return nil, errors.Join(fmt.Errorf("create temporary directory on disk %d: %w", i+1, err), cleanupErr)
 		}
 		paths = append(paths, path)
 	}
 	fusePath, err := os.MkdirTemp(config.Mountpoint, ".flexraid-bench-")
 	if err != nil {
-		removeWorkDirs(paths)
-		return nil, fmt.Errorf("create temporary directory in FlexRAID mount: %w", err)
+		cleanupErr := removeWorkDirs(paths)
+		return nil, errors.Join(fmt.Errorf("create temporary directory in FlexRAID mount: %w", err), cleanupErr)
 	}
 	paths = append(paths, fusePath)
 	return paths, nil
 }
 
-func removeWorkDirs(paths []string) {
+func removeWorkDirs(paths []string) error {
+	var cleanupErr error
 	for _, path := range paths {
 		if err := os.RemoveAll(path); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: remove benchmark directory %s: %v\n", path, err)
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove benchmark directory %s: %w", path, err))
 		}
 	}
+	return cleanupErr
 }
 
 func runCase(opts options, filesystem string, paths []string, blockSize int64, label, direction string) (sample, error) {
