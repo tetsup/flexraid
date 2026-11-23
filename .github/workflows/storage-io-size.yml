@@ -6,6 +6,13 @@ on:
       - main
     paths:
       - ".github/workflows/storage-io-size.yml"
+      - "benchmark/**"
+      - "main/**"
+      - "management/**"
+      - "distribution/**"
+      - "io/**"
+      - "platform/**"
+      - "pkg/shared/**"
   workflow_dispatch:
 
 permissions:
