@@ -59,6 +59,7 @@ func percentileDuration(sorted []time.Duration, percentile float64) time.Duratio
 }
 
 type workloadMetrics struct {
+	duration        time.Duration
 	writeHash       string
 	readHash        string
 	writeLatency    latencySamples
@@ -106,7 +107,7 @@ func runConcurrentWorkload(mountpoint, socket string, opts options, measured *re
 	}
 
 	if opts.warmupDuration > 0 {
-		if err := runFilesystemPhase(mountpoint, dataPath, opts, opts.warmupDuration, false, nil); err != nil {
+		if err := runFilesystemPhase(mountpoint, dataPath, "", opts, opts.warmupDuration, false, nil); err != nil {
 			return fmt.Errorf("warm-up FUSE workload: %w", err)
 		}
 	}
@@ -123,7 +124,7 @@ func runConcurrentWorkload(mountpoint, socket string, opts options, measured *re
 	}
 
 	metrics := &workloadMetrics{}
-	if err := runFilesystemPhase(mountpoint, dataPath, opts, opts.duration, active, metrics); err != nil {
+	if err := runFilesystemPhase(mountpoint, dataPath, socket, opts, opts.duration, active, metrics); err != nil {
 		return err
 	}
 	elapsed := metrics.duration
@@ -166,7 +167,7 @@ func runConcurrentWorkload(mountpoint, socket string, opts options, measured *re
 	return nil
 }
 
-func runFilesystemPhase(mountpoint, dataPath string, opts options, duration time.Duration, active bool, metrics *workloadMetrics) error {
+func runFilesystemPhase(mountpoint, dataPath, socket string, opts options, duration time.Duration, active bool, metrics *workloadMetrics) error {
 	var err error
 	regionSize := (opts.size / int64(opts.workers) / int64(opts.blockSize)) * int64(opts.blockSize)
 	slots := int(regionSize / int64(opts.blockSize))
