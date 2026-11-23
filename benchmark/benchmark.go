@@ -468,7 +468,8 @@ func createTemporaryStorageRoots(disks []management.DriveConfig) ([]string, erro
 func renderWorkerConfig(disks []management.DriveConfig, roots []string, mountpoint, socketPath string) (string, error) {
 	if len(disks) != len(roots) {
 		return "", fmt.Errorf("disk count %d does not match temporary storage root count %d", len(disks), len(roots))
-	}	var builder strings.Builder
+	}
+	var builder strings.Builder
 	builder.WriteString("disks:\n")
 	for index, disk := range disks {
 		for _, value := range []string{roots[index], disk.Mountpoint, disk.WWN} {
