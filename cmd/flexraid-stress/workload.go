@@ -168,6 +168,7 @@ func runConcurrentWorkload(mountpoint, socket string, opts options, measured *re
 }
 
 func runFilesystemPhase(mountpoint, dataPath string, opts options, duration time.Duration, active bool, metrics *workloadMetrics) error {
+	var err error
 	regionSize := (opts.size / int64(opts.workers) / int64(opts.blockSize)) * int64(opts.blockSize)
 	slots := int(regionSize / int64(opts.blockSize))
 	if slots < 1 {
