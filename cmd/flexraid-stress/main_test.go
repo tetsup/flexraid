@@ -4,6 +4,7 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRenderConfigSelectsGRPCMode(t *testing.T) {
@@ -66,5 +67,36 @@ func TestSummarizeResultsUsesMedian(t *testing.T) {
 	}
 	if got[1].Mode != modeIdle || got[1].WriteMiBPerSec != 90 {
 		t.Fatalf("idle summary = %+v", got[1])
+	}
+}
+
+func TestLatencySamplesSummary(t *testing.T) {
+	var samples latencySamples
+	for _, value := range []time.Duration{50, 10, 40, 20, 30} {
+		samples.add(value)
+	}
+	average, p50, p95, p99 := samples.summary()
+	if average != 30 || p50 != 30 || p95 != 50 || p99 != 50 {
+		t.Fatalf("summary = avg %s p50 %s p95 %s p99 %s; want 30ns, 30ns, 50ns, 50ns",
+			average, p50, p95, p99)
+	}
+}
+
+func TestSummarizeResultsPreservesIntegrityAndLatency(t *testing.T) {
+	samples := []result{
+		{Mode: modeOff, IntegrityVerified: true, WriteLatencyP95: 100 * time.Microsecond},
+		{Mode: modeOff, IntegrityVerified: true, WriteLatencyP95: 200 * time.Microsecond},
+		{Mode: modeActive, IntegrityVerified: true, WriteLatencyP95: 300 * time.Microsecond},
+		{Mode: modeActive, IntegrityVerified: false, WriteLatencyP95: 500 * time.Microsecond},
+	}
+	got := summarizeResults(samples)
+	if len(got) != 2 {
+		t.Fatalf("summary length = %d, want 2", len(got))
+	}
+	if !got[0].IntegrityVerified || got[0].WriteLatencyP95 != 200*time.Microsecond {
+		t.Fatalf("off summary lost integrity or median latency: %+v", got[0])
+	}
+	if got[1].IntegrityVerified || got[1].WriteLatencyP95 != 500*time.Microsecond {
+		t.Fatalf("active summary lost failed integrity or median latency: %+v", got[1])
 	}
 }
