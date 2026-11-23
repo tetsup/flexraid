@@ -24,7 +24,7 @@ func TestFioReportDecodesBandwidth(t *testing.T) {
 }
 
 func TestBuildFioJobUsesBoundedWriteWindow(t *testing.T) {
-	job := buildFioJob([]string{"/tmp/one"}, 4096, 1<<20, "write")
+	job := buildFioJob([]string{"/tmp/one"}, 4096, 1<<20, "write", 20*time.Second)
 	for _, expected := range []string{"runtime=20\n", "time_based=1\n", "size=1048576\n", "bs=4096\n"} {
 		if !strings.Contains(job, expected) {
 			t.Fatalf("fio job missing %q:\n%s", expected, job)
@@ -33,7 +33,7 @@ func TestBuildFioJobUsesBoundedWriteWindow(t *testing.T) {
 }
 
 func TestBuildFioJobDoesNotRepeatReadDataset(t *testing.T) {
-	job := buildFioJob([]string{"/tmp/one"}, 4096, 1<<20, "read")
+	job := buildFioJob([]string{"/tmp/one"}, 4096, 1<<20, "read", 20*time.Second)
 	if strings.Contains(job, "time_based=1") {
 		t.Fatalf("read job repeats dataset:\n%s", job)
 	}
@@ -57,6 +57,40 @@ func TestMeasureColdReadReadsEachFileOnce(t *testing.T) {
 	}
 	if bw <= 0 || iops <= 0 {
 		t.Fatalf("measureColdRead returned non-positive metrics: bw=%f iops=%f", bw, iops)
+	}
+}
+
+
+func TestBuildFioJobUsesConfiguredDuration(t *testing.T) {
+	job := buildFioJob([]string{"/tmp/one"}, 4096, 1<<20, "write", 7*time.Second)
+	if !strings.Contains(job, "runtime=7\\n") {
+		t.Fatalf("fio job does not use configured duration:\\n%s", job)
+	}
+}
+
+func TestMeasureOverwriteUpdatesExistingFileOnce(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "data.bin")
+	original := []byte(strings.Repeat("a", 8192))
+	if err := os.WriteFile(path, original, 0600); err != nil {
+		t.Fatal(err)
+	}
+	bw, iops, err := measureOverwrite([]string{root}, 4096, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bw <= 0 || iops <= 0 {
+		t.Fatalf("measureOverwrite returned non-positive metrics: bw=%f iops=%f", bw, iops)
+	}
+	actual, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(actual) != len(original) {
+		t.Fatalf("overwrite changed file size: got %d, want %d", len(actual), len(original))
+	}
+	if strings.Contains(string(actual), "a") {
+		t.Fatal("overwrite did not replace existing file contents")
 	}
 }
 
