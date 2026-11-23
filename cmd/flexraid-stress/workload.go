@@ -21,7 +21,7 @@ import (
 )
 
 type latencySamples struct {
-	mu sync.Mutex
+	mu     sync.Mutex
 	values []time.Duration
 }
 
@@ -60,33 +60,33 @@ func sortDurations(values []time.Duration) {
 func percentileDuration(sorted []time.Duration, percentile float64) time.Duration {
 	index := int(float64(len(sorted)-1)*percentile + .999999)
 	if index >= len(sorted) {
-		index = len(sorted)-1
+		index = len(sorted) - 1
 	}
 	return sorted[index]
 }
 
 type workloadMetrics struct {
-	writeLatency latencySamples
-	readLatency latencySamples
+	writeLatency    latencySamples
+	readLatency     latencySamples
 	metadataLatency latencySamples
-	rpcLatency latencySamples
-	writeBytes atomic.Int64
-	readBytes atomic.Int64
-	writeOps atomic.Uint64
-	readOps atomic.Uint64
-	metadataOps atomic.Uint64
-	rpcCalls atomic.Uint64
-	rpcErrors atomic.Uint64
+	rpcLatency      latencySamples
+	writeBytes      atomic.Int64
+	readBytes       atomic.Int64
+	writeOps        atomic.Uint64
+	readOps         atomic.Uint64
+	metadataOps     atomic.Uint64
+	rpcCalls        atomic.Uint64
+	rpcErrors       atomic.Uint64
 }
 
 type workerExpected struct {
-	blocks [][]byte
+	blocks  [][]byte
 	written []bool
 }
 
 type rpcPoller struct {
-	method string
-	interval time.Duration
+	method     string
+	interval   time.Duration
 	connection *grpc.ClientConn
 }
 
@@ -149,8 +149,8 @@ func runConcurrentWorkload(mountpoint, socket string, opts options, measured *re
 	measured.Workers = opts.workers
 	measured.WriteOps, measured.ReadOps, measured.MetadataOps = writeOps, readOps, metaOps
 	measured.IOPS = float64(writeOps+readOps+metaOps) / elapsed.Seconds()
-	measured.WriteMiBPerSec = float64(writeBytes) / (1<<20) / elapsed.Seconds()
-	measured.ReadMiBPerSec = float64(readBytes) / (1<<20) / elapsed.Seconds()
+	measured.WriteMiBPerSec = float64(writeBytes) / (1 << 20) / elapsed.Seconds()
+	measured.ReadMiBPerSec = float64(readBytes) / (1 << 20) / elapsed.Seconds()
 	measured.WriteDuration, measured.ReadDuration = writeTotal, readTotal
 	measured.WriteLatencyP50, measured.WriteLatencyP95, measured.WriteLatencyP99 = writeP50, writeP95, writeP99
 	measured.ReadLatencyP50, measured.ReadLatencyP95, measured.ReadLatencyP99 = readP50, readP95, readP99
@@ -229,13 +229,13 @@ func runFilesystemPhase(mountpoint, dataPath string, opts options, duration time
 	var pollers sync.WaitGroup
 	if active {
 		definitions := []struct {
-			method string
+			method   string
 			interval time.Duration
 		}{
 			{"/flexraid.worker.v1.WorkerService/GetStatus", opts.rpcEvery},
 			{"/flexraid.worker.v1.WorkerService/GetStatus", opts.rpcEvery},
-			{"/flexraid.worker.v1.WorkerService/GetDetailedStatus", opts.rpcEvery*2},
-			{"/flexraid.worker.v1.WorkerService/Inspect", opts.rpcEvery*5},
+			{"/flexraid.worker.v1.WorkerService/GetDetailedStatus", opts.rpcEvery * 2},
+			{"/flexraid.worker.v1.WorkerService/Inspect", opts.rpcEvery * 5},
 		}
 		for _, definition := range definitions {
 			connection, clientErr := grpc.NewClient(
@@ -406,26 +406,48 @@ func runMetadataCycle(directory string, workerID int, sequence uint64, scratchPa
 	temporary, renamed := base+".tmp", base+".renamed"
 	if err := measure(func() error {
 		file, err := os.OpenFile(temporary, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		_, writeErr := file.Write([]byte(fmt.Sprintf("worker=%d sequence=%d", workerID, sequence)))
 		closeErr := file.Close()
-		if writeErr != nil { return writeErr }
+		if writeErr != nil {
+			return writeErr
+		}
 		return closeErr
-	}); err != nil { return fmt.Errorf("metadata create/write: %w", err) }
-	if err := measure(func() error { return os.Rename(temporary, renamed) }); err != nil { return fmt.Errorf("metadata rename: %w", err) }
-	if err := measure(func() error { _, err := os.Stat(renamed); return err }); err != nil { return fmt.Errorf("metadata stat: %w", err) }
-	if err := measure(func() error { return os.Remove(renamed) }); err != nil { return fmt.Errorf("metadata unlink: %w", err) }
+	}); err != nil {
+		return fmt.Errorf("metadata create/write: %w", err)
+	}
+	if err := measure(func() error { return os.Rename(temporary, renamed) }); err != nil {
+		return fmt.Errorf("metadata rename: %w", err)
+	}
+	if err := measure(func() error { _, err := os.Stat(renamed); return err }); err != nil {
+		return fmt.Errorf("metadata stat: %w", err)
+	}
+	if err := measure(func() error { return os.Remove(renamed) }); err != nil {
+		return fmt.Errorf("metadata unlink: %w", err)
+	}
 	subdirectory := base + ".dir"
-	if err := measure(func() error { return os.Mkdir(subdirectory, 0700) }); err != nil { return fmt.Errorf("metadata mkdir: %w", err) }
-	if err := measure(func() error { return os.Remove(subdirectory) }); err != nil { return fmt.Errorf("metadata rmdir: %w", err) }
+	if err := measure(func() error { return os.Mkdir(subdirectory, 0700) }); err != nil {
+		return fmt.Errorf("metadata mkdir: %w", err)
+	}
+	if err := measure(func() error { return os.Remove(subdirectory) }); err != nil {
+		return fmt.Errorf("metadata rmdir: %w", err)
+	}
 	if err := measure(func() error {
 		file, err := os.OpenFile(scratchPath, os.O_RDWR, 0600)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		truncateErr := file.Truncate(int64(sequence%3) * 4096)
 		closeErr := file.Close()
-		if truncateErr != nil { return truncateErr }
+		if truncateErr != nil {
+			return truncateErr
+		}
 		return closeErr
-	}); err != nil { return fmt.Errorf("metadata truncate: %w", err) }
+	}); err != nil {
+		return fmt.Errorf("metadata truncate: %w", err)
+	}
 	return nil
 }
 
