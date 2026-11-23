@@ -159,8 +159,12 @@ func runMode(opts options, template string, selected mode) (_ result, runErr err
 	if err := command.Start(); err != nil {
 		return result, fmt.Errorf("start Worker: %w", err)
 	}
-	waitDone := make(chan error, 1)
-	go func() { waitDone <- command.Wait() }()
+	waitDone := make(chan struct{})
+	var waitErr error
+	go func() {
+		waitErr = command.Wait()
+		close(waitDone)
+	}()
 	defer func() {
 		if isMounted(mountpoint) {
 			_ = unmount(mountpoint)
@@ -287,8 +291,8 @@ func waitForWorker(command *exec.Cmd, done <-chan error, mountpoint, socket stri
 			return nil
 		}
 		select {
-		case err := <-done:
-			return fmt.Errorf("Worker exited before becoming ready: %v", err)
+		case <-done:
+			return fmt.Errorf("Worker exited before becoming ready: %v", waitErr)
 		case <-deadline.C:
 			return fmt.Errorf("Worker did not become ready within %s (mount=%t, socket=%t)", timeout, isMounted(mountpoint), socketReady(socket))
 		case <-ticker.C:
