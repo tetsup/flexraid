@@ -72,7 +72,7 @@ jobs:
       - name: Build real Worker and stress runner
         run: |
           mkdir -p bin benchmark-results
-          go build -o bin/flexraid ./cmd/flexraid
+          go build -o bin/flexraid ./main
           go build -o bin/flexraid-stress ./cmd/flexraid-stress
 
       - name: Run actual FUSE and gRPC A/B/C workload on four loopback drives
