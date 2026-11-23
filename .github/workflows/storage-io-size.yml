@@ -43,7 +43,7 @@ jobs:
           mkdir -p bin benchmark-results
           go build -o bin/flexraid ./main
 
-      - name: Create one ext4 loopback drive
+      - name: Create four independent ext4 loopback drives
         shell: bash
         run: |
           set -euo pipefail
@@ -53,12 +53,12 @@ jobs:
           : > "$RUNNER_TEMP/flexraid-bench-loops"
           : > "$RUNNER_TEMP/flexraid-bench-mounts"
           : > "$RUNNER_TEMP/flexraid-bench-links"
-          image="$RUNNER_TEMP/flexraid-bench-disk.img"
-          truncate -s 4G "$image"
-          loop="$(sudo losetup --find --show "$image")"
-          echo "$loop" >> "$RUNNER_TEMP/flexraid-bench-loops"
-          sudo mkfs.ext4 -F -q "$loop"
           for index in 1 2 3 4; do
+            image="$RUNNER_TEMP/flexraid-bench-disk-$index.img"
+            truncate -s 1G "$image"
+            loop="$(sudo losetup --find --show "$image")"
+            echo "$loop" >> "$RUNNER_TEMP/flexraid-bench-loops"
+            sudo mkfs.ext4 -F -q "$loop"
             mount="/mnt/flexraid-bench-disk-$index"
             link="/dev/disk/by-id/wwn-flexraid-bench-$index"
             sudo mkdir -p "$mount"
@@ -66,8 +66,8 @@ jobs:
             echo "$mount" >> "$RUNNER_TEMP/flexraid-bench-mounts"
             sudo ln -s "$loop" "$link"
             echo "$link" >> "$RUNNER_TEMP/flexraid-bench-links"
+            sudo mkdir -p "$mount/flexraid-data"
           done
-          sudo mkdir -p /mnt/flexraid-bench-disk-1/flexraid-data
 
       - name: Run raw directory benchmark
         run: |
@@ -83,25 +83,22 @@ jobs:
           worker_config="$RUNNER_TEMP/flexraid-bench.yaml"
           cat > "$worker_config" <<YAML
           disks:
-            - root: /mnt/flexraid-bench-disk-1/flexraid-data-1
+            - root: /mnt/flexraid-bench-disk-1/flexraid-data
               mountpoint: /mnt/flexraid-bench-disk-1
               wwn: flexraid-bench-1
-            - root: /mnt/flexraid-bench-disk-1/flexraid-data-2
-              mountpoint: /mnt/flexraid-bench-disk-1
+            - root: /mnt/flexraid-bench-disk-2/flexraid-data
+              mountpoint: /mnt/flexraid-bench-disk-2
               wwn: flexraid-bench-2
-            - root: /mnt/flexraid-bench-disk-1/flexraid-data-3
-              mountpoint: /mnt/flexraid-bench-disk-1
+            - root: /mnt/flexraid-bench-disk-3/flexraid-data
+              mountpoint: /mnt/flexraid-bench-disk-3
               wwn: flexraid-bench-3
-            - root: /mnt/flexraid-bench-disk-1/flexraid-data-4
-              mountpoint: /mnt/flexraid-bench-disk-1
+            - root: /mnt/flexraid-bench-disk-4/flexraid-data
+              mountpoint: /mnt/flexraid-bench-disk-4
               wwn: flexraid-bench-4
           mountpoint: $RUNNER_TEMP/flexraid-production-mountpoint
           grpc_socket_path: $RUNNER_TEMP/flexraid-bench.sock
           grpc_enabled: false
           YAML
-          for index in 1 2 3 4; do
-            sudo mkdir -p "/mnt/flexraid-bench-disk-1/flexraid-data-$index"
-          done
           sudo ./bin/flexraid benchmark \
             --config "$worker_config" \
             --size 268435456 \
