@@ -148,7 +148,7 @@ func runConcurrentWorkload(mountpoint, socket string, opts options, measured *re
 	measured.IOPS = float64(writeOps+readOps+metaOps) / elapsed.Seconds()
 	measured.WriteMiBPerSec = float64(writeBytes) / (1 << 20) / elapsed.Seconds()
 	measured.ReadMiBPerSec = float64(readBytes) / (1 << 20) / elapsed.Seconds()
-	measured.WriteDuration, measured.ReadDuration = writeTotal, readTotal
+	measured.AverageWriteLatency, measured.AverageReadLatency = writeTotal, readTotal
 	measured.WriteLatencyP50, measured.WriteLatencyP95, measured.WriteLatencyP99 = writeP50, writeP95, writeP99
 	measured.ReadLatencyP50, measured.ReadLatencyP95, measured.ReadLatencyP99 = readP50, readP95, readP99
 	measured.MetadataLatencyP50, measured.MetadataLatencyP95, measured.MetadataLatencyP99 = metaP50, metaP95, metaP99
