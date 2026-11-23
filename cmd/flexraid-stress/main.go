@@ -23,37 +23,37 @@ const (
 )
 
 type result struct {
-	Mode               mode          `json:"mode"`
-	Repetition         int           `json:"repetition"`
-	Bytes              int64         `json:"bytes"`
+	Mode                mode          `json:"mode"`
+	Repetition          int           `json:"repetition"`
+	Bytes               int64         `json:"bytes"`
 	AverageWriteLatency time.Duration `json:"average_write_latency_ns"`
 	AverageReadLatency  time.Duration `json:"average_read_latency_ns"`
-	WriteMiBPerSec     float64       `json:"write_mib_per_sec"`
-	ReadMiBPerSec      float64       `json:"read_mib_per_sec"`
-	WriteSHA256        string        `json:"write_sha256"`
-	ReadSHA256         string        `json:"read_sha256"`
-	IntegrityVerified  bool          `json:"integrity_verified"`
-	Duration           time.Duration `json:"duration_ns"`
-	Workers            int           `json:"workers"`
-	WriteOps           uint64        `json:"write_ops"`
-	ReadOps            uint64        `json:"read_ops"`
-	MetadataOps        uint64        `json:"metadata_ops"`
-	IOPS               float64       `json:"iops"`
-	WriteLatencyP50    time.Duration `json:"write_latency_p50_ns"`
-	WriteLatencyP95    time.Duration `json:"write_latency_p95_ns"`
-	WriteLatencyP99    time.Duration `json:"write_latency_p99_ns"`
-	ReadLatencyP50     time.Duration `json:"read_latency_p50_ns"`
-	ReadLatencyP95     time.Duration `json:"read_latency_p95_ns"`
-	ReadLatencyP99     time.Duration `json:"read_latency_p99_ns"`
-	MetadataLatencyP50 time.Duration `json:"metadata_latency_p50_ns"`
-	MetadataLatencyP95 time.Duration `json:"metadata_latency_p95_ns"`
-	MetadataLatencyP99 time.Duration `json:"metadata_latency_p99_ns"`
-	RPCCalls           uint64        `json:"rpc_calls"`
-	RPCErrors          uint64        `json:"rpc_errors"`
-	AverageRPCLatency  time.Duration `json:"average_rpc_latency_ns"`
-	RPCLatencyP50      time.Duration `json:"rpc_latency_p50_ns"`
-	RPCLatencyP95      time.Duration `json:"rpc_latency_p95_ns"`
-	RPCLatencyP99      time.Duration `json:"rpc_latency_p99_ns"`
+	WriteMiBPerSec      float64       `json:"write_mib_per_sec"`
+	ReadMiBPerSec       float64       `json:"read_mib_per_sec"`
+	WriteSHA256         string        `json:"write_sha256"`
+	ReadSHA256          string        `json:"read_sha256"`
+	IntegrityVerified   bool          `json:"integrity_verified"`
+	Duration            time.Duration `json:"duration_ns"`
+	Workers             int           `json:"workers"`
+	WriteOps            uint64        `json:"write_ops"`
+	ReadOps             uint64        `json:"read_ops"`
+	MetadataOps         uint64        `json:"metadata_ops"`
+	IOPS                float64       `json:"iops"`
+	WriteLatencyP50     time.Duration `json:"write_latency_p50_ns"`
+	WriteLatencyP95     time.Duration `json:"write_latency_p95_ns"`
+	WriteLatencyP99     time.Duration `json:"write_latency_p99_ns"`
+	ReadLatencyP50      time.Duration `json:"read_latency_p50_ns"`
+	ReadLatencyP95      time.Duration `json:"read_latency_p95_ns"`
+	ReadLatencyP99      time.Duration `json:"read_latency_p99_ns"`
+	MetadataLatencyP50  time.Duration `json:"metadata_latency_p50_ns"`
+	MetadataLatencyP95  time.Duration `json:"metadata_latency_p95_ns"`
+	MetadataLatencyP99  time.Duration `json:"metadata_latency_p99_ns"`
+	RPCCalls            uint64        `json:"rpc_calls"`
+	RPCErrors           uint64        `json:"rpc_errors"`
+	AverageRPCLatency   time.Duration `json:"average_rpc_latency_ns"`
+	RPCLatencyP50       time.Duration `json:"rpc_latency_p50_ns"`
+	RPCLatencyP95       time.Duration `json:"rpc_latency_p95_ns"`
+	RPCLatencyP99       time.Duration `json:"rpc_latency_p99_ns"`
 }
 
 type options struct {
@@ -387,18 +387,18 @@ func summarizeResults(samples []result) []result {
 			Mode: selected, Bytes: values[0].Bytes, Workers: values[0].Workers,
 			IntegrityVerified: allIntegrityVerified(values),
 			WriteMiBPerSec:    medianFloat64(writeRates), ReadMiBPerSec: medianFloat64(readRates), IOPS: medianFloat64(iops),
-			WriteLatencyP50:    time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.WriteLatencyP50 }))),
-			WriteLatencyP95:    time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.WriteLatencyP95 }))),
-			WriteLatencyP99:    time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.WriteLatencyP99 }))),
-			ReadLatencyP50:     time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.ReadLatencyP50 }))),
-			ReadLatencyP95:     time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.ReadLatencyP95 }))),
-			ReadLatencyP99:     time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.ReadLatencyP99 }))),
+			WriteLatencyP50:     time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.WriteLatencyP50 }))),
+			WriteLatencyP95:     time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.WriteLatencyP95 }))),
+			WriteLatencyP99:     time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.WriteLatencyP99 }))),
+			ReadLatencyP50:      time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.ReadLatencyP50 }))),
+			ReadLatencyP95:      time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.ReadLatencyP95 }))),
+			ReadLatencyP99:      time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.ReadLatencyP99 }))),
 			AverageWriteLatency: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.AverageWriteLatency }))),
 			AverageReadLatency:  time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.AverageReadLatency }))),
-			MetadataLatencyP50: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.MetadataLatencyP50 }))),
-			MetadataLatencyP95: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.MetadataLatencyP95 }))),
-			MetadataLatencyP99: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.MetadataLatencyP99 }))),
-			RPCCalls:           uint64(medianInt64(rpcCounts)), RPCErrors: uint64(medianInt64(rpcErrors)),
+			MetadataLatencyP50:  time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.MetadataLatencyP50 }))),
+			MetadataLatencyP95:  time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.MetadataLatencyP95 }))),
+			MetadataLatencyP99:  time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.MetadataLatencyP99 }))),
+			RPCCalls:            uint64(medianInt64(rpcCounts)), RPCErrors: uint64(medianInt64(rpcErrors)),
 			AverageRPCLatency: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.AverageRPCLatency }))),
 			RPCLatencyP50:     time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.RPCLatencyP50 }))),
 			RPCLatencyP95:     time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.RPCLatencyP95 }))),
