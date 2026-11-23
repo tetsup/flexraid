@@ -251,6 +251,10 @@ func runFilesystemPhase(mountpoint, dataPath string, opts options, duration time
 				cancel()
 				close(start)
 				workers.Wait()
+				pollers.Wait()
+				for _, opened := range connections {
+					_ = opened.Close()
+				}
 				return fmt.Errorf("create gRPC client: %w", clientErr)
 			}
 			connections = append(connections, connection)
