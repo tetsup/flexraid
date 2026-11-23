@@ -32,7 +32,7 @@ The directory must already exist and be writable. The command creates a uniquely
 
 ## Measurements
 
-The I/O request sizes are 4 KiB, 4 KiB+1 B, 64 KiB, 8 MiB, 8 MiB+1 B, and 64 MiB. The 8 MiB boundary represents four 2 MiB data chunks; 8 MiB+1 B deliberately crosses that boundary. `--reference-bytes` sets the logical-byte target used to derive each file count, and `--max-files` caps the count for every I/O size. The defaults are 60 × 64 MiB (3.75 GiB) and 1024 files. Thus 64 MiB uses 60 files, both 8 MiB cases use 480 files, and small requests are capped at 1024 files. The paired 8 MiB cases use the same file count.
+The I/O request sizes are 4 KiB, 4 KiB+1 B, 64 KiB, 8 MiB+15 KiB and 8 MiB+15 KiB+1 B, and 64 MiB. With four data chunks, the first stripe carries 15 KiB after the 1 KiB header reservation; the next stripe adds 8 MiB (four 2 MiB chunks). The paired sizes therefore test exactly at and one byte beyond that boundary. `--reference-bytes` sets the logical-byte target used to derive each file count, and `--max-files` caps the count for every I/O size. The defaults are 60 × 64 MiB (3.75 GiB) and 1024 files. Thus 64 MiB uses 60 files, both stripe-boundary cases use 479 files, and small requests are capped at 1024 files. The paired boundary cases use the same file count.
 
 For each size:
 
