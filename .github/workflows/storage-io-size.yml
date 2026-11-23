@@ -55,7 +55,7 @@ jobs:
           : > "$RUNNER_TEMP/flexraid-bench-links"
           for index in 1 2 3 4; do
             image="$RUNNER_TEMP/flexraid-bench-disk-$index.img"
-            truncate -s 1G "$image"
+            truncate -s 4G "$image"
             loop="$(sudo losetup --find --show "$image")"
             echo "$loop" >> "$RUNNER_TEMP/flexraid-bench-loops"
             sudo mkfs.ext4 -F -q "$loop"
@@ -73,7 +73,8 @@ jobs:
         run: |
           sudo ./bin/flexraid benchmark raw \
             --directory /mnt/flexraid-bench-disk-1 \
-            --size 268435456 \
+            --reference-bytes 4294967296 \
+            --max-files 1024 \
             --output "$GITHUB_WORKSPACE/benchmark-results/raw"
 
       - name: Run FlexRAID benchmark
@@ -101,7 +102,8 @@ jobs:
           YAML
           sudo ./bin/flexraid benchmark \
             --config "$worker_config" \
-            --size 268435456 \
+            --reference-bytes 4294967296 \
+            --max-files 1024 \
             --output "$GITHUB_WORKSPACE/benchmark-results/flexraid"
           sudo chown -R "$USER:$USER" benchmark-results
 
