@@ -1,7 +1,6 @@
 package benchmark
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,100 +18,53 @@ func TestRawBenchmarkRequiresOnlyDirectoryArgument(t *testing.T) {
 	}
 }
 
-func TestFioReportDecodesBandwidth(t *testing.T) {
-	data := []byte(`{"jobs":[{"job_runtime":7000,"read":{"bw_bytes":1234,"iops":2,"io_bytes":8192,"total_ios":2},"write":{"bw_bytes":5678,"iops":3,"io_bytes":12288,"total_ios":3}}]}`)
-	var report fioReport
-	if err := json.Unmarshal(data, &report); err != nil {
-		t.Fatal(err)
-	}
-	if len(report.Jobs) != 1 || report.Jobs[0].Write.BWBytes != 5678 || report.Jobs[0].Read.IOPS != 2 || report.Jobs[0].Write.IOBytes != 12288 || report.Jobs[0].Write.TotalIOs != 3 || report.Jobs[0].JobRuntime != 7000 {
-		t.Fatalf("unexpected report: %+v", report)
-	}
-}
-
-func TestBuildFioJobUsesBoundedWriteWindow(t *testing.T) {
-	job := buildFioJob([]string{"/tmp/one"}, 4096, 1<<20, "write", 20*time.Second)
-	for _, expected := range []string{"runtime=20\n", "time_based=1\n", "size=1048576\n", "bs=4096\n", "end_fsync=1\n"} {
-		if !strings.Contains(job, expected) {
-			t.Fatalf("fio job missing %q:\n%s", expected, job)
-		}
-	}
-}
-
-func TestBuildFioJobDoesNotRepeatReadDataset(t *testing.T) {
-	job := buildFioJob([]string{"/tmp/one"}, 4096, 1<<20, "read", 20*time.Second)
-	if strings.Contains(job, "time_based=1") {
-		t.Fatalf("read job repeats dataset:\n%s", job)
-	}
-}
-
-func TestMeasureColdReadReadsEachFileOnce(t *testing.T) {
+func TestCreateBenchmarkFilesCreatesDistinctRandomFiles(t *testing.T) {
 	root := t.TempDir()
-	paths := []string{filepath.Join(root, "first"), filepath.Join(root, "second")}
-	for index, path := range paths {
-		if err := os.Mkdir(path, 0700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(path, "data.bin"), []byte(strings.Repeat("x", 8192)), 0600); err != nil {
-			t.Fatal(err)
-		}
-		_ = index
+	files, bytesWritten, operations, elapsed, err := createBenchmarkFiles([]string{root}, 4096, 4096*8, 100*time.Millisecond)
+	if err != nil { t.Fatal(err) }
+	if len(files) != 8 || bytesWritten != 8*4096 || operations != 8 || elapsed <= 0 {
+		t.Fatalf("files=%d bytes=%d operations=%d elapsed=%s", len(files), bytesWritten, operations, elapsed)
 	}
-	bytesRead, operations, elapsed, err := measureColdRead(paths, 4096, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if bytesRead != 16384 || operations != 4 || elapsed <= 0 {
-		t.Fatalf("measureColdRead returned bytes=%d operations=%d elapsed=%s", bytesRead, operations, elapsed)
+	seen := make(map[string]struct{})
+	for _, path := range files {
+		if _, ok := seen[path]; ok { t.Fatalf("duplicate generated path %q", path) }
+		seen[path] = struct{}{}
+		info, err := os.Stat(path)
+		if err != nil { t.Fatal(err) }
+		if info.Size() != 4096 { t.Fatalf("file %s size=%d, want 4096", path, info.Size()) }
 	}
 }
 
-func TestBuildFioJobUsesConfiguredDuration(t *testing.T) {
-	job := buildFioJob([]string{"/tmp/one"}, 4096, 1<<20, "write", 7*time.Second)
-	if !strings.Contains(job, "runtime=7\n") {
-		t.Fatalf("fio job does not use configured duration:\n%s", job)
-	}
-}
-
-func TestMeasureOverwriteUpdatesExistingFileOnce(t *testing.T) {
+func TestOverwriteAndReadLoopAcrossGeneratedFiles(t *testing.T) {
 	root := t.TempDir()
-	path := filepath.Join(root, "data.bin")
-	original := []byte(strings.Repeat("a", 8192))
-	if err := os.WriteFile(path, original, 0600); err != nil {
-		t.Fatal(err)
+	files, _, _, _, err := createBenchmarkFiles([]string{root}, 4096, 4096*4, time.Second)
+	if err != nil { t.Fatal(err) }
+	bytesWritten, writes, elapsed, err := measureOverwrite(files, 4096, 20*time.Millisecond)
+	if err != nil { t.Fatal(err) }
+	if writes < int64(len(files)) || bytesWritten != writes*4096 || elapsed < 20*time.Millisecond {
+		t.Fatalf("overwrite bytes=%d operations=%d elapsed=%s", bytesWritten, writes, elapsed)
 	}
-	bytesWritten, operations, elapsed, err := measureOverwrite([]string{root}, 4096, time.Second)
-	if err != nil {
-		t.Fatal(err)
+	bytesRead, reads, readElapsed, err := measureColdRead(files, 4096, 20*time.Millisecond)
+	if err != nil { t.Fatal(err) }
+	if reads < int64(len(files)) || bytesRead != reads*4096 || readElapsed < 20*time.Millisecond {
+		t.Fatalf("read bytes=%d operations=%d elapsed=%s", bytesRead, reads, readElapsed)
 	}
-	if bytesWritten != int64(len(original)) || operations != 2 || elapsed <= 0 {
-		t.Fatalf("measureOverwrite returned bytes=%d operations=%d elapsed=%s", bytesWritten, operations, elapsed)
-	}
-	actual, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(actual) != len(original) {
-		t.Fatalf("overwrite changed file size: got %d, want %d", len(actual), len(original))
-	}
-	if strings.Contains(string(actual), "a") {
-		t.Fatal("overwrite did not replace existing file contents")
-	}
+}
+
+func TestRemoveBenchmarkFiles(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "random-name")
+	if err := os.WriteFile(path, []byte("data"), 0600); err != nil { t.Fatal(err) }
+	if err := removeBenchmarkFiles([]string{path}); err != nil { t.Fatal(err) }
+	if _, err := os.Stat(path); !os.IsNotExist(err) { t.Fatalf("file still exists: %v", err) }
 }
 
 func TestDriveCapacityPathFallsBackToPhysicalMountpoint(t *testing.T) {
 	mountpoint := t.TempDir()
-	disk := management.DriveConfig{
-		Root:       filepath.Join(mountpoint, "not-created-yet"),
-		Mountpoint: mountpoint,
-	}
+	disk := management.DriveConfig{Root: filepath.Join(mountpoint, "not-created-yet"), Mountpoint: mountpoint}
 	path, err := driveCapacityPath(disk)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if path != mountpoint {
-		t.Fatalf("capacity path = %q, want %q", path, mountpoint)
-	}
+	if err != nil { t.Fatal(err) }
+	if path != mountpoint { t.Fatalf("capacity path = %q, want %q", path, mountpoint) }
 }
 
 func TestSelectBenchmarkDisksPreservesConfiguredOrderForEqualCapacity(t *testing.T) {
@@ -120,32 +72,20 @@ func TestSelectBenchmarkDisksPreservesConfiguredOrderForEqualCapacity(t *testing
 	disks := make([]management.DriveConfig, 5)
 	for index := range disks {
 		root := filepath.Join(parent, fmt.Sprintf("disk-%d", index))
-		if err := os.Mkdir(root, 0700); err != nil {
-			t.Fatal(err)
-		}
-		disks[index] = management.DriveConfig{
-			Root: root, Mountpoint: parent, WWN: fmt.Sprintf("drive-%d", index),
-		}
+		if err := os.Mkdir(root, 0700); err != nil { t.Fatal(err) }
+		disks[index] = management.DriveConfig{Root: root, Mountpoint: parent, WWN: fmt.Sprintf("drive-%d", index)}
 	}
 	selected, err := selectBenchmarkDisks(disks)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(selected) != 4 {
-		t.Fatalf("selected %d drives, want 4", len(selected))
-	}
+	if err != nil { t.Fatal(err) }
+	if len(selected) != 4 { t.Fatalf("selected %d drives, want 4", len(selected)) }
 	for index := range selected {
-		if selected[index].WWN != disks[index].WWN {
-			t.Fatalf("selected drive %d = %s, want %s", index, selected[index].WWN, disks[index].WWN)
-		}
+		if selected[index].WWN != disks[index].WWN { t.Fatalf("selected drive %d = %s, want %s", index, selected[index].WWN, disks[index].WWN) }
 	}
 }
 
 func TestValidateBenchmarkCapacityRejectsOverflow(t *testing.T) {
 	disks := []management.DriveConfig{{WWN: "drive-1", Mountpoint: "/unused"}}
-	if err := validateBenchmarkCapacity(disks, int64(^uint64(0)>>1)); err == nil {
-		t.Fatal("validateBenchmarkCapacity accepted an overflowing size")
-	}
+	if err := validateBenchmarkCapacity(disks, int64(^uint64(0)>>1)); err == nil { t.Fatal("accepted overflowing size") }
 }
 
 func TestRenderWorkerConfigUsesIsolatedRootsAndDisablesGRPC(t *testing.T) {
@@ -157,64 +97,39 @@ func TestRenderWorkerConfigUsesIsolatedRootsAndDisablesGRPC(t *testing.T) {
 	}
 	roots := []string{"/mnt/disk1/temp", "/mnt/disk2/temp", "/mnt/disk3/temp", "/mnt/disk4/temp"}
 	config, err := renderWorkerConfig(disks, roots, "/tmp/fuse-mount", "/tmp/worker.sock")
-	if err != nil {
-		t.Fatal(err)
+	if err != nil { t.Fatal(err) }
+	for _, expected := range []string{"root: /mnt/disk1/temp", "mountpoint: /mnt/disk4", "wwn: drive-4", "mountpoint: /tmp/fuse-mount", "grpc_socket_path: /tmp/worker.sock", "grpc_enabled: false"} {
+		if !strings.Contains(config, expected) { t.Fatalf("missing %q:\n%s", expected, config) }
 	}
-	for _, expected := range []string{
-		"root: /mnt/disk1/temp",
-		"mountpoint: /mnt/disk4",
-		"wwn: drive-4",
-		"mountpoint: /tmp/fuse-mount",
-		"grpc_socket_path: /tmp/worker.sock",
-		"grpc_enabled: false",
-	} {
-		if !strings.Contains(config, expected) {
-			t.Fatalf("generated config missing %q:\n%s", expected, config)
-		}
-	}
-	if strings.Contains(config, "/original/") {
-		t.Fatalf("generated config retained original storage roots:\n%s", config)
-	}
+	if strings.Contains(config, "/original/") { t.Fatalf("retained original roots:\n%s", config) }
 }
 
 func TestValidateOutputPathRejectsOverlappingStoragePaths(t *testing.T) {
 	root := t.TempDir()
 	config := testConfig(filepath.Join(root, "disk"))
-	for _, output := range []string{
-		config.Disks[0].Root,
-		filepath.Join(config.Disks[0].Root, "results"),
-		root,
-	} {
-		if err := validateOutputPath(output, config); err == nil {
-			t.Fatalf("validateOutputPath(%q) succeeded; want error", output)
-		}
+	for _, output := range []string{config.Disks[0].Root, filepath.Join(config.Disks[0].Root, "results"), root} {
+		if err := validateOutputPath(output, config); err == nil { t.Fatalf("validateOutputPath(%q) succeeded", output) }
 	}
 }
 
 func TestValidateOutputPathAllowsSibling(t *testing.T) {
 	root := t.TempDir()
 	config := testConfig(filepath.Join(root, "disk"))
-	if err := validateOutputPath(filepath.Join(root, "results"), config); err != nil {
-		t.Fatalf("validateOutputPath returned error: %v", err)
-	}
+	if err := validateOutputPath(filepath.Join(root, "results"), config); err != nil { t.Fatal(err) }
 }
 
 func TestValidateOutputPathResolvesSymlinks(t *testing.T) {
 	root := t.TempDir()
 	config := testConfig(filepath.Join(root, "disk"))
 	link := filepath.Join(root, "output-link")
-	if err := os.Symlink(config.Disks[0].Root, link); err != nil {
-		t.Fatal(err)
-	}
-	if err := validateOutputPath(link, config); err == nil {
-		t.Fatal("validateOutputPath accepted a symlink into a storage root")
-	}
+	if err := os.Symlink(config.Disks[0].Root, link); err != nil { t.Fatal(err) }
+	if err := validateOutputPath(link, config); err == nil { t.Fatal("accepted symlink into storage root") }
 }
 
 func testConfig(root string) management.Config {
 	parent := filepath.Dir(root)
 	return management.Config{
-		Disks:      []management.DriveConfig{{Root: root, Mountpoint: filepath.Join(parent, "physical")}},
+		Disks: []management.DriveConfig{{Root: root, Mountpoint: filepath.Join(parent, "physical")}},
 		Mountpoint: filepath.Join(parent, "fuse"),
 	}
 }
