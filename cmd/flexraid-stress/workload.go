@@ -202,6 +202,27 @@ func runFilesystemPhase(mountpoint, dataPath, socket string, opts options, durat
 		}
 	}()
 
+	// Exercise namespace mutations and truncate outside the timed data-I/O
+	// phase. The benchmark duration must stop workers between operations, not
+	// interrupt a metadata syscall and misreport its cancellation as EOPNOTSUPP.
+	for workerID, directory := range directories {
+		scratchPath := filepath.Join(directory, "truncate.dat")
+		scratch, err := os.OpenFile(scratchPath, os.O_CREATE|os.O_RDWR, 0600)
+		if err != nil {
+			return fmt.Errorf("create worker %d metadata scratch file: %w", workerID, err)
+		}
+		if err := scratch.Truncate(4096); err != nil {
+			_ = scratch.Close()
+			return fmt.Errorf("initialize worker %d metadata scratch file: %w", workerID, err)
+		}
+		if err := scratch.Close(); err != nil {
+			return fmt.Errorf("close worker %d metadata scratch file: %w", workerID, err)
+		}
+		if err := runMetadataCycle(directory, workerID, 0, scratchPath, metrics); err != nil {
+			return fmt.Errorf("worker %d metadata workload: %w", workerID, err)
+		}
+	}
+
 	workerFiles := make([]*os.File, opts.workers)
 	readerFiles := make([]*os.File, opts.workers)
 	for workerID := range workerFiles {
@@ -357,21 +378,6 @@ func runFilesystemPhase(mountpoint, dataPath, socket string, opts options, durat
 }
 
 func runFilesystemWorker(ctx context.Context, workerID int, writeFile, readFile *os.File, directory string, regionSize int64, slots, blockSize int, expected *workerExpected, metrics *workloadMetrics) error {
-	scratchPath := filepath.Join(directory, "truncate.dat")
-	scratch, err := os.OpenFile(scratchPath, os.O_CREATE|os.O_RDWR, 0600)
-	if err != nil {
-		return err
-	}
-	if err := scratch.Truncate(4096); err != nil {
-		_ = scratch.Close()
-		return fmt.Errorf("worker %d initialize metadata scratch file: %w", workerID, err)
-	}
-	if err := scratch.Close(); err != nil {
-		return fmt.Errorf("worker %d close metadata scratch file: %w", workerID, err)
-	}
-	if err := runMetadataCycle(directory, workerID, 0, scratchPath, metrics); err != nil {
-		return fmt.Errorf("worker %d initial metadata workload: %w", workerID, err)
-	}
 	payload := make([]byte, blockSize)
 	readback := make([]byte, blockSize)
 	var sequence uint64
@@ -435,11 +441,6 @@ func runFilesystemWorker(ctx context.Context, workerID int, writeFile, readFile 
 		}
 
 		sequence++
-		if sequence%16 == 0 {
-			if err := runMetadataCycle(directory, workerID, sequence, scratchPath, metrics); err != nil {
-				return err
-			}
-		}
 	}
 }
 
