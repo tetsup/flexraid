@@ -255,9 +255,7 @@ func renderConfig(template string, roots []string, mountpoint, socket string, gr
 			foundMount = true
 		case len(indent) == 0 && strings.HasPrefix(trimmed, "grpc_socket_path:"):
 			foundGRPC = true
-			if grpcEnabled {
-				output = append(output, "grpc_socket_path: "+socket)
-			}
+			output = append(output, "grpc_socket_path: "+socket)
 		default:
 			output = append(output, line)
 		}
@@ -265,9 +263,10 @@ func renderConfig(template string, roots []string, mountpoint, socket string, gr
 	if rootIndex != len(roots) || !foundMount {
 		return "", errors.New("config must contain disk roots and a top-level mountpoint")
 	}
-	if grpcEnabled && !foundGRPC {
+	if !foundGRPC {
 		output = append(output, "grpc_socket_path: "+socket)
 	}
+	output = append(output, "grpc_enabled: "+fmt.Sprint(grpcEnabled))
 	return strings.Join(output, "\n"), nil
 }
 
