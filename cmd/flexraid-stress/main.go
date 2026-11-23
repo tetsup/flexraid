@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"sort"
 	"path/filepath"
 	"strings"
 	"time"
@@ -480,6 +481,68 @@ func runBenchmarkWithMonitoring(mountpoint, socket string, opts options, measure
 func printResult(value result) {
 	fmt.Printf("  write %.2f MiB/s, read %.2f MiB/s, RPC %d/%d errors\n",
 		value.WriteMiBPerSec, value.ReadMiBPerSec, value.RPCErrors, value.RPCCalls)
+}
+
+func summarizeResults(samples []result) []result {
+	byMode := map[mode][]result{}
+	for _, sample := range samples {
+		byMode[sample.Mode] = append(byMode[sample.Mode], sample)
+	}
+	summary := make([]result, 0, 3)
+	for _, selected := range []mode{modeOff, modeIdle, modeActive} {
+		values := byMode[selected]
+		if len(values) == 0 {
+			continue
+		}
+		writeRates := make([]float64, 0, len(values))
+		readRates := make([]float64, 0, len(values))
+		writeDurations := make([]int64, 0, len(values))
+		readDurations := make([]int64, 0, len(values))
+		rpcCounts := make([]int64, 0, len(values))
+		rpcErrors := make([]int64, 0, len(values))
+		rpcLatencies := make([]int64, 0, len(values))
+		for _, value := range values {
+			writeRates = append(writeRates, value.WriteMiBPerSec)
+			readRates = append(readRates, value.ReadMiBPerSec)
+			writeDurations = append(writeDurations, int64(value.WriteDuration))
+			readDurations = append(readDurations, int64(value.ReadDuration))
+			rpcCounts = append(rpcCounts, int64(value.RPCCalls))
+			rpcErrors = append(rpcErrors, int64(value.RPCErrors))
+			rpcLatencies = append(rpcLatencies, int64(value.AverageRPCLatency))
+		}
+		summary = append(summary, result{
+			Mode: selected,
+			Bytes: values[0].Bytes,
+			WriteDuration: time.Duration(medianInt64(writeDurations)),
+			ReadDuration: time.Duration(medianInt64(readDurations)),
+			WriteMiBPerSec: medianFloat64(writeRates),
+			ReadMiBPerSec: medianFloat64(readRates),
+			RPCCalls: uint64(medianInt64(rpcCounts)),
+			RPCErrors: uint64(medianInt64(rpcErrors)),
+			AverageRPCLatency: time.Duration(medianInt64(rpcLatencies)),
+		})
+	}
+	return summary
+}
+
+func medianFloat64(values []float64) float64 {
+	sorted := append([]float64(nil), values...)
+	sort.Float64s(sorted)
+	middle := len(sorted) / 2
+	if len(sorted)%2 == 1 {
+		return sorted[middle]
+	}
+	return (sorted[middle-1] + sorted[middle]) / 2
+}
+
+func medianInt64(values []int64) int64 {
+	sorted := append([]int64(nil), values...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+	middle := len(sorted) / 2
+	if len(sorted)%2 == 1 {
+		return sorted[middle]
+	}
+	return (sorted[middle-1] + sorted[middle]) / 2
 }
 
 func markdownReport(results []result) string {
