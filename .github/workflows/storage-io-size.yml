@@ -66,9 +66,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          fuse_mount="$RUNNER_TEMP/flexraid-bench-fuse"
           worker_config="$RUNNER_TEMP/flexraid-bench.yaml"
-          worker_log="$RUNNER_TEMP/flexraid-worker.log"
           cat > "$worker_config" <<YAML
           disks:
             - root: /mnt/flexraid-bench-disk-1/flexraid-data
@@ -83,36 +81,10 @@ jobs:
             - root: /mnt/flexraid-bench-disk-4/flexraid-data
               mountpoint: /mnt/flexraid-bench-disk-4
               wwn: flexraid-bench-4
-          mountpoint: $fuse_mount
+          mountpoint: $RUNNER_TEMP/flexraid-production-mountpoint
           grpc_socket_path: $RUNNER_TEMP/flexraid-bench.sock
           grpc_enabled: false
           YAML
-          sudo mkdir -p "$fuse_mount"
-          sudo ./bin/flexraid --config "$worker_config" >"$worker_log" 2>&1 &
-          worker_pid=$!
-          cleanup_worker() {
-            sudo fusermount3 -u "$fuse_mount" >/dev/null 2>&1 || true
-            sudo kill "$worker_pid" >/dev/null 2>&1 || true
-            wait "$worker_pid" >/dev/null 2>&1 || true
-          }
-          trap cleanup_worker EXIT
-          ready=0
-          for attempt in $(seq 1 180); do
-            if mountpoint -q "$fuse_mount" && sudo ls "$fuse_mount" >/dev/null 2>&1; then
-              ready=1
-              break
-            fi
-            if ! kill -0 "$worker_pid" 2>/dev/null; then
-              cat "$worker_log"
-              exit 1
-            fi
-            sleep 1
-          done
-          if [[ "$ready" != 1 ]]; then
-            cat "$worker_log"
-            echo "FlexRAID FUSE mount did not become ready" >&2
-            exit 1
-          fi
 
           sudo ./bin/flexraid benchmark \
             --config "$worker_config" \
