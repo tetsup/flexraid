@@ -247,7 +247,7 @@ func runRaw(args []string) error {
 	flags.StringVar(&directory, "directory", "", "directory on the physical filesystem to benchmark")
 	flags.StringVar(&opts.outputDir, "output", "./flexraid-raw-bench-results", "result directory")
 	flags.IntVar(&opts.maxFiles, "max-files", 1024, "maximum files per I/O size")
-	flags.Int64Var(&opts.referenceBytes, "reference-bytes", 64<<20, "logical byte target used to derive per-size file counts")
+	flags.Int64Var(&opts.referenceBytes, "reference-bytes", 4<<30, "logical byte target used to derive per-size file counts")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -706,7 +706,8 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 	var bytes, operations int64
 	var elapsed time.Duration
 	var generated []string
-	var err error	switch direction {
+	var err error
+	switch direction {
 	case "write":
 		generated, bytes, operations, elapsed, err = createBenchmarkFiles(paths, blockSize, fileCount)
 	case "overwrite":
