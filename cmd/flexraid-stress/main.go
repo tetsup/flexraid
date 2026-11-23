@@ -32,16 +32,16 @@ const (
 )
 
 type result struct {
-	Mode             mode          `json:"mode"`
-	Bytes            int64         `json:"bytes"`
-	WriteDuration    time.Duration `json:"write_duration_ns"`
-	ReadDuration     time.Duration `json:"read_duration_ns"`
-	WriteMiBPerSec   float64       `json:"write_mib_per_sec"`
-	ReadMiBPerSec    float64       `json:"read_mib_per_sec"`
-	WriteSHA256      string        `json:"write_sha256"`
-	ReadSHA256       string        `json:"read_sha256"`
-	RPCCalls         uint64        `json:"rpc_calls"`
-	RPCErrors        uint64        `json:"rpc_errors"`
+	Mode              mode          `json:"mode"`
+	Bytes             int64         `json:"bytes"`
+	WriteDuration     time.Duration `json:"write_duration_ns"`
+	ReadDuration      time.Duration `json:"read_duration_ns"`
+	WriteMiBPerSec    float64       `json:"write_mib_per_sec"`
+	ReadMiBPerSec     float64       `json:"read_mib_per_sec"`
+	WriteSHA256       string        `json:"write_sha256"`
+	ReadSHA256        string        `json:"read_sha256"`
+	RPCCalls          uint64        `json:"rpc_calls"`
+	RPCErrors         uint64        `json:"rpc_errors"`
 	AverageRPCLatency time.Duration `json:"average_rpc_latency_ns"`
 }
 
