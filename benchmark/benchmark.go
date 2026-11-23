@@ -51,7 +51,7 @@ type options struct {
 type fioJob struct {
 	Read       fioDirection `json:"read"`
 	Write      fioDirection `json:"write"`
-	JobRuntime int64         `json:"job_runtime"`
+	JobRuntime int64        `json:"job_runtime"`
 }
 
 type fioDirection struct {
@@ -749,7 +749,9 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 		} else {
 			bytes, operations, elapsed, err = measureColdRead(paths, blockSize, opts.duration)
 		}
-		if err != nil { return sample{}, err }
+		if err != nil {
+			return sample{}, err
+		}
 		result = sample{Bytes: bytes, Operations: operations, Elapsed: elapsed}
 	} else {
 		jobPath := filepath.Join(opts.outputDir, filesystem+"-"+label+"-"+direction+".fio")
@@ -759,21 +761,31 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 		}
 		command := exec.Command(opts.fioPath, jobPath, "--output-format=json", "--output="+resultPath)
 		command.Stdout, command.Stderr = os.Stdout, os.Stderr
-		if err := command.Run(); err != nil { return sample{}, fmt.Errorf("run fio: %w", err) }
+		if err := command.Run(); err != nil {
+			return sample{}, fmt.Errorf("run fio: %w", err)
+		}
 		data, err := os.ReadFile(resultPath)
-		if err != nil { return sample{}, fmt.Errorf("read fio result: %w", err) }
+		if err != nil {
+			return sample{}, fmt.Errorf("read fio result: %w", err)
+		}
 		var report fioReport
-		if err := json.Unmarshal(data, &report); err != nil { return sample{}, fmt.Errorf("decode fio result: %w", err) }
+		if err := json.Unmarshal(data, &report); err != nil {
+			return sample{}, fmt.Errorf("decode fio result: %w", err)
+		}
 		var totalBytes, totalOperations int64
 		var elapsed time.Duration
 		for _, job := range report.Jobs {
 			totalBytes += job.Write.IOBytes
 			totalOperations += job.Write.TotalIOs
-			if job.JobRuntime > 0 { elapsed = time.Duration(job.JobRuntime) * time.Millisecond }
+			if job.JobRuntime > 0 {
+				elapsed = time.Duration(job.JobRuntime) * time.Millisecond
+			}
 		}
 		result = sample{Bytes: totalBytes, Operations: totalOperations, Elapsed: elapsed}
 	}
-	if result.Elapsed <= 0 { return sample{}, errors.New("measurement elapsed time is zero") }
+	if result.Elapsed <= 0 {
+		return sample{}, errors.New("measurement elapsed time is zero")
+	}
 	result.Filesystem, result.IOSize, result.Label, result.Direction = filesystem, blockSize, label, direction
 	result.BWBytes = float64(result.Bytes) / result.Elapsed.Seconds()
 	result.IOPS = float64(result.Operations) / result.Elapsed.Seconds()
