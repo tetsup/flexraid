@@ -520,7 +520,6 @@ func runMetadataCycle(directory string, workerID int, sequence uint64, scratchPa
 	return nil
 }
 
-
 func writeAtRetry(file *os.File, data []byte, offset int64) (int, error) {
 	for {
 		n, err := file.WriteAt(data, offset)
