@@ -24,7 +24,6 @@ const (
 	fuseSuperMagic       = 0x65735546
 	workerStartupTimeout = 90 * time.Second
 	workerStopTimeout    = 10 * time.Second
-	defaultCaseDuration  = 5 * time.Second
 )
 
 var ioSizes = []struct {
@@ -42,8 +41,8 @@ var ioSizes = []struct {
 type options struct {
 	configPath string
 	outputDir  string
-	totalBytes int64
-	duration   time.Duration
+	maxFiles       int
+	referenceBytes int64
 }
 
 type sample struct {
@@ -77,9 +76,8 @@ func Run(args []string) (runErr error) {
 	flags.SetOutput(os.Stderr)
 	flags.StringVar(&opts.configPath, "config", "", "Worker YAML configuration")
 	flags.StringVar(&opts.outputDir, "output", "./flexraid-bench-results", "result directory")
-	flags.Int64Var(&opts.totalBytes, "size", 512<<20, "total logical bytes per test case")
-	var durationSeconds int
-	flags.IntVar(&durationSeconds, "duration-seconds", int(defaultCaseDuration/time.Second), "maximum duration of each I/O measurement in seconds")
+	flags.IntVar(&opts.maxFiles, "max-files", 1024, "maximum files per I/O size")
+	flags.Int64Var(&opts.referenceBytes, "reference-bytes", 64<<20, "logical byte target used to derive per-size file counts")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -89,16 +87,11 @@ func Run(args []string) (runErr error) {
 	if opts.configPath == "" {
 		return errors.New("--config is required")
 	}
-	if durationSeconds <= 0 {
-		return errors.New("--duration-seconds must be positive")
+	if opts.maxFiles <= 0 {
+		return errors.New("--max-files must be positive")
 	}
-	opts.duration = time.Duration(durationSeconds) * time.Second
-	if opts.totalBytes <= 0 {
-		return errors.New("--size must be positive")
-	}
-	minimumSize := ioSizes[len(ioSizes)-1].bytes
-	if opts.totalBytes < minimumSize {
-		return fmt.Errorf("--size must be at least %d bytes so every I/O size can be tested", minimumSize)
+	if opts.referenceBytes <= 0 {
+		return errors.New("--reference-bytes must be positive")
 	}
 
 	config, err := management.LoadConfig(opts.configPath)
@@ -144,7 +137,8 @@ func Run(args []string) (runErr error) {
 	if err != nil {
 		return err
 	}
-	if err := validateBenchmarkCapacity(selected, opts.totalBytes); err != nil {
+	physicalBytesPerDisk := int64(opts.maxFiles) * (172 << 20) / 4
+	if err := validateBenchmarkCapacity(selected, physicalBytesPerDisk); err != nil {
 		return err
 	}
 	for index, disk := range selected {
@@ -218,10 +212,12 @@ func Run(args []string) (runErr error) {
 	}
 	var samples []sample
 	for _, block := range ioSizes {
+		fileCount := benchmarkFileCount(block.bytes, opts.referenceBytes, opts.maxFiles)
+		fmt.Printf("Benchmark workload %s: files=%d logical_bytes=%d\\n", block.label, fileCount, int64(fileCount)*block.bytes)
 		var files []string
 		for _, direction := range []string{"write", "overwrite", "read"} {
 			fmt.Printf("Running %-10s %-8s %s ...\n", "flexraid", direction, block.label)
-			measured, generated, err := runCase(opts, "flexraid", workDirs, block.bytes, block.label, direction, files)
+			measured, generated, err := runCase(opts, "flexraid", workDirs, block.bytes, block.label, direction, files, fileCount)
 			if err != nil {
 				return fmt.Errorf("flexraid %s %s: %w", direction, block.label, err)
 			}
@@ -237,8 +233,7 @@ func Run(args []string) (runErr error) {
 	if err := writeReports(opts.outputDir, samples); err != nil {
 		return err
 	}
-	fmt.Printf("Results: %s\n", opts.outputDir)
-	return nil
+	fmt.Printf("Results: %s\n", opts.outputDir)	return nil
 }
 
 // runRaw measures one caller-selected directory without loading or consulting
@@ -250,9 +245,8 @@ func runRaw(args []string) error {
 	var directory string
 	flags.StringVar(&directory, "directory", "", "directory on the physical filesystem to benchmark")
 	flags.StringVar(&opts.outputDir, "output", "./flexraid-raw-bench-results", "result directory")
-	flags.Int64Var(&opts.totalBytes, "size", 512<<20, "total bytes per test case")
-	var durationSeconds int
-	flags.IntVar(&durationSeconds, "duration-seconds", int(defaultCaseDuration/time.Second), "maximum duration of each I/O measurement in seconds")
+	flags.IntVar(&opts.maxFiles, "max-files", 1024, "maximum files per I/O size")
+	flags.Int64Var(&opts.referenceBytes, "reference-bytes", 64<<20, "logical byte target used to derive per-size file counts")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -262,11 +256,11 @@ func runRaw(args []string) error {
 	if directory == "" {
 		return errors.New("--directory is required")
 	}
-	if durationSeconds <= 0 {
-		return errors.New("--duration-seconds must be positive")
+	if opts.maxFiles <= 0 {
+		return errors.New("--max-files must be positive")
 	}
-	if opts.totalBytes < ioSizes[len(ioSizes)-1].bytes {
-		return fmt.Errorf("--size must be at least %d bytes", ioSizes[len(ioSizes)-1].bytes)
+	if opts.referenceBytes <= 0 {
+		return errors.New("--reference-bytes must be positive")
 	}
 	absolute, err := filepath.Abs(directory)
 	if err != nil {
@@ -294,14 +288,14 @@ func runRaw(args []string) error {
 		return fmt.Errorf("create temporary raw benchmark directory: %w", err)
 	}
 	defer os.RemoveAll(workDir)
-	opts.duration = time.Duration(durationSeconds) * time.Second
-
 	var samples []sample
 	for _, block := range ioSizes {
+		fileCount := benchmarkFileCount(block.bytes, opts.referenceBytes, opts.maxFiles)
+		fmt.Printf("Benchmark workload %s: files=%d logical_bytes=%d\\n", block.label, fileCount, int64(fileCount)*block.bytes)
 		var files []string
 		for _, direction := range []string{"write", "overwrite", "read"} {
 			fmt.Printf("Running %-10s %-8s %s ...\n", "raw", direction, block.label)
-			measured, generated, err := runCase(opts, "raw", []string{workDir}, block.bytes, block.label, direction, files)
+			measured, generated, err := runCase(opts, "raw", []string{workDir}, block.bytes, block.label, direction, files, fileCount)
 			if err != nil {
 				return fmt.Errorf("raw %s %s: %w", direction, block.label, err)
 			}
@@ -477,8 +471,7 @@ func createTemporaryStorageRoots(disks []management.DriveConfig) ([]string, erro
 func renderWorkerConfig(disks []management.DriveConfig, roots []string, mountpoint, socketPath string) (string, error) {
 	if len(disks) != len(roots) {
 		return "", fmt.Errorf("disk count %d does not match temporary storage root count %d", len(disks), len(roots))
-	}
-	var builder strings.Builder
+	}	var builder strings.Builder
 	builder.WriteString("disks:\n")
 	for index, disk := range disks {
 		for _, value := range []string{roots[index], disk.Mountpoint, disk.WWN} {
@@ -709,7 +702,7 @@ func removeWorkDirs(paths []string) error {
 	return cleanupErr
 }
 
-func runCase(opts options, filesystem string, paths []string, blockSize int64, label, direction string, files []string) (sample, []string, error) {
+func runCase(opts options, filesystem string, paths []string, blockSize int64, label, direction string, files []string, fileCount int) (sample, []string, error) {
 	if err := dropCaches(); err != nil {
 		return sample{}, nil, fmt.Errorf("drop filesystem caches before %s: %w", direction, err)
 	}
@@ -717,14 +710,13 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 	var bytes, operations int64
 	var elapsed time.Duration
 	var generated []string
-	var err error
-	switch direction {
+	var err error	switch direction {
 	case "write":
-		generated, bytes, operations, elapsed, err = createBenchmarkFiles(paths, blockSize, opts.totalBytes, opts.duration)
+		generated, bytes, operations, elapsed, err = createBenchmarkFiles(paths, blockSize, fileCount)
 	case "overwrite":
-		bytes, operations, elapsed, err = measureOverwrite(files, blockSize, opts.duration)
+		bytes, operations, elapsed, err = measureOverwrite(files, blockSize)
 	case "read":
-		bytes, operations, elapsed, err = measureColdRead(files, blockSize, opts.duration)
+		bytes, operations, elapsed, err = measureColdRead(files, blockSize)
 	default:
 		return sample{}, nil, fmt.Errorf("unknown benchmark direction %q", direction)
 	}
@@ -745,51 +737,54 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 	return result, generated, nil
 }
 
-func createBenchmarkFiles(paths []string, blockSize, totalBytes int64, limit time.Duration) ([]string, int64, int64, time.Duration, error) {
+func benchmarkFileCount(blockSize, referenceBytes int64, maxFiles int) int {
+	count := int(referenceBytes / blockSize)
+	if count < 1 {
+		count = 1
+	}
+	if count > maxFiles {
+		count = maxFiles
+	}
+	return count
+}
+
+func createBenchmarkFiles(paths []string, blockSize int64, fileCount int) ([]string, int64, int64, time.Duration, error) {
 	if len(paths) == 0 {
 		return nil, 0, 0, 0, errors.New("no benchmark directories configured")
 	}
-	perDirectoryLimit := totalBytes / int64(len(paths))
-	if perDirectoryLimit < blockSize {
-		return nil, 0, 0, 0, fmt.Errorf("per-directory byte limit %d is smaller than I/O size %d", perDirectoryLimit, blockSize)
+	if fileCount <= 0 {
+		return nil, 0, 0, 0, errors.New("file count must be positive")
 	}
 	payload := make([]byte, blockSize)
 	if _, err := rand.Read(payload); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("generate benchmark payload: %w", err)
 	}
 	start := time.Now()
-	deadline := start.Add(limit)
 	var files []string
 	var totalBytesWritten, totalOperations int64
-	for _, dir := range paths {
-		var directoryBytes int64
-		for time.Now().Before(deadline) && directoryBytes+blockSize <= perDirectoryLimit {
-			file, err := os.CreateTemp(dir, "bench-*.dat")
-			if err != nil {
-				return files, totalBytesWritten, totalOperations, time.Since(start), fmt.Errorf("create new benchmark file in %s: %w", dir, err)
-			}
-			path := file.Name()
-			written, writeErr := writeFull(file, payload)
-			if writeErr == nil {
-				writeErr = file.Sync()
-			}
-			closeErr := file.Close()
-			if writeErr != nil {
-				_ = os.Remove(path)
-				return files, totalBytesWritten + int64(written), totalOperations, time.Since(start), errors.Join(fmt.Errorf("write new benchmark file %s: %w", path, writeErr), closeErr)
-			}
-			if closeErr != nil {
-				_ = os.Remove(path)
-				return files, totalBytesWritten, totalOperations, time.Since(start), fmt.Errorf("close new benchmark file %s: %w", path, closeErr)
-			}
-			files = append(files, path)
-			directoryBytes += int64(written)
-			totalBytesWritten += int64(written)
-			totalOperations++
+	for index := 0; index < fileCount; index++ {
+		dir := paths[index%len(paths)]
+		file, err := os.CreateTemp(dir, "bench-*.dat")
+		if err != nil {
+			return files, totalBytesWritten, totalOperations, time.Since(start), fmt.Errorf("create new benchmark file in %s: %w", dir, err)
 		}
-	}
-	if len(files) == 0 {
-		return nil, 0, 0, time.Since(start), errors.New("write phase did not create any files")
+		path := file.Name()
+		written, writeErr := writeFull(file, payload)
+		if writeErr == nil {
+			writeErr = file.Sync()
+		}
+		closeErr := file.Close()
+		if writeErr != nil {
+			_ = os.Remove(path)
+			return files, totalBytesWritten + int64(written), totalOperations, time.Since(start), errors.Join(fmt.Errorf("write new benchmark file %s: %w", path, writeErr), closeErr)
+		}
+		if closeErr != nil {
+			_ = os.Remove(path)
+			return files, totalBytesWritten, totalOperations, time.Since(start), fmt.Errorf("close new benchmark file %s: %w", path, closeErr)
+		}
+		files = append(files, path)
+		totalBytesWritten += int64(written)
+		totalOperations++
 	}
 	return files, totalBytesWritten, totalOperations, time.Since(start), nil
 }
@@ -809,7 +804,7 @@ func writeFull(file *os.File, payload []byte) (int, error) {
 	return total, nil
 }
 
-func measureOverwrite(paths []string, blockSize int64, limit time.Duration) (int64, int64, time.Duration, error) {
+func measureOverwrite(paths []string, blockSize int64) (int64, int64, time.Duration, error) {
 	if len(paths) == 0 {
 		return 0, 0, 0, errors.New("overwrite phase has no files")
 	}
@@ -818,47 +813,37 @@ func measureOverwrite(paths []string, blockSize int64, limit time.Duration) (int
 		return 0, 0, 0, fmt.Errorf("generate overwrite payload: %w", err)
 	}
 	start := time.Now()
-	deadline := start.Add(limit)
 	var totalBytes, totalOperations int64
-	for time.Now().Before(deadline) {
-		for _, path := range paths {
-			if !time.Now().Before(deadline) {
-				break
-			}
-			file, err := os.OpenFile(path, os.O_WRONLY, 0)
-			if err != nil {
-				return totalBytes, totalOperations, time.Since(start), fmt.Errorf("open existing file %s for overwrite: %w", path, err)
-			}
-			written, writeErr := writeFull(file, payload)
-			if writeErr == nil {
-				writeErr = file.Sync()
-			}
-			closeErr := file.Close()
-			if writeErr != nil {
-				return totalBytes + int64(written), totalOperations, time.Since(start), errors.Join(fmt.Errorf("overwrite %s: %w", path, writeErr), closeErr)
-			}
-			if closeErr != nil {
-				return totalBytes + int64(written), totalOperations, time.Since(start), fmt.Errorf("close overwritten file %s: %w", path, closeErr)
-			}
-			totalBytes += int64(written)
-			totalOperations++
+	for _, path := range paths {
+		file, err := os.OpenFile(path, os.O_WRONLY, 0)
+		if err != nil {
+			return totalBytes, totalOperations, time.Since(start), fmt.Errorf("open existing file %s for overwrite: %w", path, err)
 		}
+		written, writeErr := writeFull(file, payload)
+		if writeErr == nil {
+			writeErr = file.Sync()
+		}
+		closeErr := file.Close()
+		if writeErr != nil {
+			return totalBytes + int64(written), totalOperations, time.Since(start), errors.Join(fmt.Errorf("overwrite %s: %w", path, writeErr), closeErr)
+		}
+		if closeErr != nil {
+			return totalBytes + int64(written), totalOperations, time.Since(start), fmt.Errorf("close overwritten file %s: %w", path, closeErr)
+		}
+		totalBytes += int64(written)
+		totalOperations++
 	}
 	return totalBytes, totalOperations, time.Since(start), nil
 }
 
-func measureColdRead(paths []string, blockSize int64, limit time.Duration) (int64, int64, time.Duration, error) {
+func measureColdRead(paths []string, blockSize int64) (int64, int64, time.Duration, error) {
 	if len(paths) == 0 {
 		return 0, 0, 0, errors.New("read phase has no files")
 	}
 	buffer := make([]byte, blockSize)
 	start := time.Now()
-	deadline := start.Add(limit)
 	var totalBytes, totalOperations int64
 	for _, path := range paths {
-		if !time.Now().Before(deadline) {
-			break
-		}
 		file, err := os.Open(path)
 		if err != nil {
 			return totalBytes, totalOperations, time.Since(start), fmt.Errorf("open benchmark file %s for read: %w", path, err)
