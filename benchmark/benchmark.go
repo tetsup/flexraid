@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -666,16 +668,22 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 	if perJob < blockSize {
 		return sample{}, fmt.Errorf("per-job size %d is smaller than block size %d", perJob, blockSize)
 	}
+	if direction == "read" {
+		if err := dropCaches(); err != nil {
+			return sample{}, fmt.Errorf("drop filesystem caches before cold read: %w", err)
+		}
+		bw, iops, err := measureColdRead(paths, blockSize, caseRuntime)
+		if err != nil {
+			return sample{}, err
+		}
+		return sample{Filesystem: filesystem, IOSize: blockSize, Label: label, Direction: direction, BWBytes: bw, IOPS: iops}, nil
+	}
+
 	jobPath := filepath.Join(opts.outputDir, filesystem+"-"+label+"-"+direction+".fio")
 	resultPath := filepath.Join(opts.outputDir, filesystem+"-"+label+"-"+direction+".json")
 	jobConfig := buildFioJob(paths, blockSize, perJob, direction)
 	if err := os.WriteFile(jobPath, []byte(jobConfig), 0600); err != nil {
 		return sample{}, fmt.Errorf("write fio job: %w", err)
-	}
-	if direction == "read" {
-		if err := dropCaches(); err != nil {
-			return sample{}, fmt.Errorf("drop filesystem caches before cold read: %w", err)
-		}
 	}
 	command := exec.Command(opts.fioPath, jobPath, "--output-format=json", "--output="+resultPath)
 	command.Stdout = os.Stdout
@@ -693,12 +701,8 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 	}
 	var totalBW, totalIOPS float64
 	for _, job := range report.Jobs {
-		result := job.Read
-		if direction == "write" {
-			result = job.Write
-		}
-		totalBW += result.BWBytes
-		totalIOPS += result.IOPS
+		totalBW += job.Write.BWBytes
+		totalIOPS += job.Write.IOPS
 	}
 	return sample{Filesystem: filesystem, IOSize: blockSize, Label: label, Direction: direction, BWBytes: totalBW, IOPS: totalIOPS}, nil
 }
@@ -736,6 +740,59 @@ func dropCaches() error {
 		return fmt.Errorf("write /proc/sys/vm/drop_caches: %w", err)
 	}
 	return nil
+}
+
+
+func measureColdRead(paths []string, blockSize int64, limit time.Duration) (float64, float64, error) {
+	start := time.Now()
+	deadline := start.Add(limit)
+	var totalBytes atomic.Int64
+	var totalOps atomic.Int64
+	var wg sync.WaitGroup
+	errCh := make(chan error, len(paths))
+	for _, dir := range paths {
+		path := filepath.Join(dir, "data.bin")
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			file, err := os.Open(path)
+			if err != nil {
+				errCh <- fmt.Errorf("open %s: %w", path, err)
+				return
+			}
+			defer file.Close()
+			buffer := make([]byte, blockSize)
+			for time.Now().Before(deadline) {
+				n, readErr := file.Read(buffer)
+				if n > 0 {
+					totalBytes.Add(int64(n))
+					totalOps.Add(1)
+				}
+				if readErr != nil {
+					if errors.Is(readErr, io.EOF) {
+						return
+					}
+					errCh <- fmt.Errorf("read %s: %w", path, readErr)
+					return
+				}
+				if n == 0 {
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			return 0, 0, err
+		}
+	}
+	elapsed := time.Since(start).Seconds()
+	if elapsed <= 0 {
+		return 0, 0, errors.New("cold-read measurement elapsed time is zero")
+	}
+	return float64(totalBytes.Load()) / elapsed, float64(totalOps.Load()) / elapsed, nil
 }
 
 func writeReports(outputDir string, samples []sample) error {
