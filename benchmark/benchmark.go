@@ -728,11 +728,11 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 	result := sample{Filesystem: filesystem, IOSize: blockSize, Label: label, Direction: direction, Bytes: bytes, Operations: operations, Elapsed: elapsed}
 	result.BWBytes = float64(bytes) / elapsed.Seconds()
 	result.IOPS = float64(operations) / elapsed.Seconds()
-	fileCount := len(generated)
+	measuredFileCount := len(generated)
 	if direction != "write" {
-		fileCount = len(files)
+		measuredFileCount = len(files)
 	}
-	fmt.Printf("Completed %-8s %-10s %-9s elapsed=%s operations=%d bytes=%d (%.2f MiB) bandwidth=%.2f MiB/s IOPS=%.2f files=%d\n", direction, filesystem, label, elapsed.Round(time.Millisecond), operations, bytes, float64(bytes)/(1024*1024), result.BWBytes/(1024*1024), result.IOPS, fileCount)
+	fmt.Printf("Completed %-8s %-10s %-9s elapsed=%s operations=%d bytes=%d (%.2f MiB) bandwidth=%.2f MiB/s IOPS=%.2f files=%d\n", direction, filesystem, label, elapsed.Round(time.Millisecond), operations, bytes, float64(bytes)/(1024*1024), result.BWBytes/(1024*1024), result.IOPS, measuredFileCount)
 	return result, generated, nil
 }
 
