@@ -104,3 +104,21 @@ func TestLoadConfigRequiresGRPCSocketPath(t *testing.T) {
 		t.Fatalf("LoadConfig error = %v, want required gRPC socket path error", err)
 	}
 }
+
+func TestLoadConfigCanDisableGRPC(t *testing.T) {
+	yaml := "disks:\\n" +
+		"  - root: /data/disk1\\n    mountpoint: /mnt/disk1\\n    wwn: w1\\n" +
+		"  - root: /data/disk2\\n    mountpoint: /mnt/disk2\\n    wwn: w2\\n" +
+		"  - root: /data/disk3\\n    mountpoint: /mnt/disk3\\n    wwn: w3\\n" +
+		"  - root: /data/disk4\\n    mountpoint: /mnt/disk4\\n    wwn: w4\\n" +
+		"mountpoint: /mnt/flexraid\\n" +
+		"grpc_socket_path: /run/flexraid/worker.sock\\n" +
+		"grpc_enabled: false\\n"
+	got, err := LoadConfig(writeManagementConfig(t, yaml))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GRPCSocketPath != "" {
+		t.Fatalf("GRPCSocketPath = %q, want empty when gRPC is disabled", got.GRPCSocketPath)
+	}
+}
