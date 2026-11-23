@@ -59,6 +59,8 @@ func percentileDuration(sorted []time.Duration, percentile float64) time.Duratio
 }
 
 type workloadMetrics struct {
+	syncLatency latencySamples
+	syncOps atomic.Uint64
 	duration        time.Duration
 	writeHash       string
 	readHash        string
@@ -135,9 +137,10 @@ func runConcurrentWorkload(mountpoint, socket string, opts options, measured *re
 	writeTotal, writeP50, writeP95, writeP99 := metrics.writeLatency.summary()
 	readTotal, readP50, readP95, readP99 := metrics.readLatency.summary()
 	_, metaP50, metaP95, metaP99 := metrics.metadataLatency.summary()
+	_, syncP50, syncP95, syncP99 := metrics.syncLatency.summary()
 	rpcTotal, rpcP50, rpcP95, rpcP99 := metrics.rpcLatency.summary()
 	writeBytes, readBytes := metrics.writeBytes.Load(), metrics.readBytes.Load()
-	writeOps, readOps, metaOps := metrics.writeOps.Load(), metrics.readOps.Load(), metrics.metadataOps.Load()
+	writeOps, readOps, metaOps, syncOps := metrics.writeOps.Load(), metrics.readOps.Load(), metrics.metadataOps.Load(), metrics.syncOps.Load()
 	rpcCalls, rpcErrors := metrics.rpcCalls.Load(), metrics.rpcErrors.Load()
 
 	measured.Duration = elapsed
@@ -146,13 +149,15 @@ func runConcurrentWorkload(mountpoint, socket string, opts options, measured *re
 	measured.IntegrityVerified = metrics.writeHash != "" && metrics.writeHash == metrics.readHash
 	measured.Workers = opts.workers
 	measured.WriteOps, measured.ReadOps, measured.MetadataOps = writeOps, readOps, metaOps
-	measured.IOPS = float64(writeOps+readOps+metaOps) / elapsed.Seconds()
+	measured.IOPS = float64(writeOps+readOps+metaOps+syncOps) / elapsed.Seconds()
 	measured.WriteMiBPerSec = float64(writeBytes) / (1 << 20) / elapsed.Seconds()
 	measured.ReadMiBPerSec = float64(readBytes) / (1 << 20) / elapsed.Seconds()
 	measured.AverageWriteLatency, measured.AverageReadLatency = writeTotal, readTotal
 	measured.WriteLatencyP50, measured.WriteLatencyP95, measured.WriteLatencyP99 = writeP50, writeP95, writeP99
 	measured.ReadLatencyP50, measured.ReadLatencyP95, measured.ReadLatencyP99 = readP50, readP95, readP99
 	measured.MetadataLatencyP50, measured.MetadataLatencyP95, measured.MetadataLatencyP99 = metaP50, metaP95, metaP99
+	measured.SyncOps = syncOps
+	measured.SyncLatencyP50, measured.SyncLatencyP95, measured.SyncLatencyP99 = syncP50, syncP95, syncP99
 	measured.RPCCalls, measured.RPCErrors = rpcCalls, rpcErrors
 	measured.AverageRPCLatency, measured.RPCLatencyP50, measured.RPCLatencyP95, measured.RPCLatencyP99 = rpcTotal, rpcP50, rpcP95, rpcP99
 	if active && rpcCalls == 0 {
@@ -389,8 +394,8 @@ func runFilesystemWorker(ctx context.Context, workerID int, file *os.File, direc
 			return fmt.Errorf("worker %d Sync after write: %w", workerID, err)
 		}
 		if metrics != nil {
-			metrics.metadataLatency.add(time.Since(started))
-			metrics.metadataOps.Add(1)
+			metrics.syncLatency.add(time.Since(started))
+			metrics.syncOps.Add(1)
 		}
 
 		started = time.Now()
