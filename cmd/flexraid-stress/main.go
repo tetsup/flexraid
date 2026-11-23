@@ -33,6 +33,7 @@ const (
 
 type result struct {
 	Mode              mode          `json:"mode"`
+	Repetition        int           `json:"repetition"`
 	Bytes             int64         `json:"bytes"`
 	WriteDuration     time.Duration `json:"write_duration_ns"`
 	ReadDuration      time.Duration `json:"read_duration_ns"`
