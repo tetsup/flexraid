@@ -22,6 +22,21 @@ func TestFioReportDecodesBandwidth(t *testing.T) {
 	}
 }
 
+func TestDriveCapacityPathFallsBackToPhysicalMountpoint(t *testing.T) {
+	mountpoint := t.TempDir()
+	disk := management.DriveConfig{
+		Root: filepath.Join(mountpoint, "not-created-yet"),
+		Mountpoint: mountpoint,
+	}
+	path, err := driveCapacityPath(disk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != mountpoint {
+		t.Fatalf("capacity path = %q, want %q", path, mountpoint)
+	}
+}
+
 func TestSelectBenchmarkDisksPreservesConfiguredOrderForEqualCapacity(t *testing.T) {
 	parent := t.TempDir()
 	disks := make([]management.DriveConfig, 5)
