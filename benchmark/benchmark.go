@@ -911,18 +911,11 @@ func writeReports(outputDir string, samples []sample) error {
 	}
 
 \tvar markdown strings.Builder
-	markdown.WriteString("| I/O size | Direction | FlexRAID |\n")
-	markdown.WriteString("|---|---|---:|\n")
-	for _, block := range ioSizes {
-		for _, direction := range []string{"read", "write", "overwrite"} {
-			bandwidth := 0.0
-			for _, value := range samples {
-				if value.IOSize == block.bytes && value.Direction == direction {
-					bandwidth = value.BWBytes / (1024 * 1024)
-				}
-			}
-			fmt.Fprintf(&markdown, "| %s | %s | %.2f MiB/s |\n", block.label, direction, bandwidth)
-		}
+	markdown.WriteString("| Filesystem | I/O size | Direction | Bandwidth |\n")
+	markdown.WriteString("|---|---|---|---:|\n")
+\tfor _, value := range samples {
+		fmt.Fprintf(&markdown, "| %s | %s | %s | %.2f MiB/s |\n",
+			value.Filesystem, value.Label, value.Direction, value.BWBytes/(1024*1024))
 	}
 	if err := os.WriteFile(filepath.Join(outputDir, "summary.md"), []byte(markdown.String()), 0644); err != nil {
 		return fmt.Errorf("write Markdown summary: %w", err)
