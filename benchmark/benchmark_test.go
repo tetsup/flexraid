@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"testing"
+	"testing"\n\t"time"
 
 	"github.com/tetsup/flexraid/management"
 )
@@ -19,6 +19,44 @@ func TestFioReportDecodesBandwidth(t *testing.T) {
 	}
 	if len(report.Jobs) != 1 || report.Jobs[0].Write.BWBytes != 5678 || report.Jobs[0].Read.IOPS != 2 {
 		t.Fatalf("unexpected report: %+v", report)
+	}
+}
+
+
+func TestBuildFioJobUsesBoundedWriteWindow(t *testing.T) {
+	job := buildFioJob([]string{"/tmp/one"}, 4096, 1<<20, "write")
+	for _, expected := range []string{"runtime=20\\n", "time_based=1\\n", "size=1048576\\n", "bs=4096\\n"} {
+		if !strings.Contains(job, expected) {
+			t.Fatalf("fio job missing %q:\\n%s", expected, job)
+		}
+	}
+}
+
+func TestBuildFioJobDoesNotRepeatReadDataset(t *testing.T) {
+	job := buildFioJob([]string{"/tmp/one"}, 4096, 1<<20, "read")
+	if strings.Contains(job, "time_based=1") {
+		t.Fatalf("read job repeats dataset:\\n%s", job)
+	}
+}
+
+func TestMeasureColdReadReadsEachFileOnce(t *testing.T) {
+	root := t.TempDir()
+	paths := []string{filepath.Join(root, "first"), filepath.Join(root, "second")}
+	for index, path := range paths {
+		if err := os.Mkdir(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(path, "data.bin"), []byte(strings.Repeat("x", 8192)), 0600); err != nil {
+			t.Fatal(err)
+		}
+		_ = index
+	}
+	bw, iops, err := measureColdRead(paths, 4096, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bw <= 0 || iops <= 0 {
+		t.Fatalf("measureColdRead returned non-positive metrics: bw=%f iops=%f", bw, iops)
 	}
 }
 
