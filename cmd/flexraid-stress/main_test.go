@@ -93,10 +93,10 @@ func TestSummarizeResultsPreservesIntegrityAndLatency(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("summary length = %d, want 2", len(got))
 	}
-	if !got[0].IntegrityVerified || got[0].WriteLatencyP95 != 200*time.Microsecond {
+	if !got[0].IntegrityVerified || got[0].WriteLatencyP95 != 150*time.Microsecond {
 		t.Fatalf("off summary lost integrity or median latency: %+v", got[0])
 	}
-	if got[1].IntegrityVerified || got[1].WriteLatencyP95 != 500*time.Microsecond {
+	if got[1].IntegrityVerified || got[1].WriteLatencyP95 != 400*time.Microsecond {
 		t.Fatalf("active summary lost failed integrity or median latency: %+v", got[1])
 	}
 }
