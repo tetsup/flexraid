@@ -267,25 +267,49 @@ func runRaw(args []string) error {
 	flags.Int64Var(&opts.totalBytes, "size", 512<<20, "total bytes per test case")
 	var durationSeconds int
 	flags.IntVar(&durationSeconds, "duration-seconds", int(defaultCaseDuration/time.Second), "maximum duration of each I/O measurement in seconds")
-	if err := flags.Parse(args); err != nil { return err }
-	if flags.NArg() != 0 { return fmt.Errorf("unexpected arguments: %s", strings.Join(flags.Args(), " ")) }
-	if directory == "" { return errors.New("--directory is required") }
-	if durationSeconds <= 0 { return errors.New("--duration-seconds must be positive") }
-	if opts.totalBytes < ioSizes[len(ioSizes)-1].bytes { return fmt.Errorf("--size must be at least %d bytes", ioSizes[len(ioSizes)-1].bytes) }
-	if _, err := exec.LookPath(opts.fioPath); err != nil { return fmt.Errorf("find fio executable: %w", err) }
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return fmt.Errorf("unexpected arguments: %s", strings.Join(flags.Args(), " "))
+	}
+	if directory == "" {
+		return errors.New("--directory is required")
+	}
+	if durationSeconds <= 0 {
+		return errors.New("--duration-seconds must be positive")
+	}
+	if opts.totalBytes < ioSizes[len(ioSizes)-1].bytes {
+		return fmt.Errorf("--size must be at least %d bytes", ioSizes[len(ioSizes)-1].bytes)
+	}
+	if _, err := exec.LookPath(opts.fioPath); err != nil {
+		return fmt.Errorf("find fio executable: %w", err)
+	}
 	absolute, err := filepath.Abs(directory)
-	if err != nil { return fmt.Errorf("resolve benchmark directory: %w", err) }
+	if err != nil {
+		return fmt.Errorf("resolve benchmark directory: %w", err)
+	}
 	info, err := os.Stat(absolute)
-	if err != nil { return fmt.Errorf("stat benchmark directory: %w", err) }
-	if !info.IsDir() { return fmt.Errorf("benchmark path %s is not a directory", absolute) }
+	if err != nil {
+		return fmt.Errorf("stat benchmark directory: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("benchmark path %s is not a directory", absolute)
+	}
 	outputPath, err := resolvePath(opts.outputDir)
-	if err != nil { return fmt.Errorf("resolve output directory: %w", err) }
+	if err != nil {
+		return fmt.Errorf("resolve output directory: %w", err)
+	}
 	if pathsOverlap(outputPath, absolute) {
 		return fmt.Errorf("output directory %s must not overlap benchmark directory %s", outputPath, absolute)
 	}
-	if err := os.MkdirAll(opts.outputDir, 0755); err != nil { return fmt.Errorf("create output directory: %w", err) }
+	if err := os.MkdirAll(opts.outputDir, 0755); err != nil {
+		return fmt.Errorf("create output directory: %w", err)
+	}
 	workDir, err := os.MkdirTemp(absolute, ".flexraid-raw-bench-")
-	if err != nil { return fmt.Errorf("create temporary raw benchmark directory: %w", err) }
+	if err != nil {
+		return fmt.Errorf("create temporary raw benchmark directory: %w", err)
+	}
 	defer os.RemoveAll(workDir)
 	opts.duration = time.Duration(durationSeconds) * time.Second
 	var samples []sample
@@ -293,12 +317,18 @@ func runRaw(args []string) error {
 		for _, direction := range []string{"write", "overwrite", "read"} {
 			fmt.Printf("Running %-10s %-8s %s ...\n", "raw", direction, block.label)
 			measured, err := runCase(opts, "raw", []string{workDir}, block.bytes, block.label, direction)
-			if err != nil { return fmt.Errorf("raw %s %s: %w", direction, block.label, err) }
+			if err != nil {
+				return fmt.Errorf("raw %s %s: %w", direction, block.label, err)
+			}
 			samples = append(samples, measured)
 		}
-		if err := removeModeFiles([]string{workDir}); err != nil { return fmt.Errorf("remove raw benchmark file: %w", err) }
+		if err := removeModeFiles([]string{workDir}); err != nil {
+			return fmt.Errorf("remove raw benchmark file: %w", err)
+		}
 	}
-	if err := writeReports(opts.outputDir, samples); err != nil { return err }
+	if err := writeReports(opts.outputDir, samples); err != nil {
+		return err
+	}
 	return nil
 }
 
