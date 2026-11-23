@@ -42,7 +42,6 @@ type options struct {
 	outputDir  string
 	fioPath    string
 	totalBytes int64
-	runtime    time.Duration
 }
 
 type fioJob struct {
@@ -86,7 +85,6 @@ func Run(args []string) (runErr error) {
 	flags.StringVar(&opts.outputDir, "output", "./flexraid-bench-results", "result directory")
 	flags.StringVar(&opts.fioPath, "fio", "fio", "fio executable path")
 	flags.Int64Var(&opts.totalBytes, "size", 512<<20, "total logical bytes per test case")
-	flags.DurationVar(&opts.runtime, "runtime", 0, "optional time-based fio runtime (0 runs the full size)")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -140,6 +138,9 @@ func Run(args []string) (runErr error) {
 
 	selected, err := selectBenchmarkDisks(config.Disks)
 	if err != nil {
+		return err
+	}
+	if err := validateBenchmarkCapacity(selected, opts.totalBytes); err != nil {
 		return err
 	}
 	for index, disk := range selected {
@@ -330,6 +331,26 @@ func selectBenchmarkDisks(disks []management.DriveConfig) ([]management.DriveCon
 		selected[index] = candidates[index].drive
 	}
 	return selected, nil
+}
+
+func validateBenchmarkCapacity(disks []management.DriveConfig, totalBytes int64) error {
+	// Six FlexRAID cases remain physically allocated in the isolated roots
+	// until the temporary Worker is stopped. A 3+1 layout stores roughly one
+	// third of the logical payload on each of the four drives.
+	required := uint64(totalBytes) * uint64(len(ioSizes)) / 3
+	required += required / 5
+	required += 64 << 20
+	for index, disk := range disks {
+		var stats syscall.Statfs_t
+		if err := syscall.Statfs(disk.Mountpoint, &stats); err != nil {
+			return fmt.Errorf("get available capacity for disk %d (%s): %w", index+1, disk.WWN, err)
+		}
+		available := uint64(stats.Bavail) * uint64(stats.Bsize)
+		if available < required {
+			return fmt.Errorf("disk %d (%s) has %d bytes available; benchmark needs at least %d bytes for isolated FlexRAID data", index+1, disk.WWN, available, required)
+		}
+	}
+	return nil
 }
 
 func createTemporaryStorageRoots(disks []management.DriveConfig) ([]string, error) {
@@ -611,10 +632,6 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 	builder.WriteString("group_reporting=1\n")
 	builder.WriteString("end_fsync=1\n")
 	builder.WriteString("invalidate=1\n")
-	if opts.runtime > 0 {
-		builder.WriteString("time_based=1\n")
-		builder.WriteString("runtime=" + opts.runtime.String() + "\n")
-	}
 	builder.WriteString("size=" + strconv.FormatInt(perJob, 10) + "\n")
 	for i, dir := range paths {
 		fmt.Fprintf(&builder, "[job-%d]\nfilename=%s\n", i+1, filepath.Join(dir, "data.bin"))
