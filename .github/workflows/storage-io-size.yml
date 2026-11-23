@@ -43,6 +43,9 @@ jobs:
           sudo modprobe fuse
           sudo modprobe loop
           sudo mkdir -p /dev/disk/by-id
+          : > "$RUNNER_TEMP/flexraid-bench-loops"
+          : > "$RUNNER_TEMP/flexraid-bench-mounts"
+          : > "$RUNNER_TEMP/flexraid-bench-links"
           for index in 1 2 3 4; do
             image="$RUNNER_TEMP/flexraid-bench-disk-$index.img"
             mount="/mnt/flexraid-bench-disk-$index"
@@ -131,35 +134,32 @@ jobs:
               echo 'runtime=20'
               echo 'ramp_time=3'
               echo 'group_reporting=1'
-              echo 'rw='$direction
+              echo "rw=$direction"
               echo "bs=$bytes"
-              echo 'size=64m'
-              echo 'filename_format=bench-$jobnum.dat'
+              echo 'size=128m'
               echo 'fallocate=none'
               if [[ "$direction" == write ]]; then
                 echo 'end_fsync=1'
               fi
-              if [[ "$filesystem" == raw ]]; then
-                for index in 1 2 3 4; do
-                  echo "[raw-disk-$index]"
-                  echo "filename=/mnt/flexraid-bench-disk-$index/bench-$label.dat"
-                done
-              else
-                echo '[flexraid]'
-                echo "filename=$fuse_mount/bench-$label.dat"
-                echo 'numjobs=4'
-                echo 'offset_increment=64m'
-              fi
+              for index in 1 2 3 4; do
+                echo "[$filesystem-job-$index]"
+                if [[ "$filesystem" == raw ]]; then
+                  echo "filename=/mnt/flexraid-bench-disk-$index/bench.dat"
+                else
+                  echo "filename=$fuse_mount/bench-$index.dat"
+                fi
+              done
             } > "$jobfile"
             if [[ "$direction" == read ]]; then
               sync
               echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null
             fi
-            fio "$jobfile" --output-format=json --output="$output"
+            sudo fio "$jobfile" --output-format=json --output="$output"
             python3 - "$output" "$filesystem" "$bytes" "$label" "$direction" >> benchmark-results/summary.csv <<'PY'
           import json, sys
           path, filesystem, size, label, direction = sys.argv[1:]
-          report = json.load(open(path, encoding="utf-8"))
+          with open(path, encoding="utf-8") as stream:
+              report = json.load(stream)
           jobs = report.get("jobs", [])
           total_bytes = sum(j.get(direction, {}).get("bw_bytes", 0) for j in jobs)
           total_iops = sum(j.get(direction, {}).get("iops", 0) for j in jobs)
@@ -170,10 +170,6 @@ jobs:
           PY
           }
 
-          for index in 1 2 3 4; do
-            sudo chown -R "$(id -u):$(id -g)" "/mnt/flexraid-bench-disk-$index"
-          done
-          sudo chown "$(id -u):$(id -g)" "$fuse_mount"
           for position in "${!sizes[@]}"; do
             bytes="${sizes[$position]}"
             label="${labels[$position]}"
@@ -181,6 +177,10 @@ jobs:
             for direction in write read; do
               run_fio raw "$bytes" "$label" "$direction"
               run_fio flexraid "$bytes" "$label" "$direction"
+            done
+            for index in 1 2 3 4; do
+              sudo rm -f "/mnt/flexraid-bench-disk-$index/bench.dat"
+              sudo rm -f "$fuse_mount/bench-$index.dat"
             done
             echo "::endgroup::"
           done
