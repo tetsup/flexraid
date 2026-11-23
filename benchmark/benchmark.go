@@ -337,9 +337,17 @@ func validateBenchmarkCapacity(disks []management.DriveConfig, totalBytes int64)
 	// Six FlexRAID cases remain physically allocated in the isolated roots
 	// until the temporary Worker is stopped. A 3+1 layout stores roughly one
 	// third of the logical payload on each of the four drives.
-	required := uint64(totalBytes) * uint64(len(ioSizes)) / 3
-	required += required / 5
-	required += 64 << 20
+	maxUint := ^uint64(0)
+	size := uint64(totalBytes)
+	if size > maxUint/uint64(len(ioSizes)) {
+		return fmt.Errorf("benchmark size %d is too large for capacity calculation", totalBytes)
+	}
+	required := size * uint64(len(ioSizes)) / 3
+	margin := required / 5
+	if required > maxUint-margin-(64<<20) {
+		return fmt.Errorf("benchmark size %d is too large for capacity calculation", totalBytes)
+	}
+	required += margin + (64 << 20)
 	for index, disk := range disks {
 		var stats syscall.Statfs_t
 		if err := syscall.Statfs(disk.Mountpoint, &stats); err != nil {
