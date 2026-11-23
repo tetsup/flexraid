@@ -114,7 +114,7 @@ func TestValidateOutputPathResolvesSymlinks(t *testing.T) {
 func testConfig(root string) management.Config {
 	parent := filepath.Dir(root)
 	return management.Config{
-		Disks: []management.DriveConfig{{Root: root, Mountpoint: filepath.Join(parent, "physical")}},
+		Disks:      []management.DriveConfig{{Root: root, Mountpoint: filepath.Join(parent, "physical")}},
 		Mountpoint: filepath.Join(parent, "fuse"),
 	}
 }
