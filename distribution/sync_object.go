@@ -72,7 +72,9 @@ func (d *Distribution) SyncObject(request SyncObjectRequest) (response SyncObjec
 			_, syncErr := d.ios[location.ioIndex].Sync(physicalio.SyncRequest{Context: ctx, Key: location.key})
 			d.recordChunkOperation("Sync", syncErr)
 			if err = syncErr; err != nil {
-				d.logger.Error("stripe synchronization failed", "object_id", request.ObjectID.String(), "stripe_id", rawID, "io_index", location.ioIndex, "error", err)
+				if d.logger != nil {
+					d.logger.Error("stripe synchronization failed", "object_id", request.ObjectID.String(), "stripe_id", rawID, "io_index", location.ioIndex, "error", err)
+				}
 				unlockStripe()
 				return response, fmt.Errorf("sync stripe %d on I/O %d: %w", rawID, location.ioIndex, err)
 			}
