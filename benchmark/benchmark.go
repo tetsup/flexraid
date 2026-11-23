@@ -120,6 +120,10 @@ func Run(args []string) (runErr error) {
 		return fmt.Errorf("resolve configured FUSE mountpoint: %w", err)
 	}
 	for index := range config.Disks {
+		config.Disks[index].Root, err = filepath.Abs(config.Disks[index].Root)
+		if err != nil {
+			return fmt.Errorf("resolve disk %d storage root: %w", index+1, err)
+		}
 		config.Disks[index].Mountpoint, err = filepath.Abs(config.Disks[index].Mountpoint)
 		if err != nil {
 			return fmt.Errorf("resolve disk %d physical mountpoint: %w", index+1, err)
@@ -268,12 +272,24 @@ func validatePhysicalMountpoints(disks []management.DriveConfig) error {
 		if _, ok := mounts[mountpoint]; !ok {
 			return fmt.Errorf("physical mountpoint %s for disk %d is not mounted", mountpoint, index+1)
 		}
-		info, err := os.Stat(mountpoint)
+		mountInfo, err := os.Stat(mountpoint)
 		if err != nil {
 			return fmt.Errorf("stat physical mountpoint for disk %d: %w", index+1, err)
 		}
-		if !info.IsDir() {
+		if !mountInfo.IsDir() {
 			return fmt.Errorf("physical mountpoint %s for disk %d is not a directory", mountpoint, index+1)
+		}
+		rootInfo, err := os.Stat(disk.Root)
+		if err != nil {
+			return fmt.Errorf("stat configured Storage Root for disk %d: %w", index+1, err)
+		}
+		if !rootInfo.IsDir() {
+			return fmt.Errorf("configured Storage Root %s for disk %d is not a directory", disk.Root, index+1)
+		}
+		rootStat, rootOK := rootInfo.Sys().(*syscall.Stat_t)
+		mountStat, mountOK := mountInfo.Sys().(*syscall.Stat_t)
+		if !rootOK || !mountOK || rootStat.Dev != mountStat.Dev {
+			return fmt.Errorf("configured Storage Root %s for disk %d is not on physical mountpoint %s", disk.Root, index+1, mountpoint)
 		}
 	}
 	return nil
@@ -319,7 +335,7 @@ func selectBenchmarkDisks(disks []management.DriveConfig) ([]management.DriveCon
 	candidates := make([]candidate, 0, len(disks))
 	for index, disk := range disks {
 		var stats syscall.Statfs_t
-		if err := syscall.Statfs(disk.Mountpoint, &stats); err != nil {
+		if err := syscall.Statfs(disk.Root, &stats); err != nil {
 			return nil, fmt.Errorf("get available capacity for disk %d (%s): %w", index+1, disk.WWN, err)
 		}
 		candidates = append(candidates, candidate{
