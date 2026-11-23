@@ -25,7 +25,9 @@ func (layer *Orchestration) UnlinkLocked(request UnlinkRequest) (response Unlink
 	defer func() {
 		layer.recordOperation("Unlink", started, err)
 		if err != nil {
-			layer.logger.Error("namespace unlink failed", "parent_id", request.ParentID.String(), "name", request.Name, "error", err)
+			if layer.logger != nil {
+				layer.logger.Error("namespace unlink failed", "parent_id", request.ParentID.String(), "name", request.Name, "error", err)
+			}
 		}
 	}()
 	response, err = layer.unlinkLocked(request)
