@@ -53,6 +53,7 @@ type options struct {
 	rpcEvery   time.Duration
 	reportPath string
 	startup    time.Duration
+	repetitions int
 }
 
 func main() {
@@ -72,12 +73,13 @@ func run() error {
 	flag.DurationVar(&opts.rpcEvery, "rpc-interval", 250*time.Millisecond, "on-active GetStatus interval")
 	flag.StringVar(&opts.reportPath, "report", "flexraid-stress-report.json", "JSON report path")
 	flag.DurationVar(&opts.startup, "startup-timeout", 90*time.Second, "Worker startup timeout")
+	flag.IntVar(&opts.repetitions, "repetitions", 2, "number of alternating comparison rounds")
 	flag.Parse()
 
 	if opts.configPath == "" {
 		return errors.New("--config is required; use a dedicated test configuration with test-only storage roots")
 	}
-	if opts.size <= 0 || opts.warmupSize < 0 || opts.blockSize <= 0 || opts.rpcEvery <= 0 {
+	if opts.size <= 0 || opts.warmupSize < 0 || opts.blockSize <= 0 || opts.rpcEvery <= 0 || opts.repetitions <= 0 {
 		return errors.New("size, block-size, and rpc-interval must be positive; warmup-size must not be negative")
 	}
 	if _, err := os.Stat(opts.workerPath); err != nil {
@@ -88,21 +90,29 @@ func run() error {
 		return fmt.Errorf("read config template: %w", err)
 	}
 
-	var results []result
-	for _, selected := range []mode{modeOff, modeIdle, modeActive} {
-		fmt.Printf("Running %s...\n", selected)
-		measured, err := runMode(opts, string(template), selected)
-		if err != nil {
-			return fmt.Errorf("%s: %w", selected, err)
+	var samples []result
+	for repetition := 1; repetition <= opts.repetitions; repetition++ {
+		order := []mode{modeOff, modeIdle, modeActive}
+		if repetition%2 == 0 {
+			order = []mode{modeActive, modeIdle, modeOff}
 		}
-		results = append(results, measured)
-		printResult(measured)
+		for _, selected := range order {
+			fmt.Printf("Running %s (round %d/%d)...\n", selected, repetition, opts.repetitions)
+			measured, err := runMode(opts, string(template), selected)
+			if err != nil {
+				return fmt.Errorf("%s round %d: %w", selected, repetition, err)
+			}
+			measured.Repetition = repetition
+			samples = append(samples, measured)
+			printResult(measured)
+		}
 	}
-
+	summary := summarizeResults(samples)
 	report := struct {
 		CreatedAt time.Time `json:"created_at"`
-		Results   []result  `json:"results"`
-	}{CreatedAt: time.Now().UTC(), Results: results}
+		Samples   []result  `json:"samples"`
+		Summary   []result  `json:"median_summary"`
+	}{CreatedAt: time.Now().UTC(), Samples: samples, Summary: summary}
 	encoded, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode report: %w", err)
@@ -110,7 +120,7 @@ func run() error {
 	if err := os.WriteFile(opts.reportPath, append(encoded, '\n'), 0600); err != nil {
 		return fmt.Errorf("write report: %w", err)
 	}
-	fmt.Printf("\n%s\n", markdownReport(results))
+	fmt.Printf("\n%s\n", markdownReport(summary))
 	fmt.Printf("JSON report: %s\n", opts.reportPath)
 	return nil
 }
