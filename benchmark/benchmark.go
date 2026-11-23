@@ -94,8 +94,8 @@ func Run(args []string) (runErr error) {
 	if opts.configPath == "" {
 		return errors.New("--config is required")
 	}
-	if opts.totalBytes <= 0 || opts.runtime < 0 {
-		return errors.New("--size must be positive and --runtime must not be negative")
+	if opts.totalBytes <= 0 {
+		return errors.New("--size must be positive")
 	}
 	if _, err := exec.LookPath(opts.fioPath); err != nil {
 		return fmt.Errorf("find fio executable: %w", err)
