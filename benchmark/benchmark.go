@@ -707,7 +707,6 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 	return sample{Filesystem: filesystem, IOSize: blockSize, Label: label, Direction: direction, BWBytes: totalBW, IOPS: totalIOPS}, nil
 }
 
-
 func buildFioJob(paths []string, blockSize, perJob int64, direction string) string {
 	var builder strings.Builder
 	builder.WriteString("[global]\\n")
@@ -741,7 +740,6 @@ func dropCaches() error {
 	}
 	return nil
 }
-
 
 func measureColdRead(paths []string, blockSize int64, limit time.Duration) (float64, float64, error) {
 	start := time.Now()
