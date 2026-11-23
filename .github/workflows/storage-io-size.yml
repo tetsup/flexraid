@@ -155,14 +155,14 @@ jobs:
                   writer.writerows(output)
 
               with open(f"{root}/{filesystem}/average.md", "w") as stream:
-                  stream.write("| I/O size | Direction | Avg elapsed | Avg operations | Avg bytes | Avg bandwidth | Avg IOPS |\\n")
-                  stream.write("|---|---|---:|---:|---:|---:|---:|\\n")
+                  stream.write("| I/O size | Direction | Avg elapsed | Avg operations | Avg bytes | Avg bandwidth | Avg IOPS |\n")
+                  stream.write("|---|---|---:|---:|---:|---:|---:|\n")
                   for row in output:
                       stream.write(
                           f"| {row['label']} | {row['direction']} | {float(row['elapsed_seconds']):.3f}s "
                           f"| {float(row['operations']):.1f} | {float(row['bytes']):.1f} "
                           f"| {float(row['bw_bytes_per_sec']) / (1024*1024):.2f} MiB/s "
-                          f"| {float(row['iops']):.2f} |\\n")
+                          f"| {float(row['iops']):.2f} |\n")
           PY
 
       - name: Upload benchmark results and summary
