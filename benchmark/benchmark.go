@@ -20,9 +20,9 @@ import (
 )
 
 const (
-	fuseSuperMagic = 0x65735546
+	fuseSuperMagic       = 0x65735546
 	workerStartupTimeout = 90 * time.Second
-	workerStopTimeout = 10 * time.Second
+	workerStopTimeout    = 10 * time.Second
 )
 
 var ioSizes = []struct {
@@ -69,12 +69,12 @@ type sample struct {
 }
 
 type workerProcess struct {
-	command   *exec.Cmd
+	command    *exec.Cmd
 	mountpoint string
-	logPath   string
-	done      chan struct{}
-	waitErr   error
-	waitMu    sync.Mutex
+	logPath    string
+	done       chan struct{}
+	waitErr    error
+	waitMu     sync.Mutex
 }
 
 // Run measures raw physical storage and an isolated temporary FlexRAID Worker.
@@ -379,10 +379,10 @@ func startWorker(mountpoint, configPath, logPath string) (*workerProcess, error)
 		return nil, fmt.Errorf("start temporary Worker: %w", err)
 	}
 	process := &workerProcess{
-		command: command,
+		command:    command,
 		mountpoint: mountpoint,
-		logPath: logPath,
-		done: make(chan struct{}),
+		logPath:    logPath,
+		done:       make(chan struct{}),
 	}
 	go func() {
 		err := command.Wait()
