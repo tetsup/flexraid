@@ -2,6 +2,7 @@ package benchmark
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -38,6 +39,18 @@ func TestValidateOutputPathAllowsSibling(t *testing.T) {
 	config := testConfig(filepath.Join(root, "disk"))
 	if err := validateOutputPath(filepath.Join(root, "results"), config); err != nil {
 		t.Fatalf("validateOutputPath returned error: %v", err)
+	}
+}
+
+func TestValidateOutputPathResolvesSymlinks(t *testing.T) {
+	root := t.TempDir()
+	config := testConfig(filepath.Join(root, "disk"))
+	link := filepath.Join(root, "output-link")
+	if err := os.Symlink(config.Disks[0].Root, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateOutputPath(link, config); err == nil {
+		t.Fatal("validateOutputPath accepted a symlink into a storage root")
 	}
 }
 
