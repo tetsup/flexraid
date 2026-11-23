@@ -123,11 +123,10 @@ func runConcurrentWorkload(mountpoint, socket string, opts options, measured *re
 	}
 
 	metrics := &workloadMetrics{}
-	started := time.Now()
 	if err := runFilesystemPhase(mountpoint, dataPath, opts, opts.duration, active, metrics); err != nil {
 		return err
 	}
-	elapsed := time.Since(started)
+	elapsed := metrics.duration
 	if elapsed <= 0 {
 		return fmt.Errorf("invalid measured duration")
 	}
@@ -270,13 +269,15 @@ func runFilesystemPhase(mountpoint, dataPath string, opts options, duration time
 		<-ready
 	}
 	close(start)
+	phaseStarted := time.Now()
 	timer := time.NewTimer(duration)
 	select {
 	case <-timer.C:
 	case <-ctx.Done():
-		if !timer.Stop() {
-			<-timer.C
-		}
+		timer.Stop()
+	}
+	if metrics != nil {
+		metrics.duration = time.Since(phaseStarted)
 	}
 	cancel()
 	workers.Wait()
