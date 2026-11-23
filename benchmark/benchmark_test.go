@@ -43,7 +43,7 @@ func TestCreateBenchmarkFilesCreatesDistinctRandomFiles(t *testing.T) {
 	}
 }
 
-func TestOverwriteAndReadLoopAcrossGeneratedFiles(t *testing.T) {
+func TestOverwriteLoopsAndColdReadReadsEachGeneratedFileOnce(t *testing.T) {
 	root := t.TempDir()
 	files, _, _, _, err := createBenchmarkFiles([]string{root}, 4096, 4096*4, time.Second)
 	if err != nil {
@@ -56,12 +56,12 @@ func TestOverwriteAndReadLoopAcrossGeneratedFiles(t *testing.T) {
 	if writes < int64(len(files)) || bytesWritten != writes*4096 || elapsed < 2*time.Second {
 		t.Fatalf("overwrite bytes=%d operations=%d elapsed=%s", bytesWritten, writes, elapsed)
 	}
-	bytesRead, reads, readElapsed, err := measureColdRead(files, 4096, 100*time.Millisecond)
+	bytesRead, reads, readElapsed, err := measureColdRead(files, 4096, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reads < int64(len(files)) || bytesRead != reads*4096 || readElapsed < 100*time.Millisecond {
-		t.Fatalf("read bytes=%d operations=%d elapsed=%s", bytesRead, reads, readElapsed)
+	if reads != int64(len(files)) || bytesRead != int64(len(files))*4096 || readElapsed <= 0 {
+		t.Fatalf("read bytes=%d operations=%d elapsed=%s; want one pass over %d files", bytesRead, reads, readElapsed, len(files))
 	}
 }
 
