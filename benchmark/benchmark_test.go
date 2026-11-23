@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"testing"
+
+	"github.com/tetsup/flexraid/management"
 )
 
 func TestFioReportDecodesBandwidth(t *testing.T) {
@@ -17,10 +19,15 @@ func TestFioReportDecodesBandwidth(t *testing.T) {
 	}
 }
 
-func TestValidateOutputPathRejectsStorageRoots(t *testing.T) {
+func TestValidateOutputPathRejectsOverlappingStoragePaths(t *testing.T) {
 	root := t.TempDir()
-	config := testConfig(root)
-	for _, output := range []string{root, filepath.Join(root, "results")} {
+	config := testConfig(filepath.Join(root, "disk"))
+	for _, output := range []string{
+		config.Disks[0].Root,
+		filepath.Join(config.Disks[0].Root, "results"),
+		root,
+		filepath.Join(root, "results"),
+	} {
 		if err := validateOutputPath(output, config); err == nil {
 			t.Fatalf("validateOutputPath(%q) succeeded; want error", output)
 		}
@@ -37,7 +44,7 @@ func TestValidateOutputPathAllowsSibling(t *testing.T) {
 
 func testConfig(root string) management.Config {
 	return management.Config{
-		Disks:      []management.DriveConfig{{Root: root}},
-		Mountpoint: filepath.Join(root, "fuse"),
+		Disks: []management.DriveConfig{{Root: root, Mountpoint: filepath.Dir(root)}},
+		Mountpoint: filepath.Join(filepath.Dir(root), "fuse"),
 	}
 }
