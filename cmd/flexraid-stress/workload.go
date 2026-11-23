@@ -350,9 +350,14 @@ func runFilesystemWorker(ctx context.Context, workerID int, file *os.File, direc
 			return nil
 		default:
 		}
-		// A multiplicative stride gives repeatable pseudo-random offsets while
-		// keeping each worker's writes disjoint from every other worker.
-		slot := int((sequence*uint64(73) + uint64(workerID*19)) % uint64(slots))
+		// Alternate sequential progression and a repeatable pseudo-random
+		// permutation while keeping each worker's region disjoint.
+		var slot int
+		if sequence%2 == 0 {
+			slot = int((sequence / 2) % uint64(slots))
+		} else {
+			slot = int(((sequence/2)*uint64(73) + uint64(workerID*19)) % uint64(slots))
+		}
 		for index := range payload {
 			payload[index] = byte((workerID*37 + int(sequence%251)*13 + index*7) % 251)
 		}
