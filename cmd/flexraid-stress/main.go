@@ -12,8 +12,8 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"sort"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -46,14 +46,14 @@ type result struct {
 }
 
 type options struct {
-	configPath string
-	workerPath string
-	size       int64
-	warmupSize int64
-	blockSize  int
-	rpcEvery   time.Duration
-	reportPath string
-	startup    time.Duration
+	configPath  string
+	workerPath  string
+	size        int64
+	warmupSize  int64
+	blockSize   int
+	rpcEvery    time.Duration
+	reportPath  string
+	startup     time.Duration
 	repetitions int
 }
 
@@ -511,14 +511,14 @@ func summarizeResults(samples []result) []result {
 			rpcLatencies = append(rpcLatencies, int64(value.AverageRPCLatency))
 		}
 		summary = append(summary, result{
-			Mode: selected,
-			Bytes: values[0].Bytes,
-			WriteDuration: time.Duration(medianInt64(writeDurations)),
-			ReadDuration: time.Duration(medianInt64(readDurations)),
-			WriteMiBPerSec: medianFloat64(writeRates),
-			ReadMiBPerSec: medianFloat64(readRates),
-			RPCCalls: uint64(medianInt64(rpcCounts)),
-			RPCErrors: uint64(medianInt64(rpcErrors)),
+			Mode:              selected,
+			Bytes:             values[0].Bytes,
+			WriteDuration:     time.Duration(medianInt64(writeDurations)),
+			ReadDuration:      time.Duration(medianInt64(readDurations)),
+			WriteMiBPerSec:    medianFloat64(writeRates),
+			ReadMiBPerSec:     medianFloat64(readRates),
+			RPCCalls:          uint64(medianInt64(rpcCounts)),
+			RPCErrors:         uint64(medianInt64(rpcErrors)),
 			AverageRPCLatency: time.Duration(medianInt64(rpcLatencies)),
 		})
 	}
