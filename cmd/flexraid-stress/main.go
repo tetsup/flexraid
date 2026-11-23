@@ -160,9 +160,8 @@ func runMode(opts options, template string, selected mode) (_ result, runErr err
 		return result, fmt.Errorf("start Worker: %w", err)
 	}
 	waitDone := make(chan struct{})
-	var waitErr error
 	go func() {
-		waitErr = command.Wait()
+		_ = command.Wait()
 		close(waitDone)
 	}()
 	defer func() {
@@ -199,15 +198,6 @@ func runMode(opts options, template string, selected mode) (_ result, runErr err
 
 func createStorageRoots(template string) ([]string, error) {
 	var roots []string
-	for _, line := range strings.Split(template, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmed, "- root:") {
-			continue
-		}
-		mountpoint := ""
-		// The physical mountpoint immediately follows the root entry in the supported config format.
-		_ = mountpoint
-	}
 	// Root directories must remain under their configured physical mountpoints.
 	lines := strings.Split(template, "\n")
 	for i, line := range lines {
@@ -281,7 +271,7 @@ func renderConfig(template string, roots []string, mountpoint, socket string, gr
 	return strings.Join(output, "\n"), nil
 }
 
-func waitForWorker(command *exec.Cmd, done <-chan error, mountpoint, socket string, grpcEnabled bool, timeout time.Duration) error {
+func waitForWorker(command *exec.Cmd, done <-chan struct{}, mountpoint, socket string, grpcEnabled bool, timeout time.Duration) error {
 	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -292,7 +282,7 @@ func waitForWorker(command *exec.Cmd, done <-chan error, mountpoint, socket stri
 		}
 		select {
 		case <-done:
-			return fmt.Errorf("Worker exited before becoming ready: %v", waitErr)
+			return fmt.Errorf("Worker exited before becoming ready: %v", command.ProcessState)
 		case <-deadline.C:
 			return fmt.Errorf("Worker did not become ready within %s (mount=%t, socket=%t)", timeout, isMounted(mountpoint), socketReady(socket))
 		case <-ticker.C:
