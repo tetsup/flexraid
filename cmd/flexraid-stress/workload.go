@@ -349,7 +349,13 @@ func runFilesystemWorker(ctx context.Context, workerID int, file *os.File, direc
 	if err != nil {
 		return err
 	}
-	_ = scratch.Close()
+	if err := scratch.Truncate(4096); err != nil {
+		_ = scratch.Close()
+		return fmt.Errorf("worker %d initialize metadata scratch file: %w", workerID, err)
+	}
+	if err := scratch.Close(); err != nil {
+		return fmt.Errorf("worker %d close metadata scratch file: %w", workerID, err)
+	}
 	if err := runMetadataCycle(directory, workerID, 0, scratchPath, metrics); err != nil {
 		return fmt.Errorf("worker %d initial metadata workload: %w", workerID, err)
 	}
