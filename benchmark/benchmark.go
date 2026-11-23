@@ -737,6 +737,9 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 
 func benchmarkFileCount(blockSize, referenceBytes int64, maxFiles int) int {
 	count := int(referenceBytes / blockSize)
+	if remainder := referenceBytes % blockSize; remainder > 0 && blockSize-remainder < blockSize/2 {
+		count++
+	}
 	if count < 1 {
 		count = 1
 	}
