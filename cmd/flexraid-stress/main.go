@@ -38,6 +38,7 @@ type result struct {
 	WriteOps            uint64        `json:"write_ops"`
 	ReadOps             uint64        `json:"read_ops"`
 	MetadataOps         uint64        `json:"metadata_ops"`
+	SyncOps             uint64        `json:"sync_ops"`
 	IOPS                float64       `json:"iops"`
 	WriteLatencyP50     time.Duration `json:"write_latency_p50_ns"`
 	WriteLatencyP95     time.Duration `json:"write_latency_p95_ns"`
@@ -48,6 +49,9 @@ type result struct {
 	MetadataLatencyP50  time.Duration `json:"metadata_latency_p50_ns"`
 	MetadataLatencyP95  time.Duration `json:"metadata_latency_p95_ns"`
 	MetadataLatencyP99  time.Duration `json:"metadata_latency_p99_ns"`
+	SyncLatencyP50      time.Duration `json:"sync_latency_p50_ns"`
+	SyncLatencyP95      time.Duration `json:"sync_latency_p95_ns"`
+	SyncLatencyP99      time.Duration `json:"sync_latency_p99_ns"`
 	RPCCalls            uint64        `json:"rpc_calls"`
 	RPCErrors           uint64        `json:"rpc_errors"`
 	AverageRPCLatency   time.Duration `json:"average_rpc_latency_ns"`
@@ -405,6 +409,10 @@ func summarizeResults(samples []result) []result {
 			MetadataLatencyP50:  time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.MetadataLatencyP50 }))),
 			MetadataLatencyP95:  time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.MetadataLatencyP95 }))),
 			MetadataLatencyP99:  time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.MetadataLatencyP99 }))),
+			SyncOps:             uint64(medianInt64(collectDuration(func(v result) time.Duration { return time.Duration(v.SyncOps) }))),
+			SyncLatencyP50:      time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.SyncLatencyP50 }))),
+			SyncLatencyP95:      time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.SyncLatencyP95 }))),
+			SyncLatencyP99:      time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.SyncLatencyP99 }))),
 			RPCCalls:            uint64(medianInt64(rpcCounts)), RPCErrors: uint64(medianInt64(rpcErrors)),
 			AverageRPCLatency: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.AverageRPCLatency }))),
 			RPCLatencyP50:     time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.RPCLatencyP50 }))),
