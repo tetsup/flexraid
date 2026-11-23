@@ -22,7 +22,7 @@ jobs:
   compare:
     name: Raw ext4 vs FlexRAID FUSE
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - name: Check out source
         uses: actions/checkout@v6
@@ -56,7 +56,7 @@ jobs:
           for index in 1 2 3 4; do
             image="$RUNNER_TEMP/flexraid-bench-disk-$index.img"
             if [[ "$index" == "1" ]]; then truncate -s 5G "$image"; else truncate -s 4G "$image"; fi
-            loop="$(sudo losetup --find --show "$image")"
+            loop="$(sudo losetup --discard --find --show "$image")"
             echo "$loop" >> "$RUNNER_TEMP/flexraid-bench-loops"
             sudo mkfs.ext4 -F -q "$loop"
             mount="/mnt/flexraid-bench-disk-$index"
