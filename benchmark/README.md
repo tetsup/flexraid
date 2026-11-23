@@ -38,9 +38,9 @@ For each size:
 
 - **Write** creates a new randomly named file for every I/O operation, writes one request-sized payload, calls `fsync()`, and continues until the duration limit or `--size` cap is reached. Files are never reused during this phase.
 - **Overwrite** clears the filesystem cache, then repeatedly visits the generated files in creation order and overwrites each complete payload, including `fsync()` and `close()` for every file.
-- **Read** clears the filesystem cache, then repeatedly visits the same files in creation order and reads each complete payload until the duration limit expires.
+- **Read** clears the filesystem cache, then reads each generated file exactly once in creation order, stopping when all files have been read or the duration limit expires. It never loops back to already-read files, so the result cannot turn into a page-cache benchmark.
 
-Before every measurement, the benchmark runs `sync` and clears Linux page caches through `/proc/sys/vm/drop_caches`. Each file operation includes open/create, data transfer, and close; writes and overwrites also include `fsync()`. Every phase reports actual elapsed time, file-operation count, total bytes, bandwidth, and IOPS. Both benchmark modes use buffered I/O (no `O_DIRECT`), keeping unaligned +1 B request sizes valid and comparable. Results therefore measure normal POSIX buffered-I/O behavior while ensuring writes are timed through durable flush completion.
+Before every measurement (including immediately before the read phase), the benchmark runs `sync` and clears Linux page caches through `/proc/sys/vm/drop_caches`; it logs this action and fails the measurement if either operation fails. Each file operation includes open/create, data transfer, and close; writes and overwrites also include `fsync()`. Every phase reports actual elapsed time, file-operation count, total bytes, bandwidth, and IOPS. Both benchmark modes use buffered I/O (no `O_DIRECT`), keeping unaligned +1 B request sizes valid and comparable. Results therefore measure normal POSIX buffered-I/O behavior while ensuring writes are timed through durable flush completion.
 
 ## Output
 
