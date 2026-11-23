@@ -6,7 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"testing"\n\t"time"
+	"testing"
+	"time"
 
 	"github.com/tetsup/flexraid/management"
 )
@@ -25,9 +26,9 @@ func TestFioReportDecodesBandwidth(t *testing.T) {
 
 func TestBuildFioJobUsesBoundedWriteWindow(t *testing.T) {
 	job := buildFioJob([]string{"/tmp/one"}, 4096, 1<<20, "write")
-	for _, expected := range []string{"runtime=20\\n", "time_based=1\\n", "size=1048576\\n", "bs=4096\\n"} {
+	for _, expected := range []string{"runtime=20\n", "time_based=1\n", "size=1048576\n", "bs=4096\n"} {
 		if !strings.Contains(job, expected) {
-			t.Fatalf("fio job missing %q:\\n%s", expected, job)
+			t.Fatalf("fio job missing %q:\n%s", expected, job)
 		}
 	}
 }
@@ -35,7 +36,7 @@ func TestBuildFioJobUsesBoundedWriteWindow(t *testing.T) {
 func TestBuildFioJobDoesNotRepeatReadDataset(t *testing.T) {
 	job := buildFioJob([]string{"/tmp/one"}, 4096, 1<<20, "read")
 	if strings.Contains(job, "time_based=1") {
-		t.Fatalf("read job repeats dataset:\\n%s", job)
+		t.Fatalf("read job repeats dataset:\n%s", job)
 	}
 }
 
