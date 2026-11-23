@@ -220,7 +220,7 @@ func Run(args []string) (runErr error) {
 	for _, block := range ioSizes {
 		var files []string
 		for _, direction := range []string{"write", "overwrite", "read"} {
-			fmt.Printf("Running %-10s %-8s %s ...\\n", "flexraid", direction, block.label)
+			fmt.Printf("Running %-10s %-8s %s ...\n", "flexraid", direction, block.label)
 			measured, generated, err := runCase(opts, "flexraid", workDirs, block.bytes, block.label, direction, files)
 			if err != nil {
 				return fmt.Errorf("flexraid %s %s: %w", direction, block.label, err)
@@ -300,7 +300,7 @@ func runRaw(args []string) error {
 	for _, block := range ioSizes {
 		var files []string
 		for _, direction := range []string{"write", "overwrite", "read"} {
-			fmt.Printf("Running %-10s %-8s %s ...\\n", "raw", direction, block.label)
+			fmt.Printf("Running %-10s %-8s %s ...\n", "raw", direction, block.label)
 			measured, generated, err := runCase(opts, "raw", []string{workDir}, block.bytes, block.label, direction, files)
 			if err != nil {
 				return fmt.Errorf("raw %s %s: %w", direction, block.label, err)
@@ -740,7 +740,7 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 	if direction != "write" {
 		fileCount = len(files)
 	}
-	fmt.Printf("Completed %-8s %-10s %-9s elapsed=%s operations=%d bytes=%d (%.2f MiB) bandwidth=%.2f MiB/s IOPS=%.2f files=%d\\n", direction, filesystem, label, elapsed.Round(time.Millisecond), operations, bytes, float64(bytes)/(1024*1024), result.BWBytes/(1024*1024), result.IOPS, fileCount)
+	fmt.Printf("Completed %-8s %-10s %-9s elapsed=%s operations=%d bytes=%d (%.2f MiB) bandwidth=%.2f MiB/s IOPS=%.2f files=%d\n", direction, filesystem, label, elapsed.Round(time.Millisecond), operations, bytes, float64(bytes)/(1024*1024), result.BWBytes/(1024*1024), result.IOPS, fileCount)
 	return result, generated, nil
 }
 
