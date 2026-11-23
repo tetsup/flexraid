@@ -382,6 +382,17 @@ func runFilesystemWorker(ctx context.Context, workerID int, file *os.File, direc
 		expected.blocks[slot] = append(expected.blocks[slot][:0], payload...)
 		expected.written[slot] = true
 
+		// Force the write through FUSE Fsync before reading it back. This
+		// verifies persisted data rather than relying on a client-side cache.
+		started = time.Now()
+		if err := file.Sync(); err != nil {
+			return fmt.Errorf("worker %d Sync after write: %w", workerID, err)
+		}
+		if metrics != nil {
+			metrics.metadataLatency.add(time.Since(started))
+			metrics.metadataOps.Add(1)
+		}
+
 		started = time.Now()
 		n, readErr := file.ReadAt(readback, offset)
 		if readErr != nil {
@@ -400,16 +411,6 @@ func runFilesystemWorker(ctx context.Context, workerID int, file *os.File, direc
 		if sequence%16 == 0 {
 			if err := runMetadataCycle(directory, workerID, sequence, scratchPath, metrics); err != nil {
 				return err
-			}
-		}
-		if sequence%128 == 0 {
-			started = time.Now()
-			if err := file.Sync(); err != nil {
-				return fmt.Errorf("worker %d Sync: %w", workerID, err)
-			}
-			if metrics != nil {
-				metrics.metadataLatency.add(time.Since(started))
-				metrics.metadataOps.Add(1)
 			}
 		}
 	}
