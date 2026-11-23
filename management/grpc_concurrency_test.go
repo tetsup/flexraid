@@ -2,10 +2,8 @@ package management
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"path/filepath"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -66,16 +64,26 @@ func invokeGetStatus(ctx context.Context, connection *grpc.ClientConn) error {
 	return connection.Invoke(ctx, "/flexraid.worker.v1.WorkerService/GetStatus", &emptypb.Empty{}, response)
 }
 
+// runLockedForegroundOperation models the locking and cancellation boundary
+// used by Management foreground operations.
+func runLockedForegroundOperation(ctx context.Context, layer *Management, operation func()) error {
+	layer.mu.Lock()
+	defer layer.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	operation()
+	return nil
+}
+
 func TestWorkerGRPCMonitoringConcurrentWithCancelledForegroundOperations(t *testing.T) {
 	layer, connection := newGRPCConcurrencyFixture(t)
 
 	monitorCtx, stopMonitor := context.WithCancel(context.Background())
-	defer stopMonitor()
 	var rpcCalls atomic.Int64
 	var rpcErrors atomic.Int64
 	var monitorReady atomic.Bool
 	firstRPC := make(chan struct{})
-	var firstRPCOnce sync.Once
 	monitorDone := make(chan struct{})
 	go func() {
 		defer close(monitorDone)
@@ -88,7 +96,7 @@ func TestWorkerGRPCMonitoringConcurrentWithCancelledForegroundOperations(t *test
 			if err == nil {
 				rpcCalls.Add(1)
 				if monitorReady.CompareAndSwap(false, true) {
-					firstRPCOnce.Do(func() { close(firstRPC) })
+					close(firstRPC)
 				}
 			} else if monitorReady.Load() && monitorCtx.Err() == nil {
 				rpcErrors.Add(1)
@@ -103,44 +111,43 @@ func TestWorkerGRPCMonitoringConcurrentWithCancelledForegroundOperations(t *test
 	select {
 	case <-firstRPC:
 	case <-time.After(5 * time.Second):
+		stopMonitor()
 		t.Fatal("GetStatus monitoring did not start")
 	}
 
 	blockerStarted := make(chan struct{})
 	releaseBlocker := make(chan struct{})
-	blocker, err := layer.scheduler.SubmitForeground(context.Background(), "cancellation-blocker", func(context.Context) error {
+	blockerDone := make(chan struct{})
+	go func() {
+		defer close(blockerDone)
+		layer.mu.Lock()
+		defer layer.mu.Unlock()
 		close(blockerStarted)
 		<-releaseBlocker
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	}()
 	select {
 	case <-blockerStarted:
 	case <-time.After(5 * time.Second):
-		t.Fatal("blocking foreground operation did not start")
+		close(releaseBlocker)
+		t.Fatal("blocking Management operation did not acquire the lock")
 	}
 
 	const requestCount = 64
 	type queuedRequest struct {
-		handle *ForegroundHandle
 		cancel context.CancelFunc
+		done   chan error
 	}
-	requests := make([]queuedRequest, 0, requestCount)
+	requests := make([]queuedRequest, requestCount)
 	var executed atomic.Int64
-	for index := 0; index < requestCount; index++ {
+	for index := range requests {
 		ctx, cancel := context.WithCancel(context.Background())
-		handle, submitErr := layer.scheduler.SubmitForeground(ctx, fmt.Sprintf("queued-%d", index), func(context.Context) error {
-			executed.Add(1)
-			return nil
-		})
-		if submitErr != nil {
-			cancel()
-			close(releaseBlocker)
-			t.Fatalf("submit queued request %d: %v", index, submitErr)
-		}
-		requests = append(requests, queuedRequest{handle: handle, cancel: cancel})
+		done := make(chan error, 1)
+		requests[index] = queuedRequest{cancel: cancel, done: done}
+		go func() {
+			done <- runLockedForegroundOperation(ctx, layer, func() {
+				executed.Add(1)
+			})
+		}()
 	}
 	for index, request := range requests {
 		if index%2 == 0 {
@@ -148,28 +155,26 @@ func TestWorkerGRPCMonitoringConcurrentWithCancelledForegroundOperations(t *test
 		}
 	}
 	close(releaseBlocker)
-	if err := blocker.Wait(context.Background()); err != nil {
-		t.Fatalf("blocking operation: %v", err)
-	}
+	<-blockerDone
 	for index, request := range requests {
-		err := request.handle.Wait(context.Background())
+		err := <-request.done
 		if index%2 == 0 && err != context.Canceled {
-			t.Errorf("cancelled queued operation %d: error = %v, want context.Canceled", index, err)
+			t.Errorf("cancelled operation %d: error = %v, want context.Canceled", index, err)
 		}
 		if index%2 != 0 && err != nil {
-			t.Errorf("queued operation %d: %v", index, err)
+			t.Errorf("operation %d: %v", index, err)
 		}
 		request.cancel()
 	}
+
 	stopMonitor()
 	select {
 	case <-monitorDone:
 	case <-time.After(5 * time.Second):
 		t.Fatal("GetStatus monitor did not stop")
 	}
-
 	if got, want := executed.Load(), requestCount/2; got != int64(want) {
-		t.Fatalf("executed queued operations = %d, want %d; cancelled requests must not run", got, want)
+		t.Fatalf("executed operations = %d, want %d; cancelled operations must not execute", got, want)
 	}
 	if got := rpcCalls.Load(); got == 0 {
 		t.Fatal("no monitoring RPCs were completed")
@@ -177,19 +182,12 @@ func TestWorkerGRPCMonitoringConcurrentWithCancelledForegroundOperations(t *test
 	if got := rpcErrors.Load(); got != 0 {
 		t.Fatalf("monitoring RPC errors = %d, want 0", got)
 	}
-
-	finalOperation, err := layer.scheduler.SubmitForeground(context.Background(), "after-cancellation", func(context.Context) error {
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("submit operation after cancellations: %v", err)
-	}
-	if err := finalOperation.Wait(context.Background()); err != nil {
-		t.Fatalf("operation after cancellations: %v", err)
+	if err := invokeGetStatus(context.Background(), connection); err != nil {
+		t.Fatalf("GetStatus after lock contention: %v", err)
 	}
 }
 
-func BenchmarkSchedulerForegroundCancellationWithGRPCMonitoring(b *testing.B) {
+func BenchmarkManagementMutexWithGRPCMonitoring(b *testing.B) {
 	for _, test := range []struct {
 		name      string
 		cancelled bool
@@ -221,6 +219,9 @@ func BenchmarkSchedulerForegroundCancellationWithGRPCMonitoring(b *testing.B) {
 					}
 				}()
 			}
+
+			var sink atomic.Uint64
+			var buffer [4096]byte
 			b.ReportAllocs()
 			b.ResetTimer()
 			for index := 0; index < b.N; index++ {
@@ -228,14 +229,13 @@ func BenchmarkSchedulerForegroundCancellationWithGRPCMonitoring(b *testing.B) {
 				if test.cancelled {
 					cancel()
 				}
-				handle, err := layer.scheduler.SubmitForeground(ctx, fmt.Sprintf("bench-%d", index), func(context.Context) error {
-					return nil
+				err := runLockedForegroundOperation(ctx, layer, func() {
+					for offset := range buffer {
+						buffer[offset] = byte((index + offset*31) % 251)
+					}
+					sink.Add(uint64(buffer[index%len(buffer)]))
 				})
-				if err != nil {
-					cancel()
-					b.Fatal(err)
-				}
-				if err := handle.Wait(context.Background()); test.cancelled {
+				if test.cancelled {
 					if err != context.Canceled {
 						cancel()
 						b.Fatalf("cancelled operation error = %v, want context.Canceled", err)
@@ -247,6 +247,7 @@ func BenchmarkSchedulerForegroundCancellationWithGRPCMonitoring(b *testing.B) {
 				cancel()
 			}
 			b.StopTimer()
+			_ = sink.Load()
 			stopMonitor()
 			if test.monitor {
 				<-monitorDone
