@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"sort"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"google.golang.org/grpc"
@@ -346,7 +348,7 @@ func runFilesystemPhase(mountpoint, dataPath, socket string, opts options, durat
 	// final integrity pass observe durable data without contending multiple
 	// simultaneous fsync requests on the same logical Object.
 	syncStarted := time.Now()
-	if err := verifyFile.Sync(); err != nil {
+	if err := syncRetry(verifyFile); err != nil {
 		return fmt.Errorf("final FUSE fsync: %w", err)
 	}
 	if metrics != nil {
@@ -364,7 +366,7 @@ func runFilesystemPhase(mountpoint, dataPath, socket string, opts options, durat
 			}
 			actual := make([]byte, opts.blockSize)
 			offset := base + int64(slot*opts.blockSize)
-			if _, err := verifyFile.ReadAt(actual, offset); err != nil {
+			if _, err := readAtRetry(verifyFile, actual, offset); err != nil {
 				return fmt.Errorf("final read worker %d slot %d: %w", workerID, slot, err)
 			}
 			if !bytes.Equal(actual, block) {
@@ -412,7 +414,7 @@ func runFilesystemWorker(ctx context.Context, workerID int, writeFile, readFile 
 		}
 		offset := int64(workerID)*regionSize + int64(slot*blockSize)
 		started := time.Now()
-		n, writeErr := writeFile.WriteAt(payload, offset)
+		n, writeErr := writeAtRetry(writeFile, payload, offset)
 		if writeErr != nil {
 			return fmt.Errorf("worker %d WriteAt: %w", workerID, writeErr)
 		}
@@ -432,7 +434,7 @@ func runFilesystemWorker(ctx context.Context, workerID int, writeFile, readFile 
 		// measure serialized durability barriers rather than RPC interference.
 		if sequence%16 == 15 {
 			started = time.Now()
-			if err := writeFile.Sync(); err != nil {
+			if err := syncRetry(writeFile); err != nil {
 				return fmt.Errorf("worker %d periodic Sync: %w", workerID, err)
 			}
 			if metrics != nil {
@@ -442,7 +444,7 @@ func runFilesystemWorker(ctx context.Context, workerID int, writeFile, readFile 
 		}
 
 		started = time.Now()
-		n, readErr := readFile.ReadAt(readback, offset)
+		n, readErr := readAtRetry(readFile, readback, offset)
 		if readErr != nil {
 			return fmt.Errorf("worker %d ReadAt: %w", workerID, readErr)
 		}
@@ -516,6 +518,34 @@ func runMetadataCycle(directory string, workerID int, sequence uint64, scratchPa
 		return fmt.Errorf("metadata truncate: %w", err)
 	}
 	return nil
+}
+
+
+func writeAtRetry(file *os.File, data []byte, offset int64) (int, error) {
+	for {
+		n, err := file.WriteAt(data, offset)
+		if !errors.Is(err, syscall.EINTR) {
+			return n, err
+		}
+	}
+}
+
+func readAtRetry(file *os.File, data []byte, offset int64) (int, error) {
+	for {
+		n, err := file.ReadAt(data, offset)
+		if !errors.Is(err, syscall.EINTR) {
+			return n, err
+		}
+	}
+}
+
+func syncRetry(file *os.File) error {
+	for {
+		err := file.Sync()
+		if !errors.Is(err, syscall.EINTR) {
+			return err
+		}
+	}
 }
 
 func runMonitoringPoller(ctx context.Context, start <-chan struct{}, ready chan<- struct{}, wait *sync.WaitGroup, connection *grpc.ClientConn, method string, interval time.Duration, metrics *workloadMetrics) {
