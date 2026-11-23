@@ -20,12 +20,12 @@ func TestRawBenchmarkRequiresOnlyDirectoryArgument(t *testing.T) {
 }
 
 func TestFioReportDecodesBandwidth(t *testing.T) {
-	data := []byte(`{"jobs":[{"read":{"bw_bytes":1234,"iops":2},"write":{"bw_bytes":5678,"iops":3}}]}`)
+	data := []byte(`{"jobs":[{"job_runtime":7000,"read":{"bw_bytes":1234,"iops":2,"io_bytes":8192,"total_ios":2},"write":{"bw_bytes":5678,"iops":3,"io_bytes":12288,"total_ios":3}}]}`)
 	var report fioReport
 	if err := json.Unmarshal(data, &report); err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Jobs) != 1 || report.Jobs[0].Write.BWBytes != 5678 || report.Jobs[0].Read.IOPS != 2 {
+	if len(report.Jobs) != 1 || report.Jobs[0].Write.BWBytes != 5678 || report.Jobs[0].Read.IOPS != 2 || report.Jobs[0].Write.IOBytes != 12288 || report.Jobs[0].Write.TotalIOs != 3 || report.Jobs[0].JobRuntime != 7000 {
 		t.Fatalf("unexpected report: %+v", report)
 	}
 }
@@ -58,12 +58,12 @@ func TestMeasureColdReadReadsEachFileOnce(t *testing.T) {
 		}
 		_ = index
 	}
-	bw, iops, err := measureColdRead(paths, 4096, time.Second)
+	bytesRead, operations, elapsed, err := measureColdRead(paths, 4096, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bw <= 0 || iops <= 0 {
-		t.Fatalf("measureColdRead returned non-positive metrics: bw=%f iops=%f", bw, iops)
+	if bytesRead != 16384 || operations != 4 || elapsed <= 0 {
+		t.Fatalf("measureColdRead returned bytes=%d operations=%d elapsed=%s", bytesRead, operations, elapsed)
 	}
 }
 
@@ -81,12 +81,12 @@ func TestMeasureOverwriteUpdatesExistingFileOnce(t *testing.T) {
 	if err := os.WriteFile(path, original, 0600); err != nil {
 		t.Fatal(err)
 	}
-	bw, iops, err := measureOverwrite([]string{root}, 4096, time.Second)
+	bytesWritten, operations, elapsed, err := measureOverwrite([]string{root}, 4096, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bw <= 0 || iops <= 0 {
-		t.Fatalf("measureOverwrite returned non-positive metrics: bw=%f iops=%f", bw, iops)
+	if bytesWritten != int64(len(original)) || operations != 2 || elapsed <= 0 {
+		t.Fatalf("measureOverwrite returned bytes=%d operations=%d elapsed=%s", bytesWritten, operations, elapsed)
 	}
 	actual, err := os.ReadFile(path)
 	if err != nil {
