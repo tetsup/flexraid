@@ -23,6 +23,7 @@ const (
 	fuseSuperMagic       = 0x65735546
 	workerStartupTimeout = 90 * time.Second
 	workerStopTimeout    = 10 * time.Second
+	caseRuntime          = 20 * time.Second
 )
 
 var ioSizes = []struct {
@@ -97,9 +98,8 @@ func Run(args []string) (runErr error) {
 	if opts.totalBytes <= 0 {
 		return errors.New("--size must be positive")
 	}
-	minimumSize := ioSizes[len(ioSizes)-1].bytes * 4
-	if opts.totalBytes < minimumSize {
-		return fmt.Errorf("--size must be at least %d bytes so every raw parallel job can issue a full 64 MiB request", minimumSize)
+	if opts.totalBytes < ioSizes[len(ioSizes)-1].bytes {
+		return fmt.Errorf("--size must be at least %d bytes so every I/O size fits in the read dataset", ioSizes[len(ioSizes)-1].bytes)
 	}
 	if _, err := exec.LookPath(opts.fioPath); err != nil {
 		return fmt.Errorf("find fio executable: %w", err)
@@ -373,20 +373,15 @@ func selectBenchmarkDisks(disks []management.DriveConfig) ([]management.DriveCon
 }
 
 func validateBenchmarkCapacity(disks []management.DriveConfig, totalBytes int64) error {
-	// Six FlexRAID cases remain physically allocated in the isolated roots
-	// until the temporary Worker is stopped. A 3+1 layout stores roughly one
-	// third of the logical payload on each of the four drives.
+	// Only one test dataset per mode is retained at a time. The largest
+	// physical allocation is the raw single-drive dataset, plus headroom.
 	maxUint := ^uint64(0)
 	size := uint64(totalBytes)
-	if size > maxUint/uint64(len(ioSizes)) {
+	margin := uint64(64 << 20)
+	if size > maxUint-margin {
 		return fmt.Errorf("benchmark size %d is too large for capacity calculation", totalBytes)
 	}
-	required := size * uint64(len(ioSizes)) / 3
-	margin := required / 5
-	if required > maxUint-margin-(64<<20) {
-		return fmt.Errorf("benchmark size %d is too large for capacity calculation", totalBytes)
-	}
-	required += margin + (64 << 20)
+	required := size + margin
 	for index, disk := range disks {
 		path, err := driveCapacityPath(disk)
 		if err != nil {
@@ -673,22 +668,14 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 	}
 	jobPath := filepath.Join(opts.outputDir, filesystem+"-"+label+"-"+direction+".fio")
 	resultPath := filepath.Join(opts.outputDir, filesystem+"-"+label+"-"+direction+".json")
-	var builder strings.Builder
-	builder.WriteString("[global]\n")
-	builder.WriteString("ioengine=sync\n")
-	builder.WriteString("direct=0\n")
-	builder.WriteString("rw=" + direction + "\n")
-	builder.WriteString("bs=" + strconv.FormatInt(blockSize, 10) + "\n")
-	builder.WriteString("fallocate=none\n")
-	builder.WriteString("group_reporting=1\n")
-	builder.WriteString("end_fsync=1\n")
-	builder.WriteString("invalidate=1\n")
-	builder.WriteString("size=" + strconv.FormatInt(perJob, 10) + "\n")
-	for i, dir := range paths {
-		fmt.Fprintf(&builder, "[job-%d]\nfilename=%s\n", i+1, filepath.Join(dir, "data.bin"))
-	}
-	if err := os.WriteFile(jobPath, []byte(builder.String()), 0600); err != nil {
+	jobConfig := buildFioJob(paths, blockSize, perJob, direction)
+	if err := os.WriteFile(jobPath, []byte(jobConfig), 0600); err != nil {
 		return sample{}, fmt.Errorf("write fio job: %w", err)
+	}
+	if direction == "read" {
+		if err := dropCaches(); err != nil {
+			return sample{}, fmt.Errorf("drop filesystem caches before cold read: %w", err)
+		}
 	}
 	command := exec.Command(opts.fioPath, jobPath, "--output-format=json", "--output="+resultPath)
 	command.Stdout = os.Stdout
@@ -714,6 +701,41 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 		totalIOPS += result.IOPS
 	}
 	return sample{Filesystem: filesystem, IOSize: blockSize, Label: label, Direction: direction, BWBytes: totalBW, IOPS: totalIOPS}, nil
+}
+
+
+func buildFioJob(paths []string, blockSize, perJob int64, direction string) string {
+	var builder strings.Builder
+	builder.WriteString("[global]\\n")
+	builder.WriteString("ioengine=sync\\n")
+	builder.WriteString("direct=0\\n")
+	builder.WriteString("rw=" + direction + "\\n")
+	builder.WriteString("bs=" + strconv.FormatInt(blockSize, 10) + "\\n")
+	builder.WriteString("fallocate=none\\n")
+	builder.WriteString("group_reporting=1\\n")
+	builder.WriteString("end_fsync=1\\n")
+	builder.WriteString("invalidate=1\\n")
+	builder.WriteString("runtime=" + strconv.Itoa(int(caseRuntime/time.Second)) + "\\n")
+	if direction == "write" {
+		// Keep writing for the full measurement window, reusing this bounded
+		// file region if necessary. The subsequent read is deliberately one pass.
+		builder.WriteString("time_based=1\\n")
+	}
+	builder.WriteString("size=" + strconv.FormatInt(perJob, 10) + "\\n")
+	for i, dir := range paths {
+		fmt.Fprintf(&builder, "[job-%d]\\nfilename=%s\\n", i+1, filepath.Join(dir, "data.bin"))
+	}
+	return builder.String()
+}
+
+func dropCaches() error {
+	if err := exec.Command("sync").Run(); err != nil {
+		return fmt.Errorf("sync written benchmark data: %w", err)
+	}
+	if err := os.WriteFile("/proc/sys/vm/drop_caches", []byte("3\\n"), 0); err != nil {
+		return fmt.Errorf("write /proc/sys/vm/drop_caches: %w", err)
+	}
+	return nil
 }
 
 func writeReports(outputDir string, samples []sample) error {
