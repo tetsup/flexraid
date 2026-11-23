@@ -33,7 +33,7 @@ Each mode measures reads and writes using 4 KiB, 4 KiB+1 B, 64 KiB, 6 MiB, 6 MiB
 
 Raw three-drive parallel is the closest payload-parallel reference for a 3+1 parity layout. Raw four-drive parallel shows the aggregate bandwidth across four physical drives. Neither ratio is a pure parity-cost measurement.
 
-fio uses buffered I/O for all cases so the unaligned `+1 B` request sizes remain comparable. Results include Linux page-cache effects. An optional `--runtime` enables time-based fio runs; without it, each case processes the full configured data size.
+fio uses buffered I/O for all cases so the unaligned `+1 B` request sizes remain comparable. Results include Linux page-cache effects. Each case processes the full configured data size.
 
 ## Output
 
