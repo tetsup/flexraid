@@ -26,6 +26,7 @@ func LoadConfig(path string) (Config, error) {
 	defer file.Close()
 
 	var result Config
+	grpcEnabled := true
 	inDisks := false
 	var current *DriveConfig
 	scanner := bufio.NewScanner(file)
@@ -101,6 +102,14 @@ func LoadConfig(path string) (Config, error) {
 			result.Mountpoint = unquoteConfig(strings.TrimSpace(strings.TrimPrefix(line, "mountpoint:")))
 			continue
 		}
+		if indent == 0 && strings.HasPrefix(line, "grpc_enabled:") {
+			value, err := strconv.ParseBool(unquoteConfig(strings.TrimSpace(strings.TrimPrefix(line, "grpc_enabled:"))))
+			if err != nil {
+				return Config{}, fmt.Errorf("line %d: invalid grpc_enabled: %w", lineNo, err)
+			}
+			grpcEnabled = value
+			continue
+		}
 		if indent == 0 && strings.HasPrefix(line, "grpc_socket_path:") {
 			if result.GRPCSocketPath != "" {
 				return Config{}, fmt.Errorf("line %d: duplicate grpc_socket_path key", lineNo)
@@ -140,6 +149,9 @@ func LoadConfig(path string) (Config, error) {
 	}
 	if result.GRPCSocketPath == "" {
 		return Config{}, fmt.Errorf("grpc_socket_path is required")
+	}
+	if !grpcEnabled {
+		result.GRPCSocketPath = ""
 	}
 	return result, nil
 }
