@@ -54,6 +54,7 @@ type result struct {
 	SyncLatencyP99      time.Duration `json:"sync_latency_p99_ns"`
 	RPCCalls            uint64        `json:"rpc_calls"`
 	RPCErrors           uint64        `json:"rpc_errors"`
+	RPCSuccessRatePct   float64       `json:"rpc_success_rate_pct"`
 	AverageRPCLatency   time.Duration `json:"average_rpc_latency_ns"`
 	RPCLatencyP50       time.Duration `json:"rpc_latency_p50_ns"`
 	RPCLatencyP95       time.Duration `json:"rpc_latency_p95_ns"`
@@ -386,13 +387,14 @@ func summarizeResults(samples []result) []result {
 			}
 			return items
 		}
-		rpcCounts, rpcErrors := make([]int64, 0, len(values)), make([]int64, 0, len(values))
+		rpcCounts, rpcErrors, rpcSuccess := make([]int64, 0, len(values)), make([]int64, 0, len(values)), make([]float64, 0, len(values))
 		for _, value := range values {
 			writeRates = append(writeRates, value.WriteMiBPerSec)
 			readRates = append(readRates, value.ReadMiBPerSec)
 			iops = append(iops, value.IOPS)
 			rpcCounts = append(rpcCounts, int64(value.RPCCalls))
 			rpcErrors = append(rpcErrors, int64(value.RPCErrors))
+			rpcSuccess = append(rpcSuccess, value.RPCSuccessRatePct)
 		}
 		summary = append(summary, result{
 			Mode: selected, Bytes: values[0].Bytes, Workers: values[0].Workers,
@@ -413,7 +415,7 @@ func summarizeResults(samples []result) []result {
 			SyncLatencyP50:      time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.SyncLatencyP50 }))),
 			SyncLatencyP95:      time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.SyncLatencyP95 }))),
 			SyncLatencyP99:      time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.SyncLatencyP99 }))),
-			RPCCalls:            uint64(medianInt64(rpcCounts)), RPCErrors: uint64(medianInt64(rpcErrors)),
+			RPCCalls:            uint64(medianInt64(rpcCounts)), RPCErrors: uint64(medianInt64(rpcErrors)), RPCSuccessRatePct: medianFloat64(rpcSuccess),
 			AverageRPCLatency: time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.AverageRPCLatency }))),
 			RPCLatencyP50:     time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.RPCLatencyP50 }))),
 			RPCLatencyP95:     time.Duration(medianInt64(collectDuration(func(v result) time.Duration { return v.RPCLatencyP95 }))),
@@ -454,14 +456,14 @@ func medianInt64(values []int64) int64 {
 
 func markdownReport(results []result) string {
 	var builder strings.Builder
-	builder.WriteString("| gRPC mode | Write MiB/s | Read MiB/s | IOPS | Write p95 | Read p95 | Metadata p95 | Sync p95 | RPC calls/errors | RPC p95 | Integrity |\n")
-	builder.WriteString("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|\n")
+	builder.WriteString("| gRPC mode | Write MiB/s | Read MiB/s | IOPS | Write p95 | Read p95 | Metadata p95 | Sync p95 | RPC calls/errors | RPC success | RPC p95 | Integrity |\n")
+	builder.WriteString("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|\n")
 	for _, value := range results {
-		fmt.Fprintf(&builder, "| %s | %.2f | %.2f | %.0f | %s | %s | %s | %s | %d/%d | %s | %t |\n",
+		fmt.Fprintf(&builder, "| %s | %.2f | %.2f | %.0f | %s | %s | %s | %s | %d/%d | %s | %s | %t |\n",
 			value.Mode, value.WriteMiBPerSec, value.ReadMiBPerSec, value.IOPS,
 			value.WriteLatencyP95.Round(time.Microsecond), value.ReadLatencyP95.Round(time.Microsecond),
 			value.MetadataLatencyP95.Round(time.Microsecond), value.SyncLatencyP95.Round(time.Microsecond),
-			value.RPCCalls, value.RPCErrors, value.RPCLatencyP95.Round(time.Microsecond), value.IntegrityVerified)
+			value.RPCCalls, value.RPCErrors, rpcSuccessLabel(value), value.RPCLatencyP95.Round(time.Microsecond), value.IntegrityVerified)
 	}
 	if len(results) == 3 {
 		for _, index := range []int{1, 2} {
