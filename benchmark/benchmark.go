@@ -709,24 +709,24 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 
 func buildFioJob(paths []string, blockSize, perJob int64, direction string) string {
 	var builder strings.Builder
-	builder.WriteString("[global]\\n")
-	builder.WriteString("ioengine=sync\\n")
-	builder.WriteString("direct=0\\n")
-	builder.WriteString("rw=" + direction + "\\n")
-	builder.WriteString("bs=" + strconv.FormatInt(blockSize, 10) + "\\n")
-	builder.WriteString("fallocate=none\\n")
-	builder.WriteString("group_reporting=1\\n")
-	builder.WriteString("end_fsync=1\\n")
-	builder.WriteString("invalidate=1\\n")
-	builder.WriteString("runtime=" + strconv.Itoa(int(caseRuntime/time.Second)) + "\\n")
+	builder.WriteString("[global]\n")
+	builder.WriteString("ioengine=sync\n")
+	builder.WriteString("direct=0\n")
+	builder.WriteString("rw=" + direction + "\n")
+	builder.WriteString("bs=" + strconv.FormatInt(blockSize, 10) + "\n")
+	builder.WriteString("fallocate=none\n")
+	builder.WriteString("group_reporting=1\n")
+	builder.WriteString("end_fsync=1\n")
+	builder.WriteString("invalidate=1\n")
+	builder.WriteString("runtime=" + strconv.Itoa(int(caseRuntime/time.Second)) + "\n")
 	if direction == "write" {
 		// Keep writing for the full measurement window, reusing this bounded
 		// file region if necessary. The subsequent read is deliberately one pass.
-		builder.WriteString("time_based=1\\n")
+		builder.WriteString("time_based=1\n")
 	}
-	builder.WriteString("size=" + strconv.FormatInt(perJob, 10) + "\\n")
+	builder.WriteString("size=" + strconv.FormatInt(perJob, 10) + "\n")
 	for i, dir := range paths {
-		fmt.Fprintf(&builder, "[job-%d]\\nfilename=%s\\n", i+1, filepath.Join(dir, "data.bin"))
+		fmt.Fprintf(&builder, "[job-%d]\nfilename=%s\n", i+1, filepath.Join(dir, "data.bin"))
 	}
 	return builder.String()
 }
@@ -735,7 +735,7 @@ func dropCaches() error {
 	if err := exec.Command("sync").Run(); err != nil {
 		return fmt.Errorf("sync written benchmark data: %w", err)
 	}
-	if err := os.WriteFile("/proc/sys/vm/drop_caches", []byte("3\\n"), 0); err != nil {
+	if err := os.WriteFile("/proc/sys/vm/drop_caches", []byte("3\n"), 0); err != nil {
 		return fmt.Errorf("write /proc/sys/vm/drop_caches: %w", err)
 	}
 	return nil
