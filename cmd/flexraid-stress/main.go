@@ -446,14 +446,14 @@ func medianInt64(values []int64) int64 {
 
 func markdownReport(results []result) string {
 	var builder strings.Builder
-	builder.WriteString("| gRPC mode | Write MiB/s | Read MiB/s | IOPS | Write p95 | Read p95 | Metadata p95 | RPC calls/errors | RPC p95 | Integrity |\n")
-	builder.WriteString("|---|---:|---:|---:|---:|---:|---:|---:|---:|---|\n")
+	builder.WriteString("| gRPC mode | Write MiB/s | Read MiB/s | IOPS | Write p95 | Read p95 | Metadata p95 | Sync p95 | RPC calls/errors | RPC p95 | Integrity |\n")
+	builder.WriteString("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|\n")
 	for _, value := range results {
-		fmt.Fprintf(&builder, "| %s | %.2f | %.2f | %.0f | %s | %s | %s | %d/%d | %s | %t |\n",
+		fmt.Fprintf(&builder, "| %s | %.2f | %.2f | %.0f | %s | %s | %s | %s | %d/%d | %s | %t |\n",
 			value.Mode, value.WriteMiBPerSec, value.ReadMiBPerSec, value.IOPS,
 			value.WriteLatencyP95.Round(time.Microsecond), value.ReadLatencyP95.Round(time.Microsecond),
-			value.MetadataLatencyP95.Round(time.Microsecond), value.RPCCalls, value.RPCErrors,
-			value.RPCLatencyP95.Round(time.Microsecond), value.IntegrityVerified)
+			value.MetadataLatencyP95.Round(time.Microsecond), value.SyncLatencyP95.Round(time.Microsecond),
+			value.RPCCalls, value.RPCErrors, value.RPCLatencyP95.Round(time.Microsecond), value.IntegrityVerified)
 	}
 	if len(results) == 3 {
 		for _, index := range []int{1, 2} {
