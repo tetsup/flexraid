@@ -106,6 +106,7 @@ jobs:
             --config "$worker_config" \\
             --size 268435456 \\
             --output "$GITHUB_WORKSPACE/benchmark-results/flexraid"
+          sudo chown -R "$USER:$USER" benchmark-results
 
       - name: Upload raw fio results and summary
         uses: actions/upload-artifact@v6
