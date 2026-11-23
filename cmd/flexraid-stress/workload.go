@@ -159,6 +159,9 @@ func runConcurrentWorkload(mountpoint, socket string, opts options, measured *re
 	measured.SyncOps = syncOps
 	measured.SyncLatencyP50, measured.SyncLatencyP95, measured.SyncLatencyP99 = syncP50, syncP95, syncP99
 	measured.RPCCalls, measured.RPCErrors = rpcCalls, rpcErrors
+	if rpcCalls > 0 {
+		measured.RPCSuccessRatePct = float64(rpcCalls-rpcErrors) * 100 / float64(rpcCalls)
+	}
 	measured.AverageRPCLatency, measured.RPCLatencyP50, measured.RPCLatencyP95, measured.RPCLatencyP99 = rpcTotal, rpcP50, rpcP95, rpcP99
 	if active && rpcCalls == 0 {
 		return fmt.Errorf("active gRPC condition completed no RPCs")
