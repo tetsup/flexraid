@@ -1,6 +1,7 @@
 package fuse
 
 import (
+	"context"
 	"syscall"
 	"testing"
 	"time"
@@ -229,5 +230,14 @@ func TestStatfsMapsMaximumNameLength(t *testing.T) {
 	}
 	if out.NameLen != 255 {
 		t.Fatalf("Statfs NameLen=%d, want 255", out.NameLen)
+	}
+}
+
+func TestToErrnoMapsCanceledRequestsToInterrupted(t *testing.T) {
+	if got := toErrno(context.Canceled); got != syscall.EINTR {
+		t.Fatalf("toErrno(context.Canceled) = %v, want EINTR", got)
+	}
+	if got := toErrno(context.DeadlineExceeded); got != syscall.ETIMEDOUT {
+		t.Fatalf("toErrno(context.DeadlineExceeded) = %v, want ETIMEDOUT", got)
 	}
 }

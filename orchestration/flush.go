@@ -60,7 +60,18 @@ type FsyncResponse struct{ PersistedStripes uint32 }
 
 func (o *Orchestration) FsyncLocked(r FsyncRequest) (response FsyncResponse, err error) {
 	started := time.Now()
-	defer func() { o.recordOperation("Fsync", started, err) }()
+	defer func() {
+		o.recordOperation("Fsync", started, err)
+		if err != nil {
+			objectID := ""
+			if r.Handle != nil && r.Handle.runtimeFile != nil {
+				objectID = r.Handle.runtimeFile.objectID.String()
+			}
+			if o.logger != nil {
+				o.logger.Error("file fsync failed", "object_id", objectID, "error", err)
+			}
+		}
+	}()
 	return o.fsyncLocked(r)
 }
 

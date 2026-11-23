@@ -30,7 +30,14 @@ type RenameResponse struct {
 // and are not crash-atomic across multiple objects.
 func (layer *Orchestration) RenameLocked(request RenameRequest) (response RenameResponse, err error) {
 	started := time.Now()
-	defer func() { layer.recordOperation("Rename", started, err) }()
+	defer func() {
+		layer.recordOperation("Rename", started, err)
+		if err != nil {
+			if layer.logger != nil {
+				layer.logger.Error("namespace rename failed", "source_parent_id", request.SourceParentID.String(), "source_name", request.SourceName, "destination_parent_id", request.DestinationParentID.String(), "destination_name", request.DestinationName, "error", err)
+			}
+		}
+	}()
 	response, err = layer.renameLocked(request)
 	if err != nil || !response.Changed {
 		return response, err

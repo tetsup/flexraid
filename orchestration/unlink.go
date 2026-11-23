@@ -22,7 +22,14 @@ type UnlinkResponse struct{}
 // are kept in separate internal functions.
 func (layer *Orchestration) UnlinkLocked(request UnlinkRequest) (response UnlinkResponse, err error) {
 	started := time.Now()
-	defer func() { layer.recordOperation("Unlink", started, err) }()
+	defer func() {
+		layer.recordOperation("Unlink", started, err)
+		if err != nil {
+			if layer.logger != nil {
+				layer.logger.Error("namespace unlink failed", "parent_id", request.ParentID.String(), "name", request.Name, "error", err)
+			}
+		}
+	}()
 	response, err = layer.unlinkLocked(request)
 	if err != nil {
 		return response, err

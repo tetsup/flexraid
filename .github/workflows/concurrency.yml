@@ -1,0 +1,164 @@
+name: FUSE and gRPC Concurrency
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  management-lock:
+    name: Management lock and cancellation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out pull request or dispatched ref
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run concurrent cancellation tests with race detector
+        run: go test -race ./management -run '^TestWorkerGRPCMonitoringConcurrentWithCancelledForegroundOperations$' -count=10
+
+      - name: Benchmark scheduler with and without monitoring RPCs
+        shell: bash
+        run: |
+          mkdir -p benchmark-results
+          go test ./management \
+            -run '^$' \
+            -bench '^BenchmarkManagementMutexWithGRPCMonitoring$' \
+            -benchmem \
+            -benchtime=3s \
+            -count=3 | tee benchmark-results/scheduler-grpc-overhead.txt
+
+      - name: Upload scheduler benchmark
+        uses: actions/upload-artifact@v6
+        with:
+          name: scheduler-grpc-overhead
+          path: benchmark-results/scheduler-grpc-overhead.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  fuse-grpc-integration:
+    name: Real Worker FUSE and concurrent gRPC
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out pull request or dispatched ref
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install FUSE and loopback filesystem tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fuse3 e2fsprogs
+
+      - name: Build real Worker and stress runner
+        run: |
+          mkdir -p bin benchmark-results
+          go build -o bin/flexraid ./main
+          go build -o bin/flexraid-stress ./cmd/flexraid-stress
+
+      - name: Run actual FUSE and gRPC A/B/C workload on four loopback drives
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -c /dev/fuse ]]; then
+            echo "/dev/fuse is not available on this runner" >&2
+            exit 1
+          fi
+
+          sudo modprobe fuse
+          sudo modprobe loop
+          sudo mkdir -p /dev/disk/by-id
+
+          loops=()
+          symlinks=()
+          physical_mounts=()
+          fuse_mount="$RUNNER_TEMP/flexraid-fuse-integration-mount"
+          cleanup() {
+            sudo fusermount3 -u "$fuse_mount" >/dev/null 2>&1 || true
+            for mount in "${physical_mounts[@]}"; do
+              sudo umount "$mount" >/dev/null 2>&1 || true
+            done
+            for link in "${symlinks[@]}"; do
+              sudo rm -f "$link"
+            done
+            for loop in "${loops[@]}"; do
+              sudo losetup -d "$loop" >/dev/null 2>&1 || true
+            done
+          }
+          trap cleanup EXIT
+
+          for index in 1 2 3 4; do
+            image="$RUNNER_TEMP/flexraid-ci-disk-$index.img"
+            mount="/mnt/flexraid-ci-disk-$index"
+            link="/dev/disk/by-id/wwn-flexraid-ci-$index"
+            truncate -s 512M "$image"
+            loop="$(sudo losetup --find --show "$image")"
+            loops+=("$loop")
+            sudo mkfs.ext4 -F -q "$loop"
+            sudo mkdir -p "$mount"
+            sudo mount "$loop" "$mount"
+            physical_mounts+=("$mount")
+            sudo ln -s "$loop" "$link"
+            symlinks+=("$link")
+          done
+
+          cat > "$RUNNER_TEMP/flexraid-ci.yaml" <<'YAML'
+          disks:
+            - root: /tmp/flexraid-placeholder-1
+              mountpoint: /mnt/flexraid-ci-disk-1
+              wwn: flexraid-ci-1
+            - root: /tmp/flexraid-placeholder-2
+              mountpoint: /mnt/flexraid-ci-disk-2
+              wwn: flexraid-ci-2
+            - root: /tmp/flexraid-placeholder-3
+              mountpoint: /mnt/flexraid-ci-disk-3
+              wwn: flexraid-ci-3
+            - root: /tmp/flexraid-placeholder-4
+              mountpoint: /mnt/flexraid-ci-disk-4
+              wwn: flexraid-ci-4
+          mountpoint: /tmp/flexraid-ci-fuse-mount
+          grpc_socket_path: /tmp/flexraid-ci-worker.sock
+          YAML
+
+          sudo ./bin/flexraid-stress \
+            --config "$RUNNER_TEMP/flexraid-ci.yaml" \
+            --worker "$GITHUB_WORKSPACE/bin/flexraid" \
+            --size 67108864 \
+            --block-size 65536 \
+            --workers 4 \
+            --duration 8s \
+            --warmup 1s \
+            --rpc-interval 100ms \
+            --repetitions 2 \
+            --report "$RUNNER_TEMP/fuse-grpc-ab-report.json" \
+            | tee benchmark-results/fuse-grpc-ab-report.md
+
+          sudo chown "$(id -u):$(id -g)" "$RUNNER_TEMP/fuse-grpc-ab-report.json"
+          cp "$RUNNER_TEMP/fuse-grpc-ab-report.json" benchmark-results/fuse-grpc-ab-report.json
+
+      - name: Upload real FUSE and gRPC benchmark
+        uses: actions/upload-artifact@v6
+        with:
+          name: fuse-grpc-concurrency-benchmark
+          path: benchmark-results/fuse-grpc-ab-report.*
+          if-no-files-found: error
+          retention-days: 30

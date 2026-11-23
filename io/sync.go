@@ -2,6 +2,7 @@ package io
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -48,6 +49,12 @@ func (layer *IO) Sync(request SyncRequest) (response SyncResponse, err error) {
 	}
 	if err = request.Context.Err(); err == nil {
 		err = file.Sync()
+		if err != nil {
+			err = fmt.Errorf("sync physical chunk file %q: %w", path, err)
+			if layer.logger != nil {
+				layer.logger.Error("physical chunk synchronization failed", "path", path, "error", err)
+			}
+		}
 	}
 	closeErr := file.Close()
 	if err != nil {
@@ -58,6 +65,10 @@ func (layer *IO) Sync(request SyncRequest) (response SyncResponse, err error) {
 		return response, err
 	}
 	if err = syncDirectory(filepath.Dir(path)); err != nil {
+		err = fmt.Errorf("sync physical chunk directory %q: %w", filepath.Dir(path), err)
+		if layer.logger != nil {
+			layer.logger.Error("physical chunk directory synchronization failed", "path", filepath.Dir(path), "error", err)
+		}
 		return response, err
 	}
 	response.Synced = true
