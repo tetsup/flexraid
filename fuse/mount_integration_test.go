@@ -135,6 +135,14 @@ func TestMountedFilesystemFileOperations(t *testing.T) {
 		_ = file.Close()
 		t.Fatalf("fsync file: %v", err)
 	}
+	readBack := make([]byte, len(payload))
+	if n, err := file.ReadAt(readBack, 0); err != nil {
+		_ = file.Close()
+		t.Fatalf("read file through the same O_RDWR handle after fsync: %v", err)
+	} else if n != len(payload) || string(readBack) != string(payload) {
+		_ = file.Close()
+		t.Fatalf("same-handle read returned %d bytes %q, want %q", n, readBack, payload)
+	}
 	if err := file.Close(); err != nil {
 		t.Fatalf("close file: %v", err)
 	}
