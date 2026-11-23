@@ -214,6 +214,12 @@ func createStorageRoots(template string) ([]string, error) {
 				if physicalMount == "" {
 					return nil, errors.New("empty physical disk mountpoint in config")
 				}
+				if !isMounted(physicalMount) {
+					for _, created := range roots {
+						_ = os.RemoveAll(created)
+					}
+					return nil, fmt.Errorf("physical mountpoint %s is not mounted; refusing to create benchmark data on the host filesystem", physicalMount)
+				}
 				root, err := os.MkdirTemp(physicalMount, ".flexraid-stress-")
 				if err != nil {
 					for _, created := range roots {
@@ -423,20 +429,20 @@ func runBenchmarkWithMonitoring(mountpoint, socket string, opts options, measure
 		ticker := time.NewTicker(opts.rpcEvery)
 		defer ticker.Stop()
 		for {
+			started := time.Now()
+			callCtx, callCancel := context.WithTimeout(ctx, 5*time.Second)
+			response := new(structpb.Struct)
+			err := connection.Invoke(callCtx, "/flexraid.worker.v1.WorkerService/GetStatus", &emptypb.Empty{}, response)
+			callCancel()
+			measured.RPCCalls++
+			totalLatency += time.Since(started)
+			if err != nil {
+				measured.RPCErrors++
+			}
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				started := time.Now()
-				callCtx, callCancel := context.WithTimeout(ctx, 5*time.Second)
-				response := new(structpb.Struct)
-				err := connection.Invoke(callCtx, "/flexraid.worker.v1.WorkerService/GetStatus", &emptypb.Empty{}, response)
-				callCancel()
-				measured.RPCCalls++
-				totalLatency += time.Since(started)
-				if err != nil {
-					measured.RPCErrors++
-				}
 			}
 		}
 	}()
