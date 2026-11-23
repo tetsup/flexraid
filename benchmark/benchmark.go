@@ -157,16 +157,24 @@ func Run(args []string) (runErr error) {
 		if cleanupErr := removeWorkDirs(workDirs); cleanupErr != nil {
 			runErr = errors.Join(runErr, cleanupErr)
 		}
+		mountStillActive := false
 		if worker != nil {
 			if stopErr := worker.stop(); stopErr != nil {
 				runErr = errors.Join(runErr, stopErr)
 			}
+			mounted, mountErr := isFUSEMountpoint(worker.mountpoint)
+			if mountErr != nil || mounted {
+				mountStillActive = true
+				runErr = errors.Join(runErr, fmt.Errorf("temporary Worker mount may still be active; preserving temporary storage roots at %v and workspace %s (mount check error: %v)", storageRoots, temporaryDir, mountErr))
+			}
 		}
-		if cleanupErr := removeWorkDirs(storageRoots); cleanupErr != nil {
-			runErr = errors.Join(runErr, cleanupErr)
-		}
-		if cleanupErr := os.RemoveAll(temporaryDir); cleanupErr != nil {
-			runErr = errors.Join(runErr, fmt.Errorf("remove benchmark workspace %s: %w", temporaryDir, cleanupErr))
+		if !mountStillActive {
+			if cleanupErr := removeWorkDirs(storageRoots); cleanupErr != nil {
+				runErr = errors.Join(runErr, cleanupErr)
+			}
+			if cleanupErr := os.RemoveAll(temporaryDir); cleanupErr != nil {
+				runErr = errors.Join(runErr, fmt.Errorf("remove benchmark workspace %s: %w", temporaryDir, cleanupErr))
+			}
 		}
 	}()
 
@@ -460,10 +468,21 @@ func (worker *workerProcess) logContents() string {
 }
 
 func unmount(mountpoint string) error {
-	if err := exec.Command("fusermount3", "-u", mountpoint).Run(); err == nil {
-		return nil
+	commands := [][]string{
+		{"fusermount3", "-u", mountpoint},
+		{"umount", mountpoint},
+		{"fusermount3", "-u", "-z", mountpoint},
+		{"umount", "-l", mountpoint},
 	}
-	return exec.Command("umount", mountpoint).Run()
+	var unmountErr error
+	for _, args := range commands {
+		if err := exec.Command(args[0], args[1:]...).Run(); err == nil {
+			return nil
+		} else {
+			unmountErr = errors.Join(unmountErr, fmt.Errorf("%s: %w", strings.Join(args, " "), err))
+		}
+	}
+	return unmountErr
 }
 
 func validateOutputPath(output string, config management.Config) error {
