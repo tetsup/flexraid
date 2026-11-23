@@ -39,11 +39,30 @@ type result struct {
 	ReadDuration      time.Duration `json:"read_duration_ns"`
 	WriteMiBPerSec    float64       `json:"write_mib_per_sec"`
 	ReadMiBPerSec     float64       `json:"read_mib_per_sec"`
-	WriteSHA256       string        `json:"write_sha256"`
-	ReadSHA256        string        `json:"read_sha256"`
-	RPCCalls          uint64        `json:"rpc_calls"`
-	RPCErrors         uint64        `json:"rpc_errors"`
-	AverageRPCLatency time.Duration `json:"average_rpc_latency_ns"`
+	WriteSHA256          string        `json:"write_sha256"`
+	ReadSHA256           string        `json:"read_sha256"`
+	IntegrityVerified    bool          `json:"integrity_verified"`
+	Duration             time.Duration `json:"duration_ns"`
+	Workers              int           `json:"workers"`
+	WriteOps             uint64        `json:"write_ops"`
+	ReadOps              uint64        `json:"read_ops"`
+	MetadataOps          uint64        `json:"metadata_ops"`
+	IOPS                 float64       `json:"iops"`
+	WriteLatencyP50      time.Duration `json:"write_latency_p50_ns"`
+	WriteLatencyP95      time.Duration `json:"write_latency_p95_ns"`
+	WriteLatencyP99      time.Duration `json:"write_latency_p99_ns"`
+	ReadLatencyP50       time.Duration `json:"read_latency_p50_ns"`
+	ReadLatencyP95       time.Duration `json:"read_latency_p95_ns"`
+	ReadLatencyP99       time.Duration `json:"read_latency_p99_ns"`
+	MetadataLatencyP50   time.Duration `json:"metadata_latency_p50_ns"`
+	MetadataLatencyP95   time.Duration `json:"metadata_latency_p95_ns"`
+	MetadataLatencyP99   time.Duration `json:"metadata_latency_p99_ns"`
+	RPCCalls             uint64        `json:"rpc_calls"`
+	RPCErrors            uint64        `json:"rpc_errors"`
+	AverageRPCLatency    time.Duration `json:"average_rpc_latency_ns"`
+	RPCLatencyP50        time.Duration `json:"rpc_latency_p50_ns"`
+	RPCLatencyP95        time.Duration `json:"rpc_latency_p95_ns"`
+	RPCLatencyP99        time.Duration `json:"rpc_latency_p99_ns"`
 }
 
 type options struct {
@@ -55,7 +74,10 @@ type options struct {
 	rpcEvery    time.Duration
 	reportPath  string
 	startup     time.Duration
-	repetitions int
+	repetitions    int
+	workers        int
+	duration       time.Duration
+	warmupDuration time.Duration
 }
 
 func main() {
@@ -76,13 +98,17 @@ func run() error {
 	flag.StringVar(&opts.reportPath, "report", "flexraid-stress-report.json", "JSON report path")
 	flag.DurationVar(&opts.startup, "startup-timeout", 90*time.Second, "Worker startup timeout")
 	flag.IntVar(&opts.repetitions, "repetitions", 2, "number of alternating comparison rounds")
+	flag.IntVar(&opts.workers, "workers", 4, "number of concurrent FUSE file clients")
+	flag.DurationVar(&opts.duration, "duration", 10*time.Second, "measured concurrent workload duration")
+	flag.DurationVar(&opts.warmupDuration, "warmup", 2*time.Second, "warm-up duration per comparison condition")
 	flag.Parse()
 
 	if opts.configPath == "" {
 		return errors.New("--config is required; use a dedicated test configuration with test-only storage roots")
 	}
-	if opts.size <= 0 || opts.warmupSize < 0 || opts.blockSize <= 0 || opts.rpcEvery <= 0 || opts.repetitions <= 0 {
-		return errors.New("size, block-size, and rpc-interval must be positive; warmup-size must not be negative")
+	if opts.size <= 0 || opts.warmupSize < 0 || opts.blockSize <= 0 || opts.rpcEvery <= 0 || opts.repetitions <= 0 ||
+		opts.workers < 2 || opts.duration <= 0 || opts.warmupDuration < 0 || opts.size < int64(opts.workers*opts.blockSize) {
+		return errors.New("size, block-size, rpc-interval, duration, and repetitions must be positive; workers >= 2; warmup >= 0; size >= workers*block-size")
 	}
 	if _, err := os.Stat(opts.workerPath); err != nil {
 		return fmt.Errorf("Worker executable: %w", err)
@@ -205,14 +231,8 @@ func runMode(opts options, template string, selected mode) (_ result, runErr err
 	if err := waitForWorker(command, waitDone, mountpoint, socketPath, selected != modeOff, opts.startup); err != nil {
 		return result, err
 	}
-	if selected == modeActive {
-		if err := runBenchmarkWithMonitoring(mountpoint, socketPath, opts, &result); err != nil {
-			return result, err
-		}
-	} else {
-		if err := runBenchmark(mountpoint, opts, &result); err != nil {
-			return result, err
-		}
+	if err := runConcurrentWorkload(mountpoint, socketPath, opts, &result, selected == modeActive); err != nil {
+		return result, err
 	}
 	return result, nil
 }
@@ -480,8 +500,8 @@ func runBenchmarkWithMonitoring(mountpoint, socket string, opts options, measure
 }
 
 func printResult(value result) {
-	fmt.Printf("  write %.2f MiB/s, read %.2f MiB/s, RPC %d/%d errors\n",
-		value.WriteMiBPerSec, value.ReadMiBPerSec, value.RPCErrors, value.RPCCalls)
+	fmt.Printf("  %d FUSE clients, write %.2f MiB/s, read %.2f MiB/s, %.0f IOPS, verified=%t, RPC %d/%d errors\n",
+		value.Workers, value.WriteMiBPerSec, value.ReadMiBPerSec, value.IOPS, value.IntegrityVerified, value.RPCErrors, value.RPCCalls)
 }
 
 func summarizeResults(samples []result) []result {
@@ -548,18 +568,22 @@ func medianInt64(values []int64) int64 {
 
 func markdownReport(results []result) string {
 	var builder strings.Builder
-	builder.WriteString("| gRPC mode | Write MiB/s | Read MiB/s | RPC calls | RPC errors | Avg RPC latency |\n")
-	builder.WriteString("|---|---:|---:|---:|---:|---:|\n")
+	builder.WriteString("| gRPC mode | Write MiB/s | Read MiB/s | IOPS | Write p95 | Read p95 | Metadata p95 | RPC calls/errors | RPC p95 | Integrity |\n")
+	builder.WriteString("|---|---:|---:|---:|---:|---:|---:|---:|---:|---|\n")
 	for _, value := range results {
-		fmt.Fprintf(&builder, "| %s | %.2f | %.2f | %d | %d | %s |\n",
-			value.Mode, value.WriteMiBPerSec, value.ReadMiBPerSec, value.RPCCalls,
-			value.RPCErrors, value.AverageRPCLatency.Round(time.Microsecond))
+		fmt.Fprintf(&builder, "| %s | %.2f | %.2f | %.0f | %s | %s | %s | %d/%d | %s | %t |\n",
+			value.Mode, value.WriteMiBPerSec, value.ReadMiBPerSec, value.IOPS,
+			value.WriteLatencyP95.Round(time.Microsecond), value.ReadLatencyP95.Round(time.Microsecond),
+			value.MetadataLatencyP95.Round(time.Microsecond), value.RPCCalls, value.RPCErrors,
+			value.RPCLatencyP95.Round(time.Microsecond), value.IntegrityVerified)
 	}
 	if len(results) == 3 {
 		for _, index := range []int{1, 2} {
 			writeDelta := percentage(results[0].WriteMiBPerSec, results[index].WriteMiBPerSec)
 			readDelta := percentage(results[0].ReadMiBPerSec, results[index].ReadMiBPerSec)
-			fmt.Fprintf(&builder, "\n- %s vs off: write %+.2f%%, read %+.2f%%\n", results[index].Mode, writeDelta, readDelta)
+			iopsDelta := percentage(results[0].IOPS, results[index].IOPS)
+			fmt.Fprintf(&builder, "\n- %s vs off: write %+.2f%%, read %+.2f%%, IOPS %+.2f%%\n",
+				results[index].Mode, writeDelta, readDelta, iopsDelta)
 		}
 	}
 	return builder.String()
