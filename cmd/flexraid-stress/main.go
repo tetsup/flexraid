@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -265,8 +264,6 @@ func renderConfig(template string, roots []string, mountpoint, socket string, gr
 			if grpcEnabled {
 				output = append(output, "grpc_socket_path: "+socket)
 			}
-		case len(indent) == 0 && strings.HasPrefix(trimmed, "grpc_enabled:"):
-			// Generated mode settings override the template.
 		default:
 			output = append(output, line)
 		}
@@ -277,7 +274,6 @@ func renderConfig(template string, roots []string, mountpoint, socket string, gr
 	if grpcEnabled && !foundGRPC {
 		output = append(output, "grpc_socket_path: "+socket)
 	}
-	output = append(output, "grpc_enabled: "+strconv.FormatBool(grpcEnabled))
 	return strings.Join(output, "\n"), nil
 }
 
