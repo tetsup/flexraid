@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"os"
 	"testing"
 
 	"github.com/tetsup/flexraid/management"
