@@ -169,22 +169,33 @@ func validateOutputPath(output string, config management.Config) error {
 	}
 	protected := []string{config.Mountpoint}
 	for _, disk := range config.Disks {
-		protected = append(protected, disk.Root)
+		protected = append(protected, disk.Root, disk.Mountpoint)
 	}
 	for _, path := range protected {
 		root, err := filepath.Abs(path)
 		if err != nil {
 			return fmt.Errorf("resolve protected path %s: %w", path, err)
 		}
-		relative, err := filepath.Rel(root, absolute)
-		if err != nil {
-			return fmt.Errorf("compare output path with %s: %w", root, err)
-		}
-		if relative == "." || (relative != ".." && !strings.HasPrefix(relative, ".."+string(os.PathSeparator))) {
-			return fmt.Errorf("output directory %s must not be inside storage path %s", absolute, root)
+		if pathsOverlap(absolute, root) {
+			return fmt.Errorf("output directory %s must not overlap storage path %s", absolute, root)
 		}
 	}
 	return nil
+}
+
+func pathsOverlap(first, second string) bool {
+	firstToSecond, err := filepath.Rel(first, second)
+	if err != nil {
+		return true
+	}
+	secondToFirst, err := filepath.Rel(second, first)
+	if err != nil {
+		return true
+	}
+	isWithin := func(relative string) bool {
+		return relative == "." || (relative != ".." && !strings.HasPrefix(relative, ".."+string(os.PathSeparator)))
+	}
+	return isWithin(firstToSecond) || isWithin(secondToFirst)
 }
 
 func createWorkDirs(config management.Config) ([]string, error) {
