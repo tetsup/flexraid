@@ -51,7 +51,9 @@ func (layer *IO) Sync(request SyncRequest) (response SyncResponse, err error) {
 		err = file.Sync()
 		if err != nil {
 			err = fmt.Errorf("sync physical chunk file %q: %w", path, err)
-			layer.logger.Error("physical chunk synchronization failed", "path", path, "error", err)
+			if layer.logger != nil {
+				layer.logger.Error("physical chunk synchronization failed", "path", path, "error", err)
+			}
 		}
 	}
 	closeErr := file.Close()
