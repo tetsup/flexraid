@@ -67,7 +67,9 @@ func (o *Orchestration) FsyncLocked(r FsyncRequest) (response FsyncResponse, err
 			if r.Handle != nil && r.Handle.runtimeFile != nil {
 				objectID = r.Handle.runtimeFile.objectID.String()
 			}
-			o.logger.Error("file fsync failed", "object_id", objectID, "error", err)
+			if o.logger != nil {
+				o.logger.Error("file fsync failed", "object_id", objectID, "error", err)
+			}
 		}
 	}()
 	return o.fsyncLocked(r)
