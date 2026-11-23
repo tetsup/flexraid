@@ -50,7 +50,7 @@ jobs:
             image="$RUNNER_TEMP/flexraid-bench-disk-$index.img"
             mount="/mnt/flexraid-bench-disk-$index"
             link="/dev/disk/by-id/wwn-flexraid-bench-$index"
-            truncate -s 1G "$image"
+            truncate -s 2G "$image"
             loop="$(sudo losetup --find --show "$image")"
             echo "$loop" >> "$RUNNER_TEMP/flexraid-bench-loops"
             sudo mkfs.ext4 -F -q "$loop"
