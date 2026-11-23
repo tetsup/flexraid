@@ -49,13 +49,16 @@ type options struct {
 }
 
 type fioJob struct {
-	Read  fioDirection `json:"read"`
-	Write fioDirection `json:"write"`
+	Read       fioDirection `json:"read"`
+	Write      fioDirection `json:"write"`
+	JobRuntime int64         `json:"job_runtime"`
 }
 
 type fioDirection struct {
-	BWBytes float64 `json:"bw_bytes"`
-	IOPS    float64 `json:"iops"`
+	BWBytes  float64 `json:"bw_bytes"`
+	IOPS     float64 `json:"iops"`
+	IOBytes  int64   `json:"io_bytes"`
+	TotalIOs int64   `json:"total_ios"`
 }
 
 type fioReport struct {
@@ -69,6 +72,9 @@ type sample struct {
 	Direction  string
 	BWBytes    float64
 	IOPS       float64
+	Elapsed    time.Duration
+	Bytes      int64
+	Operations int64
 }
 
 type workerProcess struct {
@@ -730,49 +736,51 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 	if perJob < blockSize {
 		return sample{}, fmt.Errorf("per-job size %d is smaller than block size %d", perJob, blockSize)
 	}
+	var result sample
 	if direction == "read" || direction == "overwrite" {
 		if err := dropCaches(); err != nil {
-			return sample{}, fmt.Errorf("drop filesystem caches before cold read: %w", err)
+			return sample{}, fmt.Errorf("drop filesystem caches before cold %s: %w", direction, err)
 		}
-		var bw, iops float64
+		var bytes, operations int64
+		var elapsed time.Duration
 		var err error
 		if direction == "overwrite" {
-			bw, iops, err = measureOverwrite(paths, blockSize, opts.duration)
+			bytes, operations, elapsed, err = measureOverwrite(paths, blockSize, opts.duration)
 		} else {
-			bw, iops, err = measureColdRead(paths, blockSize, opts.duration)
+			bytes, operations, elapsed, err = measureColdRead(paths, blockSize, opts.duration)
 		}
-		if err != nil {
-			return sample{}, err
+		if err != nil { return sample{}, err }
+		result = sample{Bytes: bytes, Operations: operations, Elapsed: elapsed}
+	} else {
+		jobPath := filepath.Join(opts.outputDir, filesystem+"-"+label+"-"+direction+".fio")
+		resultPath := filepath.Join(opts.outputDir, filesystem+"-"+label+"-"+direction+".json")
+		if err := os.WriteFile(jobPath, []byte(buildFioJob(paths, blockSize, perJob, direction, opts.duration)), 0600); err != nil {
+			return sample{}, fmt.Errorf("write fio job: %w", err)
 		}
-		return sample{Filesystem: filesystem, IOSize: blockSize, Label: label, Direction: direction, BWBytes: bw, IOPS: iops}, nil
+		command := exec.Command(opts.fioPath, jobPath, "--output-format=json", "--output="+resultPath)
+		command.Stdout, command.Stderr = os.Stdout, os.Stderr
+		if err := command.Run(); err != nil { return sample{}, fmt.Errorf("run fio: %w", err) }
+		data, err := os.ReadFile(resultPath)
+		if err != nil { return sample{}, fmt.Errorf("read fio result: %w", err) }
+		var report fioReport
+		if err := json.Unmarshal(data, &report); err != nil { return sample{}, fmt.Errorf("decode fio result: %w", err) }
+		var totalBytes, totalOperations int64
+		var elapsed time.Duration
+		for _, job := range report.Jobs {
+			totalBytes += job.Write.IOBytes
+			totalOperations += job.Write.TotalIOs
+			if job.JobRuntime > 0 { elapsed = time.Duration(job.JobRuntime) * time.Millisecond }
+		}
+		result = sample{Bytes: totalBytes, Operations: totalOperations, Elapsed: elapsed}
 	}
-
-	jobPath := filepath.Join(opts.outputDir, filesystem+"-"+label+"-"+direction+".fio")
-	resultPath := filepath.Join(opts.outputDir, filesystem+"-"+label+"-"+direction+".json")
-	jobConfig := buildFioJob(paths, blockSize, perJob, direction, opts.duration)
-	if err := os.WriteFile(jobPath, []byte(jobConfig), 0600); err != nil {
-		return sample{}, fmt.Errorf("write fio job: %w", err)
-	}
-	command := exec.Command(opts.fioPath, jobPath, "--output-format=json", "--output="+resultPath)
-	command.Stdout = os.Stdout
-	command.Stderr = os.Stderr
-	if err := command.Run(); err != nil {
-		return sample{}, fmt.Errorf("run fio: %w", err)
-	}
-	data, err := os.ReadFile(resultPath)
-	if err != nil {
-		return sample{}, fmt.Errorf("read fio result: %w", err)
-	}
-	var report fioReport
-	if err := json.Unmarshal(data, &report); err != nil {
-		return sample{}, fmt.Errorf("decode fio result: %w", err)
-	}
-	var totalBW, totalIOPS float64
-	for _, job := range report.Jobs {
-		totalBW += job.Write.BWBytes
-		totalIOPS += job.Write.IOPS
-	}
-	return sample{Filesystem: filesystem, IOSize: blockSize, Label: label, Direction: direction, BWBytes: totalBW, IOPS: totalIOPS}, nil
+	if result.Elapsed <= 0 { return sample{}, errors.New("measurement elapsed time is zero") }
+	result.Filesystem, result.IOSize, result.Label, result.Direction = filesystem, blockSize, label, direction
+	result.BWBytes = float64(result.Bytes) / result.Elapsed.Seconds()
+	result.IOPS = float64(result.Operations) / result.Elapsed.Seconds()
+	fmt.Printf("Completed %-8s %-10s %-9s elapsed=%s operations=%d bytes=%d (%.2f MiB) bandwidth=%.2f MiB/s IOPS=%.2f\n",
+		direction, filesystem, label, result.Elapsed.Round(time.Millisecond), result.Operations, result.Bytes,
+		float64(result.Bytes)/(1024*1024), result.BWBytes/(1024*1024), result.IOPS)
+	return result, nil
 }
 
 func buildFioJob(paths []string, blockSize, perJob int64, direction string, duration time.Duration) string {
@@ -809,7 +817,7 @@ func dropCaches() error {
 	return nil
 }
 
-func measureColdRead(paths []string, blockSize int64, limit time.Duration) (float64, float64, error) {
+func measureColdRead(paths []string, blockSize int64, limit time.Duration) (int64, int64, time.Duration, error) {
 	start := time.Now()
 	deadline := start.Add(limit)
 	var totalBytes atomic.Int64
@@ -851,17 +859,17 @@ func measureColdRead(paths []string, blockSize int64, limit time.Duration) (floa
 	close(errCh)
 	for err := range errCh {
 		if err != nil {
-			return 0, 0, err
+			return 0, 0, 0, err
 		}
 	}
 	elapsed := time.Since(start).Seconds()
 	if elapsed <= 0 {
-		return 0, 0, errors.New("cold-read measurement elapsed time is zero")
+		return 0, 0, 0, errors.New("cold-read measurement elapsed time is zero")
 	}
-	return float64(totalBytes.Load()) / elapsed, float64(totalOps.Load()) / elapsed, nil
+	return totalBytes.Load(), totalOps.Load(), time.Duration(elapsed * float64(time.Second)), nil
 }
 
-func measureOverwrite(paths []string, blockSize int64, limit time.Duration) (float64, float64, error) {
+func measureOverwrite(paths []string, blockSize int64, limit time.Duration) (int64, int64, time.Duration, error) {
 	start := time.Now()
 	deadline := start.Add(limit)
 	var totalBytes atomic.Int64
@@ -918,7 +926,7 @@ func measureOverwrite(paths []string, blockSize int64, limit time.Duration) (flo
 	}
 	elapsed := time.Since(start).Seconds()
 	if elapsed <= 0 {
-		return 0, 0, errors.New("overwrite measurement elapsed time is zero")
+		return 0, 0, 0, errors.New("overwrite measurement elapsed time is zero")
 	}
 	return float64(totalBytes.Load()) / elapsed, float64(totalOps.Load()) / elapsed, nil
 }
@@ -929,12 +937,13 @@ func writeReports(outputDir string, samples []sample) error {
 		return fmt.Errorf("create CSV summary: %w", err)
 	}
 	writer := csv.NewWriter(csvFile)
-	if err := writer.Write([]string{"filesystem", "io_size_bytes", "label", "direction", "bw_bytes_per_sec", "iops"}); err != nil {
+	if err := writer.Write([]string{"filesystem", "io_size_bytes", "label", "direction", "elapsed_seconds", "operations", "bytes", "bw_bytes_per_sec", "iops"}); err != nil {
 		_ = csvFile.Close()
 		return fmt.Errorf("write CSV header: %w", err)
 	}
 	for _, value := range samples {
 		if err := writer.Write([]string{value.Filesystem, strconv.FormatInt(value.IOSize, 10), value.Label, value.Direction,
+			strconv.FormatFloat(value.Elapsed.Seconds(), 'f', 3, 64), strconv.FormatInt(value.Operations, 10), strconv.FormatInt(value.Bytes, 10),
 			strconv.FormatFloat(value.BWBytes, 'f', 2, 64), strconv.FormatFloat(value.IOPS, 'f', 2, 64)}); err != nil {
 			_ = csvFile.Close()
 			return fmt.Errorf("write CSV row: %w", err)
@@ -950,11 +959,11 @@ func writeReports(outputDir string, samples []sample) error {
 	}
 
 	var markdown strings.Builder
-	markdown.WriteString("| Filesystem | I/O size | Direction | Bandwidth |\n")
-	markdown.WriteString("|---|---|---|---:|\n")
+	markdown.WriteString("| Filesystem | I/O size | Direction | Elapsed | Operations | Bytes | Bandwidth |\n")
+	markdown.WriteString("|---|---|---:|---:|---:|---:|---:|\n")
 	for _, value := range samples {
-		fmt.Fprintf(&markdown, "| %s | %s | %s | %.2f MiB/s |\n",
-			value.Filesystem, value.Label, value.Direction, value.BWBytes/(1024*1024))
+		fmt.Fprintf(&markdown, "| %s | %s | %s | %s | %d | %d | %.2f MiB/s |\n",
+			value.Filesystem, value.Label, value.Direction, value.Elapsed.Round(time.Millisecond), value.Operations, value.Bytes, value.BWBytes/(1024*1024))
 	}
 	if err := os.WriteFile(filepath.Join(outputDir, "summary.md"), []byte(markdown.String()), 0644); err != nil {
 		return fmt.Errorf("write Markdown summary: %w", err)
