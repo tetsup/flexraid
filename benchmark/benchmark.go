@@ -233,33 +233,18 @@ func Run(args []string) (runErr error) {
 	if err != nil {
 		return err
 	}
-	modes := []struct {
-		name  string
-		paths []string
-	}{
-		{name: "raw-1drive", paths: workDirs[:1]},
-		{name: "raw-3drive", paths: workDirs[:3]},
-		{name: "raw-4drive", paths: workDirs[:4]},
-		{name: "flexraid", paths: workDirs[len(workDirs)-1:]},
-	}
-
-	var samples []sample
+\tvar samples []sample
 	for _, block := range ioSizes {
-		if opts.totalBytes < block.bytes*4 {
-			return fmt.Errorf("test size %d is too small for %s across four raw drives", opts.totalBytes, block.label)
+		for _, direction := range []string{"write", "overwrite", "read"} {
+			fmt.Printf("Running %-10s %-8s %s ...\\n", "flexraid", direction, block.label)
+			measured, err := runCase(opts, "flexraid", workDirs, block.bytes, block.label, direction)
+			if err != nil {
+				return fmt.Errorf("flexraid %s %s: %w", direction, block.label, err)
+			}
+			samples = append(samples, measured)
 		}
-		for _, mode := range modes {
-			for _, direction := range []string{"write", "overwrite", "read"} {
-				fmt.Printf("Running %-10s %-5s %s ...\n", mode.name, direction, block.label)
-				measured, err := runCase(opts, mode.name, mode.paths, block.bytes, block.label, direction)
-				if err != nil {
-					return fmt.Errorf("%s %s %s: %w", mode.name, direction, block.label, err)
-				}
-				samples = append(samples, measured)
-			}
-			if err := removeModeFiles(mode.paths); err != nil {
-				return fmt.Errorf("remove %s benchmark files: %w", mode.name, err)
-			}
+		if err := removeModeFiles(workDirs); err != nil {
+			return fmt.Errorf("remove FlexRAID benchmark files: %w", err)
 		}
 	}
 	if err := writeReports(opts.outputDir, samples); err != nil {
@@ -925,23 +910,18 @@ func writeReports(outputDir string, samples []sample) error {
 		return fmt.Errorf("close CSV summary: %w", err)
 	}
 
-	var markdown strings.Builder
-	markdown.WriteString("| I/O size | Direction | Raw 1 drive | Raw 3 drives | Raw 4 drives | FlexRAID | FlexRAID / raw 3-drive |\n")
-	markdown.WriteString("|---|---|---:|---:|---:|---:|---:|\n")
+\tvar markdown strings.Builder
+	markdown.WriteString("| I/O size | Direction | FlexRAID |\n")
+	markdown.WriteString("|---|---|---:|\n")
 	for _, block := range ioSizes {
 		for _, direction := range []string{"read", "write", "overwrite"} {
-			values := map[string]float64{}
+			bandwidth := 0.0
 			for _, value := range samples {
 				if value.IOSize == block.bytes && value.Direction == direction {
-					values[value.Filesystem] = value.BWBytes / (1024 * 1024)
+					bandwidth = value.BWBytes / (1024 * 1024)
 				}
 			}
-			ratio := 0.0
-			if values["raw-3drive"] > 0 {
-				ratio = values["flexraid"] / values["raw-3drive"] * 100
-			}
-			fmt.Fprintf(&markdown, "| %s | %s | %.2f MiB/s | %.2f MiB/s | %.2f MiB/s | %.2f MiB/s | %.1f%% |\n",
-				block.label, direction, values["raw-1drive"], values["raw-3drive"], values["raw-4drive"], values["flexraid"], ratio)
+			fmt.Fprintf(&markdown, "| %s | %s | %.2f MiB/s |\n", block.label, direction, bandwidth)
 		}
 	}
 	if err := os.WriteFile(filepath.Join(outputDir, "summary.md"), []byte(markdown.String()), 0644); err != nil {
