@@ -14,7 +14,6 @@ Options:
 | `--config` | required | Worker YAML configuration |
 | `--size` | 512 MiB | Total logical bytes per test case and mode |
 | `--runtime` | 0 | Optional time-based fio run; zero processes the full configured size |
-| `--direct` | false | Request O_DIRECT; use only if supported by both the backing filesystem and FUSE |
 | `--fio` | `fio` | fio executable |
 | `--output` | `./flexraid-bench-results` | Result directory, which must be outside all storage roots and the FUSE mount |
 
@@ -29,4 +28,4 @@ Each I/O size is measured sequentially for writes and reads: 4 KiB, 4 KiB+1 B, 6
 
 The raw three-drive mode is the closest payload-parallel reference for a 3+1 parity layout. The four-drive mode shows the aggregate bandwidth across four physical drives. Neither ratio is a pure parity-cost measurement.
 
-By default fio uses buffered I/O. Results therefore include page-cache effects; increase `--size` beyond available memory or use `--direct` where supported to focus on storage throughput. The command writes per-case fio JSON and job files plus CSV and Markdown summaries.
+fio uses buffered I/O for all cases so the unaligned `+1 B` request sizes remain comparable. Results therefore include Linux page-cache effects; increase `--size` beyond available memory to measure sustained storage throughput. O_DIRECT is intentionally not used because the unaligned cases cannot satisfy its alignment requirements. The command writes per-case fio JSON and job files plus CSV and Markdown summaries.
