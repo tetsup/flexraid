@@ -334,6 +334,7 @@ Distribution -> I/O
 - 性能試験用のデバイス領域・設定・マウントポイントは専用の一時領域に隔離し、通常利用中のデータや実デバイスを意図せず変更しない。異常終了時にも Worker、マウント、ソケット、一時領域を可能な範囲で後始末する。
 - PR ごとの CI では短時間・少反復の代表ワークロードを実行し、長時間・高負荷の反復試験は手動実行または専用環境で行う。CI の実行時間・CPU・メモリ・一時ストレージ消費を制御し、長時間 soak test を通常の PR 必須ゲートにしない。
 - Management の公開操作が使用する共有 Mutex の競合・キャンセル後の実行抑止・gRPC 監視との競合は、物理ドライブや FUSE マウントを必要としない統合テストで検証できる。GitHub Actions では `go test -race` による反復並行テストと、監視 RPC なし / ありのベンチマークを実行し、結果を artifact として保存する。
+- 上記の Management 単体の並行テストは補助検証であり、FUSE と gRPC の共存性・ファイル I/O 性能を検証したことにはならない。PR CI では実 Worker プロセスを起動し、4 台の loopback block device 上の実ストレージ層、実 FUSE mount、Worker gRPC server を通る A/B/C 統合ワークロードを実行する。4 台の loopback device は一時ファイルから作成し、WWN の `/dev/disk/by-id/wwn-*` 解決も実経路を使う。
 - Scheduler 単体のキャンセル試験は FUSE カーネルからの Interrupt / FORGET / Release の動作を検証したことにはならない。FUSE callback と kernel interrupt の実動作は、別途 FUSE が利用可能な Linux 環境で統合テストする。物理デバイスの電源制御・実ディスク性能試験とも区別する。
 - 比較モードに加え、単独調査用に gRPC `off` / `on-idle` / `on-active` の各条件だけを指定して実行できるようにする。比較機能は試験基盤の共通機能とし、個別ワークロードごとに独立実装しない。
 
