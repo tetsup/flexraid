@@ -71,9 +71,9 @@ jobs:
 
       - name: Run raw directory benchmark
         run: |
-          sudo ./bin/flexraid benchmark raw \\
-            --directory /mnt/flexraid-bench-disk-1 \\
-            --size 268435456 \\
+          sudo ./bin/flexraid benchmark raw \
+            --directory /mnt/flexraid-bench-disk-1 \
+            --size 268435456 \
             --output "$GITHUB_WORKSPACE/benchmark-results/raw"
 
       - name: Run FlexRAID benchmark
@@ -102,9 +102,9 @@ jobs:
           for index in 1 2 3 4; do
             sudo mkdir -p "/mnt/flexraid-bench-disk-1/flexraid-data-$index"
           done
-          sudo ./bin/flexraid benchmark \\
-            --config "$worker_config" \\
-            --size 268435456 \\
+          sudo ./bin/flexraid benchmark \
+            --config "$worker_config" \
+            --size 268435456 \
             --output "$GITHUB_WORKSPACE/benchmark-results/flexraid"
           sudo chown -R "$USER:$USER" benchmark-results
 
