@@ -240,7 +240,7 @@ func Run(args []string) (runErr error) {
 		}
 		for _, mode := range modes {
 			for _, direction := range []string{"write", "read"} {
-				fmt.Printf("Running %-10s %-5s %s ...\\n", mode.name, direction, block.label)
+				fmt.Printf("Running %-10s %-5s %s ...\n", mode.name, direction, block.label)
 				measured, err := runCase(opts, mode.name, mode.paths, block.bytes, block.label, direction)
 				if err != nil {
 					return fmt.Errorf("%s %s %s: %w", mode.name, direction, block.label, err)
