@@ -1,0 +1,225 @@
+name: Storage I/O Size Comparison
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/storage-io-size.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    name: Raw ext4 vs FlexRAID FUSE
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install benchmark and FUSE tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fuse3 e2fsprogs fio python3
+
+      - name: Build Worker
+        run: |
+          mkdir -p bin benchmark-results
+          go build -o bin/flexraid ./main
+
+      - name: Create four ext4 loopback drives
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo modprobe fuse
+          sudo modprobe loop
+          sudo mkdir -p /dev/disk/by-id
+          for index in 1 2 3 4; do
+            image="$RUNNER_TEMP/flexraid-bench-disk-$index.img"
+            mount="/mnt/flexraid-bench-disk-$index"
+            link="/dev/disk/by-id/wwn-flexraid-bench-$index"
+            truncate -s 512M "$image"
+            loop="$(sudo losetup --find --show "$image")"
+            echo "$loop" >> "$RUNNER_TEMP/flexraid-bench-loops"
+            sudo mkfs.ext4 -F -q "$loop"
+            sudo mkdir -p "$mount"
+            sudo mount "$loop" "$mount"
+            echo "$mount" >> "$RUNNER_TEMP/flexraid-bench-mounts"
+            sudo ln -s "$loop" "$link"
+            echo "$link" >> "$RUNNER_TEMP/flexraid-bench-links"
+            sudo mkdir -p "$mount/flexraid-data"
+          done
+
+      - name: Run sequential I/O size comparison
+        shell: bash
+        run: |
+          set -euo pipefail
+          fuse_mount="$RUNNER_TEMP/flexraid-bench-fuse"
+          worker_config="$RUNNER_TEMP/flexraid-bench.yaml"
+          worker_log="$RUNNER_TEMP/flexraid-worker.log"
+          cat > "$worker_config" <<YAML
+          disks:
+            - root: /mnt/flexraid-bench-disk-1/flexraid-data
+              mountpoint: /mnt/flexraid-bench-disk-1
+              wwn: flexraid-bench-1
+            - root: /mnt/flexraid-bench-disk-2/flexraid-data
+              mountpoint: /mnt/flexraid-bench-disk-2
+              wwn: flexraid-bench-2
+            - root: /mnt/flexraid-bench-disk-3/flexraid-data
+              mountpoint: /mnt/flexraid-bench-disk-3
+              wwn: flexraid-bench-3
+            - root: /mnt/flexraid-bench-disk-4/flexraid-data
+              mountpoint: /mnt/flexraid-bench-disk-4
+              wwn: flexraid-bench-4
+          mountpoint: $fuse_mount
+          grpc_socket_path: $RUNNER_TEMP/flexraid-bench.sock
+          grpc_enabled: false
+          YAML
+          sudo mkdir -p "$fuse_mount"
+          sudo ./bin/flexraid --config "$worker_config" >"$worker_log" 2>&1 &
+          worker_pid=$!
+          cleanup_worker() {
+            sudo fusermount3 -u "$fuse_mount" >/dev/null 2>&1 || true
+            sudo kill "$worker_pid" >/dev/null 2>&1 || true
+            wait "$worker_pid" >/dev/null 2>&1 || true
+          }
+          trap cleanup_worker EXIT
+          ready=0
+          for attempt in $(seq 1 180); do
+            if mountpoint -q "$fuse_mount" && sudo ls "$fuse_mount" >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            if ! kill -0 "$worker_pid" 2>/dev/null; then
+              cat "$worker_log"
+              exit 1
+            fi
+            sleep 1
+          done
+          if [[ "$ready" != 1 ]]; then
+            cat "$worker_log"
+            echo "FlexRAID FUSE mount did not become ready" >&2
+            exit 1
+          fi
+
+          sizes=(4096 4097 65536 6291456 6291457 67108864)
+          labels=("4KiB" "4KiB+1B" "64KiB" "6MiB" "6MiB+1B" "64MiB")
+          printf 'filesystem,io_size_bytes,label,direction,bw_bytes_per_sec,iops,lat_ns_mean,lat_ns_p95\n' > benchmark-results/summary.csv
+
+          run_fio() {
+            local filesystem="$1"
+            local bytes="$2"
+            local label="$3"
+            local direction="$4"
+            local jobfile="$RUNNER_TEMP/fio-$filesystem-$label-$direction.fio"
+            local output="benchmark-results/$filesystem-$label-$direction.json"
+            {
+              echo '[global]'
+              echo 'ioengine=sync'
+              echo 'direct=0'
+              echo 'invalidate=1'
+              echo 'time_based=1'
+              echo 'runtime=20'
+              echo 'ramp_time=3'
+              echo 'group_reporting=1'
+              echo 'rw='$direction
+              echo "bs=$bytes"
+              echo 'size=64m'
+              echo 'filename_format=bench-$jobnum.dat'
+              echo 'fallocate=none'
+              if [[ "$direction" == write ]]; then
+                echo 'end_fsync=1'
+              fi
+              if [[ "$filesystem" == raw ]]; then
+                for index in 1 2 3 4; do
+                  echo "[raw-disk-$index]"
+                  echo "filename=/mnt/flexraid-bench-disk-$index/bench-$label.dat"
+                done
+              else
+                echo '[flexraid]'
+                echo "filename=$fuse_mount/bench-$label.dat"
+                echo 'numjobs=4'
+                echo 'offset_increment=64m'
+              fi
+            } > "$jobfile"
+            if [[ "$direction" == read ]]; then
+              sync
+              echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null
+            fi
+            fio "$jobfile" --output-format=json --output="$output"
+            python3 - "$output" "$filesystem" "$bytes" "$label" "$direction" >> benchmark-results/summary.csv <<'PY'
+          import json, sys
+          path, filesystem, size, label, direction = sys.argv[1:]
+          report = json.load(open(path, encoding="utf-8"))
+          jobs = report.get("jobs", [])
+          total_bytes = sum(j.get(direction, {}).get("bw_bytes", 0) for j in jobs)
+          total_iops = sum(j.get(direction, {}).get("iops", 0) for j in jobs)
+          latencies = [j.get(direction, {}).get("lat_ns", {}).get("mean", 0) for j in jobs]
+          p95s = [j.get(direction, {}).get("clat_ns", {}).get("percentile", {}).get("95.000000", 0) for j in jobs]
+          count = max(len(jobs), 1)
+          print(f"{filesystem},{size},{label},{direction},{total_bytes},{total_iops:.2f},{sum(latencies)/count:.0f},{max(p95s, default=0):.0f}")
+          PY
+          }
+
+          for index in 1 2 3 4; do
+            sudo chown -R "$(id -u):$(id -g)" "/mnt/flexraid-bench-disk-$index"
+          done
+          sudo chown "$(id -u):$(id -g)" "$fuse_mount"
+          for position in "${!sizes[@]}"; do
+            bytes="${sizes[$position]}"
+            label="${labels[$position]}"
+            echo "::group::I/O size $label ($bytes bytes)"
+            for direction in write read; do
+              run_fio raw "$bytes" "$label" "$direction"
+              run_fio flexraid "$bytes" "$label" "$direction"
+            done
+            echo "::endgroup::"
+          done
+
+          python3 - <<'PY' > benchmark-results/summary.md
+          import csv
+          rows = list(csv.DictReader(open("benchmark-results/summary.csv", encoding="utf-8")))
+          print("| I/O size | Direction | Raw ext4 MiB/s | FlexRAID MiB/s | FlexRAID / Raw |")
+          print("|---:|---|---:|---:|---:|")
+          for size in ("4KiB", "4KiB+1B", "64KiB", "6MiB", "6MiB+1B", "64MiB"):
+            for direction in ("read", "write"):
+              raw = next(r for r in rows if r["filesystem"] == "raw" and r["label"] == size and r["direction"] == direction)
+              flex = next(r for r in rows if r["filesystem"] == "flexraid" and r["label"] == size and r["direction"] == direction)
+              rb = float(raw["bw_bytes_per_sec"]) / 1048576
+              fb = float(flex["bw_bytes_per_sec"]) / 1048576
+              ratio = fb / rb * 100 if rb else 0
+              print(f"| {size} | {direction} | {rb:.2f} | {fb:.2f} | {ratio:.1f}% |")
+          PY
+          cat benchmark-results/summary.md
+
+      - name: Upload raw fio results and summary
+        uses: actions/upload-artifact@v6
+        with:
+          name: storage-io-size-comparison
+          path: benchmark-results/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Clean up loopback devices
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if [[ -f "$RUNNER_TEMP/flexraid-bench-mounts" ]]; then
+            while IFS= read -r mount; do sudo umount "$mount"; done < "$RUNNER_TEMP/flexraid-bench-mounts"
+          fi
+          if [[ -f "$RUNNER_TEMP/flexraid-bench-links" ]]; then
+            while IFS= read -r link; do sudo rm -f "$link"; done < "$RUNNER_TEMP/flexraid-bench-links"
+          fi
+          if [[ -f "$RUNNER_TEMP/flexraid-bench-loops" ]]; then
+            while IFS= read -r loop; do sudo losetup -d "$loop"; done < "$RUNNER_TEMP/flexraid-bench-loops"
+          fi
