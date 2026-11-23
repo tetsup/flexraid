@@ -86,7 +86,7 @@ type workerProcess struct {
 	waitMu     sync.Mutex
 }
 
-// Run measures raw physical storage and an isolated temporary FlexRAID Worker.
+// Run measures an isolated temporary FlexRAID Worker and FUSE mount.
 func Run(args []string) (runErr error) {
 	if len(args) > 0 && args[0] == "raw" {
 		return runRaw(args[1:])
@@ -242,7 +242,7 @@ func Run(args []string) (runErr error) {
 	var samples []sample
 	for _, block := range ioSizes {
 		for _, direction := range []string{"write", "overwrite", "read"} {
-			fmt.Printf("Running %-10s %-8s %s ...\\n", "flexraid", direction, block.label)
+			fmt.Printf("Running %-10s %-8s %s ...\n", "flexraid", direction, block.label)
 			measured, err := runCase(opts, "flexraid", workDirs, block.bytes, block.label, direction)
 			if err != nil {
 				return fmt.Errorf("flexraid %s %s: %w", direction, block.label, err)
