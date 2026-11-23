@@ -60,7 +60,6 @@ func TestMeasureColdReadReadsEachFileOnce(t *testing.T) {
 	}
 }
 
-
 func TestBuildFioJobUsesConfiguredDuration(t *testing.T) {
 	job := buildFioJob([]string{"/tmp/one"}, 4096, 1<<20, "write", 7*time.Second)
 	if !strings.Contains(job, "runtime=7\\n") {

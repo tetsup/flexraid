@@ -805,7 +805,6 @@ func measureColdRead(paths []string, blockSize int64, limit time.Duration) (floa
 	return float64(totalBytes.Load()) / elapsed, float64(totalOps.Load()) / elapsed, nil
 }
 
-
 func measureOverwrite(paths []string, blockSize int64, limit time.Duration) (float64, float64, error) {
 	start := time.Now()
 	deadline := start.Add(limit)
