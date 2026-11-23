@@ -50,7 +50,7 @@ jobs:
             image="$RUNNER_TEMP/flexraid-bench-disk-$index.img"
             mount="/mnt/flexraid-bench-disk-$index"
             link="/dev/disk/by-id/wwn-flexraid-bench-$index"
-            truncate -s 512M "$image"
+            truncate -s 1G "$image"
             loop="$(sudo losetup --find --show "$image")"
             echo "$loop" >> "$RUNNER_TEMP/flexraid-bench-loops"
             sudo mkfs.ext4 -F -q "$loop"
@@ -114,91 +114,10 @@ jobs:
             exit 1
           fi
 
-          sizes=(4096 4097 65536 6291456 6291457 67108864)
-          labels=("4KiB" "4KiB+1B" "64KiB" "6MiB" "6MiB+1B" "64MiB")
-          printf 'filesystem,io_size_bytes,label,direction,bw_bytes_per_sec,iops,lat_ns_mean,lat_ns_p95\n' > benchmark-results/summary.csv
-
-          run_fio() {
-            local filesystem="$1"
-            local bytes="$2"
-            local label="$3"
-            local direction="$4"
-            local jobfile="$RUNNER_TEMP/fio-$filesystem-$label-$direction.fio"
-            local output="benchmark-results/$filesystem-$label-$direction.json"
-            {
-              echo '[global]'
-              echo 'ioengine=sync'
-              echo 'direct=0'
-              echo 'invalidate=1'
-              echo 'time_based=1'
-              echo 'runtime=20'
-              echo 'ramp_time=3'
-              echo 'group_reporting=1'
-              echo "rw=$direction"
-              echo "bs=$bytes"
-              echo 'size=128m'
-              echo 'fallocate=none'
-              if [[ "$direction" == write ]]; then
-                echo 'end_fsync=1'
-              fi
-              for index in 1 2 3 4; do
-                echo "[$filesystem-job-$index]"
-                if [[ "$filesystem" == raw ]]; then
-                  echo "filename=/mnt/flexraid-bench-disk-$index/bench.dat"
-                else
-                  echo "filename=$fuse_mount/bench-$index.dat"
-                fi
-              done
-            } > "$jobfile"
-            if [[ "$direction" == read ]]; then
-              sync
-              echo 3 | sudo tee /proc/sys/vm/drop_caches >/dev/null
-            fi
-            sudo fio "$jobfile" --output-format=json --output="$output"
-            python3 - "$output" "$filesystem" "$bytes" "$label" "$direction" >> benchmark-results/summary.csv <<'PY'
-          import json, sys
-          path, filesystem, size, label, direction = sys.argv[1:]
-          with open(path, encoding="utf-8") as stream:
-              report = json.load(stream)
-          jobs = report.get("jobs", [])
-          total_bytes = sum(j.get(direction, {}).get("bw_bytes", 0) for j in jobs)
-          total_iops = sum(j.get(direction, {}).get("iops", 0) for j in jobs)
-          latencies = [j.get(direction, {}).get("lat_ns", {}).get("mean", 0) for j in jobs]
-          p95s = [j.get(direction, {}).get("clat_ns", {}).get("percentile", {}).get("95.000000", 0) for j in jobs]
-          count = max(len(jobs), 1)
-          print(f"{filesystem},{size},{label},{direction},{total_bytes},{total_iops:.2f},{sum(latencies)/count:.0f},{max(p95s, default=0):.0f}")
-          PY
-          }
-
-          for position in "${!sizes[@]}"; do
-            bytes="${sizes[$position]}"
-            label="${labels[$position]}"
-            echo "::group::I/O size $label ($bytes bytes)"
-            for direction in write read; do
-              run_fio raw "$bytes" "$label" "$direction"
-              run_fio flexraid "$bytes" "$label" "$direction"
-            done
-            for index in 1 2 3 4; do
-              sudo rm -f "/mnt/flexraid-bench-disk-$index/bench.dat"
-              sudo rm -f "$fuse_mount/bench-$index.dat"
-            done
-            echo "::endgroup::"
-          done
-
-          python3 - <<'PY' > benchmark-results/summary.md
-          import csv
-          rows = list(csv.DictReader(open("benchmark-results/summary.csv", encoding="utf-8")))
-          print("| I/O size | Direction | Raw ext4 MiB/s | FlexRAID MiB/s | FlexRAID / Raw |")
-          print("|---:|---|---:|---:|---:|")
-          for size in ("4KiB", "4KiB+1B", "64KiB", "6MiB", "6MiB+1B", "64MiB"):
-            for direction in ("read", "write"):
-              raw = next(r for r in rows if r["filesystem"] == "raw" and r["label"] == size and r["direction"] == direction)
-              flex = next(r for r in rows if r["filesystem"] == "flexraid" and r["label"] == size and r["direction"] == direction)
-              rb = float(raw["bw_bytes_per_sec"]) / 1048576
-              fb = float(flex["bw_bytes_per_sec"]) / 1048576
-              ratio = fb / rb * 100 if rb else 0
-              print(f"| {size} | {direction} | {rb:.2f} | {fb:.2f} | {ratio:.1f}% |")
-          PY
+          sudo ./bin/flexraid benchmark \
+            --config "$worker_config" \
+            --size 536870912 \
+            --output "$GITHUB_WORKSPACE/benchmark-results"
           cat benchmark-results/summary.md
 
       - name: Upload raw fio results and summary
