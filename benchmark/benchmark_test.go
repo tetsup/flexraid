@@ -48,6 +48,13 @@ func TestSelectBenchmarkDisksPreservesConfiguredOrderForEqualCapacity(t *testing
 	}
 }
 
+func TestValidateBenchmarkCapacityRejectsOverflow(t *testing.T) {
+	disks := []management.DriveConfig{{WWN: "drive-1", Mountpoint: "/unused"}}
+	if err := validateBenchmarkCapacity(disks, int64(^uint64(0)>>1)); err == nil {
+		t.Fatal("validateBenchmarkCapacity accepted an overflowing size")
+	}
+}
+
 func TestRenderWorkerConfigUsesIsolatedRootsAndDisablesGRPC(t *testing.T) {
 	disks := []management.DriveConfig{
 		{Root: "/original/disk1", Mountpoint: "/mnt/disk1", WWN: "drive-1"},
