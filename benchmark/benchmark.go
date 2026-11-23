@@ -243,7 +243,6 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 	builder.WriteString("group_reporting=1\n")
 	builder.WriteString("end_fsync=1\n")
 	builder.WriteString("invalidate=1\n")
-	builder.WriteString("time_based=0\n")
 	if opts.runtime > 0 {
 		builder.WriteString("time_based=1\n")
 		builder.WriteString("runtime=" + opts.runtime.String() + "\n")
