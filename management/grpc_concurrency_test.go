@@ -138,16 +138,21 @@ func TestWorkerGRPCMonitoringConcurrentWithCancelledForegroundOperations(t *test
 		done   chan error
 	}
 	requests := make([]queuedRequest, requestCount)
+	started := make(chan struct{}, requestCount)
 	var executed atomic.Int64
 	for index := range requests {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		requests[index] = queuedRequest{cancel: cancel, done: done}
 		go func() {
+			started <- struct{}{}
 			done <- runLockedForegroundOperation(ctx, layer, func() {
 				executed.Add(1)
 			})
 		}()
+	}
+	for range requests {
+		<-started
 	}
 	for index, request := range requests {
 		if index%2 == 0 {
