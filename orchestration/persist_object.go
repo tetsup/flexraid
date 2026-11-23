@@ -67,6 +67,7 @@ func (layer *Orchestration) persistNewObject(ctx context.Context, objectHeader h
 		return header{}, fmt.Errorf("placement plan covers %d bytes, want %d", contentOffset, objectHeader.Size)
 	}
 	if _, err := layer.persistDirtyStripesLocked(ctx, file); err != nil {
+		layer.logger.Error("new object stripe persistence failed", "object_id", objectHeader.ObjectID.String(), "kind", objectHeader.Kind, "layout", objectHeader.Layout, "error", err)
 		return header{}, err
 	}
 	return objectHeader, nil
