@@ -3,6 +3,7 @@ package management
 import (
 	"context"
 	"errors"
+	"sort"
 	"sync"
 	"time"
 )
@@ -12,6 +13,7 @@ const traceSpanLimit = 100_000
 // TraceSpan records one completed layer operation using monotonic offsets.
 type TraceSpan struct {
 	ID         uint64 `json:"id"`
+	ParentID   uint64 `json:"parent_id,omitempty"`
 	Operation  string `json:"operation"`
 	StartNS    int64  `json:"start_ns"`
 	DurationNS int64  `json:"duration_ns"`
@@ -72,7 +74,32 @@ func (r *traceRecorder) Record(operation string, started time.Time, err error) {
 func (r *traceRecorder) snapshot() TraceSnapshot {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return TraceSnapshot{Enabled: r.enabled, Dropped: r.dropped, Spans: append([]TraceSpan(nil), r.spans...)}
+
+	spans := append([]TraceSpan(nil), r.spans...)
+	sort.Slice(spans, func(i, j int) bool {
+		if spans[i].StartNS == spans[j].StartNS {
+			return spans[i].DurationNS > spans[j].DurationNS
+		}
+		return spans[i].StartNS < spans[j].StartNS
+	})
+	stack := make([]int, 0, len(spans))
+	for index := range spans {
+		currentEnd := spans[index].StartNS + spans[index].DurationNS
+		for len(stack) > 0 {
+			parent := spans[stack[len(stack)-1]]
+			parentEnd := parent.StartNS + parent.DurationNS
+			if parentEnd < currentEnd || parentEnd <= spans[index].StartNS {
+				stack = stack[:len(stack)-1]
+				continue
+			}
+			break
+		}
+		if len(stack) > 0 {
+			spans[index].ParentID = spans[stack[len(stack)-1]].ID
+		}
+		stack = append(stack, index)
+	}
+	return TraceSnapshot{Enabled: r.enabled, Dropped: r.dropped, Spans: spans}
 }
 
 type StartTraceRequest struct{ Context context.Context }
