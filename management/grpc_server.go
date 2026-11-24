@@ -121,6 +121,9 @@ func (service *workerService) GetRuntimeMetrics(ctx context.Context, _ *emptypb.
 			"stripe_index_entries":  float64(cache.CacheMemory.StripeIndexEntries),
 			"version_index_entries": float64(cache.CacheMemory.VersionIndexEntries),
 			"orphan_chunk_entries":  float64(cache.CacheMemory.OrphanChunkEntries),
+			"cleanup_pending_entries": float64(cache.CacheMemory.CleanupPendingEntries),
+			"cleanup_in_flight_entries": float64(cache.CacheMemory.CleanupInFlightEntries),
+			"stripe_lock_entries": float64(cache.CacheMemory.StripeLockEntries),
 			"cached_chunk_count":    float64(cache.CacheMemory.CachedChunkCount),
 			"cached_chunk_bytes":    float64(cache.CacheMemory.CachedChunkBytes),
 		}
