@@ -88,7 +88,17 @@ type DriveOrphanMetrics struct {
 	DriveIndex       int
 	OrphanChunkCount uint64
 }
+type CacheMemoryMetrics struct {
+	ObjectIndexEntries uint64
+	StripeIndexEntries uint64
+	VersionIndexEntries uint64
+	OrphanChunkEntries uint64
+	CachedChunkCount uint64
+	CachedChunkBytes uint64
+}
+
 type GetMetricsResponse struct {
+	CacheMemory CacheMemoryMetrics
 	Objects                            []ObjectMetrics
 	OrphanChunks                       []OrphanChunkMetrics
 	OrphanChunksByDrive                []DriveOrphanMetrics
@@ -286,6 +296,32 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 		return response, nil
 	}
 	d.mapMu.Lock()
+	for _, stripes := range d.objects {
+		response.CacheMemory.ObjectIndexEntries++
+		response.CacheMemory.StripeIndexEntries += uint64(len(stripes))
+		for _, stripe := range stripes {
+			for _, location := range stripe.chunks {
+				if location.data != nil {
+					response.CacheMemory.CachedChunkCount++
+					response.CacheMemory.CachedChunkBytes += uint64(len(location.data))
+				}
+			}
+		}
+	}
+	for _, versions := range d.versions {
+		response.CacheMemory.VersionIndexEntries += uint64(len(versions))
+		for _, version := range versions {
+			for _, location := range version.chunks {
+				if location.data != nil {
+					response.CacheMemory.CachedChunkCount++
+					response.CacheMemory.CachedChunkBytes += uint64(len(location.data))
+				}
+			}
+		}
+	}
+	for _, locations := range d.orphans {
+		response.CacheMemory.OrphanChunkEntries += uint64(len(locations))
+	}
 	objects := make(map[shared.ObjectID]struct{})
 	stripes := make(map[stripeIDKey]struct{})
 	for objectID, entries := range d.objects {
