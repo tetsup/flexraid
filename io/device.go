@@ -124,7 +124,6 @@ func (layer *IO) StopMonitoring(ctx context.Context) error {
 		layer.monitorMu.Unlock()
 		return nil
 	}
-	layer.monitorCancel = nil
 	cancel(errDeviceMonitoringStopped)
 	layer.monitorMu.Unlock()
 	select {
