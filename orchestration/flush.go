@@ -28,9 +28,6 @@ func (o *Orchestration) flushLocked(r FlushRequest) (FlushResponse, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if err := ctx.Err(); err != nil {
-		return out, err
-	}
 	if r.Handle == nil {
 		return out, os.ErrInvalid
 	}
@@ -39,6 +36,26 @@ func (o *Orchestration) flushLocked(r FlushRequest) (FlushResponse, error) {
 		return out, os.ErrInvalid
 	}
 	f := h.runtimeFile
+
+	// FUSE may interrupt a redundant Flush after a preceding Fsync has
+	// already persisted every dirty stripe. A clean, non-syncing Flush has
+	// no work to cancel and must remain idempotent.
+	if !r.Sync {
+		hasDirtyStripes := false
+		for _, entry := range f.stripeCache {
+			if entry != nil && entry.state == stripeCacheDirty {
+				hasDirtyStripes = true
+				break
+			}
+		}
+		if !hasDirtyStripes {
+			return out, nil
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return out, err
+	}
+
 	persisted, err := o.persistDirtyStripesLocked(ctx, f, r.Sync)
 	if err != nil {
 		return out, err
