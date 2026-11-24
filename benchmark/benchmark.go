@@ -499,7 +499,7 @@ func renderWorkerConfig(disks []management.DriveConfig, roots []string, mountpoi
 	}
 	fmt.Fprintf(&builder, "mountpoint: %s\n", mountpoint)
 	fmt.Fprintf(&builder, "grpc_socket_path: %s\n", socketPath)
-	builder.WriteString("grpc_enabled: false\n")
+	builder.WriteString("grpc_enabled: true\\n")
 	return builder.String(), nil
 }
 
