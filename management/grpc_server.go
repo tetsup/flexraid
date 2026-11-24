@@ -415,7 +415,7 @@ func (layer *Management) startGRPCServer(ctx context.Context) error {
 		return fmt.Errorf("set Worker gRPC socket permissions: %w", err)
 	}
 
-	server := grpc.NewServer()
+	server := grpc.NewServer(grpc.MaxSendMsgSize(64 << 20))
 	registerWorkerServiceServer(server, &workerService{management: layer})
 	state := grpcServer{server: server, listener: listener, socket: layer.grpcSocketPath, serveErr: make(chan error, 1)}
 	layer.grpcServer = state
