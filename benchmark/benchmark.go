@@ -1005,7 +1005,7 @@ func startRuntimeMetricsMonitor(socketPath, outputDir string) func() {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		ticker := time.NewTicker(time.Second)
+		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
