@@ -58,6 +58,7 @@ def read_pressure(path):
 
 
 started = time.monotonic()
+previous_vmstat = {}
 with open(output_path, "w", encoding="utf-8", buffering=1) as output:
     while not stopping:
         meminfo = read_key_values("/proc/meminfo")
@@ -81,4 +82,22 @@ with open(output_path, "w", encoding="utf-8", buffering=1) as output:
             },
         }
         output.write(json.dumps(sample, separators=(",", ":")) + "\n")
+
+        available_mib = meminfo.get("MemAvailable", 0) / 1024
+        swap_total = meminfo.get("SwapTotal", 0)
+        swap_used = swap_total - meminfo.get("SwapFree", swap_total)
+        swap_in_delta = vmstat.get("pswpin", 0) - previous_vmstat.get("pswpin", vmstat.get("pswpin", 0))
+        swap_out_delta = vmstat.get("pswpout", 0) - previous_vmstat.get("pswpout", vmstat.get("pswpout", 0))
+        memory_psi = sample["pressure"]["memory"].get("some", {}).get("avg10", 0)
+        io_psi = sample["pressure"]["io"].get("some", {}).get("avg10", 0)
+        print(
+            "[resource] t={:.0f}s MemAvailable={:.0f}MiB SwapUsed={:.0f}/{:.0f}MiB ".format(
+                sample["elapsed_seconds"], available_mib, swap_used / 1024, swap_total / 1024
+            )
+            + "swap-in={}pages/s swap-out={}pages/s PSI(memory/io)={:.2f}%/{:.2f}%".format(
+                swap_in_delta, swap_out_delta, memory_psi, io_psi
+            ),
+            flush=True,
+        )
+        previous_vmstat = vmstat
         time.sleep(1)
