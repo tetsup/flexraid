@@ -150,8 +150,14 @@ func Run(args []string) (runErr error) {
 	if err != nil {
 		return err
 	}
-	largestCaseFiles := benchmarkFileCount(blocks[0].bytes, opts.referenceBytes, opts.maxFiles)
-	physicalBytesPerDisk := int64(largestCaseFiles) * (172 << 20) / 4
+	largestBlockSize := blocks[0].bytes
+	for _, block := range blocks[1:] {
+		if block.bytes > largestBlockSize {
+			largestBlockSize = block.bytes
+		}
+	}
+	largestCaseFiles := benchmarkFileCount(largestBlockSize, opts.referenceBytes, opts.maxFiles)
+	physicalBytesPerDisk := int64(largestCaseFiles) * largestBlockSize / 4
 	if err := validateBenchmarkCapacity(selected, physicalBytesPerDisk); err != nil {
 		return err
 	}
