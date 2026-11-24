@@ -76,8 +76,8 @@ func Run(args []string) (runErr error) {
 	flags.SetOutput(os.Stderr)
 	flags.StringVar(&opts.configPath, "config", "", "Worker YAML configuration")
 	flags.StringVar(&opts.outputDir, "output", "./flexraid-bench-results", "result directory")
-	flags.IntVar(&opts.maxFiles, "max-files", 1024, "maximum files per I/O size")
-	flags.Int64Var(&opts.referenceBytes, "reference-bytes", 60*64<<20, "logical byte target used to derive per-size file counts")
+	flags.IntVar(&opts.maxFiles, "max-files", 256, "maximum files per I/O size")
+	flags.Int64Var(&opts.referenceBytes, "reference-bytes", 512<<20, "logical byte target used to derive per-size file counts")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -247,8 +247,8 @@ func runRaw(args []string) error {
 	var directory string
 	flags.StringVar(&directory, "directory", "", "directory on the physical filesystem to benchmark")
 	flags.StringVar(&opts.outputDir, "output", "./flexraid-raw-bench-results", "result directory")
-	flags.IntVar(&opts.maxFiles, "max-files", 1024, "maximum files per I/O size")
-	flags.Int64Var(&opts.referenceBytes, "reference-bytes", 4<<30, "logical byte target used to derive per-size file counts")
+	flags.IntVar(&opts.maxFiles, "max-files", 256, "maximum files per I/O size")
+	flags.Int64Var(&opts.referenceBytes, "reference-bytes", 512<<20, "logical byte target used to derive per-size file counts")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
