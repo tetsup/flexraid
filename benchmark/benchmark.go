@@ -949,6 +949,7 @@ func saveWorkerTrace(socketPath, outputDir string) error {
 	defer cancel()
 	connection, err := grpc.NewClient("passthrough:///worker",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(64<<20)),
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
 		}))
