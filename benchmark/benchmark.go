@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	runtimemetrics "runtime/metrics"
 	"sort"
 	"strconv"
 	"strings"
@@ -1000,6 +1001,24 @@ func writeReports(outputDir string, samples []sample) error {
 	return nil
 }
 
+func collectGoRuntimeMetrics() map[string]any {
+	descriptions := runtimemetrics.All()
+	samples := make([]runtimemetrics.Sample, len(descriptions))
+	for index, description := range descriptions {
+		samples[index].Name = description.Name
+	}
+	runtimemetrics.Read(samples)
+	values := make(map[string]any, len(samples))
+	for _, sample := range samples {
+		switch sample.Value.Kind() {
+		case runtimemetrics.KindUint64:
+			values[sample.Name] = float64(sample.Value.Uint64())
+		case runtimemetrics.KindFloat64:
+			values[sample.Name] = sample.Value.Float64()
+		}
+	}
+	return values
+}
 func startRuntimeMetricsMonitor(socketPath, outputDir string) func() {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -1039,7 +1058,8 @@ func collectRuntimeMetrics(socketPath, outputDir, phase string) error {
 	record := map[string]any{
 		"unix_time_ns": time.Now().UnixNano(),
 		"phase":        phase,
-		"metrics":      response.AsMap(),
+		"worker_metrics": response.AsMap(),
+		"benchmark_metrics": collectGoRuntimeMetrics(),
 	}
 	runtimeMetricsFileMu.Lock()
 	defer runtimeMetricsFileMu.Unlock()
