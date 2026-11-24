@@ -329,8 +329,8 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 		response.CacheMemory.CleanupInFlightEntries = uint64(len(d.cleanupQueue.inFlight))
 		d.cleanupQueue.mu.Unlock()
 	}
-	d.mapMu.Unlock()
 	if request.SummaryOnly {
+		d.mapMu.Unlock()
 		return response, nil
 	}
 	objects := make(map[shared.ObjectID]struct{})
