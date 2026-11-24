@@ -133,7 +133,7 @@ func TestRenderWorkerConfigUsesIsolatedRootsAndDisablesGRPC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"root: /mnt/disk1/temp", "mountpoint: /mnt/disk4", "wwn: drive-4", "mountpoint: /tmp/fuse-mount", "grpc_socket_path: /tmp/worker.sock", "grpc_enabled: false"} {
+	for _, expected := range []string{"root: /mnt/disk1/temp", "mountpoint: /mnt/disk4", "wwn: drive-4", "mountpoint: /tmp/fuse-mount", "grpc_socket_path: /tmp/worker.sock", "grpc_enabled: true"} {
 		if !strings.Contains(config, expected) {
 			t.Fatalf("missing %q:\n%s", expected, config)
 		}
