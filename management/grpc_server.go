@@ -96,12 +96,12 @@ func (service *workerService) GetRuntimeMetrics(ctx context.Context, _ *emptypb.
 			return nil, managementRPCError(err)
 		}
 		values["flexraid_distribution_cache"] = map[string]any{
-			"object_index_entries": float64(cache.CacheMemory.ObjectIndexEntries),
-			"stripe_index_entries": float64(cache.CacheMemory.StripeIndexEntries),
+			"object_index_entries":  float64(cache.CacheMemory.ObjectIndexEntries),
+			"stripe_index_entries":  float64(cache.CacheMemory.StripeIndexEntries),
 			"version_index_entries": float64(cache.CacheMemory.VersionIndexEntries),
-			"orphan_chunk_entries": float64(cache.CacheMemory.OrphanChunkEntries),
-			"cached_chunk_count": float64(cache.CacheMemory.CachedChunkCount),
-			"cached_chunk_bytes": float64(cache.CacheMemory.CachedChunkBytes),
+			"orphan_chunk_entries":  float64(cache.CacheMemory.OrphanChunkEntries),
+			"cached_chunk_count":    float64(cache.CacheMemory.CachedChunkCount),
+			"cached_chunk_bytes":    float64(cache.CacheMemory.CachedChunkBytes),
 		}
 	}
 	return structpb.NewStruct(values)
