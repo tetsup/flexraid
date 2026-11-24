@@ -18,7 +18,7 @@ func TestTraceRecorderIsDisabledByDefaultAndCanBeToggled(t *testing.T) {
 	recorder.start()
 	started = time.Now()
 	time.Sleep(time.Millisecond)
-	recorder.record("Create", started, errors.New("test failure"))
+	recorder.Record("Create", started, errors.New("test failure"))
 	recorder.stop()
 	snapshot := recorder.snapshot()
 	if snapshot.Enabled {
@@ -31,7 +31,7 @@ func TestTraceRecorderIsDisabledByDefaultAndCanBeToggled(t *testing.T) {
 	if span.Operation != "Create" || span.StartNS < 0 || span.DurationNS <= 0 || span.Error != "test failure" {
 		t.Fatalf("unexpected span: %+v", span)
 	}
-	recorder.record("after-stop", time.Now(), nil)
+	recorder.Record("after-stop", time.Now(), nil)
 	if got := len(recorder.snapshot().Spans); got != 1 {
 		t.Fatalf("recorded after stop: %d spans", got)
 	}
