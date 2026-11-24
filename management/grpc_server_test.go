@@ -91,6 +91,28 @@ func TestWorkerGRPCServerRemainsAvailableAcrossLifecyclePhases(t *testing.T) {
 		t.Fatalf("ready lifecycle phase = %v, want %d", got, LifecycleReady)
 	}
 
+	traceResponse := new(structpb.Struct)
+	if err := connection.Invoke(ctx, "/flexraid.worker.v1.WorkerService/StartTrace", &emptypb.Empty{}, traceResponse); err != nil {
+		t.Fatalf("StartTrace RPC: %v", err)
+	}
+	traceResponse = new(structpb.Struct)
+	if err := connection.Invoke(ctx, "/flexraid.worker.v1.WorkerService/GetTrace", &emptypb.Empty{}, traceResponse); err != nil {
+		t.Fatalf("GetTrace RPC while enabled: %v", err)
+	}
+	if !traceResponse.Fields["Trace"].GetStructValue().Fields["Enabled"].GetBoolValue() {
+		t.Fatalf("trace was not enabled: %v", traceResponse)
+	}
+	if err := connection.Invoke(ctx, "/flexraid.worker.v1.WorkerService/StopTrace", &emptypb.Empty{}, new(structpb.Struct)); err != nil {
+		t.Fatalf("StopTrace RPC: %v", err)
+	}
+	traceResponse = new(structpb.Struct)
+	if err := connection.Invoke(ctx, "/flexraid.worker.v1.WorkerService/GetTrace", &emptypb.Empty{}, traceResponse); err != nil {
+		t.Fatalf("GetTrace RPC after stop: %v", err)
+	}
+	if traceResponse.Fields["Trace"].GetStructValue().Fields["Enabled"].GetBoolValue() {
+		t.Fatalf("trace remained enabled after stop: %v", traceResponse)
+	}
+
 	permissionRequest, err := structpb.NewStruct(map[string]any{"wwn": "wwn-grpc-test", "allowed": true})
 	if err != nil {
 		t.Fatal(err)
