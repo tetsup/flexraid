@@ -162,12 +162,19 @@ type GetDeviceStatusResponse struct {
 	Status DeviceStatus
 }
 
-func (layer *IO) monitorDevice(ctx context.Context, wake <-chan struct{}, done chan<- struct{}) {
+func (layer *IO) monitorDevice(ctx context.Context, wake <-chan struct{}, done chan struct{}) {
 	defer func() {
 		if cause := context.Cause(ctx); cause != nil {
 			layer.logger.Debug("device monitoring context ended", "cause", cause)
 		}
 		close(done)
+		layer.monitorMu.Lock()
+		if layer.monitorDone == done {
+			layer.monitorCancel = nil
+			layer.monitorDone = nil
+			layer.monitorWake = nil
+		}
+		layer.monitorMu.Unlock()
 	}()
 	for {
 		select {
