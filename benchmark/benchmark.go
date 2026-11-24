@@ -1013,7 +1013,7 @@ func startRuntimeMetricsMonitor(socketPath, outputDir string) func() {
 				return
 			case <-ticker.C:
 				if err := collectRuntimeMetrics(socketPath, outputDir, "periodic"); err != nil {
-					fmt.Fprintf(os.Stderr, "collect periodic Worker runtime metrics: %v\\n", err)
+					fmt.Fprintf(os.Stderr, "collect periodic Worker runtime metrics: %v\n", err)
 				}
 			}
 		}
