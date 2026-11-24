@@ -10,7 +10,7 @@ import (
 func TestTraceRecorderIsDisabledByDefaultAndCanBeToggled(t *testing.T) {
 	recorder := newTraceRecorder()
 	started := time.Now()
-	recorder.record("ignored", started, nil)
+	recorder.Record("ignored", started, nil)
 	if got := recorder.snapshot(); got.Enabled || len(got.Spans) != 0 {
 		t.Fatalf("default trace snapshot = %+v, want disabled and empty", got)
 	}
