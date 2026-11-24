@@ -1056,9 +1056,9 @@ func collectRuntimeMetrics(socketPath, outputDir, phase string) error {
 		return err
 	}
 	record := map[string]any{
-		"unix_time_ns": time.Now().UnixNano(),
-		"phase":        phase,
-		"worker_metrics": response.AsMap(),
+		"unix_time_ns":      time.Now().UnixNano(),
+		"phase":             phase,
+		"worker_metrics":    response.AsMap(),
 		"benchmark_metrics": collectGoRuntimeMetrics(),
 	}
 	runtimeMetricsFileMu.Lock()
