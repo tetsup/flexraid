@@ -213,6 +213,18 @@ func Run(args []string) (runErr error) {
 	if err := invokeTraceRPC(socketPath, "StartTrace"); err != nil {
 		return fmt.Errorf("enable Worker trace: %w", err)
 	}
+	// Export the trace on both successful and failed benchmark runs. In
+	// particular, a failed FUSE operation must leave enough evidence to
+	// diagnose the failure rather than losing the in-memory trace at shutdown.
+	traceActive := true
+	defer func() {
+		if !traceActive {
+			return
+		}
+		if traceErr := saveWorkerTrace(socketPath, opts.outputDir); traceErr != nil {
+			runErr = errors.Join(runErr, fmt.Errorf("save Worker trace after benchmark: %w", traceErr))
+		}
+	}()
 
 	benchmarkConfig := config
 	benchmarkConfig.Disks = selected
@@ -240,9 +252,6 @@ func Run(args []string) (runErr error) {
 		if err := removeBenchmarkFiles(files); err != nil {
 			return fmt.Errorf("remove FlexRAID benchmark files: %w", err)
 		}
-	}
-	if err := saveWorkerTrace(socketPath, opts.outputDir); err != nil {
-		return fmt.Errorf("save Worker trace: %w", err)
 	}
 	if err := writeReports(opts.outputDir, samples); err != nil {
 		return err
