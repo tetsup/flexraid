@@ -75,13 +75,27 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          monitor_pid=""
+          stop_monitor() {
+            if [[ -n "$monitor_pid" ]]; then
+              kill "$monitor_pid" 2>/dev/null || true
+              wait "$monitor_pid" 2>/dev/null || true
+              monitor_pid=""
+            fi
+          }
+          trap stop_monitor EXIT
           for iteration in 1 2 3 4 5; do
             echo "===== Raw benchmark iteration $iteration/5 ====="
+            output="$GITHUB_WORKSPACE/benchmark-results/raw/run-$iteration"
+            mkdir -p "$output"
+            python3 benchmark/ci_resource_monitor.py "$output/system.jsonl" &
+            monitor_pid=$!
             sudo ./bin/flexraid benchmark raw \
               --directory /mnt/flexraid-bench-disk-1 \
               --reference-bytes 805306368 \
               --max-files 256 \
-              --output "$GITHUB_WORKSPACE/benchmark-results/raw/run-$iteration"
+              --output "$output"
+            stop_monitor
             sudo fstrim -v /mnt/flexraid-bench-disk-1
           done
 
@@ -89,6 +103,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          monitor_pid=""
+          stop_monitor() {
+            if [[ -n "$monitor_pid" ]]; then
+              kill "$monitor_pid" 2>/dev/null || true
+              wait "$monitor_pid" 2>/dev/null || true
+              monitor_pid=""
+            fi
+          }
+          trap stop_monitor EXIT
           worker_config="$RUNNER_TEMP/flexraid-bench.yaml"
           cat > "$worker_config" <<YAML
           disks:
@@ -110,11 +133,16 @@ jobs:
           YAML
           for iteration in 1 2 3 4 5; do
             echo "===== FlexRAID benchmark iteration $iteration/5 ====="
+            output="$GITHUB_WORKSPACE/benchmark-results/flexraid/run-$iteration"
+            mkdir -p "$output"
+            python3 benchmark/ci_resource_monitor.py "$output/system.jsonl" &
+            monitor_pid=$!
             sudo ./bin/flexraid benchmark \
               --config "$worker_config" \
               --reference-bytes 805306368 \
               --max-files 256 \
-              --output "$GITHUB_WORKSPACE/benchmark-results/flexraid/run-$iteration"
+              --output "$output"
+            stop_monitor
             for disk in 1 2 3 4; do
               sudo fstrim -v "/mnt/flexraid-bench-disk-$disk"
             done
