@@ -21,9 +21,8 @@ type IO struct {
 	device           *deviceState
 	monitorMu        sync.Mutex
 	monitorWake      chan struct{}
-	monitorStop      chan struct{}
 	monitorDone      chan struct{}
-	monitorCancel    context.CancelFunc
+	monitorCancel    context.CancelCauseFunc
 }
 
 type ScanEntry struct {
