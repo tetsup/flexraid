@@ -117,7 +117,7 @@ jobs:
           YAML
           output="$GITHUB_WORKSPACE/benchmark-results/flexraid"
           mkdir -p "$output"
-          python3 benchmark/ci_resource_monitor.py "$output/system.jsonl" &
+          python3 benchmark/ci_resource_monitor.py "$output/system.jsonl" "$output/worker.pid" "$output/benchmark.pid" &
           monitor_pid=$!
           trap 'kill "$monitor_pid" 2>/dev/null || true; wait "$monitor_pid" 2>/dev/null || true' EXIT
           sudo ./bin/flexraid benchmark \
