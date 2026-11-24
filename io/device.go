@@ -166,7 +166,6 @@ func (layer *IO) monitorDevice(ctx context.Context, wake <-chan struct{}, done c
 		if cause := context.Cause(ctx); cause != nil {
 			layer.logger.Debug("device monitoring context ended", "cause", cause)
 		}
-		close(done)
 		layer.monitorMu.Lock()
 		if layer.monitorDone == done {
 			layer.monitorCancel = nil
@@ -174,6 +173,7 @@ func (layer *IO) monitorDevice(ctx context.Context, wake <-chan struct{}, done c
 			layer.monitorWake = nil
 		}
 		layer.monitorMu.Unlock()
+		close(done)
 	}()
 	for {
 		select {
