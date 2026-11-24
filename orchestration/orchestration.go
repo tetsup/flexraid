@@ -48,7 +48,7 @@ type Orchestration struct {
 	deletionQueue          map[shared.ObjectID]struct{}
 	protectedObjects       map[shared.ObjectID]struct{}
 	cleanupWorkerMu        sync.Mutex
-	cleanupWorkerCancel    context.CancelFunc
+	cleanupWorkerCancel    context.CancelCauseFunc
 	cleanupWorkerDone      chan struct{}
 	warnings               []initializationWarning
 	metrics                *metricsCollector
