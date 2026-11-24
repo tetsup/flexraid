@@ -104,4 +104,9 @@ func TestCleanupWorkerPreservesParentCancellationCause(t *testing.T) {
 	if got := context.Cause(workerContext); !errors.Is(got, parentCause) {
 		t.Fatalf("context cause = %v, want %v", got, parentCause)
 	}
+	stopCtx, cancelStop := context.WithTimeout(context.Background(), time.Second)
+	defer cancelStop()
+	if err := layer.StopCleanupWorker(stopCtx); err != nil {
+		t.Fatalf("StopCleanupWorker after parent cancellation: %v", err)
+	}
 }
