@@ -91,6 +91,14 @@ func TestWorkerGRPCServerRemainsAvailableAcrossLifecyclePhases(t *testing.T) {
 		t.Fatalf("ready lifecycle phase = %v, want %d", got, LifecycleReady)
 	}
 
+	runtimeResponse := new(structpb.Struct)
+	if err := connection.Invoke(ctx, "/flexraid.worker.v1.WorkerService/GetRuntimeMetrics", &emptypb.Empty{}, runtimeResponse); err != nil {
+		t.Fatalf("GetRuntimeMetrics RPC: %v", err)
+	}
+	if runtimeResponse.Fields["/gc/heap/live:bytes"] == nil {
+		t.Fatalf("Go runtime metrics do not include live heap size: %v", runtimeResponse)
+	}
+
 	traceResponse := new(structpb.Struct)
 	if err := connection.Invoke(ctx, "/flexraid.worker.v1.WorkerService/StartTrace", &emptypb.Empty{}, traceResponse); err != nil {
 		t.Fatalf("StartTrace RPC: %v", err)
