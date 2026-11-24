@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sample Linux memory, swap, and PSI counters while a CI benchmark runs."""
+"""Sample Linux memory, swap, PSI, and block-device counters during CI benchmarks."""
 
 import json
 import signal
@@ -38,6 +38,37 @@ def read_key_values(path):
     return values
 
 
+def read_diskstats(path="/proc/diskstats"):
+    devices = {}
+    try:
+        with open(path, encoding="ascii") as stream:
+            for line in stream:
+                fields = line.split()
+                if len(fields) < 14:
+                    continue
+                try:
+                    major, minor = int(fields[0]), int(fields[1])
+                    values = [int(value) for value in fields[3:14]]
+                except ValueError:
+                    continue
+                devices[fields[2]] = {
+                    "major": major,
+                    "minor": minor,
+                    "reads_completed": values[0],
+                    "sectors_read": values[2],
+                    "read_ms": values[3],
+                    "writes_completed": values[4],
+                    "sectors_written": values[6],
+                    "write_ms": values[7],
+                    "in_flight": values[8],
+                    "io_ms": values[9],
+                    "weighted_io_ms": values[10],
+                }
+    except OSError:
+        pass
+    return devices
+
+
 def read_pressure(path):
     result = {}
     try:
@@ -58,12 +89,12 @@ def read_pressure(path):
 
 
 started = time.monotonic()
-previous_vmstat = {}
+previous_vmstat = {}\nprevious_diskstats = {}\nprevious_sample_time = None
 with open(output_path, "w", encoding="utf-8", buffering=1) as output:
     while not stopping:
         meminfo = read_key_values("/proc/meminfo")
         vmstat = read_key_values("/proc/vmstat")
-        sample = {
+        diskstats = read_diskstats()\n        sample_time = time.monotonic()\n        interval_seconds = (sample_time - previous_sample_time) if previous_sample_time is not None else 0\n        sample = {
             "unix_time_ns": time.time_ns(),
             "elapsed_seconds": round(time.monotonic() - started, 3),
             "memory_kib": {
@@ -71,7 +102,7 @@ with open(output_path, "w", encoding="utf-8", buffering=1) as output:
                 for key in ("MemTotal", "MemAvailable", "SwapTotal", "SwapFree", "Dirty", "Writeback")
                 if key in meminfo
             },
-            "vmstat_pages": {
+            "diskstats": diskstats,\n            "vmstat_pages": {
                 key: vmstat[key]
                 for key in ("pswpin", "pswpout", "pgmajfault", "oom_kill")
                 if key in vmstat
