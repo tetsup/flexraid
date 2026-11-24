@@ -51,7 +51,7 @@ func (r *traceRecorder) stop() {
 	r.mu.Unlock()
 }
 
-func (r *traceRecorder) record(operation string, started time.Time, err error) {
+func (r *traceRecorder) Record(operation string, started time.Time, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if !r.enabled {
