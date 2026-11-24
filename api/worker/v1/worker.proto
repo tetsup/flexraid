@@ -14,6 +14,7 @@ service WorkerService {
   rpc StartTrace(google.protobuf.Empty) returns (google.protobuf.Struct);
   rpc StopTrace(google.protobuf.Empty) returns (google.protobuf.Struct);
   rpc GetTrace(google.protobuf.Empty) returns (google.protobuf.Struct);
+  rpc GetRuntimeMetrics(google.protobuf.Empty) returns (google.protobuf.Struct);
   rpc GetDetailedStatus(google.protobuf.Empty) returns (google.protobuf.Struct);
   rpc Inspect(google.protobuf.Empty) returns (google.protobuf.Struct);
   rpc SpinUp(google.protobuf.Struct) returns (google.protobuf.Struct);
