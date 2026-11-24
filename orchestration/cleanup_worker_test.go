@@ -38,7 +38,6 @@ func TestCleanupWorkerRunsAndStops(t *testing.T) {
 	}
 }
 
-
 func TestCleanupWorkerStopRecordsCancellationCause(t *testing.T) {
 	layer := &Orchestration{logger: slog.Default()}
 	captured := make(chan context.Context, 1)
