@@ -10,6 +10,8 @@ import (
 
 const deviceRefreshInterval = time.Minute
 
+var errDeviceMonitoringStopped = errors.New("device monitoring stopped")
+
 // DeviceConfig binds one I/O root to its physical drive.
 type DeviceConfig struct {
 	Mountpoint string
@@ -100,15 +102,14 @@ func (layer *IO) StartMonitoring() error {
 	}
 	layer.monitorMu.Lock()
 	defer layer.monitorMu.Unlock()
-	if layer.monitorStop != nil {
+	if layer.monitorCancel != nil {
 		return nil
 	}
 	layer.monitorWake = make(chan struct{}, 1)
-	layer.monitorStop = make(chan struct{})
 	layer.monitorDone = make(chan struct{})
-	monitorCtx, cancel := context.WithCancel(context.Background())
+	monitorCtx, cancel := context.WithCancelCause(context.Background())
 	layer.monitorCancel = cancel
-	go layer.monitorDevice(monitorCtx, layer.monitorWake, layer.monitorStop, layer.monitorDone)
+	go layer.monitorDevice(monitorCtx, layer.monitorWake, layer.monitorDone)
 	return nil
 }
 
@@ -118,15 +119,12 @@ func (layer *IO) StopMonitoring(ctx context.Context) error {
 		return errors.New("monitor stop context is required")
 	}
 	layer.monitorMu.Lock()
-	stop, done, cancel := layer.monitorStop, layer.monitorDone, layer.monitorCancel
-	if stop == nil {
+	done, cancel := layer.monitorDone, layer.monitorCancel
+	if cancel == nil {
 		layer.monitorMu.Unlock()
 		return nil
 	}
-	close(stop)
-	layer.monitorStop = nil
-	layer.monitorCancel = nil
-	cancel()
+	cancel(errDeviceMonitoringStopped)
 	layer.monitorMu.Unlock()
 	select {
 	case <-done:
@@ -163,11 +161,23 @@ type GetDeviceStatusResponse struct {
 	Status DeviceStatus
 }
 
-func (layer *IO) monitorDevice(ctx context.Context, wake <-chan struct{}, stop <-chan struct{}, done chan<- struct{}) {
-	defer close(done)
+func (layer *IO) monitorDevice(ctx context.Context, wake <-chan struct{}, done chan struct{}) {
+	defer func() {
+		if cause := context.Cause(ctx); cause != nil {
+			layer.logger.Debug("device monitoring context ended", "cause", cause)
+		}
+		layer.monitorMu.Lock()
+		if layer.monitorDone == done {
+			layer.monitorCancel = nil
+			layer.monitorDone = nil
+			layer.monitorWake = nil
+		}
+		layer.monitorMu.Unlock()
+		close(done)
+	}()
 	for {
 		select {
-		case <-stop:
+		case <-ctx.Done():
 			return
 		case <-wake:
 			if layer.device == nil {

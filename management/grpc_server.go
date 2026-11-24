@@ -8,9 +8,12 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime/metrics"
 	"syscall"
 	"time"
 
+	"github.com/tetsup/flexraid/distribution"
+	"github.com/tetsup/flexraid/orchestration"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -27,6 +30,10 @@ type grpcServer struct {
 
 type workerServiceServer interface {
 	GetStatus(context.Context, *emptypb.Empty) (*structpb.Struct, error)
+	StartTrace(context.Context, *emptypb.Empty) (*structpb.Struct, error)
+	StopTrace(context.Context, *emptypb.Empty) (*structpb.Struct, error)
+	GetTrace(context.Context, *emptypb.Empty) (*structpb.Struct, error)
+	GetRuntimeMetrics(context.Context, *emptypb.Empty) (*structpb.Struct, error)
 	GetDetailedStatus(context.Context, *emptypb.Empty) (*structpb.Struct, error)
 	Inspect(context.Context, *emptypb.Empty) (*structpb.Struct, error)
 	SpinUp(context.Context, *structpb.Struct) (*structpb.Struct, error)
@@ -39,6 +46,89 @@ type workerServiceServer interface {
 
 type workerService struct {
 	management *Management
+}
+
+func (service *workerService) StartTrace(ctx context.Context, _ *emptypb.Empty) (*structpb.Struct, error) {
+	response, err := service.management.StartTrace(StartTraceRequest{Context: ctx})
+	if err != nil {
+		return nil, managementRPCError(err)
+	}
+	return encodeWorkerResponse(response)
+}
+
+func (service *workerService) StopTrace(ctx context.Context, _ *emptypb.Empty) (*structpb.Struct, error) {
+	response, err := service.management.StopTrace(StopTraceRequest{Context: ctx})
+	if err != nil {
+		return nil, managementRPCError(err)
+	}
+	return encodeWorkerResponse(response)
+}
+
+func (service *workerService) GetTrace(ctx context.Context, _ *emptypb.Empty) (*structpb.Struct, error) {
+	response, err := service.management.GetTrace(GetTraceRequest{Context: ctx})
+	if err != nil {
+		return nil, managementRPCError(err)
+	}
+	return encodeWorkerResponse(response)
+}
+
+func (service *workerService) GetRuntimeMetrics(ctx context.Context, _ *emptypb.Empty) (*structpb.Struct, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, managementRPCError(err)
+	}
+	descriptions := metrics.All()
+	samples := make([]metrics.Sample, len(descriptions))
+	for index, description := range descriptions {
+		samples[index].Name = description.Name
+	}
+	metrics.Read(samples)
+	values := make(map[string]any, len(samples))
+	for _, sample := range samples {
+		switch sample.Value.Kind() {
+		case metrics.KindUint64:
+			values[sample.Name] = float64(sample.Value.Uint64())
+		case metrics.KindFloat64:
+			values[sample.Name] = sample.Value.Float64()
+		}
+	}
+	service.management.mu.Lock()
+	defer service.management.mu.Unlock()
+	if service.management.orchestration != nil {
+		cache, err := service.management.orchestration.GetMetrics(orchestration.GetMetricsRequest{Context: ctx, SummaryOnly: true})
+		if err != nil {
+			return nil, managementRPCError(err)
+		}
+		values["flexraid_orchestration_cache"] = map[string]any{
+			"namespace_object_count":   float64(cache.RuntimeMemory.NamespaceObjectCount),
+			"header_index_entries":     float64(cache.RuntimeMemory.HeaderIndexEntries),
+			"directory_entry_count":    float64(cache.RuntimeMemory.DirectoryEntryCount),
+			"stripe_cache_entries":     float64(cache.RuntimeMemory.StripeCacheEntries),
+			"stripe_cache_data_bytes":  float64(cache.RuntimeMemory.StripeCacheDataBytes),
+			"zero_stripe_range_count":  float64(cache.RuntimeMemory.ZeroStripeRangeCount),
+			"symlink_target_bytes":     float64(cache.RuntimeMemory.SymlinkTargetBytes),
+			"deletion_queue_entries":   float64(cache.RuntimeMemory.DeletionQueueEntries),
+			"protected_object_entries": float64(cache.RuntimeMemory.ProtectedObjectEntries),
+			"initialization_warnings":  float64(cache.RuntimeMemory.InitializationWarnings),
+		}
+	}
+	if service.management.distribution != nil {
+		cache, err := service.management.distribution.GetMetrics(distribution.GetMetricsRequest{Context: ctx, SummaryOnly: true})
+		if err != nil {
+			return nil, managementRPCError(err)
+		}
+		values["flexraid_distribution_cache"] = map[string]any{
+			"object_index_entries":      float64(cache.CacheMemory.ObjectIndexEntries),
+			"stripe_index_entries":      float64(cache.CacheMemory.StripeIndexEntries),
+			"version_index_entries":     float64(cache.CacheMemory.VersionIndexEntries),
+			"orphan_chunk_entries":      float64(cache.CacheMemory.OrphanChunkEntries),
+			"cleanup_pending_entries":   float64(cache.CacheMemory.CleanupPendingEntries),
+			"cleanup_in_flight_entries": float64(cache.CacheMemory.CleanupInFlightEntries),
+			"stripe_lock_entries":       float64(cache.CacheMemory.StripeLockEntries),
+			"cached_chunk_count":        float64(cache.CacheMemory.CachedChunkCount),
+			"cached_chunk_bytes":        float64(cache.CacheMemory.CachedChunkBytes),
+		}
+	}
+	return structpb.NewStruct(values)
 }
 
 func (service *workerService) GetStatus(ctx context.Context, _ *emptypb.Empty) (*structpb.Struct, error) {
@@ -208,6 +298,39 @@ func workerGetStatusHandler(server any, ctx context.Context, decoder func(any) e
 	return interceptor(ctx, in, &grpc.UnaryServerInfo{Server: server, FullMethod: "/flexraid.worker.v1.WorkerService/GetStatus"}, handler)
 }
 
+func workerStartTraceHandler(server any, ctx context.Context, decoder func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+	return workerEmptyHandler(server, ctx, decoder, interceptor, "StartTrace", func(ctx context.Context, service workerServiceServer) (any, error) {
+		return service.StartTrace(ctx, &emptypb.Empty{})
+	})
+}
+func workerStopTraceHandler(server any, ctx context.Context, decoder func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+	return workerEmptyHandler(server, ctx, decoder, interceptor, "StopTrace", func(ctx context.Context, service workerServiceServer) (any, error) {
+		return service.StopTrace(ctx, &emptypb.Empty{})
+	})
+}
+func workerGetTraceHandler(server any, ctx context.Context, decoder func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+	return workerEmptyHandler(server, ctx, decoder, interceptor, "GetTrace", func(ctx context.Context, service workerServiceServer) (any, error) {
+		return service.GetTrace(ctx, &emptypb.Empty{})
+	})
+}
+func workerEmptyHandler(server any, ctx context.Context, decoder func(any) error, interceptor grpc.UnaryServerInterceptor, method string, call func(context.Context, workerServiceServer) (any, error)) (any, error) {
+	in := new(emptypb.Empty)
+	if err := decoder(in); err != nil {
+		return nil, err
+	}
+	handler := func(ctx context.Context, request any) (any, error) { return call(ctx, server.(workerServiceServer)) }
+	if interceptor == nil {
+		return handler(ctx, in)
+	}
+	return interceptor(ctx, in, &grpc.UnaryServerInfo{Server: server, FullMethod: "/flexraid.worker.v1.WorkerService/" + method}, handler)
+}
+
+func workerGetRuntimeMetricsHandler(server any, ctx context.Context, decoder func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+	return workerEmptyHandler(server, ctx, decoder, interceptor, "GetRuntimeMetrics", func(ctx context.Context, service workerServiceServer) (any, error) {
+		return service.GetRuntimeMetrics(ctx, &emptypb.Empty{})
+	})
+}
+
 func workerGetDetailedStatusHandler(server any, ctx context.Context, decoder func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(emptypb.Empty)
 	if err := decoder(in); err != nil {
@@ -298,6 +421,10 @@ var workerServiceDescription = grpc.ServiceDesc{
 	HandlerType: (*workerServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{MethodName: "GetStatus", Handler: workerGetStatusHandler},
+		{MethodName: "StartTrace", Handler: workerStartTraceHandler},
+		{MethodName: "StopTrace", Handler: workerStopTraceHandler},
+		{MethodName: "GetTrace", Handler: workerGetTraceHandler},
+		{MethodName: "GetRuntimeMetrics", Handler: workerGetRuntimeMetricsHandler},
 		{MethodName: "GetDetailedStatus", Handler: workerGetDetailedStatusHandler},
 		{MethodName: "Inspect", Handler: workerInspectHandler},
 		{MethodName: "SpinUp", Handler: workerSpinUpHandler},
@@ -358,7 +485,7 @@ func (layer *Management) startGRPCServer(ctx context.Context) error {
 		return fmt.Errorf("set Worker gRPC socket permissions: %w", err)
 	}
 
-	server := grpc.NewServer()
+	server := grpc.NewServer(grpc.MaxSendMsgSize(64 << 20))
 	registerWorkerServiceServer(server, &workerService{management: layer})
 	state := grpcServer{server: server, listener: listener, socket: layer.grpcSocketPath, serveErr: make(chan error, 1)}
 	layer.grpcServer = state

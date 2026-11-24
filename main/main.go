@@ -3,11 +3,23 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
+	"os"
 	"time"
+
+	"github.com/tetsup/flexraid/benchmark"
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "benchmark" {
+		if err := benchmark.Run(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "flexraid benchmark:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	configPath := flag.String("config", "", "path to FlexRAID YAML configuration")
 	flag.Parse()
 	if *configPath == "" {

@@ -48,10 +48,11 @@ type Orchestration struct {
 	deletionQueue          map[shared.ObjectID]struct{}
 	protectedObjects       map[shared.ObjectID]struct{}
 	cleanupWorkerMu        sync.Mutex
-	cleanupWorkerCancel    context.CancelFunc
+	cleanupWorkerCancel    context.CancelCauseFunc
 	cleanupWorkerDone      chan struct{}
 	warnings               []initializationWarning
 	metrics                *metricsCollector
+	trace                  shared.TraceRecorder
 }
 
 func New(request NewRequest) (NewResponse, error) {
@@ -94,4 +95,11 @@ func New(request NewRequest) (NewResponse, error) {
 	}
 	logger.Debug("Orchestration initialized", "root_id", layer.root.header.ObjectID.String(), "objects", len(layer.headers), "deletion_queue", len(layer.deletionQueue), "protected_objects", len(layer.protectedObjects), "warnings", len(layer.warnings))
 	return NewResponse{Layer: layer, RootID: layer.root.header.ObjectID}, nil
+}
+
+func (layer *Orchestration) SetTraceRecorder(recorder shared.TraceRecorder) {
+	layer.trace = recorder
+	if layer.distribution != nil {
+		layer.distribution.SetTraceRecorder(recorder)
+	}
 }

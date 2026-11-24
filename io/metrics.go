@@ -97,6 +97,9 @@ func newMetricsCollector() *metricsCollector {
 }
 
 func (layer *IO) recordOperation(operation Operation, started time.Time, err error, readErrors uint64) {
+	if layer.trace != nil {
+		layer.trace.Record("IO."+string(operation), started, err)
+	}
 	if layer.metrics == nil {
 		return
 	}

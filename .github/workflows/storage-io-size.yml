@@ -1,0 +1,169 @@
+name: Storage I/O Size Comparison
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/storage-io-size.yml"
+      - "benchmark/**"
+      - "main/**"
+      - "management/**"
+      - "api/worker/v1/**"
+      - "distribution/**"
+      - "orchestration/**"
+      - "io/**"
+      - "platform/**"
+      - "pkg/shared/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    name: Raw ext4 vs FlexRAID FUSE (${{ matrix.io_size }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        io_size: ["4KiB", "4KiB+1B", "64KiB", "6MiB+11KiB", "6MiB+11KiB+1B", "64MiB"]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Disable swap
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo swapoff -a
+          if [[ "$(wc -l < /proc/swaps)" -ne 1 ]]; then
+            echo "Swap remains enabled after swapoff -a:" >&2
+            cat /proc/swaps >&2
+            exit 1
+          fi
+          cat /proc/swaps
+          free -h
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install benchmark and FUSE tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fuse3 e2fsprogs
+
+      - name: Build Worker
+        run: |
+          mkdir -p bin benchmark-results
+          go build -o bin/flexraid ./main
+
+      - name: Create four independent ext4 loopback drives
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo modprobe fuse
+          sudo modprobe loop
+          sudo mkdir -p /dev/disk/by-id
+          : > "$RUNNER_TEMP/flexraid-bench-loops"
+          : > "$RUNNER_TEMP/flexraid-bench-mounts"
+          : > "$RUNNER_TEMP/flexraid-bench-links"
+          for index in 1 2 3 4; do
+            image="$RUNNER_TEMP/flexraid-bench-disk-$index.img"
+            if [[ "$index" == "1" ]]; then truncate -s 5G "$image"; else truncate -s 4G "$image"; fi
+            loop="$(sudo losetup --find --show "$image")"
+            echo "$loop" >> "$RUNNER_TEMP/flexraid-bench-loops"
+            sudo mkfs.ext4 -F -q "$loop"
+            mount="/mnt/flexraid-bench-disk-$index"
+            link="/dev/disk/by-id/wwn-flexraid-bench-$index"
+            sudo mkdir -p "$mount"
+            sudo mount "$loop" "$mount"
+            echo "$mount" >> "$RUNNER_TEMP/flexraid-bench-mounts"
+            sudo ln -s "$loop" "$link"
+            echo "$link" >> "$RUNNER_TEMP/flexraid-bench-links"
+            sudo mkdir -p "$mount/flexraid-data"
+          done
+
+      - name: Run raw directory benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="$GITHUB_WORKSPACE/benchmark-results/raw"
+          mkdir -p "$output"
+          python3 benchmark/ci_resource_monitor.py "$output/system.jsonl" &
+          monitor_pid=$!
+          trap 'kill "$monitor_pid" 2>/dev/null || true; wait "$monitor_pid" 2>/dev/null || true' EXIT
+          sudo ./bin/flexraid benchmark raw \
+            --directory /mnt/flexraid-bench-disk-1 \
+            --io-size '${{ matrix.io_size }}' \
+            --reference-bytes 805306368 \
+            --max-files 256 \
+            --output "$output"
+          sudo fstrim -v /mnt/flexraid-bench-disk-1
+
+      - name: Run FlexRAID benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          worker_config="$RUNNER_TEMP/flexraid-bench.yaml"
+          cat > "$worker_config" <<YAML
+          disks:
+            - root: /mnt/flexraid-bench-disk-1/flexraid-data
+              mountpoint: /mnt/flexraid-bench-disk-1
+              wwn: flexraid-bench-1
+            - root: /mnt/flexraid-bench-disk-2/flexraid-data
+              mountpoint: /mnt/flexraid-bench-disk-2
+              wwn: flexraid-bench-2
+            - root: /mnt/flexraid-bench-disk-3/flexraid-data
+              mountpoint: /mnt/flexraid-bench-disk-3
+              wwn: flexraid-bench-3
+            - root: /mnt/flexraid-bench-disk-4/flexraid-data
+              mountpoint: /mnt/flexraid-bench-disk-4
+              wwn: flexraid-bench-4
+          mountpoint: $RUNNER_TEMP/flexraid-production-mountpoint
+          grpc_socket_path: $RUNNER_TEMP/flexraid-bench.sock
+          grpc_enabled: true
+          YAML
+          output="$GITHUB_WORKSPACE/benchmark-results/flexraid"
+          mkdir -p "$output"
+          python3 benchmark/ci_resource_monitor.py "$output/system.jsonl" "$output/worker.pid" "$output/benchmark.pid" &
+          monitor_pid=$!
+          trap 'kill "$monitor_pid" 2>/dev/null || true; wait "$monitor_pid" 2>/dev/null || true' EXIT
+          sudo ./bin/flexraid benchmark \
+            --config "$worker_config" \
+            --io-size '${{ matrix.io_size }}' \
+            --reference-bytes 805306368 \
+            --max-files 256 \
+            --output "$output"
+          for disk in 1 2 3 4; do
+            sudo fstrim -v "/mnt/flexraid-bench-disk-$disk"
+          done
+          sudo chown -R "$USER:$USER" benchmark-results
+
+      - name: Upload benchmark results and summary
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: storage-io-size-comparison-${{ matrix.io_size }}
+          path: benchmark-results/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Clean up loopback devices
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if [[ -f "$RUNNER_TEMP/flexraid-bench-mounts" ]]; then
+            while IFS= read -r mount; do sudo umount "$mount"; done < "$RUNNER_TEMP/flexraid-bench-mounts"
+          fi
+          if [[ -f "$RUNNER_TEMP/flexraid-bench-links" ]]; then
+            while IFS= read -r link; do sudo rm -f "$link"; done < "$RUNNER_TEMP/flexraid-bench-links"
+          fi
+          if [[ -f "$RUNNER_TEMP/flexraid-bench-loops" ]]; then
+            while IFS= read -r loop; do sudo losetup -d "$loop"; done < "$RUNNER_TEMP/flexraid-bench-loops"
+          fi

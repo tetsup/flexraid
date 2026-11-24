@@ -30,12 +30,13 @@ type Distribution struct {
 	objects                map[shared.ObjectID]map[storage.StripeID]*stripeInfo
 	versions               map[stripeIDKey]map[storage.StripeVersion]*versionInfo
 	metrics                *metricsCollector
+	trace                  shared.TraceRecorder
 	metricsOnce            sync.Once
 	orphans                map[shared.ObjectID][]chunkLocation
 	cleanupQueue           *cleanupQueue
 	cleanupPermissionStore *shared.CleanupPermissionStore
 	cleanupWorkerMu        sync.Mutex
-	cleanupWorkerCancel    context.CancelFunc
+	cleanupWorkerCancel    context.CancelCauseFunc
 	cleanupWorkerDone      chan struct{}
 	cleanupWake            chan struct{}
 }
@@ -291,4 +292,11 @@ func expectedChunkNos(method distributionMethod) []chunkNo {
 		result = append(result, parityFlag|chunkNo(index))
 	}
 	return result
+}
+
+func (d *Distribution) SetTraceRecorder(recorder shared.TraceRecorder) {
+	d.trace = recorder
+	for _, layer := range d.ios {
+		layer.SetTraceRecorder(recorder)
+	}
 }
