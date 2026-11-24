@@ -134,6 +134,9 @@ func (c *metricsCollector) recordOperation(name string, duration time.Duration, 
 }
 
 func (layer *Orchestration) recordOperation(name string, started time.Time, err error) {
+	if layer.trace != nil {
+		layer.trace.Record("Orchestration."+name, started, err)
+	}
 	if layer.metrics == nil {
 		return
 	}
