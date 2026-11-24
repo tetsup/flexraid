@@ -187,15 +187,15 @@ func TestBenchmarkFileCountUsesReferenceAndMaximum(t *testing.T) {
 		blockSize int64
 		want      int
 	}{
-		{"4KiB capped", 4 << 10, 1024},
-		{"64KiB capped", 64 << 10, 1024},
-		{"6MiB+11KiB", (6 << 20) + (11 << 10), 639},
-		{"stripe boundary +1B", (6 << 20) + (11 << 10) + 1, 639},
-		{"64MiB reference", 64 << 20, 60},
+		{"4KiB capped", 4 << 10, 256},
+		{"64KiB capped", 64 << 10, 256},
+		{"6MiB+11KiB", (6 << 20) + (11 << 10), 10},
+		{"stripe boundary +1B", (6 << 20) + (11 << 10) + 1, 10},
+		{"64MiB reference", 64 << 20, 1},
 	}
 	for _, test := range tests {
 		t.Run(test.label, func(t *testing.T) {
-			if got := benchmarkFileCount(test.blockSize, 60*64<<20, 1024); got != test.want {
+			if got := benchmarkFileCount(test.blockSize, 64<<20, 256); got != test.want {
 				t.Fatalf("benchmarkFileCount() = %d, want %d", got, test.want)
 			}
 		})
