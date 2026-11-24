@@ -54,3 +54,32 @@ func TestManagementTraceControlValidatesContext(t *testing.T) {
 		t.Fatal("canceled StopTrace disabled tracing")
 	}
 }
+
+func TestTraceSnapshotInfersNestedParent(t *testing.T) {
+	recorder := newTraceRecorder()
+	recorder.start()
+	parentStarted := time.Now()
+	time.Sleep(time.Millisecond)
+	childStarted := time.Now()
+	time.Sleep(time.Millisecond)
+	recorder.Record("IO.Write", childStarted, nil)
+	time.Sleep(time.Millisecond)
+	recorder.Record("Management.Write", parentStarted, nil)
+
+	snapshot := recorder.snapshot()
+	if len(snapshot.Spans) != 2 {
+		t.Fatalf("got %d spans, want 2", len(snapshot.Spans))
+	}
+	var parent, child TraceSpan
+	for _, span := range snapshot.Spans {
+		switch span.Operation {
+		case "Management.Write":
+			parent = span
+		case "IO.Write":
+			child = span
+		}
+	}
+	if parent.ID == 0 || child.ID == 0 || child.ParentID != parent.ID {
+		t.Fatalf("parent=%+v child=%+v; want child parent ID %d", parent, child, parent.ID)
+	}
+}
