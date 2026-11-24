@@ -382,8 +382,10 @@ func TestDataCallbacksHonorCancellationAndStillRelease(t *testing.T) {
 	if _, errno := n.Write(cancelled, handle, []byte("x"), 0); errno == 0 {
 		t.Errorf("Write with canceled context errno = %v, want a nonzero errno", errno)
 	}
-	if errno := n.Flush(cancelled, handle); errno == 0 {
-		t.Errorf("Flush with canceled context errno = %v, want a nonzero errno", errno)
+	// A clean Flush is an idempotent no-op, even if its request context
+	// was canceled. Dirty Flush cancellation is covered at the Orchestration layer.
+	if errno := n.Flush(cancelled, handle); errno != 0 {
+		t.Errorf("Flush of clean file with canceled context = %v, want success", errno)
 	}
 	if errno := n.Fsync(cancelled, handle, 0); errno == 0 {
 		t.Errorf("Fsync with canceled context errno = %v, want a nonzero errno", errno)
