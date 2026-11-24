@@ -9,6 +9,7 @@ on:
       - "benchmark/**"
       - "main/**"
       - "management/**"
+      - "api/worker/v1/**"
       - "distribution/**"
       - "io/**"
       - "platform/**"
