@@ -121,7 +121,7 @@ func TestValidateBenchmarkCapacityRejectsOverflow(t *testing.T) {
 	}
 }
 
-func TestRenderWorkerConfigUsesIsolatedRootsAndDisablesGRPC(t *testing.T) {
+func TestRenderWorkerConfigUsesIsolatedRootsAndEnablesGRPC(t *testing.T) {
 	disks := []management.DriveConfig{
 		{Root: "/original/disk1", Mountpoint: "/mnt/disk1", WWN: "drive-1"},
 		{Root: "/original/disk2", Mountpoint: "/mnt/disk2", WWN: "drive-2"},
