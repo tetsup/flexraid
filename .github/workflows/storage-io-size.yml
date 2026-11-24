@@ -104,7 +104,7 @@ jobs:
               wwn: flexraid-bench-4
           mountpoint: $RUNNER_TEMP/flexraid-production-mountpoint
           grpc_socket_path: $RUNNER_TEMP/flexraid-bench.sock
-          grpc_enabled: false
+          grpc_enabled: true
           YAML
           for iteration in 1 2 3 4 5; do
             echo "===== FlexRAID benchmark iteration $iteration/5 ====="
