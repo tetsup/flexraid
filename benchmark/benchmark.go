@@ -1014,8 +1014,8 @@ func collectRuntimeMetrics(socketPath, outputDir, phase string) error {
 	}
 	record := map[string]any{
 		"unix_time_ns": time.Now().UnixNano(),
-		"phase": phase,
-		"metrics": response.AsMap(),
+		"phase":        phase,
+		"metrics":      response.AsMap(),
 	}
 	file, err := os.OpenFile(filepath.Join(outputDir, "go-runtime-metrics.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
