@@ -36,7 +36,7 @@ type Distribution struct {
 	cleanupQueue           *cleanupQueue
 	cleanupPermissionStore *shared.CleanupPermissionStore
 	cleanupWorkerMu        sync.Mutex
-	cleanupWorkerCancel    context.CancelFunc
+	cleanupWorkerCancel    context.CancelCauseFunc
 	cleanupWorkerDone      chan struct{}
 	cleanupWake            chan struct{}
 }
