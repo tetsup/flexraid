@@ -61,7 +61,7 @@ func (layer *Management) recordOperation(name string, started time.Time, err err
 	}
 	layer.metrics.record(name, time.Since(started), err)
 	if layer.trace != nil {
-		layer.trace.record(name, started, err)
+		layer.trace.Record(name, started, err)
 	}
 }
 
