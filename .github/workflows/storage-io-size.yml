@@ -33,6 +33,19 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v6
 
+      - name: Disable swap
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo swapoff -a
+          if [[ "$(wc -l < /proc/swaps)" -ne 1 ]]; then
+            echo "Swap remains enabled after swapoff -a:" >&2
+            cat /proc/swaps >&2
+            exit 1
+          fi
+          cat /proc/swaps
+          free -h
+
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
