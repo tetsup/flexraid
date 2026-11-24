@@ -212,3 +212,17 @@ func TestCreateBenchmarkFilesCreatesExactlyRequestedCount(t *testing.T) {
 		t.Fatalf("files=%d bytes=%d operations=%d elapsed=%s", len(files), bytesWritten, operations, elapsed)
 	}
 }
+
+func TestSelectIOSizes(t *testing.T) {
+	all, err := selectIOSizes("")
+	if err != nil || len(all) != len(ioSizes) {
+		t.Fatalf("selectIOSizes(all) = %d, %v", len(all), err)
+	}
+	one, err := selectIOSizes("64MiB")
+	if err != nil || len(one) != 1 || one[0].label != "64MiB" {
+		t.Fatalf("selectIOSizes(single) = %#v, %v", one, err)
+	}
+	if _, err := selectIOSizes("invalid"); err == nil {
+		t.Fatal("selectIOSizes accepted an unknown size")
+	}
+}
