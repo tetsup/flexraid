@@ -224,6 +224,13 @@ func Run(args []string) (runErr error) {
 		if traceErr := saveWorkerTrace(socketPath, opts.outputDir); traceErr != nil {
 			runErr = errors.Join(runErr, fmt.Errorf("save Worker trace after benchmark: %w", traceErr))
 		}
+		if logData, readErr := os.ReadFile(workerLogPath); readErr == nil {
+			if writeErr := os.WriteFile(filepath.Join(opts.outputDir, "worker.log"), logData, 0644); writeErr != nil {
+				runErr = errors.Join(runErr, fmt.Errorf("save Worker log: %w", writeErr))
+			}
+		} else {
+			runErr = errors.Join(runErr, fmt.Errorf("read Worker log: %w", readErr))
+		}
 	}()
 
 	benchmarkConfig := config
