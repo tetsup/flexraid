@@ -319,6 +319,13 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 	for _, locations := range d.orphans {
 		response.CacheMemory.OrphanChunkEntries += uint64(len(locations))
 	}
+	response.CacheMemory.StripeLockEntries = uint64(len(d.stripeLocks))
+	if d.cleanupQueue != nil {
+		d.cleanupQueue.mu.Lock()
+		response.CacheMemory.CleanupPendingEntries = uint64(len(d.cleanupQueue.pending))
+		response.CacheMemory.CleanupInFlightEntries = uint64(len(d.cleanupQueue.inFlight))
+		d.cleanupQueue.mu.Unlock()
+	}
 	d.mapMu.Unlock()
 	if request.SummaryOnly {
 		return response, nil
