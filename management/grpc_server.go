@@ -99,16 +99,16 @@ func (service *workerService) GetRuntimeMetrics(ctx context.Context, _ *emptypb.
 			return nil, managementRPCError(err)
 		}
 		values["flexraid_orchestration_cache"] = map[string]any{
-			"namespace_object_count": float64(cache.RuntimeMemory.NamespaceObjectCount),
-			"header_index_entries": float64(cache.RuntimeMemory.HeaderIndexEntries),
-			"directory_entry_count": float64(cache.RuntimeMemory.DirectoryEntryCount),
-			"stripe_cache_entries": float64(cache.RuntimeMemory.StripeCacheEntries),
-			"stripe_cache_data_bytes": float64(cache.RuntimeMemory.StripeCacheDataBytes),
-			"zero_stripe_range_count": float64(cache.RuntimeMemory.ZeroStripeRangeCount),
-			"symlink_target_bytes": float64(cache.RuntimeMemory.SymlinkTargetBytes),
-			"deletion_queue_entries": float64(cache.RuntimeMemory.DeletionQueueEntries),
+			"namespace_object_count":   float64(cache.RuntimeMemory.NamespaceObjectCount),
+			"header_index_entries":     float64(cache.RuntimeMemory.HeaderIndexEntries),
+			"directory_entry_count":    float64(cache.RuntimeMemory.DirectoryEntryCount),
+			"stripe_cache_entries":     float64(cache.RuntimeMemory.StripeCacheEntries),
+			"stripe_cache_data_bytes":  float64(cache.RuntimeMemory.StripeCacheDataBytes),
+			"zero_stripe_range_count":  float64(cache.RuntimeMemory.ZeroStripeRangeCount),
+			"symlink_target_bytes":     float64(cache.RuntimeMemory.SymlinkTargetBytes),
+			"deletion_queue_entries":   float64(cache.RuntimeMemory.DeletionQueueEntries),
 			"protected_object_entries": float64(cache.RuntimeMemory.ProtectedObjectEntries),
-			"initialization_warnings": float64(cache.RuntimeMemory.InitializationWarnings),
+			"initialization_warnings":  float64(cache.RuntimeMemory.InitializationWarnings),
 		}
 	}
 	if service.management.distribution != nil {
