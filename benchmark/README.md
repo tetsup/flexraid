@@ -11,7 +11,7 @@ Both commands report write, overwrite, and read measurements for the same I/O re
 
 ```sh
 go build -o ./bin/flexraid ./main
-sudo ./bin/flexraid benchmark --config /etc/flexraid/config.yaml --reference-bytes 67108864 --max-files 256
+sudo ./bin/flexraid benchmark --config /etc/flexraid/config.yaml --reference-bytes 805306368 --max-files 256
 ```
 
 The configured physical filesystems must already be mounted, configured device identifiers must resolve, and the production FUSE mountpoint must be unmounted. The command creates temporary Storage Roots and starts a temporary Worker using those roots. It cleans up the temporary mount and storage after measurement. If unmounting fails, it preserves the storage roots and workspace for manual inspection.
@@ -23,7 +23,7 @@ The benchmark selects four configured drives with the most available capacity fo
 ```sh
 sudo ./bin/flexraid benchmark raw \
   --directory /mnt/disk/benchmark \
-  --reference-bytes 67108864 \
+  --reference-bytes 805306368 \
   --max-files 256 \
   --output ./raw-bench-results
 ```
@@ -32,7 +32,7 @@ The directory must already exist and be writable. The command creates a uniquely
 
 ## Measurements
 
-The I/O request sizes are 4 KiB, 4 KiB+1 B, 64 KiB, 6 MiB+11 KiB, 6 MiB+11 KiB+1 B, and 64 MiB. With four physical chunks (three data plus one parity), the logical stripe capacity is 6 MiB. Stripe 0 contributes 11 KiB of data after the 1 KiB header reservation, so the next boundary is 6 MiB+11 KiB; the paired +1 B case crosses it. `--reference-bytes` sets the logical-byte target used to derive each file count, and `--max-files` caps the count for every I/O size. The defaults are 64 MiB and 256 files. Thus 64 MiB uses 1 file, both stripe-boundary cases use 10 files, and small requests (4 KiB, 4 KiB+1 B, and 64 KiB) are capped at 256 files. The paired boundary cases use the same file count.
+The I/O request sizes are 4 KiB, 4 KiB+1 B, 64 KiB, 6 MiB+11 KiB, 6 MiB+11 KiB+1 B, and 64 MiB. With four physical chunks (three data plus one parity), the logical stripe capacity is 6 MiB. Stripe 0 contributes 11 KiB of data after the 1 KiB header reservation, so the next boundary is 6 MiB+11 KiB; the paired +1 B case crosses it. `--reference-bytes` sets the logical-byte target used to derive each file count, and `--max-files` caps the count for every I/O size. The defaults are 768 MiB and 256 files. Thus 64 MiB uses 12 files, both stripe-boundary cases use 127 files, and small requests (4 KiB, 4 KiB+1 B, and 64 KiB) are capped at 256 files. The paired boundary cases use the same file count.
 
 For each size:
 
@@ -40,7 +40,7 @@ For each size:
 - **Overwrite** clears the filesystem cache, then visits every generated file exactly once in creation order and overwrites its complete payload, including `fsync()` and `close()` for every file.
 - **Read** clears the filesystem cache, then reads every generated file exactly once in creation order. It never loops back to already-read files, so the result cannot turn into a page-cache benchmark.
 
-Before every measurement (including immediately before the read phase), the benchmark runs `sync` and clears Linux page caches through `/proc/sys/vm/drop_caches`; it logs this action and fails the measurement if either operation fails. Each file operation includes open/create, data transfer, and close; writes and overwrites also include `fsync()`. Every phase reports actual elapsed time, file-operation count, total bytes, bandwidth, and IOPS. Write, overwrite, and read therefore have identical operation counts and byte totals for each I/O size. CI runs the complete workload five times with the reduced 64 MiB reference and 256-file cap; this is sized to bring the raw ext4 portion close to two minutes across all five repetitions. Each invocation creates a new isolated FlexRAID storage root (or a new raw temporary directory), removes it on completion, and runs `fstrim` before the next iteration to reclaim sparse loopback-image blocks. CI stores all five runs and calculates arithmetic means for elapsed time, bytes, operations, bandwidth, and IOPS in `average.csv` / `average.md`. Both benchmark modes use buffered I/O (no `O_DIRECT`), keeping unaligned +1 B request sizes valid and comparable. Results therefore measure normal POSIX buffered-I/O behavior while ensuring writes are timed through durable flush completion.
+Before every measurement (including immediately before the read phase), the benchmark runs `sync` and clears Linux page caches through `/proc/sys/vm/drop_caches`; it logs this action and fails the measurement if either operation fails. Each file operation includes open/create, data transfer, and close; writes and overwrites also include `fsync()`. Every phase reports actual elapsed time, file-operation count, total bytes, bandwidth, and IOPS. Write, overwrite, and read therefore have identical operation counts and byte totals for each I/O size. CI runs the complete workload five times with the reduced 768 MiB reference and 256-file cap; this is sized to bring the raw ext4 portion close to two minutes across all five repetitions. Each invocation creates a new isolated FlexRAID storage root (or a new raw temporary directory), removes it on completion, and runs `fstrim` before the next iteration to reclaim sparse loopback-image blocks. CI stores all five runs and calculates arithmetic means for elapsed time, bytes, operations, bandwidth, and IOPS in `average.csv` / `average.md`. Both benchmark modes use buffered I/O (no `O_DIRECT`), keeping unaligned +1 B request sizes valid and comparable. Results therefore measure normal POSIX buffered-I/O behavior while ensuring writes are timed through durable flush completion.
 
 ## Output
 
