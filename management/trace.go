@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-const traceSpanLimit = 1_000_000
+const traceSpanLimit = 100_000
 
 // TraceSpan records one completed Management operation using monotonic offsets.
 type TraceSpan struct {
