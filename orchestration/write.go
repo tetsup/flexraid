@@ -375,17 +375,14 @@ func (layer *Orchestration) readLogicalRangeLocked(
 	return result, nil
 }
 
+// cloneStripeCache copies the map while sharing immutable entry payloads.
+// Callers that modify an existing entry must go through loadStripeForWriteLocked,
+// which copies that one stripe before returning it. This keeps staging cost
+// proportional to the number of pending dirty stripes, not their total bytes.
 func cloneStripeCache(source map[uint64]*stripeCacheEntry) map[uint64]*stripeCacheEntry {
 	clone := make(map[uint64]*stripeCacheEntry, len(source))
 	for id, entry := range source {
-		if entry == nil {
-			clone[id] = nil
-			continue
-		}
-		clone[id] = &stripeCacheEntry{
-			data:  append([]byte(nil), entry.data...),
-			state: entry.state,
-		}
+		clone[id] = entry
 	}
 	return clone
 }
