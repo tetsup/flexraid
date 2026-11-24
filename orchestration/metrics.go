@@ -57,20 +57,20 @@ type GetMetricsRequest struct {
 }
 
 type RuntimeMemoryMetrics struct {
-	NamespaceObjectCount uint64
-	HeaderIndexEntries uint64
-	DirectoryEntryCount uint64
-	StripeCacheEntries uint64
-	StripeCacheDataBytes uint64
-	ZeroStripeRangeCount uint64
-	SymlinkTargetBytes uint64
-	DeletionQueueEntries uint64
+	NamespaceObjectCount   uint64
+	HeaderIndexEntries     uint64
+	DirectoryEntryCount    uint64
+	StripeCacheEntries     uint64
+	StripeCacheDataBytes   uint64
+	ZeroStripeRangeCount   uint64
+	SymlinkTargetBytes     uint64
+	DeletionQueueEntries   uint64
 	ProtectedObjectEntries uint64
 	InitializationWarnings uint64
 }
 
 type GetMetricsResponse struct {
-	RuntimeMemory RuntimeMemoryMetrics
+	RuntimeMemory                 RuntimeMemoryMetrics
 	Operations                    map[string]OperationMetrics
 	ReadErrors                    ReadErrorMetrics
 	RecoverableMissingFileCount   uint64
