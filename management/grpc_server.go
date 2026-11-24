@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/tetsup/flexraid/distribution"
+	"github.com/tetsup/flexraid/orchestration"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -88,6 +89,26 @@ func (service *workerService) GetRuntimeMetrics(ctx context.Context, _ *emptypb.
 			values[sample.Name] = float64(sample.Value.Uint64())
 		case metrics.KindFloat64:
 			values[sample.Name] = sample.Value.Float64()
+		}
+	}
+	service.management.mu.Lock()
+	defer service.management.mu.Unlock()
+	if service.management.orchestration != nil {
+		cache, err := service.management.orchestration.GetMetrics(orchestration.GetMetricsRequest{Context: ctx, SummaryOnly: true})
+		if err != nil {
+			return nil, managementRPCError(err)
+		}
+		values["flexraid_orchestration_cache"] = map[string]any{
+			"namespace_object_count": float64(cache.RuntimeMemory.NamespaceObjectCount),
+			"header_index_entries": float64(cache.RuntimeMemory.HeaderIndexEntries),
+			"directory_entry_count": float64(cache.RuntimeMemory.DirectoryEntryCount),
+			"stripe_cache_entries": float64(cache.RuntimeMemory.StripeCacheEntries),
+			"stripe_cache_data_bytes": float64(cache.RuntimeMemory.StripeCacheDataBytes),
+			"zero_stripe_range_count": float64(cache.RuntimeMemory.ZeroStripeRangeCount),
+			"symlink_target_bytes": float64(cache.RuntimeMemory.SymlinkTargetBytes),
+			"deletion_queue_entries": float64(cache.RuntimeMemory.DeletionQueueEntries),
+			"protected_object_entries": float64(cache.RuntimeMemory.ProtectedObjectEntries),
+			"initialization_warnings": float64(cache.RuntimeMemory.InitializationWarnings),
 		}
 	}
 	if service.management.distribution != nil {
