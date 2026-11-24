@@ -9,7 +9,7 @@ import (
 
 const traceSpanLimit = 100_000
 
-// TraceSpan records one completed Management operation using monotonic offsets.
+// TraceSpan records one completed layer operation using monotonic offsets.
 type TraceSpan struct {
 	ID         uint64 `json:"id"`
 	Operation  string `json:"operation"`
@@ -78,7 +78,7 @@ func (r *traceRecorder) snapshot() TraceSnapshot {
 type StartTraceRequest struct{ Context context.Context }
 type StartTraceResponse struct{}
 type StopTraceRequest struct{ Context context.Context }
-type StopTraceResponse struct{ Trace TraceSnapshot }
+type StopTraceResponse struct{}
 type GetTraceRequest struct{ Context context.Context }
 type GetTraceResponse struct{ Trace TraceSnapshot }
 
@@ -100,7 +100,7 @@ func (layer *Management) StopTrace(request StopTraceRequest) (StopTraceResponse,
 		return StopTraceResponse{}, err
 	}
 	layer.trace.stop()
-	return StopTraceResponse{Trace: layer.trace.snapshot()}, nil
+	return StopTraceResponse{}, nil
 }
 func (layer *Management) GetTrace(request GetTraceRequest) (GetTraceResponse, error) {
 	if request.Context == nil {
