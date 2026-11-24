@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+var errDistributionCleanupWorkerStopped = errors.New("Distribution cleanup worker stopped")
+
 // NotifyCleanupPermissionsChanged wakes the worker after Management updates
 // the shared permission store.
 func (d *Distribution) NotifyCleanupPermissionsChanged() {
@@ -28,7 +30,7 @@ func (d *Distribution) StartCleanupWorker(parent context.Context) (resultErr err
 	if d.cleanupWorkerCancel != nil {
 		return nil
 	}
-	ctx, cancel := context.WithCancel(parent)
+	ctx, cancel := context.WithCancelCause(parent)
 	done := make(chan struct{})
 	d.cleanupWorkerCancel = cancel
 	d.cleanupWorkerDone = done
@@ -51,7 +53,7 @@ func (d *Distribution) StopCleanupWorker(ctx context.Context) (resultErr error) 
 		d.cleanupWorkerMu.Unlock()
 		return nil
 	}
-	cancel()
+	cancel(errDistributionCleanupWorkerStopped)
 	d.cleanupWorkerMu.Unlock()
 	select {
 	case <-done:
@@ -77,6 +79,9 @@ func (d *Distribution) wakeCleanupWorker() {
 
 func (d *Distribution) runCleanupWorker(ctx context.Context, done chan struct{}) {
 	defer func() {
+		if cause := context.Cause(ctx); cause != nil {
+			d.logger.Debug("Distribution cleanup worker context ended", "cause", cause)
+		}
 		close(done)
 		d.cleanupWorkerMu.Lock()
 		if d.cleanupWorkerDone == done {
