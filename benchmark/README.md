@@ -3,7 +3,7 @@
 Two independent benchmarks are provided:
 
 - `flexraid benchmark` measures I/O through an isolated temporary FlexRAID Worker and FUSE mount.
-- `flexraid benchmark raw` measures a directory on an arbitrary mounted filesystem. It does not load FlexRAID configuration, resolve device IDs, start a Worker, or mount FUSE.
+- `flexraid benchmark raw` measures a directory on an arbitrary mounted filesystem. It does not load FlexRAID configuration, resolve device IDs, start a Worker, or mount FUSE. CI runs each request size once in a separate matrix job.
 
 Both commands report write, overwrite, and read measurements for the same I/O request sizes. Every phase processes a fixed number of files; elapsed time is measured, not used as a stopping condition.
 
@@ -45,3 +45,5 @@ Before every measurement (including immediately before the read phase), the benc
 ## Output
 
 Each command writes `summary.csv`, `summary.md` to its output directory. Both summaries use the same columns, including a filesystem identifier, so CI or other external tooling can combine and compare independent runs. The commands do not launch each other or perform comparisons automatically.
+
+For FlexRAID runs, the output also includes `go-runtime-metrics.jsonl`, sampled once per second and after each phase. It records all supported Go `runtime/metrics` values, including live heap, heap objects, heap idle/released, stacks, GC cycles and GC CPU time, plus explicit Distribution and Orchestration cache counters/retained payload bytes. The CI resource monitor writes `system.jsonl` with host memory/cache categories (`Cached`, `Buffers`, active/inactive anonymous/file pages, reclaimable/unreclaimable slab, dirty/writeback), cgroup memory categories when available, swap and PSI, and per-process `/proc` RSS/PSS/anonymous/file-backed/shared/swap details for the Worker and benchmark client. These values are intentionally reported as separate overlapping views: Go heap is part of Worker RSS, and Linux page cache is not additive to process RSS. `worker.pid` and `benchmark.pid` are transient files removed during normal benchmark cleanup.
