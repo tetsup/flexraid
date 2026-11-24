@@ -248,7 +248,7 @@ func runRaw(args []string) error {
 	flags.StringVar(&directory, "directory", "", "directory on the physical filesystem to benchmark")
 	flags.StringVar(&opts.outputDir, "output", "./flexraid-raw-bench-results", "result directory")
 	flags.IntVar(&opts.maxFiles, "max-files", 256, "maximum files per I/O size")
-	flags.Int64Var(&opts.referenceBytes, "reference-bytes", 512<<20, "logical byte target used to derive per-size file counts")
+	flags.Int64Var(&opts.referenceBytes, "reference-bytes", 768<<20, "logical byte target used to derive per-size file counts")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
