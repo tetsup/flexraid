@@ -168,6 +168,7 @@ jobs:
           PY
 
       - name: Upload benchmark results and summary
+        if: always()
         uses: actions/upload-artifact@v6
         with:
           name: storage-io-size-comparison
