@@ -52,10 +52,25 @@ type RecentReadErrorMetrics struct {
 }
 
 type GetMetricsRequest struct {
-	Context context.Context
+	Context     context.Context
+	SummaryOnly bool
+}
+
+type RuntimeMemoryMetrics struct {
+	NamespaceObjectCount uint64
+	HeaderIndexEntries uint64
+	DirectoryEntryCount uint64
+	StripeCacheEntries uint64
+	StripeCacheDataBytes uint64
+	ZeroStripeRangeCount uint64
+	SymlinkTargetBytes uint64
+	DeletionQueueEntries uint64
+	ProtectedObjectEntries uint64
+	InitializationWarnings uint64
 }
 
 type GetMetricsResponse struct {
+	RuntimeMemory RuntimeMemoryMetrics
 	Operations                    map[string]OperationMetrics
 	ReadErrors                    ReadErrorMetrics
 	RecoverableMissingFileCount   uint64
@@ -272,6 +287,28 @@ func (layer *Orchestration) GetMetrics(request GetMetricsRequest) (response GetM
 	}
 	if err = request.Context.Err(); err != nil {
 		return response, err
+	}
+	if request.SummaryOnly {
+		response.RuntimeMemory.NamespaceObjectCount = uint64(len(layer.objects))
+		response.RuntimeMemory.HeaderIndexEntries = uint64(len(layer.headers))
+		response.RuntimeMemory.DeletionQueueEntries = uint64(len(layer.deletionQueue))
+		response.RuntimeMemory.ProtectedObjectEntries = uint64(len(layer.protectedObjects))
+		response.RuntimeMemory.InitializationWarnings = uint64(len(layer.warnings))
+		for _, object := range layer.objects {
+			response.RuntimeMemory.DirectoryEntryCount += uint64(len(object.children))
+			response.RuntimeMemory.SymlinkTargetBytes += uint64(len(object.linkTarget))
+			if object.file == nil {
+				continue
+			}
+			response.RuntimeMemory.StripeCacheEntries += uint64(len(object.file.stripeCache))
+			response.RuntimeMemory.ZeroStripeRangeCount += uint64(len(object.file.zeroStripeRanges))
+			for _, entry := range object.file.stripeCache {
+				if entry != nil {
+					response.RuntimeMemory.StripeCacheDataBytes += uint64(len(entry.data))
+				}
+			}
+		}
+		return response, nil
 	}
 	distributionMetrics, err := layer.distribution.GetMetrics(distribution.GetMetricsRequest{
 		Context: request.Context, IncludeDetails: true,
