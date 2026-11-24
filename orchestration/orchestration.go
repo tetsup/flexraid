@@ -99,4 +99,7 @@ func New(request NewRequest) (NewResponse, error) {
 
 func (layer *Orchestration) SetTraceRecorder(recorder shared.TraceRecorder) {
 	layer.trace = recorder
+	if layer.distribution != nil {
+		layer.distribution.SetTraceRecorder(recorder)
+	}
 }
