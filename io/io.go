@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 
 	"github.com/tetsup/flexraid/storage"
+	"github.com/tetsup/flexraid/pkg/shared"
 )
 
 type IO struct {
@@ -15,6 +16,7 @@ type IO struct {
 	preservationRoot string
 	logger           *slog.Logger
 	metrics          *metricsCollector
+	trace            shared.TraceRecorder
 	lastAccess       atomic.Int64
 	device           *deviceState
 	monitorMu        sync.Mutex
@@ -33,4 +35,8 @@ type ScanEntry struct {
 
 func newLogger(level slog.Level) *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+}
+
+func (layer *IO) SetTraceRecorder(recorder shared.TraceRecorder) {
+	layer.trace = recorder
 }
