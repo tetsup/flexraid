@@ -53,6 +53,8 @@ type options struct {
 	ioSize         string
 }
 
+var runtimeMetricsFileMu sync.Mutex
+
 type sample struct {
 	Filesystem string
 	IOSize     int64
@@ -236,6 +238,8 @@ func Run(args []string) (runErr error) {
 	if err := invokeTraceRPC(socketPath, "StartTrace"); err != nil {
 		return fmt.Errorf("enable Worker trace: %w", err)
 	}
+	stopRuntimeMetrics := startRuntimeMetricsMonitor(socketPath, opts.outputDir)
+	defer stopRuntimeMetrics()
 	// Export the trace on both successful and failed benchmark runs. In
 	// particular, a failed FUSE operation must leave enough evidence to
 	// diagnose the failure rather than losing the in-memory trace at shutdown.
@@ -996,6 +1000,26 @@ func writeReports(outputDir string, samples []sample) error {
 	return nil
 }
 
+func startRuntimeMetricsMonitor(socketPath, outputDir string) func() {
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := collectRuntimeMetrics(socketPath, outputDir, "periodic"); err != nil {
+					fmt.Fprintf(os.Stderr, "collect periodic Worker runtime metrics: %v\\n", err)
+				}
+			}
+		}
+	}()
+	return func() { cancel(); <-done }
+}
 func collectRuntimeMetrics(socketPath, outputDir, phase string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -1017,6 +1041,8 @@ func collectRuntimeMetrics(socketPath, outputDir, phase string) error {
 		"phase":        phase,
 		"metrics":      response.AsMap(),
 	}
+	runtimeMetricsFileMu.Lock()
+	defer runtimeMetricsFileMu.Unlock()
 	file, err := os.OpenFile(filepath.Join(outputDir, "go-runtime-metrics.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
