@@ -320,7 +320,9 @@ func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file 
 				return persisted, fmt.Errorf("persist stripe %d: %w", id, err)
 			}
 			if entry != nil {
-				entry.state = stripeCacheClean
+				// A successfully written stripe is no longer dirty and does not
+				// need to remain cached. Future reads load it on demand.
+				delete(file.stripeCache, id)
 			}
 			if isZero {
 				file.zeroStripeRanges = removeStripeFromRanges(file.zeroStripeRanges, id)
