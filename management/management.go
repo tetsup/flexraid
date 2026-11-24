@@ -64,6 +64,12 @@ func New(request NewRequest) (*Management, error) {
 		trace:                  newTraceRecorder(),
 		grpcSocketPath:         request.Config.GRPCSocketPath,
 	}
+	if request.Distribution != nil {
+		request.Distribution.SetTraceRecorder(layer.trace)
+	}
+	if request.Orchestration != nil {
+		request.Orchestration.SetTraceRecorder(layer.trace)
+	}
 	if receiver, ok := request.Initialization.(cleanupPermissionStoreReceiver); ok {
 		receiver.SetCleanupPermissionStore(permissionStore)
 	}
