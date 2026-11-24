@@ -46,19 +46,25 @@ type workerService struct {
 
 func (service *workerService) StartTrace(ctx context.Context, _ *emptypb.Empty) (*structpb.Struct, error) {
 	response, err := service.management.StartTrace(StartTraceRequest{Context: ctx})
-	if err != nil { return nil, managementRPCError(err) }
+	if err != nil {
+		return nil, managementRPCError(err)
+	}
 	return encodeWorkerResponse(response)
 }
 
 func (service *workerService) StopTrace(ctx context.Context, _ *emptypb.Empty) (*structpb.Struct, error) {
 	response, err := service.management.StopTrace(StopTraceRequest{Context: ctx})
-	if err != nil { return nil, managementRPCError(err) }
+	if err != nil {
+		return nil, managementRPCError(err)
+	}
 	return encodeWorkerResponse(response)
 }
 
 func (service *workerService) GetTrace(ctx context.Context, _ *emptypb.Empty) (*structpb.Struct, error) {
 	response, err := service.management.GetTrace(GetTraceRequest{Context: ctx})
-	if err != nil { return nil, managementRPCError(err) }
+	if err != nil {
+		return nil, managementRPCError(err)
+	}
 	return encodeWorkerResponse(response)
 }
 
@@ -230,19 +236,29 @@ func workerGetStatusHandler(server any, ctx context.Context, decoder func(any) e
 }
 
 func workerStartTraceHandler(server any, ctx context.Context, decoder func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
-	return workerEmptyHandler(server, ctx, decoder, interceptor, "StartTrace", func(ctx context.Context, service workerServiceServer) (any, error) { return service.StartTrace(ctx, &emptypb.Empty{}) })
+	return workerEmptyHandler(server, ctx, decoder, interceptor, "StartTrace", func(ctx context.Context, service workerServiceServer) (any, error) {
+		return service.StartTrace(ctx, &emptypb.Empty{})
+	})
 }
 func workerStopTraceHandler(server any, ctx context.Context, decoder func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
-	return workerEmptyHandler(server, ctx, decoder, interceptor, "StopTrace", func(ctx context.Context, service workerServiceServer) (any, error) { return service.StopTrace(ctx, &emptypb.Empty{}) })
+	return workerEmptyHandler(server, ctx, decoder, interceptor, "StopTrace", func(ctx context.Context, service workerServiceServer) (any, error) {
+		return service.StopTrace(ctx, &emptypb.Empty{})
+	})
 }
 func workerGetTraceHandler(server any, ctx context.Context, decoder func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
-	return workerEmptyHandler(server, ctx, decoder, interceptor, "GetTrace", func(ctx context.Context, service workerServiceServer) (any, error) { return service.GetTrace(ctx, &emptypb.Empty{}) })
+	return workerEmptyHandler(server, ctx, decoder, interceptor, "GetTrace", func(ctx context.Context, service workerServiceServer) (any, error) {
+		return service.GetTrace(ctx, &emptypb.Empty{})
+	})
 }
 func workerEmptyHandler(server any, ctx context.Context, decoder func(any) error, interceptor grpc.UnaryServerInterceptor, method string, call func(context.Context, workerServiceServer) (any, error)) (any, error) {
 	in := new(emptypb.Empty)
-	if err := decoder(in); err != nil { return nil, err }
+	if err := decoder(in); err != nil {
+		return nil, err
+	}
 	handler := func(ctx context.Context, request any) (any, error) { return call(ctx, server.(workerServiceServer)) }
-	if interceptor == nil { return handler(ctx, in) }
+	if interceptor == nil {
+		return handler(ctx, in)
+	}
 	return interceptor(ctx, in, &grpc.UnaryServerInfo{Server: server, FullMethod: "/flexraid.worker.v1.WorkerService/" + method}, handler)
 }
 

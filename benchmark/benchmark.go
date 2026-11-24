@@ -9,9 +9,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
-	"net"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -935,7 +935,9 @@ func invokeTraceRPC(socketPath, method string) error {
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
 		}))
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	defer connection.Close()
 	response := new(structpb.Struct)
 	return connection.Invoke(ctx, "/flexraid.worker.v1.WorkerService/"+method, &emptypb.Empty{}, response)
@@ -949,14 +951,24 @@ func saveWorkerTrace(socketPath, outputDir string) error {
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
 		}))
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	defer connection.Close()
 	stopResponse := new(structpb.Struct)
-	if err := connection.Invoke(ctx, "/flexraid.worker.v1.WorkerService/StopTrace", &emptypb.Empty{}, stopResponse); err != nil { return err }
+	if err := connection.Invoke(ctx, "/flexraid.worker.v1.WorkerService/StopTrace", &emptypb.Empty{}, stopResponse); err != nil {
+		return err
+	}
 	traceResponse := new(structpb.Struct)
-	if err := connection.Invoke(ctx, "/flexraid.worker.v1.WorkerService/GetTrace", &emptypb.Empty{}, traceResponse); err != nil { return err }
+	if err := connection.Invoke(ctx, "/flexraid.worker.v1.WorkerService/GetTrace", &emptypb.Empty{}, traceResponse); err != nil {
+		return err
+	}
 	encoded, err := json.MarshalIndent(traceResponse.AsMap(), "", "  ")
-	if err != nil { return err }
-	if err := os.WriteFile(filepath.Join(outputDir, "trace.json"), encoded, 0644); err != nil { return err }
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(outputDir, "trace.json"), encoded, 0644); err != nil {
+		return err
+	}
 	return nil
 }
