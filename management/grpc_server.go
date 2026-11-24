@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime/metrics"
 	"syscall"
 	"time"
 
@@ -30,6 +31,7 @@ type workerServiceServer interface {
 	StartTrace(context.Context, *emptypb.Empty) (*structpb.Struct, error)
 	StopTrace(context.Context, *emptypb.Empty) (*structpb.Struct, error)
 	GetTrace(context.Context, *emptypb.Empty) (*structpb.Struct, error)
+	GetRuntimeMetrics(context.Context, *emptypb.Empty) (*structpb.Struct, error)
 	GetDetailedStatus(context.Context, *emptypb.Empty) (*structpb.Struct, error)
 	Inspect(context.Context, *emptypb.Empty) (*structpb.Struct, error)
 	SpinUp(context.Context, *structpb.Struct) (*structpb.Struct, error)
@@ -66,6 +68,28 @@ func (service *workerService) GetTrace(ctx context.Context, _ *emptypb.Empty) (*
 		return nil, managementRPCError(err)
 	}
 	return encodeWorkerResponse(response)
+}
+
+func (service *workerService) GetRuntimeMetrics(ctx context.Context, _ *emptypb.Empty) (*structpb.Struct, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, managementRPCError(err)
+	}
+	descriptions := metrics.All()
+	samples := make([]metrics.Sample, len(descriptions))
+	for index, description := range descriptions {
+		samples[index].Name = description.Name
+	}
+	metrics.Read(samples)
+	values := make(map[string]any, len(samples))
+	for _, sample := range samples {
+		switch sample.Value.Kind() {
+		case metrics.KindUint64:
+			values[sample.Name] = float64(sample.Value.Uint64())
+		case metrics.KindFloat64:
+			values[sample.Name] = sample.Value.Float64()
+		}
+	}
+	return structpb.NewStruct(values)
 }
 
 func (service *workerService) GetStatus(ctx context.Context, _ *emptypb.Empty) (*structpb.Struct, error) {
@@ -262,6 +286,12 @@ func workerEmptyHandler(server any, ctx context.Context, decoder func(any) error
 	return interceptor(ctx, in, &grpc.UnaryServerInfo{Server: server, FullMethod: "/flexraid.worker.v1.WorkerService/" + method}, handler)
 }
 
+func workerGetRuntimeMetricsHandler(server any, ctx context.Context, decoder func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+	return workerEmptyHandler(server, ctx, decoder, interceptor, "GetRuntimeMetrics", func(ctx context.Context, service workerServiceServer) (any, error) {
+		return service.GetRuntimeMetrics(ctx, &emptypb.Empty{})
+	})
+}
+
 func workerGetDetailedStatusHandler(server any, ctx context.Context, decoder func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(emptypb.Empty)
 	if err := decoder(in); err != nil {
@@ -355,6 +385,7 @@ var workerServiceDescription = grpc.ServiceDesc{
 		{MethodName: "StartTrace", Handler: workerStartTraceHandler},
 		{MethodName: "StopTrace", Handler: workerStopTraceHandler},
 		{MethodName: "GetTrace", Handler: workerGetTraceHandler},
+		{MethodName: "GetRuntimeMetrics", Handler: workerGetRuntimeMetricsHandler},
 		{MethodName: "GetDetailedStatus", Handler: workerGetDetailedStatusHandler},
 		{MethodName: "Inspect", Handler: workerInspectHandler},
 		{MethodName: "SpinUp", Handler: workerSpinUpHandler},
