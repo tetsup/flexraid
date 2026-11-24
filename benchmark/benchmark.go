@@ -50,6 +50,7 @@ type options struct {
 	outputDir      string
 	maxFiles       int
 	referenceBytes int64
+	ioSize         string
 }
 
 type sample struct {
@@ -85,6 +86,7 @@ func Run(args []string) (runErr error) {
 	flags.StringVar(&opts.outputDir, "output", "./flexraid-bench-results", "result directory")
 	flags.IntVar(&opts.maxFiles, "max-files", 256, "maximum files per I/O size")
 	flags.Int64Var(&opts.referenceBytes, "reference-bytes", 768<<20, "logical byte target used to derive per-size file counts")
+	flags.StringVar(&opts.ioSize, "io-size", "", "run only the named I/O size (for example 4KiB or 64MiB)")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -99,6 +101,10 @@ func Run(args []string) (runErr error) {
 	}
 	if opts.referenceBytes <= 0 {
 		return errors.New("--reference-bytes must be positive")
+	}
+	blocks, err := selectIOSizes(opts.ioSize)
+	if err != nil {
+		return err
 	}
 
 	config, err := management.LoadConfig(opts.configPath)
@@ -144,7 +150,7 @@ func Run(args []string) (runErr error) {
 	if err != nil {
 		return err
 	}
-	largestCaseFiles := benchmarkFileCount(ioSizes[len(ioSizes)-1].bytes, opts.referenceBytes, opts.maxFiles)
+	largestCaseFiles := benchmarkFileCount(blocks[0].bytes, opts.referenceBytes, opts.maxFiles)
 	physicalBytesPerDisk := int64(largestCaseFiles) * (172 << 20) / 4
 	if err := validateBenchmarkCapacity(selected, physicalBytesPerDisk); err != nil {
 		return err
@@ -241,7 +247,7 @@ func Run(args []string) (runErr error) {
 		return err
 	}
 	var samples []sample
-	for _, block := range ioSizes {
+	for _, block := range blocks {
 		fileCount := benchmarkFileCount(block.bytes, opts.referenceBytes, opts.maxFiles)
 		fmt.Printf("Benchmark workload %s: files=%d logical_bytes=%d\n", block.label, fileCount, int64(fileCount)*block.bytes)
 		var files []string
@@ -293,6 +299,10 @@ func runRaw(args []string) error {
 	if opts.referenceBytes <= 0 {
 		return errors.New("--reference-bytes must be positive")
 	}
+	blocks, err := selectIOSizes(opts.ioSize)
+	if err != nil {
+		return err
+	}
 	absolute, err := filepath.Abs(directory)
 	if err != nil {
 		return fmt.Errorf("resolve benchmark directory: %w", err)
@@ -320,7 +330,7 @@ func runRaw(args []string) error {
 	}
 	defer os.RemoveAll(workDir)
 	var samples []sample
-	for _, block := range ioSizes {
+	for _, block := range blocks {
 		fileCount := benchmarkFileCount(block.bytes, opts.referenceBytes, opts.maxFiles)
 		fmt.Printf("Benchmark workload %s: files=%d logical_bytes=%d\n", block.label, fileCount, int64(fileCount)*block.bytes)
 		var files []string
@@ -763,6 +773,28 @@ func runCase(opts options, filesystem string, paths []string, blockSize int64, l
 	}
 	fmt.Printf("Completed %-8s %-10s %-9s elapsed=%s operations=%d bytes=%d (%.2f MiB) bandwidth=%.2f MiB/s IOPS=%.2f files=%d\n", direction, filesystem, label, elapsed.Round(time.Millisecond), operations, bytes, float64(bytes)/(1024*1024), result.BWBytes/(1024*1024), result.IOPS, measuredFileCount)
 	return result, generated, nil
+}
+
+func selectIOSizes(label string) ([]struct {
+	label string
+	bytes int64
+}, error) {
+	if label == "" {
+		return ioSizes, nil
+	}
+	for _, block := range ioSizes {
+		if block.label == label {
+			return []struct {
+				label string
+				bytes int64
+			}{block}, nil
+		}
+	}
+	labels := make([]string, 0, len(ioSizes))
+	for _, block := range ioSizes {
+		labels = append(labels, block.label)
+	}
+	return nil, fmt.Errorf("unknown I/O size %q (valid values: %s)", label, strings.Join(labels, ", "))
 }
 
 func benchmarkFileCount(blockSize, referenceBytes int64, maxFiles int) int {
