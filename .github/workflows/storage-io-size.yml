@@ -22,9 +22,13 @@ permissions:
 
 jobs:
   compare:
-    name: Raw ext4 vs FlexRAID FUSE
+    name: Raw ext4 vs FlexRAID FUSE (${{ matrix.io_size }})
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        io_size: ["4KiB", "4KiB+1B", "64KiB", "6MiB+11KiB", "6MiB+11KiB+1B", "64MiB"]
     steps:
       - name: Check out source
         uses: actions/checkout@v6
@@ -71,47 +75,27 @@ jobs:
             sudo mkdir -p "$mount/flexraid-data"
           done
 
-      - name: Run raw directory benchmark five times
+      - name: Run raw directory benchmark
         shell: bash
         run: |
           set -euo pipefail
-          monitor_pid=""
-          stop_monitor() {
-            if [[ -n "$monitor_pid" ]]; then
-              kill "$monitor_pid" 2>/dev/null || true
-              wait "$monitor_pid" 2>/dev/null || true
-              monitor_pid=""
-            fi
-          }
-          trap stop_monitor EXIT
-          for iteration in 1 2 3 4 5; do
-            echo "===== Raw benchmark iteration $iteration/5 ====="
-            output="$GITHUB_WORKSPACE/benchmark-results/raw/run-$iteration"
-            mkdir -p "$output"
-            python3 benchmark/ci_resource_monitor.py "$output/system.jsonl" &
-            monitor_pid=$!
-            sudo ./bin/flexraid benchmark raw \
-              --directory /mnt/flexraid-bench-disk-1 \
-              --reference-bytes 805306368 \
-              --max-files 256 \
-              --output "$output"
-            stop_monitor
-            sudo fstrim -v /mnt/flexraid-bench-disk-1
-          done
+          output="$GITHUB_WORKSPACE/benchmark-results/raw"
+          mkdir -p "$output"
+          python3 benchmark/ci_resource_monitor.py "$output/system.jsonl" &
+          monitor_pid=$!
+          trap 'kill "$monitor_pid" 2>/dev/null || true; wait "$monitor_pid" 2>/dev/null || true' EXIT
+          sudo ./bin/flexraid benchmark raw \
+            --directory /mnt/flexraid-bench-disk-1 \
+            --io-size '${{ matrix.io_size }}' \
+            --reference-bytes 805306368 \
+            --max-files 256 \
+            --output "$output"
+          sudo fstrim -v /mnt/flexraid-bench-disk-1
 
-      - name: Run FlexRAID benchmark five times
+      - name: Run FlexRAID benchmark
         shell: bash
         run: |
           set -euo pipefail
-          monitor_pid=""
-          stop_monitor() {
-            if [[ -n "$monitor_pid" ]]; then
-              kill "$monitor_pid" 2>/dev/null || true
-              wait "$monitor_pid" 2>/dev/null || true
-              monitor_pid=""
-            fi
-          }
-          trap stop_monitor EXIT
           worker_config="$RUNNER_TEMP/flexraid-bench.yaml"
           cat > "$worker_config" <<YAML
           disks:
@@ -131,75 +115,27 @@ jobs:
           grpc_socket_path: $RUNNER_TEMP/flexraid-bench.sock
           grpc_enabled: true
           YAML
-          for iteration in 1 2 3 4 5; do
-            echo "===== FlexRAID benchmark iteration $iteration/5 ====="
-            output="$GITHUB_WORKSPACE/benchmark-results/flexraid/run-$iteration"
-            mkdir -p "$output"
-            python3 benchmark/ci_resource_monitor.py "$output/system.jsonl" &
-            monitor_pid=$!
-            sudo ./bin/flexraid benchmark \
-              --config "$worker_config" \
-              --reference-bytes 805306368 \
-              --max-files 256 \
-              --output "$output"
-            stop_monitor
-            for disk in 1 2 3 4; do
-              sudo fstrim -v "/mnt/flexraid-bench-disk-$disk"
-            done
+          output="$GITHUB_WORKSPACE/benchmark-results/flexraid"
+          mkdir -p "$output"
+          python3 benchmark/ci_resource_monitor.py "$output/system.jsonl" &
+          monitor_pid=$!
+          trap 'kill "$monitor_pid" 2>/dev/null || true; wait "$monitor_pid" 2>/dev/null || true' EXIT
+          sudo ./bin/flexraid benchmark \
+            --config "$worker_config" \
+            --io-size '${{ matrix.io_size }}' \
+            --reference-bytes 805306368 \
+            --max-files 256 \
+            --output "$output"
+          for disk in 1 2 3 4; do
+            sudo fstrim -v "/mnt/flexraid-bench-disk-$disk"
           done
           sudo chown -R "$USER:$USER" benchmark-results
-
-      - name: Calculate five-run averages
-        run: |
-          python3 - <<'PY'
-          import csv
-          import glob
-          import os
-          from collections import defaultdict
-
-          root = "benchmark-results"
-          for filesystem in ("raw", "flexraid"):
-              rows = defaultdict(list)
-              for path in sorted(glob.glob(f"{root}/{filesystem}/run-*/summary.csv")):
-                  with open(path, newline="") as stream:
-                      for row in csv.DictReader(stream):
-                          key = (row["filesystem"], row["io_size_bytes"], row["label"], row["direction"])
-                          rows[key].append(row)
-
-              output = []
-              for key, values in sorted(rows.items()):
-                  if len(values) != 5:
-                      raise SystemExit(f"{filesystem} {key}: expected 5 runs, got {len(values)}")
-                  numeric = ("elapsed_seconds", "operations", "bytes", "bw_bytes_per_sec", "iops")
-                  averaged = dict(zip(("filesystem", "io_size_bytes", "label", "direction"), key))
-                  for field in numeric:
-                      averaged[field] = str(sum(float(value[field]) for value in values) / 5)
-                  output.append(averaged)
-
-              destination = f"{root}/{filesystem}/average.csv"
-              with open(destination, "w", newline="") as stream:
-                  writer = csv.DictWriter(stream, fieldnames=(
-                      "filesystem", "io_size_bytes", "label", "direction",
-                      "elapsed_seconds", "operations", "bytes", "bw_bytes_per_sec", "iops"))
-                  writer.writeheader()
-                  writer.writerows(output)
-
-              with open(f"{root}/{filesystem}/average.md", "w") as stream:
-                  stream.write("| I/O size | Direction | Avg elapsed | Avg operations | Avg bytes | Avg bandwidth | Avg IOPS |\n")
-                  stream.write("|---|---|---:|---:|---:|---:|---:|\n")
-                  for row in output:
-                      stream.write(
-                          f"| {row['label']} | {row['direction']} | {float(row['elapsed_seconds']):.3f}s "
-                          f"| {float(row['operations']):.1f} | {float(row['bytes']):.1f} "
-                          f"| {float(row['bw_bytes_per_sec']) / (1024*1024):.2f} MiB/s "
-                          f"| {float(row['iops']):.2f} |\n")
-          PY
 
       - name: Upload benchmark results and summary
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: storage-io-size-comparison
+          name: storage-io-size-comparison-${{ matrix.io_size }}
           path: benchmark-results/
           if-no-files-found: error
           retention-days: 30
