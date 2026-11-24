@@ -219,8 +219,19 @@ func Run(args []string) (runErr error) {
 	if err != nil {
 		return err
 	}
+	if err := os.WriteFile(filepath.Join(opts.outputDir, "worker.pid"), []byte(strconv.Itoa(worker.command.Process.Pid)+"\n"), 0644); err != nil {
+		return fmt.Errorf("write Worker PID file: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(opts.outputDir, "benchmark.pid"), []byte(strconv.Itoa(os.Getpid())+"\n"), 0644); err != nil {
+		return fmt.Errorf("write benchmark PID file: %w", err)
+	}
+	defer os.Remove(filepath.Join(opts.outputDir, "worker.pid"))
+	defer os.Remove(filepath.Join(opts.outputDir, "benchmark.pid"))
 	if err := worker.waitReady(workerStartupTimeout); err != nil {
 		return err
+	}
+	if err := collectRuntimeMetrics(socketPath, opts.outputDir, "worker-start"); err != nil {
+		return fmt.Errorf("collect initial Worker runtime metrics: %w", err)
 	}
 	if err := invokeTraceRPC(socketPath, "StartTrace"); err != nil {
 		return fmt.Errorf("enable Worker trace: %w", err)
@@ -267,6 +278,9 @@ func Run(args []string) (runErr error) {
 				files = generated
 			}
 			samples = append(samples, measured)
+			if err := collectRuntimeMetrics(socketPath, opts.outputDir, block.label+"/"+direction); err != nil {
+				return fmt.Errorf("collect Worker runtime metrics after %s %s: %w", block.label, direction, err)
+			}
 		}
 		if err := removeBenchmarkFiles(files); err != nil {
 			return fmt.Errorf("remove FlexRAID benchmark files: %w", err)
@@ -980,6 +994,36 @@ func writeReports(outputDir string, samples []sample) error {
 	}
 	fmt.Print(markdown.String())
 	return nil
+}
+
+func collectRuntimeMetrics(socketPath, outputDir, phase string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	connection, err := grpc.NewClient("passthrough:///worker",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
+		}))
+	if err != nil {
+		return err
+	}
+	defer connection.Close()
+	response := new(structpb.Struct)
+	if err := connection.Invoke(ctx, "/flexraid.worker.v1.WorkerService/GetRuntimeMetrics", &emptypb.Empty{}, response); err != nil {
+		return err
+	}
+	record := map[string]any{
+		"unix_time_ns": time.Now().UnixNano(),
+		"phase": phase,
+		"metrics": response.AsMap(),
+	}
+	file, err := os.OpenFile(filepath.Join(outputDir, "go-runtime-metrics.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	encodeErr := json.NewEncoder(file).Encode(record)
+	closeErr := file.Close()
+	return errors.Join(encodeErr, closeErr)
 }
 
 func invokeTraceRPC(socketPath, method string) error {
