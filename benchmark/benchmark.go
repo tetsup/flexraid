@@ -3,6 +3,7 @@ package benchmark
 import (
 	"crypto/rand"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -18,6 +19,10 @@ import (
 	"time"
 
 	"github.com/tetsup/flexraid/management"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 const (
@@ -203,6 +208,9 @@ func Run(args []string) (runErr error) {
 	if err := worker.waitReady(workerStartupTimeout); err != nil {
 		return err
 	}
+	if err := invokeTraceRPC(socketPath, "StartTrace"); err != nil {
+		return fmt.Errorf("enable Worker trace: %w", err)
+	}
 
 	benchmarkConfig := config
 	benchmarkConfig.Disks = selected
@@ -230,6 +238,9 @@ func Run(args []string) (runErr error) {
 		if err := removeBenchmarkFiles(files); err != nil {
 			return fmt.Errorf("remove FlexRAID benchmark files: %w", err)
 		}
+	}
+	if err := saveWorkerTrace(socketPath, opts.outputDir); err != nil {
+		return fmt.Errorf("save Worker trace: %w", err)
 	}
 	if err := writeReports(opts.outputDir, samples); err != nil {
 		return err
@@ -911,5 +922,39 @@ func writeReports(outputDir string, samples []sample) error {
 		return fmt.Errorf("write Markdown summary: %w", err)
 	}
 	fmt.Print(markdown.String())
+	return nil
+}
+
+func invokeTraceRPC(socketPath, method string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	connection, err := grpc.NewClient("passthrough:///worker",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
+		}))
+	if err != nil { return err }
+	defer connection.Close()
+	response := new(structpb.Struct)
+	return connection.Invoke(ctx, "/flexraid.worker.v1.WorkerService/"+method, &emptypb.Empty{}, response)
+}
+
+func saveWorkerTrace(socketPath, outputDir string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	connection, err := grpc.NewClient("passthrough:///worker",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
+		}))
+	if err != nil { return err }
+	defer connection.Close()
+	stopResponse := new(structpb.Struct)
+	if err := connection.Invoke(ctx, "/flexraid.worker.v1.WorkerService/StopTrace", &emptypb.Empty{}, stopResponse); err != nil { return err }
+	traceResponse := new(structpb.Struct)
+	if err := connection.Invoke(ctx, "/flexraid.worker.v1.WorkerService/GetTrace", &emptypb.Empty{}, traceResponse); err != nil { return err }
+	encoded, err := json.MarshalIndent(traceResponse.AsMap(), "", "  ")
+	if err != nil { return err }
+	if err := os.WriteFile(filepath.Join(outputDir, "trace.json"), encoded, 0644); err != nil { return err }
 	return nil
 }
