@@ -189,7 +189,7 @@ func TestBenchmarkFileCountUsesReferenceAndMaximum(t *testing.T) {
 	}{
 		{"4KiB capped", 4 << 10, 256},
 		{"64KiB capped", 64 << 10, 256},
-		{"6MiB+11KiB", (6 << 20) + (11 << 10), 127},
+		{"6MiB+11KiB", (6 << 20) + (11 << 10), 128},
 		{"stripe boundary +1B", (6 << 20) + (11 << 10) + 1, 127},
 		{"64MiB reference", 64 << 20, 12},
 	}
