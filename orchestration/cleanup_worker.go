@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+var errOrchestrationCleanupWorkerStopped = errors.New("Orchestration cleanup worker stopped")
+
 // StartCleanupWorker starts Orchestration's logical-deletion cleanup loop.
 // The callback must enter through Management so its lifecycle and operation
 // serialization remain authoritative.
@@ -24,7 +26,7 @@ func (layer *Orchestration) StartCleanupWorker(parent context.Context, cleanup f
 	if layer.cleanupWorkerCancel != nil {
 		return nil
 	}
-	ctx, cancel := context.WithCancel(parent)
+	ctx, cancel := context.WithCancelCause(parent)
 	done := make(chan struct{})
 	layer.cleanupWorkerCancel = cancel
 	layer.cleanupWorkerDone = done
@@ -46,7 +48,7 @@ func (layer *Orchestration) StopCleanupWorker(ctx context.Context) (err error) {
 		layer.cleanupWorkerMu.Unlock()
 		return nil
 	}
-	cancel()
+	cancel(errOrchestrationCleanupWorkerStopped)
 	layer.cleanupWorkerMu.Unlock()
 	select {
 	case <-done:
@@ -64,6 +66,9 @@ func (layer *Orchestration) StopCleanupWorker(ctx context.Context) (err error) {
 
 func (layer *Orchestration) runCleanupWorker(ctx context.Context, done chan struct{}, cleanup func(context.Context) error) {
 	defer func() {
+		if cause := context.Cause(ctx); cause != nil {
+			layer.logger.Debug("Orchestration cleanup worker context ended", "cause", cause)
+		}
 		close(done)
 		layer.cleanupWorkerMu.Lock()
 		if layer.cleanupWorkerDone == done {
