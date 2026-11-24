@@ -77,7 +77,7 @@ jobs:
             echo "===== Raw benchmark iteration $iteration/5 ====="
             sudo ./bin/flexraid benchmark raw \
               --directory /mnt/flexraid-bench-disk-1 \
-              --reference-bytes 536870912 \
+              --reference-bytes 67108864 \
               --max-files 256 \
               --output "$GITHUB_WORKSPACE/benchmark-results/raw/run-$iteration"
             sudo fstrim -v /mnt/flexraid-bench-disk-1
@@ -110,7 +110,7 @@ jobs:
             echo "===== FlexRAID benchmark iteration $iteration/5 ====="
             sudo ./bin/flexraid benchmark \
               --config "$worker_config" \
-              --reference-bytes 536870912 \
+              --reference-bytes 67108864 \
               --max-files 256 \
               --output "$GITHUB_WORKSPACE/benchmark-results/flexraid/run-$iteration"
             for disk in 1 2 3 4; do
