@@ -7,8 +7,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/tetsup/flexraid/storage"
 	"github.com/tetsup/flexraid/pkg/shared"
+	"github.com/tetsup/flexraid/storage"
 )
 
 type IO struct {
