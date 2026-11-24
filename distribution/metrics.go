@@ -292,9 +292,6 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 		return response, err
 	}
 	response.Operations, response.Chunks, response.IntegrityErrorCount, response.RecoveryCount, response.RecoveryFailureCount = d.metricsCollector().snapshot()
-	if request.SummaryOnly {
-		return response, nil
-	}
 	d.mapMu.Lock()
 	for _, stripes := range d.objects {
 		response.CacheMemory.ObjectIndexEntries++
@@ -321,6 +318,10 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 	}
 	for _, locations := range d.orphans {
 		response.CacheMemory.OrphanChunkEntries += uint64(len(locations))
+	}
+	d.mapMu.Unlock()
+	if request.SummaryOnly {
+		return response, nil
 	}
 	objects := make(map[shared.ObjectID]struct{})
 	stripes := make(map[stripeIDKey]struct{})
