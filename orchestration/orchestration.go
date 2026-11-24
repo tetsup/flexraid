@@ -52,6 +52,7 @@ type Orchestration struct {
 	cleanupWorkerDone      chan struct{}
 	warnings               []initializationWarning
 	metrics                *metricsCollector
+	trace                  shared.TraceRecorder
 }
 
 func New(request NewRequest) (NewResponse, error) {
@@ -94,4 +95,8 @@ func New(request NewRequest) (NewResponse, error) {
 	}
 	logger.Debug("Orchestration initialized", "root_id", layer.root.header.ObjectID.String(), "objects", len(layer.headers), "deletion_queue", len(layer.deletionQueue), "protected_objects", len(layer.protectedObjects), "warnings", len(layer.warnings))
 	return NewResponse{Layer: layer, RootID: layer.root.header.ObjectID}, nil
+}
+
+func (layer *Orchestration) SetTraceRecorder(recorder shared.TraceRecorder) {
+	layer.trace = recorder
 }
