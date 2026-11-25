@@ -290,7 +290,7 @@ Distribution -> I/O
 
 ## 7. 排他制御
 
-### Management の共通実行ロック
+### Management の Admission / Scheduler
 
 - Management は Lifecycle admission、drain、Foreground / Background / Exclusive / Stop の優先順位を調停する。通常の Foreground file operation 全体を一つの Mutex で直列化しない。Lifecycle が Ready である間、独立した Object / Stripe の Foreground 操作は並行して下位レイヤーへ進める。
 - Management は ObjectID / StripeID をキーにしたデータロックを所有しない。データの整合性ロックは Orchestration と Distribution がそれぞれの責務に応じて所有する。Management はその内部ロックを取得・操作しない。
@@ -307,7 +307,7 @@ Distribution -> I/O
 
 ### Distribution の内部 Stripe ロック
 
-- Distribution は Management とは独立して、Distribution 内部の同時実行制約を管理する。Management の実行単位・共通ロックとは概念も粒度も異なり、相互に統合・共有しない。自律 Cleanup は Management の WorkItem / MaintenanceExecutor を待たず、Management が設定した Drive 単位の許可レベルに従って Distribution 内部で進行する。
+- Distribution は Management とは独立して、Distribution 内部の同時実行制約を管理する。Management の Admission / Scheduler とは責務も粒度も異なり、相互に統合・共有しない。自律 Cleanup は Management の WorkItem / MaintenanceExecutor を待たず、Management が設定した Drive 単位の許可レベルに従って Distribution 内部で進行する。
 - Distribution は同一 ObjectID + StripeID を Foreground Read / Write / Recovery の最小排他単位とする Stripe ロックを所有する。自律 Cleanup はそのロックを使用せず、Foreground と独立して動作する。Management の実行ロックとは独立しており、Management の WorkItem 境界を Distribution の Atomic に流用しない。
 - 自律 Cleanup の許可は Drive 単位、物理削除対象は Chunk / FileKey 単位で選択する。Cleanup 対象は最新有効 Version 以外の不変 FileKey に限るため、Foreground の有効データのキャッシュ化・Read / Write・Stripe ロックに関与しない。
 - 最新 Version の欠損が確認された Stripe と保護対象は Cleanup しない。最新 Version が復元可能であることを含め、削除候補の安全性を Distribution が判断する。
