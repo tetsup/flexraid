@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/pkg/shared"
@@ -63,6 +64,7 @@ type chunkLocation struct {
 	data        []byte
 	totalLength uint64
 	sizeBytes   uint64
+	readers     *atomic.Int64
 }
 
 func New(request NewRequest) (NewResponse, error) {
@@ -99,7 +101,7 @@ func New(request NewRequest) (NewResponse, error) {
 		scanResult, err := layer.ListChunks(physicalio.ListChunksRequest{Context: ctx, Callback: func(entry physicalio.ScanEntry) error {
 			if entry.Error != nil {
 				d.recordIntegrityError()
-				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key, sizeBytes: entry.SizeBytes})
+				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key, sizeBytes: entry.SizeBytes, readers: &atomic.Int64{}})
 				return nil
 			}
 			method, no, methodErr := methodFromLayout(entry.Key.LayoutID)
@@ -137,7 +139,7 @@ func New(request NewRequest) (NewResponse, error) {
 				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key, sizeBytes: entry.SizeBytes})
 				return nil
 			}
-			version.chunks[no] = chunkLocation{ioIndex: index, key: entry.Key, data: payload, totalLength: total, sizeBytes: entry.SizeBytes}
+			version.chunks[no] = chunkLocation{ioIndex: index, key: entry.Key, data: payload, totalLength: total, sizeBytes: entry.SizeBytes, readers: &atomic.Int64{}}
 			if method.distributionType == distributionParity {
 				if version.chunkSize == 0 {
 					version.chunkSize = uint32(len(payload))

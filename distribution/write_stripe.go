@@ -3,6 +3,7 @@ package distribution
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	physicalio "github.com/tetsup/flexraid/io"
@@ -116,7 +117,7 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 			d.logger.Error("stripe write failed", "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "io_index", ioIndex, "chunk", no, "error", err)
 			return response, err
 		}
-		written[no] = chunkLocation{ioIndex: ioIndex, key: fileKey, totalLength: uint64(len(request.Data)), sizeBytes: uint64(len(encoded))}
+		written[no] = chunkLocation{ioIndex: ioIndex, key: fileKey, totalLength: uint64(len(request.Data)), sizeBytes: uint64(len(encoded)), readers: &atomic.Int64{}}
 	}
 	d.mapMu.Lock()
 	defer d.mapMu.Unlock()

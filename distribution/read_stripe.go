@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync/atomic"
 	"time"
 
 	physicalio "github.com/tetsup/flexraid/io"
@@ -44,7 +45,19 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 	}
 	source := stripes[request.StripeID]
 	info := &stripeInfo{version: source.version, method: source.method, chunkSize: source.chunkSize, chunks: cloneChunks(source.chunks), corrupted: source.corrupted}
+	pinned := make([]*atomic.Int64, 0, len(info.chunks))
+	for _, location := range info.chunks {
+		if location.readers != nil {
+			location.readers.Add(1)
+			pinned = append(pinned, location.readers)
+		}
+	}
 	d.mapMu.RUnlock()
+	defer func() {
+		for _, readers := range pinned {
+			readers.Add(-1)
+		}
+	}()
 	needsClassificationRefresh := false
 	stripeKey := stripeKeyInfo{objectID: request.ObjectID, stripeID: request.StripeID, stripeVersion: info.version}
 	chunks := make([]chunkDataWithInfo, 0, len(info.chunks))
