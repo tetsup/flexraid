@@ -32,21 +32,15 @@ func (d *Distribution) GetStripeInfo(request GetStripeInfoRequest) (response Get
 		ctx = context.Background()
 	}
 	key := stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}
-	unlockStripe, unlockMap := d.lockStripe(key)
-	defer unlockStripe()
-	if err = d.cacheStripeLocked(ctx, key); err != nil {
-		unlockMap()
-		return GetStripeInfoResponse{}, err
-	}
+	d.mapMu.RLock()
+	defer d.mapMu.RUnlock()
 	stripes := d.objects[request.ObjectID]
 	if stripes == nil || stripes[request.StripeID] == nil {
-		unlockMap()
 		err = ErrStripeNotFound
 		return GetStripeInfoResponse{}, err
 	}
 	info := stripes[request.StripeID]
 	if info == nil {
-		unlockMap()
 		err = fmt.Errorf("stripe %d has no selected version: %w", request.StripeID, ErrStripeNotFound)
 		return GetStripeInfoResponse{}, err
 	}
@@ -55,6 +49,5 @@ func (d *Distribution) GetStripeInfo(request GetStripeInfoRequest) (response Get
 		Layout:    info.method.layout(),
 		ChunkSize: info.chunkSize,
 	}
-	unlockMap()
 	return result, nil
 }

@@ -36,16 +36,33 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 		return response, err
 	}
 	key := stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}
-	d.mapMu.RLock()
+	unlockStripe, unlockMap := d.lockStripe(key)
+	defer unlockStripe()
+	needsClassificationRefresh := false
+	if cacheErr := d.cacheStripeLocked(request.Context, key); cacheErr != nil {
+		if !errors.Is(cacheErr, ErrDataCorrupted) {
+			unlockMap()
+			return response, cacheErr
+		}
+		if stripes := d.objects[request.ObjectID]; stripes != nil && stripes[request.StripeID] != nil {
+			if versions := d.versions[key]; versions != nil {
+				if version := versions[stripes[request.StripeID].version]; version != nil {
+					version.recoverable = false
+				}
+			}
+		}
+		d.refreshStripeCleanupQueueLocked(key)
+		needsClassificationRefresh = true
+	}
+	unlockMap()
+	d.mapMu.Lock()
 	stripes := d.objects[request.ObjectID]
 	if stripes == nil || stripes[request.StripeID] == nil {
-		d.mapMu.RUnlock()
+		d.mapMu.Unlock()
 		return response, ErrStripeNotFound
 	}
-	source := stripes[request.StripeID]
-	info := &stripeInfo{version: source.version, method: source.method, chunkSize: source.chunkSize, chunks: cloneChunks(source.chunks), corrupted: source.corrupted}
-	d.mapMu.RUnlock()
-	needsClassificationRefresh := false
+	info := stripes[request.StripeID]
+	d.mapMu.Unlock()
 	stripeKey := stripeKeyInfo{objectID: request.ObjectID, stripeID: request.StripeID, stripeVersion: info.version}
 	chunks := make([]chunkDataWithInfo, 0, len(info.chunks))
 	missing := make([]chunkNo, 0)

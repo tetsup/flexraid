@@ -23,7 +23,8 @@ type NewRequest struct {
 type NewResponse struct{ Layer *Distribution }
 
 type Distribution struct {
-	mapMu                  sync.RWMutex
+	mapMu                  sync.Mutex
+	stripeLocks            map[stripeIDKey]*sync.Mutex
 	ios                    []*physicalio.IO
 	logger                 *slog.Logger
 	objects                map[shared.ObjectID]map[storage.StripeID]*stripeInfo
@@ -87,7 +88,7 @@ func New(request NewRequest) (NewResponse, error) {
 		}
 		seen[layer] = struct{}{}
 	}
-	d := &Distribution{ios: append([]*physicalio.IO(nil), request.IOs...), logger: logger,
+	d := &Distribution{stripeLocks: make(map[stripeIDKey]*sync.Mutex), ios: append([]*physicalio.IO(nil), request.IOs...), logger: logger,
 		objects:  make(map[shared.ObjectID]map[storage.StripeID]*stripeInfo),
 		versions: make(map[stripeIDKey]map[storage.StripeVersion]*versionInfo),
 		metrics:  newMetricsCollector(), orphans: make(map[shared.ObjectID][]chunkLocation), cleanupQueue: newCleanupQueue(), cleanupPermissionStore: request.CleanupPermissions, cleanupWake: make(chan struct{}, 1)}

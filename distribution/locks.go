@@ -1,8 +1,23 @@
 package distribution
 
-// lockStripe is a compatibility helper while callers are migrated to explicit
-// map snapshots. It deliberately provides no per-stripe serialization.
-func (d *Distribution) lockStripe(_ stripeIDKey) (unlockStripe func(), unlockMap func()) {
+import (
+	"runtime"
+	"sync"
+)
+
+// lockStripe acquires mapMu before the per-stripe mutex and returns with both
+// held. A contended stripe never makes a waiter retain mapMu.
+func (d *Distribution) lockStripe(key stripeIDKey) (unlockStripe func(), unlockMap func()) {
 	d.mapMu.Lock()
-	return func() {}, d.mapMu.Unlock
+	lock := d.stripeLocks[key]
+	if lock == nil {
+		lock = &sync.Mutex{}
+		d.stripeLocks[key] = lock
+	}
+	for !lock.TryLock() {
+		d.mapMu.Unlock()
+		runtime.Gosched()
+		d.mapMu.Lock()
+	}
+	return lock.Unlock, d.mapMu.Unlock
 }
