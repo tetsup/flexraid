@@ -141,28 +141,39 @@ func (d *Distribution) Cleanup(request CleanupRequest) (response CleanupResponse
 
 func (d *Distribution) reselectStripeLocked(key stripeIDKey) {
 	stripes := d.objects[key.objectID]
-	if stripes == nil {
-		return
-	}
-	current := stripes[key.stripeID]
 	versions := d.versions[key]
-	if current != nil && versions[current.version] != nil {
+	var watermark storage.StripeVersion
+	if key.stripeID != 0 {
+		if stripes == nil || stripes[0] == nil {
+			if stripes != nil {
+				delete(stripes, key.stripeID)
+				if len(stripes) == 0 { delete(d.objects, key.objectID) }
+			}
+			return
+		}
+		watermark = stripes[0].version
+	}
+	current := (*stripeInfo)(nil)
+	if stripes != nil { current = stripes[key.stripeID] }
+	if current != nil && versions[current.version] != nil && (key.stripeID == 0 || current.version <= watermark) {
 		return
 	}
 	var latest storage.StripeVersion
 	var selected *versionInfo
 	for versionNo, candidate := range versions {
+		if key.stripeID != 0 && versionNo > watermark { continue }
 		if candidate.recoverable && (selected == nil || versionNo > latest) {
 			latest, selected = versionNo, candidate
 		}
 	}
 	if selected == nil {
-		delete(stripes, key.stripeID)
-		if len(stripes) == 0 {
-			delete(d.objects, key.objectID)
+		if stripes != nil {
+			delete(stripes, key.stripeID)
+			if len(stripes) == 0 { delete(d.objects, key.objectID) }
 		}
 		return
 	}
+	if stripes == nil { stripes = make(map[storage.StripeID]*stripeInfo); d.objects[key.objectID] = stripes }
 	stripes[key.stripeID] = &stripeInfo{
 		version: latest, method: selected.method, chunkSize: selected.chunkSize,
 		chunks: cloneChunks(selected.chunks),
