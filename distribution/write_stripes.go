@@ -65,11 +65,13 @@ func (d *Distribution) WriteStripes(request WriteStripesRequest) (response Write
 	}
 	for _, stripe := range requests {
 		if err = ctx.Err(); err != nil { return response, err }
+		stripe.Sync = true
 		if _, err = d.writeStripeAtVersion(stripe, version, false); err != nil {
 			return response, fmt.Errorf("write data stripe %d: %w", stripe.StripeID, err)
 		}
 	}
 	if err = ctx.Err(); err != nil { return response, err }
+	header.Sync = true
 	if _, err = d.writeStripeAtVersion(header, version, false); err != nil {
 		return response, fmt.Errorf("commit Stripe 0: %w", err)
 	}
