@@ -1,28 +1,20 @@
 package distribution
 
 import (
-	"context"
+	"bytes"
+	"errors"
 	"fmt"
+	"os"
+	"sync/atomic"
 	"time"
 
 	physicalio "github.com/tetsup/flexraid/io"
-	"github.com/tetsup/flexraid/pkg/shared"
 	"github.com/tetsup/flexraid/storage"
 )
 
-type WriteStripeRequest struct {
-	Context   context.Context
-	ObjectID  shared.ObjectID
-	StripeID  storage.StripeID
-	ChunkSize uint32
-	Layout    Layout
-	IOIndexes []int
-	Data      []byte
-	Sync      bool
-}
-type WriteStripeResponse struct{ Version storage.StripeVersion }
+type writeStripeResponse struct{ Version storage.StripeVersion }
 
-func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteStripeResponse, err error) {
+func (d *Distribution) writeStripeAtVersion(request WriteStripeRequest, forcedVersion storage.StripeVersion, publish bool) (response writeStripeResponse, err error) {
 	started := time.Now()
 	defer func() {
 		logOperation(d, "WriteStripe", started, err, "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "bytes", len(request.Data))
@@ -34,13 +26,6 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 		return response, err
 	}
 	key := stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}
-	unlockStripe, unlockMap := d.lockStripe(key)
-	defer unlockStripe()
-	if err = d.cacheStripeLocked(request.Context, key); err != nil {
-		unlockMap()
-		return response, err
-	}
-	unlockMap()
 	method, err := request.Layout.method()
 	if err != nil {
 		return response, err
@@ -66,7 +51,18 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 		return response, errInsufficientChunks
 	}
 	d.mapMu.Lock()
-	version := d.nextVersion(key)
+	version := forcedVersion
+	if version == 0 {
+		version = d.nextVersion(key)
+	}
+	versions := d.versions[key]
+	if versions == nil {
+		versions = make(map[storage.StripeVersion]*versionInfo)
+		d.versions[key] = versions
+	}
+	// Reserve the version before physical I/O so concurrent writes cannot
+	// allocate the same immutable FileKey.
+	versions[version] = &versionInfo{method: method, chunkSize: request.ChunkSize, invalid: true, chunks: make(map[chunkNo]chunkLocation)}
 	d.mapMu.Unlock()
 	chunks := make(map[chunkNo][]byte, required)
 	if method.distributionType == distributionMirror {
@@ -79,15 +75,22 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 	}
 	written := make(map[chunkNo]chunkLocation, len(chunks))
 	savePartial := func() {
-		if len(written) > 0 {
-			d.mapMu.Lock()
-			defer d.mapMu.Unlock()
-			versions := d.versions[key]
+		d.mapMu.Lock()
+		defer d.mapMu.Unlock()
+		versions := d.versions[key]
+		if len(written) == 0 {
+			delete(versions, version)
+			if len(versions) == 0 {
+				delete(d.versions, key)
+			}
+		} else {
 			if versions == nil {
 				versions = make(map[storage.StripeVersion]*versionInfo)
 				d.versions[key] = versions
 			}
 			versions[version] = &versionInfo{method: method, chunkSize: request.ChunkSize, chunks: cloneChunks(written), recoverable: false}
+		}
+		if publish {
 			d.refreshStripeCleanupQueueLocked(key)
 		}
 	}
@@ -102,34 +105,56 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 		}
 		fileKey := storage.FileKey{ObjectID: request.ObjectID, StripeVersion: version, LayoutID: layoutFor(method, no), StripeID: request.StripeID}
 		encoded := encodeChunk(uint64(len(request.Data)), chunks[no])
-		_, writeErr := d.ios[ioIndex].Write(physicalio.WriteRequest{Context: request.Context, Key: fileKey, Data: encoded, Sync: request.Sync})
+		_, writeErr := d.ios[ioIndex].Write(physicalio.WriteRequest{Context: request.Context, Key: fileKey, Data: encoded, Sync: true})
 		d.recordChunkOperation("Write", writeErr)
 		if writeErr != nil {
-			savePartial()
-			err = fmt.Errorf("write chunk %d to I/O %d: %w", no, ioIndex, writeErr)
-			d.logger.Error("stripe write failed", "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "io_index", ioIndex, "chunk", no, "error", err)
-			return response, err
+			// A Write error can be ambiguous after file Sync or directory Sync.
+			// Re-sync and verify the exact immutable chunk before treating it as
+			// durable. Otherwise remove it or retain an orphan for the next commit.
+			verified := false
+			if _, syncErr := d.ios[ioIndex].Sync(physicalio.SyncRequest{Context:request.Context,Key:fileKey}); syncErr == nil {
+				if read, readErr := d.ios[ioIndex].Read(physicalio.ReadRequest{Context:request.Context,Key:fileKey}); readErr == nil {
+					total, payload, decodeErr := decodeChunk(read.Data)
+					verified = decodeErr == nil && total == uint64(len(request.Data)) && bytes.Equal(payload,chunks[no])
+				}
+			}
+			if verified {
+				d.logger.Warn("stripe chunk write response was ambiguous but the chunk was verified durable",
+					"object_id",request.ObjectID.String(),"stripe_id",request.StripeID,"io_index",ioIndex,"chunk",no,"error",writeErr)
+			} else {
+				_, deleteErr := d.ios[ioIndex].Delete(physicalio.DeleteRequest{Context:request.Context,Key:fileKey})
+				if deleteErr != nil && !errors.Is(deleteErr,os.ErrNotExist) {
+					d.mapMu.Lock()
+					d.orphans[request.ObjectID] = append(d.orphans[request.ObjectID],chunkLocation{ioIndex:ioIndex,key:fileKey,totalLength:uint64(len(request.Data)),sizeBytes:uint64(len(encoded))})
+					d.mapMu.Unlock()
+				}
+				savePartial()
+				err = fmt.Errorf("write chunk %d to I/O %d: %w", no, ioIndex, writeErr)
+				d.logger.Error("stripe write failed", "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "io_index", ioIndex, "chunk", no, "error", err)
+				return response, err
+			}
 		}
-		written[no] = chunkLocation{ioIndex: ioIndex, key: fileKey, data: append([]byte(nil), chunks[no]...), totalLength: uint64(len(request.Data)), sizeBytes: uint64(len(encoded))}
+		written[no] = chunkLocation{ioIndex: ioIndex, key: fileKey, totalLength: uint64(len(request.Data)), sizeBytes: uint64(len(encoded)), readers: &atomic.Int64{}}
 	}
 	d.mapMu.Lock()
 	defer d.mapMu.Unlock()
-	versions := d.versions[key]
+	versions = d.versions[key]
 	if versions == nil {
 		versions = make(map[storage.StripeVersion]*versionInfo)
 		d.versions[key] = versions
 	}
 	versions[version] = &versionInfo{method: method, chunkSize: request.ChunkSize, chunks: cloneChunks(written), recoverable: true}
-	stripes := d.objects[request.ObjectID]
-	if stripes == nil {
-		stripes = make(map[storage.StripeID]*stripeInfo)
-		d.objects[request.ObjectID] = stripes
+if publish {
+		stripes := d.objects[request.ObjectID]
+		if stripes == nil {
+			stripes = make(map[storage.StripeID]*stripeInfo)
+			d.objects[request.ObjectID] = stripes
+		}
+		if current := stripes[request.StripeID]; current == nil || version > current.version {
+			stripes[request.StripeID] = &stripeInfo{version: version, method: method, chunkSize: request.ChunkSize, chunks: cloneChunks(written)}
+		}
+		d.refreshStripeCleanupQueueLocked(key)
 	}
-	stripes[request.StripeID] = &stripeInfo{version: version, method: method, chunkSize: request.ChunkSize, chunks: cloneChunks(written)}
-	// Refresh the Stripe's cleanup hints only after the new Version is fully
-	// written and published as the selected current Version. mapMu is held,
-	// establishing the lock order mapMu -> cleanupQueue.mu.
-	d.refreshStripeCleanupQueueLocked(key)
 	response.Version = version
 	return response, nil
 }

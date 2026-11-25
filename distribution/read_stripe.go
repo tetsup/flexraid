@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync/atomic"
 	"time"
 
 	physicalio "github.com/tetsup/flexraid/io"
@@ -25,6 +26,8 @@ type ReadStripeResponse struct {
 }
 
 func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStripeResponse, err error) {
+	unlock := d.lockObjectRead(request.ObjectID)
+	defer unlock()
 	started := time.Now()
 	defer func() {
 		logOperation(d, "ReadStripe", started, err, "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "bytes", len(response.Data))
@@ -36,33 +39,32 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 		return response, err
 	}
 	key := stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}
-	unlockStripe, unlockMap := d.lockStripe(key)
-	defer unlockStripe()
-	needsClassificationRefresh := false
-	if cacheErr := d.cacheStripeLocked(request.Context, key); cacheErr != nil {
-		if !errors.Is(cacheErr, ErrDataCorrupted) {
-			unlockMap()
-			return response, cacheErr
-		}
-		if stripes := d.objects[request.ObjectID]; stripes != nil && stripes[request.StripeID] != nil {
-			if versions := d.versions[key]; versions != nil {
-				if version := versions[stripes[request.StripeID].version]; version != nil {
-					version.recoverable = false
-				}
-			}
-		}
-		d.refreshStripeCleanupQueueLocked(key)
-		needsClassificationRefresh = true
-	}
-	unlockMap()
-	d.mapMu.Lock()
+	d.mapMu.RLock()
 	stripes := d.objects[request.ObjectID]
 	if stripes == nil || stripes[request.StripeID] == nil {
-		d.mapMu.Unlock()
+		d.mapMu.RUnlock()
 		return response, ErrStripeNotFound
 	}
-	info := stripes[request.StripeID]
-	d.mapMu.Unlock()
+	source := stripes[request.StripeID]
+	info := &stripeInfo{version: source.version, method: source.method, chunkSize: source.chunkSize, chunks: cloneChunks(source.chunks), corrupted: source.corrupted}
+	if request.ChunkSize != info.chunkSize {
+		d.mapMu.RUnlock()
+		return response, fmt.Errorf("stripe %d chunk size %d does not match selected version chunk size %d: %w", request.StripeID, request.ChunkSize, info.chunkSize, ErrDataCorrupted)
+	}
+	pinned := make([]*atomic.Int64, 0, len(info.chunks))
+	for _, location := range info.chunks {
+		if location.readers != nil {
+			location.readers.Add(1)
+			pinned = append(pinned, location.readers)
+		}
+	}
+	d.mapMu.RUnlock()
+	defer func() {
+		for _, readers := range pinned {
+			readers.Add(-1)
+		}
+	}()
+	needsClassificationRefresh := false
 	stripeKey := stripeKeyInfo{objectID: request.ObjectID, stripeID: request.StripeID, stripeVersion: info.version}
 	chunks := make([]chunkDataWithInfo, 0, len(info.chunks))
 	missing := make([]chunkNo, 0)
@@ -92,15 +94,6 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 			}
 			location.data, location.totalLength = payload, total
 			d.markChunkPresent(key, info.version, no)
-			d.mapMu.Lock()
-			info.chunks[no] = location
-			if versions := d.versions[stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}]; versions != nil {
-				if version := versions[info.version]; version != nil {
-					version.chunks[no] = location
-					delete(version.missing, no)
-				}
-			}
-			d.mapMu.Unlock()
 		}
 		chunks = append(chunks, chunkDataWithInfo{stripeKey: stripeKey, distributionMethod: info.method, chunkNo: no, data: location.data, totalLength: location.totalLength})
 	}
@@ -144,6 +137,9 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 	}
 	if needsClassificationRefresh {
 		d.mapMu.Lock()
+		if current := d.objects[key.objectID][key.stripeID]; current != nil && current.version == info.version {
+			current.corrupted = info.corrupted
+		}
 		if versions := d.versions[key]; versions != nil {
 			if version := versions[info.version]; version != nil {
 				version.recoverable = true
@@ -186,7 +182,7 @@ func (d *Distribution) markStripeUnrecoverable(key stripeIDKey, versionNo storag
 			version.recoverable = false
 		}
 	}
-	d.refreshStripeCleanupQueueLocked(key)
+	d.reselectStripeLocked(key)
 }
 
 func (d *Distribution) repairStripe(request ReadStripeRequest, info *stripeInfo, missing []chunkNo, data []byte) {
@@ -230,7 +226,7 @@ func (d *Distribution) repairStripe(request ReadStripeRequest, info *stripeInfo,
 			_, err := d.ios[index].Write(physicalio.WriteRequest{Context: request.Context, Key: fileKey, Data: encodeChunk(uint64(len(data)), payload)})
 			d.recordChunkOperation("Write", err)
 			if err == nil {
-				location := chunkLocation{ioIndex: index, key: fileKey, data: payload, totalLength: uint64(len(data))}
+				location := chunkLocation{ioIndex: index, key: fileKey, totalLength: uint64(len(data)), readers: &atomic.Int64{}}
 				d.mapMu.Lock()
 				info.chunks[no] = location
 				stripeKey := stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}

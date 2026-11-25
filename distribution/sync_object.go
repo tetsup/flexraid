@@ -20,6 +20,8 @@ type SyncObjectResponse struct{ SyncedChunks uint32 }
 
 // SyncObject synchronizes the cached latest version of every stripe.
 func (d *Distribution) SyncObject(request SyncObjectRequest) (response SyncObjectResponse, err error) {
+	unlock := d.lockObjectRead(request.ObjectID)
+	defer unlock()
 	started := time.Now()
 	ctx := request.Context
 	if ctx == nil {
@@ -32,12 +34,12 @@ func (d *Distribution) SyncObject(request SyncObjectRequest) (response SyncObjec
 		return response, err
 	}
 
-	d.mapMu.Lock()
+	d.mapMu.RLock()
 	ids := make([]int, 0, len(d.objects[request.ObjectID]))
 	for id := range d.objects[request.ObjectID] {
 		ids = append(ids, int(id))
 	}
-	d.mapMu.Unlock()
+	d.mapMu.RUnlock()
 	sort.Ints(ids)
 
 	for _, rawID := range ids {
@@ -45,12 +47,7 @@ func (d *Distribution) SyncObject(request SyncObjectRequest) (response SyncObjec
 			return response, err
 		}
 		key := stripeIDKey{objectID: request.ObjectID, stripeID: storage.StripeID(rawID)}
-		unlockStripe, unlockMap := d.lockStripe(key)
-		if err = d.cacheStripeLocked(ctx, key); err != nil {
-			unlockMap()
-			unlockStripe()
-			return response, err
-		}
+		d.mapMu.RLock()
 		info := d.objects[request.ObjectID][key.stripeID]
 		locations := make([]chunkLocation, 0)
 		if info != nil {
@@ -58,15 +55,13 @@ func (d *Distribution) SyncObject(request SyncObjectRequest) (response SyncObjec
 				locations = append(locations, location)
 			}
 		}
-		unlockMap()
+		d.mapMu.RUnlock()
 
 		for _, location := range locations {
 			if err = ctx.Err(); err != nil {
-				unlockStripe()
 				return response, err
 			}
 			if location.ioIndex < 0 || location.ioIndex >= len(d.ios) {
-				unlockStripe()
 				return response, fmt.Errorf("stripe %d has invalid I/O index %d", rawID, location.ioIndex)
 			}
 			_, syncErr := d.ios[location.ioIndex].Sync(physicalio.SyncRequest{Context: ctx, Key: location.key})
@@ -75,12 +70,10 @@ func (d *Distribution) SyncObject(request SyncObjectRequest) (response SyncObjec
 				if d.logger != nil {
 					d.logger.Error("stripe synchronization failed", "object_id", request.ObjectID.String(), "stripe_id", rawID, "io_index", location.ioIndex, "error", err)
 				}
-				unlockStripe()
 				return response, fmt.Errorf("sync stripe %d on I/O %d: %w", rawID, location.ioIndex, err)
 			}
 			response.SyncedChunks++
 		}
-		unlockStripe()
 	}
 	return response, nil
 }

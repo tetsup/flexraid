@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/pkg/shared"
@@ -23,23 +24,20 @@ type NewRequest struct {
 type NewResponse struct{ Layer *Distribution }
 
 type Distribution struct {
-	mapMu                  sync.Mutex
-	stripeLocks            map[stripeIDKey]*sync.Mutex
-	objectLockMu           sync.Mutex
-	objectLocks            map[shared.ObjectID]*sync.Mutex
-	objectWatermarks       map[shared.ObjectID]storage.StripeVersion
+	mapMu                  sync.RWMutex
+	commitLocksMu          sync.Mutex
+	objectCommitLocks      map[shared.ObjectID]*objectCommitLock
 	ios                    []*physicalio.IO
 	logger                 *slog.Logger
 	objects                map[shared.ObjectID]map[storage.StripeID]*stripeInfo
 	versions               map[stripeIDKey]map[storage.StripeVersion]*versionInfo
 	metrics                *metricsCollector
-	trace                  shared.TraceRecorder
 	metricsOnce            sync.Once
 	orphans                map[shared.ObjectID][]chunkLocation
 	cleanupQueue           *cleanupQueue
 	cleanupPermissionStore *shared.CleanupPermissionStore
 	cleanupWorkerMu        sync.Mutex
-	cleanupWorkerCancel    context.CancelCauseFunc
+	cleanupWorkerCancel    context.CancelFunc
 	cleanupWorkerDone      chan struct{}
 	cleanupWake            chan struct{}
 }
@@ -68,6 +66,7 @@ type chunkLocation struct {
 	data        []byte
 	totalLength uint64
 	sizeBytes   uint64
+	readers     *atomic.Int64
 }
 
 func New(request NewRequest) (NewResponse, error) {
@@ -92,8 +91,9 @@ func New(request NewRequest) (NewResponse, error) {
 		}
 		seen[layer] = struct{}{}
 	}
-	d := &Distribution{stripeLocks: make(map[stripeIDKey]*sync.Mutex), objectLocks: make(map[shared.ObjectID]*sync.Mutex), objectWatermarks: make(map[shared.ObjectID]storage.StripeVersion), ios: append([]*physicalio.IO(nil), request.IOs...), logger: logger,
+	d := &Distribution{ios: append([]*physicalio.IO(nil), request.IOs...), logger: logger,
 		objects:  make(map[shared.ObjectID]map[storage.StripeID]*stripeInfo),
+		objectCommitLocks: make(map[shared.ObjectID]*objectCommitLock),
 		versions: make(map[stripeIDKey]map[storage.StripeVersion]*versionInfo),
 		metrics:  newMetricsCollector(), orphans: make(map[shared.ObjectID][]chunkLocation), cleanupQueue: newCleanupQueue(), cleanupPermissionStore: request.CleanupPermissions, cleanupWake: make(chan struct{}, 1)}
 	if d.cleanupPermissionStore == nil {
@@ -104,7 +104,7 @@ func New(request NewRequest) (NewResponse, error) {
 		scanResult, err := layer.ListChunks(physicalio.ListChunksRequest{Context: ctx, Callback: func(entry physicalio.ScanEntry) error {
 			if entry.Error != nil {
 				d.recordIntegrityError()
-				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key, sizeBytes: entry.SizeBytes})
+				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key, sizeBytes: entry.SizeBytes, readers: &atomic.Int64{}})
 				return nil
 			}
 			method, no, methodErr := methodFromLayout(entry.Key.LayoutID)
@@ -142,7 +142,7 @@ func New(request NewRequest) (NewResponse, error) {
 				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key, sizeBytes: entry.SizeBytes})
 				return nil
 			}
-			version.chunks[no] = chunkLocation{ioIndex: index, key: entry.Key, data: payload, totalLength: total, sizeBytes: entry.SizeBytes}
+			version.chunks[no] = chunkLocation{ioIndex: index, key: entry.Key, data: payload, totalLength: total, sizeBytes: entry.SizeBytes, readers: &atomic.Int64{}}
 			if method.distributionType == distributionParity {
 				if version.chunkSize == 0 {
 					version.chunkSize = uint32(len(payload))
@@ -168,74 +168,52 @@ func New(request NewRequest) (NewResponse, error) {
 	if usable == 0 {
 		return NewResponse{}, errNoUsableIO
 	}
-	// Validate recoverability before selecting any Object state.
+	// Validate every physical Version before selecting any Object state.
 	for key, versions := range d.versions {
 		for versionNo, version := range versions {
 			if version.invalid {
+				for no, location := range version.chunks { location.data = nil; version.chunks[no] = location }
 				continue
 			}
 			chunks := make([]chunkDataWithInfo, 0, len(version.chunks))
 			for no, location := range version.chunks {
 				chunks = append(chunks, chunkDataWithInfo{stripeKey: stripeKeyInfo{objectID: key.objectID, stripeID: key.stripeID, stripeVersion: versionNo}, distributionMethod: version.method, chunkNo: no, data: location.data, totalLength: location.totalLength})
 			}
-			if _, restoreErr := restoreStripe(chunks); restoreErr != nil {
-				d.recordIntegrityError()
-				continue
-			}
+			_, restoreErr := restoreStripe(chunks)
+			for no, location := range version.chunks { location.data = nil; version.chunks[no] = location }
+			if restoreErr != nil { d.recordIntegrityError(); continue }
 			version.recoverable = true
-			if len(version.chunks) < len(expectedChunkNos(version.method)) {
-				d.recordIntegrityError()
+			if len(version.chunks) < len(expectedChunkNos(version.method)) { d.recordIntegrityError() }
+		}
+	}
+
+	// Stripe 0 defines the committed Object watermark. An Object without a
+	// recoverable Stripe 0 cannot expose any of its data stripes.
+	watermarks := make(map[shared.ObjectID]storage.StripeVersion)
+	for objectID, stripes := range d.versions {
+		if versions := stripes[0]; versions != nil {
+			for versionNo, version := range versions {
+				if version.recoverable && versionNo > watermarks[objectID] { watermarks[objectID] = versionNo }
 			}
 		}
 	}
-	// Stripe 0 is the only commit record for an Object.
 	for key, versions := range d.versions {
-		if key.stripeID != 0 {
-			continue
-		}
-		var watermark storage.StripeVersion
-		found := false
-		for versionNo, version := range versions {
-			if version.recoverable && (!found || versionNo > watermark) {
-				watermark, found = versionNo, true
-			}
-		}
-		if found {
-			d.objectWatermarks[key.objectID] = watermark
-		}
-	}
-	// Select the newest recoverable Stripe Version at or below the watermark.
-	for key, versions := range d.versions {
-		watermark, committed := d.objectWatermarks[key.objectID]
-		if !committed {
-			continue
-		}
+		watermark, exists := watermarks[key.objectID]
+		if !exists { continue }
 		var selected storage.StripeVersion
 		var selectedInfo *versionInfo
 		for versionNo, version := range versions {
-			if !version.recoverable || versionNo > watermark {
-				continue
-			}
-			if selectedInfo == nil || versionNo > selected {
-				selected, selectedInfo = versionNo, version
-			}
+			if versionNo > watermark || !version.recoverable { continue }
+			if selectedInfo == nil || versionNo > selected { selected, selectedInfo = versionNo, version }
 		}
-		if selectedInfo == nil {
-			continue
-		}
+		if selectedInfo == nil { continue }
 		stripes := d.objects[key.objectID]
-		if stripes == nil {
-			stripes = make(map[storage.StripeID]*stripeInfo)
-			d.objects[key.objectID] = stripes
-		}
+		if stripes == nil { stripes = make(map[storage.StripeID]*stripeInfo); d.objects[key.objectID] = stripes }
 		stripes[key.stripeID] = &stripeInfo{version: selected, method: selectedInfo.method, chunkSize: selectedInfo.chunkSize, chunks: cloneChunks(selectedInfo.chunks)}
-	}
-	for key := range d.versions {
 		d.mapMu.Lock()
 		d.refreshStripeCleanupQueueLocked(key)
 		d.mapMu.Unlock()
 	}
-
 	logger.Debug("Distribution initialized", "ios", len(d.ios), "usable_ios", usable, "objects", len(d.objects))
 	return NewResponse{Layer: d}, nil
 }
@@ -328,11 +306,4 @@ func expectedChunkNos(method distributionMethod) []chunkNo {
 		result = append(result, parityFlag|chunkNo(index))
 	}
 	return result
-}
-
-func (d *Distribution) SetTraceRecorder(recorder shared.TraceRecorder) {
-	d.trace = recorder
-	for _, layer := range d.ios {
-		layer.SetTraceRecorder(recorder)
-	}
 }
