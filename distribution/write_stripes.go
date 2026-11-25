@@ -2,6 +2,7 @@ package distribution
 
 import (
 	"context"
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -69,8 +70,21 @@ func (d *Distribution) WriteStripes(request WriteStripesRequest) (response Write
 	}
 	if err = ctx.Err(); err != nil { return response, err }
 	header.Sync = true
-	if _, err = d.writeStripeAtVersion(header, version, false); err != nil {
-		return response, fmt.Errorf("commit Stripe 0: %w", err)
+	if _, writeErr := d.writeStripeAtVersion(header, version, false); writeErr != nil {
+		// A failed Write response can be ambiguous if the file Sync succeeded
+		// but the directory Sync response was lost. Re-sync and read every
+		// expected chunk before deciding whether Stripe 0 committed.
+		locations, verifyErr := d.verifyStripeVersion(ctx, header, version)
+		if verifyErr != nil {
+			return response, fmt.Errorf("commit Stripe 0: %w (verification failed: %v)", writeErr, verifyErr)
+		}
+		key := stripeIDKey{objectID: request.ObjectID, stripeID: 0}
+		d.mapMu.Lock()
+		versions := d.versions[key]
+		if versions == nil { versions = make(map[storage.StripeVersion]*versionInfo); d.versions[key] = versions }
+		method, _ := header.Layout.method()
+		versions[version] = &versionInfo{method: method, chunkSize: header.ChunkSize, chunks: locations, recoverable: true}
+		d.mapMu.Unlock()
 	}
 
 	d.mapMu.Lock()
@@ -146,4 +160,34 @@ func (d *Distribution) removeUncommittedVersions(ctx context.Context, objectID s
 	if len(remaining) == 0 { delete(d.orphans, objectID) } else { d.orphans[objectID] = remaining }
 	d.mapMu.Unlock()
 	return nil
+}
+
+func (d *Distribution) verifyStripeVersion(ctx context.Context, request WriteStripeRequest, version storage.StripeVersion) (map[chunkNo]chunkLocation, error) {
+	method, err := request.Layout.method()
+	if err != nil { return nil, err }
+	required := int(method.numChunks)
+	if method.distributionType == distributionParity { required++ }
+	if err := validateIOIndexes(request.IOIndexes, len(d.ios), required); err != nil { return nil, err }
+	locations := make(map[chunkNo]chunkLocation, required)
+	chunks := make([]chunkDataWithInfo, 0, required)
+	for _, no := range expectedChunkNos(method) {
+		if err := ctx.Err(); err != nil { return nil, err }
+		ioIndex := request.IOIndexes[int(no.index())]
+		if no.isParity() { ioIndex = request.IOIndexes[int(method.numChunks)] }
+		key := storage.FileKey{ObjectID: request.ObjectID, StripeID: request.StripeID, StripeVersion: version, LayoutID: layoutFor(method, no)}
+		if _, err := d.ios[ioIndex].Sync(physicalio.SyncRequest{Context:ctx, Key:key}); err != nil { return nil, fmt.Errorf("sync chunk %d: %w", no, err) }
+		read, err := d.ios[ioIndex].Read(physicalio.ReadRequest{Context:ctx, Key:key})
+		if err != nil { return nil, fmt.Errorf("read chunk %d: %w", no, err) }
+		total, payload, err := decodeChunk(read.Data)
+		if err != nil { return nil, fmt.Errorf("decode chunk %d: %w", no, err) }
+		locations[no] = chunkLocation{ioIndex:ioIndex, key:key, totalLength:total, sizeBytes:uint64(len(read.Data))}
+		chunks = append(chunks, chunkDataWithInfo{
+			stripeKey:stripeKeyInfo{objectID:request.ObjectID, stripeID:request.StripeID, stripeVersion:version},
+			distributionMethod:method, chunkNo:no, data:payload, totalLength:total,
+		})
+	}
+	restored, err := restoreStripe(chunks)
+	if err != nil { return nil, err }
+	if !bytes.Equal(restored, request.Data) { return nil, fmt.Errorf("verified Stripe 0 payload differs from requested data") }
+	return locations, nil
 }

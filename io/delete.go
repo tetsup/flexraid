@@ -3,6 +3,7 @@ package io
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/tetsup/flexraid/storage"
@@ -39,7 +40,16 @@ func (layer *IO) Delete(request DeleteRequest) (response DeleteResponse, err err
 	}
 	layer.recordAccess()
 	defer layer.recordAccess()
-	err = os.Remove(path)
-	response.Deleted = err == nil
-	return response, err
+	removeErr := os.Remove(path)
+	// Version reuse is safe only after the directory entry removal is durable.
+	// Sync the parent even for an already absent file, which also completes a
+	// previous attempt whose unlink succeeded but directory Sync failed.
+	if syncErr := syncDirectory(filepath.Dir(path)); syncErr != nil {
+		return response, syncErr
+	}
+	if removeErr != nil {
+		return response, removeErr
+	}
+	response.Deleted = true
+	return response, nil
 }
