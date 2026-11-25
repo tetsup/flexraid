@@ -110,3 +110,44 @@ func TestUnrecoverableStripeZeroFallsBackAndConstrainsDataVersions(t *testing.T)
 	if err!=nil { t.Fatal(err) }
 	if read.Version!=v1 || string(read.Data)!="data-v1" { t.Fatalf("fallback read: version=%d data=%q",read.Version,read.Data) }
 }
+
+func TestCommitDoesNotActivateUncommittedVersionOnUnchangedStripe(t *testing.T) {
+	ctx := context.Background()
+	ios := makeIOs(t, 2)
+	created, err := New(NewRequest{IOs:ios})
+	if err != nil { t.Fatal(err) }
+	id := testObjectID()
+	layout := Layout{Type:LayoutMirror,NumChunks:2}
+	commit := func(stripes ...WriteStripeRequest) {
+		t.Helper()
+		_, err := created.Layer.WriteStripes(WriteStripesRequest{Context:ctx,ObjectID:id,Stripes:stripes})
+		if err != nil { t.Fatal(err) }
+	}
+	makeStripe := func(id storage.StripeID, data string) WriteStripeRequest {
+		return WriteStripeRequest{ObjectID:id,StripeID:id,ChunkSize:32,Layout:layout,IOIndexes:[]int{0,1},Data:[]byte(data)}
+	}
+	commit(
+		makeStripe(0,"header-v1"),
+		makeStripe(1,"data-1-v1"),
+		makeStripe(2,"data-2-v1"),
+	)
+	// A failed earlier transaction left Version 2 on Stripe 2, which this
+	// transaction does not otherwise need to update.
+	_, err = created.Layer.writeStripeAtVersion(WriteStripeRequest{
+		Context:ctx,ObjectID:id,StripeID:2,ChunkSize:32,Layout:layout,
+		IOIndexes:[]int{0,1},Data:[]byte("stale-data-2-v2"),
+	},2,false)
+	if err != nil { t.Fatal(err) }
+
+	commit(
+		makeStripe(0,"header-v2"),
+		makeStripe(1,"data-1-v2"),
+	)
+	restarted, err := New(NewRequest{IOs:ios})
+	if err != nil { t.Fatal(err) }
+	read, err := restarted.Layer.ReadStripe(ReadStripeRequest{Context:ctx,ObjectID:id,StripeID:2,ChunkSize:32})
+	if err != nil { t.Fatal(err) }
+	if read.Version != 1 || string(read.Data) != "data-2-v1" {
+		t.Fatalf("unchanged stripe was advanced by stale candidate: version=%d data=%q",read.Version,read.Data)
+	}
+}
