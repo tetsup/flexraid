@@ -45,7 +45,7 @@ func (d *Distribution) Cleanup(request CleanupRequest) (response CleanupResponse
 	}
 
 	// Select immutable FileKeys under mapMu, then release it before physical I/O.
-	d.mapMu.Lock()
+	d.mapMu.RLock()
 	items := make([]cleanupFile, 0)
 	seen := make(map[struct {
 		ioIndex int
@@ -103,7 +103,7 @@ func (d *Distribution) Cleanup(request CleanupRequest) (response CleanupResponse
 			}
 		}
 	}
-	d.mapMu.Unlock()
+	d.mapMu.RUnlock()
 
 	for _, item := range items {
 		if err = ctx.Err(); err != nil {

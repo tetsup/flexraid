@@ -285,7 +285,7 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 	if request.SummaryOnly {
 		return response, nil
 	}
-	d.mapMu.Lock()
+	d.mapMu.RLock()
 	objects := make(map[shared.ObjectID]struct{})
 	stripes := make(map[stripeIDKey]struct{})
 	for objectID, entries := range d.objects {
@@ -408,7 +408,7 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 		}
 	}
 	response.CleanupCandidates = d.cleanupCandidateMetricsLocked()
-	d.mapMu.Unlock()
+	d.mapMu.RUnlock()
 
 	capacity, capacityErr := d.getCapacity(CapacityRequest{Context: request.Context})
 	if capacityErr != nil {
