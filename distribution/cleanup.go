@@ -52,6 +52,9 @@ func (d *Distribution) Cleanup(request CleanupRequest) (response CleanupResponse
 		key     storage.FileKey
 	}]struct{})
 	appendItem := func(location chunkLocation) {
+		if location.readers != nil && location.readers.Load() > 0 {
+			return
+		}
 		identity := struct {
 			ioIndex int
 			key     storage.FileKey

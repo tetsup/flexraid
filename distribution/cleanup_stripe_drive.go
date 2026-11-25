@@ -128,7 +128,7 @@ func (d *Distribution) findCleanupLocationLocked(candidate cleanupCandidateKey) 
 		return eligible[i].ioIndex < eligible[j].ioIndex
 	})
 	for _, location := range eligible {
-		if location.ioIndex == candidate.ioIndex {
+		if location.ioIndex == candidate.ioIndex && (location.readers == nil || location.readers.Load() == 0) {
 			return location, true
 		}
 	}
