@@ -88,7 +88,20 @@ type DriveOrphanMetrics struct {
 	DriveIndex       int
 	OrphanChunkCount uint64
 }
+type CacheMemoryMetrics struct {
+	ObjectIndexEntries     uint64
+	StripeIndexEntries     uint64
+	VersionIndexEntries    uint64
+	OrphanChunkEntries     uint64
+	StripeLockEntries      uint64
+	CleanupPendingEntries  uint64
+	CleanupInFlightEntries uint64
+	CachedChunkCount       uint64
+	CachedChunkBytes       uint64
+}
+
 type GetMetricsResponse struct {
+	CacheMemory CacheMemoryMetrics
 	Objects                            []ObjectMetrics
 	OrphanChunks                       []OrphanChunkMetrics
 	OrphanChunksByDrive                []DriveOrphanMetrics

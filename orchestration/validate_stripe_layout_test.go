@@ -14,7 +14,7 @@ func TestValidateHeaderStripeLayoutsIgnoresStripesBeyondEOF(t *testing.T) {
 	fixture := newWriteFixture(t)
 	// A stale physical stripe from an earlier, larger file is outside the
 	// current Header's logical range and must not invalidate the object.
-	_, err := fixture.layer.distribution.WriteStripe(distribution.WriteStripeRequest{
+	_, err := writeDistributionStripeForTest(fixture.layer.distribution, distribution.WriteStripeRequest{
 		Context: context.Background(), ObjectID: fixture.fileID, StripeID: 1,
 		ChunkSize: 4096, Layout: distribution.Layout{Type: distribution.LayoutParity, NumChunks: 3},
 		IOIndexes: []int{0, 1, 2, 3}, Data: []byte("stale"),
@@ -42,14 +42,14 @@ func TestValidateHeaderStripeLayoutsRejectsLatestMismatchedChunkSize(t *testing.
 	}
 	firstData := make([]byte, int(cfg.HeaderReservedSize)+int(firstCapacity))
 	copy(firstData, headerBytes)
-	if _, err := fixture.layer.distribution.WriteStripe(distribution.WriteStripeRequest{
+	if _, err := writeDistributionStripeForTest(fixture.layer.distribution, distribution.WriteStripeRequest{
 		Context: context.Background(), ObjectID: fixture.fileID, StripeID: 0,
 		ChunkSize: cfg.MinimumChunkSize, Layout: distribution.Layout{Type: distribution.LayoutParity, NumChunks: 3},
 		IOIndexes: []int{0, 1, 2, 3}, Data: firstData,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fixture.layer.distribution.WriteStripe(distribution.WriteStripeRequest{
+	if _, err := writeDistributionStripeForTest(fixture.layer.distribution, distribution.WriteStripeRequest{
 		Context: context.Background(), ObjectID: fixture.fileID, StripeID: 1,
 		ChunkSize: 4096, Layout: distribution.Layout{Type: distribution.LayoutParity, NumChunks: 3},
 		IOIndexes: []int{0, 1, 2, 3}, Data: []byte("x"),
@@ -62,7 +62,7 @@ func TestValidateHeaderStripeLayoutsRejectsLatestMismatchedChunkSize(t *testing.
 
 	// The next recoverable version is selected by Distribution. Its physical
 	// chunk size conflicts with the Header and must not fall back to v1.
-	if _, err := fixture.layer.distribution.WriteStripe(distribution.WriteStripeRequest{
+	if _, err := writeDistributionStripeForTest(fixture.layer.distribution, distribution.WriteStripeRequest{
 		Context: context.Background(), ObjectID: fixture.fileID, StripeID: 1,
 		ChunkSize: 8192, Layout: distribution.Layout{Type: distribution.LayoutParity, NumChunks: 3},
 		IOIndexes: []int{0, 1, 2, 3}, Data: []byte("new"),
@@ -96,7 +96,7 @@ func TestValidateHeaderStripeLayoutsRejectsLatestMismatchedChunkSize(t *testing.
 	}
 	// A newer, internally recoverable stripe using a different redundancy
 	// layout must also be rejected, rather than selecting the older parity version.
-	if _, err := fixture.layer.distribution.WriteStripe(distribution.WriteStripeRequest{
+	if _, err := writeDistributionStripeForTest(fixture.layer.distribution, distribution.WriteStripeRequest{
 		Context: context.Background(), ObjectID: fixture.fileID, StripeID: 1,
 		ChunkSize: 4096, Layout: distribution.Layout{Type: distribution.LayoutMirror, NumChunks: 2},
 		IOIndexes: []int{0, 1}, Data: []byte("new mirror"),

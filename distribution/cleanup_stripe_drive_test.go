@@ -25,17 +25,17 @@ func TestCleanupStripeDriveProcessesOnlyOneOldVersionFile(t *testing.T) {
 		Context: ctx, ObjectID: id, StripeID: 8, ChunkSize: 32,
 		Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: []byte("version one"),
 	}
-	first, err := created.Layer.WriteStripe(request)
+	first, err := writeStripeForTest(created.Layer, request)
 	if err != nil {
 		t.Fatal(err)
 	}
 	request.Data = []byte("version two")
-	second, err := created.Layer.WriteStripe(request)
+	second, err := writeStripeForTest(created.Layer, request)
 	if err != nil {
 		t.Fatal(err)
 	}
 	request.Data = []byte("version three")
-	third, err := created.Layer.WriteStripe(request)
+	third, err := writeStripeForTest(created.Layer, request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,17 +172,15 @@ func TestCleanupStripeDriveDoesNotWaitForForegroundStripeLock(t *testing.T) {
 		Context: ctx, ObjectID: testObjectID(), StripeID: 41, ChunkSize: 32,
 		Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: []byte("old"),
 	}
-	if _, err := created.Layer.WriteStripe(request); err != nil {
+	if _, err := writeStripeForTest(created.Layer, request); err != nil {
 		t.Fatal(err)
 	}
 	request.Data = []byte("new")
-	if _, err := created.Layer.WriteStripe(request); err != nil {
+	if _, err := writeStripeForTest(created.Layer, request); err != nil {
 		t.Fatal(err)
 	}
 
-	unlockStripe, unlockMap := created.Layer.lockStripe(stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID})
-	unlockMap()
-	defer unlockStripe()
+	unlockObject := created.Layer.lockObjectRead(request.ObjectID)
 
 	result := make(chan CleanupStripeDriveResponse, 1)
 	errors := make(chan error, 1)
@@ -195,14 +193,16 @@ func TestCleanupStripeDriveDoesNotWaitForForegroundStripeLock(t *testing.T) {
 		errors <- cleanupErr
 	}()
 	select {
+	case <-result:
+		t.Fatal("cleanup proceeded while an Object read lock was held")
+	case <-time.After(50 * time.Millisecond):
+	}
+	unlockObject()
+	select {
 	case response := <-result:
-		if err := <-errors; err != nil {
-			t.Fatal(err)
-		}
-		if response.FilesProcessed != 1 {
-			t.Fatalf("cleanup processed %d files, want 1", response.FilesProcessed)
-		}
+		if err := <-errors; err != nil { t.Fatal(err) }
+		if response.FilesProcessed != 1 { t.Fatalf("cleanup processed %d files, want 1", response.FilesProcessed) }
 	case <-time.After(time.Second):
-		t.Fatal("cleanup waited for the foreground Stripe lock")
+		t.Fatal("cleanup did not resume after the Object read lock was released")
 	}
 }
