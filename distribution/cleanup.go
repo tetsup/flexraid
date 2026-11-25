@@ -115,7 +115,10 @@ func (d *Distribution) Cleanup(request CleanupRequest) (response CleanupResponse
 		current := d.objects[key.objectID][key.stripeID]
 		isCurrent := currentVersion(current, item.location.key.StripeVersion)
 		d.mapMu.RUnlock()
-		if isCurrent && !request.InvalidStripes && !request.IncompleteChunks {
+		// A candidate selected as current at revalidation time is never
+		// deletable, even when the original scan requested invalid/incomplete
+		// cleanup: a concurrent commit may have reused and committed this key.
+		if isCurrent {
 			unlock()
 			continue
 		}
