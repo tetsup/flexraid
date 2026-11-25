@@ -235,7 +235,6 @@ func TestConcurrentStripeWritesSerializeVersions(t *testing.T) {
 	}
 }
 
-
 func TestCleanupStripeDriveSkipsChunkPinnedByRead(t *testing.T) {
 	ctx := context.Background()
 	ios := makeIOs(t, 2)
