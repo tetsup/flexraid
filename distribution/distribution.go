@@ -37,7 +37,7 @@ type Distribution struct {
 	cleanupQueue           *cleanupQueue
 	cleanupPermissionStore *shared.CleanupPermissionStore
 	cleanupWorkerMu        sync.Mutex
-	cleanupWorkerCancel    context.CancelFunc
+	cleanupWorkerCancel    context.CancelCauseFunc
 	cleanupWorkerDone      chan struct{}
 	cleanupWake            chan struct{}
 }
@@ -201,13 +201,18 @@ func New(request NewRequest) (NewResponse, error) {
 	// Stripe 0 defines the committed Object watermark. An Object without a
 	// recoverable Stripe 0 cannot expose any of its data stripes.
 	watermarks := make(map[shared.ObjectID]storage.StripeVersion)
-	for objectID, stripes := range d.versions {
-		if versions := stripes[0]; versions != nil {
+	for key, stripes := range d.versions {
+		objectID := key.objectID
+		if key.stripeID == 0 {
+		if versions := map[storage.StripeVersion]*versionInfo{}; stripes != nil {
+			versions = d.versions[key]
+			if versions != nil {
 			for versionNo, version := range versions {
 				if version.recoverable && versionNo > watermarks[objectID] {
 					watermarks[objectID] = versionNo
 				}
 			}
+		}
 		}
 	}
 	for key, versions := range d.versions {
