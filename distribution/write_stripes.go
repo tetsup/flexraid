@@ -175,20 +175,30 @@ func (d *Distribution) verifyStripeVersion(ctx context.Context, request WriteStr
 		if err := ctx.Err(); err != nil { return nil, err }
 		ioIndex := request.IOIndexes[int(no.index())]
 		if no.isParity() { ioIndex = request.IOIndexes[int(method.numChunks)] }
-		key := storage.FileKey{ObjectID: request.ObjectID, StripeID: request.StripeID, StripeVersion: version, LayoutID: layoutFor(method, no)}
-		if _, err := d.ios[ioIndex].Sync(physicalio.SyncRequest{Context:ctx, Key:key}); err != nil { return nil, fmt.Errorf("sync chunk %d: %w", no, err) }
-		read, err := d.ios[ioIndex].Read(physicalio.ReadRequest{Context:ctx, Key:key})
-		if err != nil { return nil, fmt.Errorf("read chunk %d: %w", no, err) }
-		total, payload, err := decodeChunk(read.Data)
-		if err != nil { return nil, fmt.Errorf("decode chunk %d: %w", no, err) }
-		locations[no] = chunkLocation{ioIndex:ioIndex, key:key, totalLength:total, sizeBytes:uint64(len(read.Data)), readers:&atomic.Int64{}}
+		key := storage.FileKey{ObjectID:request.ObjectID, StripeID:request.StripeID, StripeVersion:version, LayoutID:layoutFor(method,no)}
+		read, readErr := d.ios[ioIndex].Read(physicalio.ReadRequest{Context:ctx,Key:key})
+		if readErr != nil {
+			if errors.Is(readErr, context.Canceled) || errors.Is(readErr, context.DeadlineExceeded) { return nil, readErr }
+			continue
+		}
+		// Only count a chunk after its file and parent directory have been
+		// synchronized successfully. Other replicas/chunks may still provide
+		// a recoverable Stripe if this one cannot be confirmed.
+		if _, syncErr := d.ios[ioIndex].Sync(physicalio.SyncRequest{Context:ctx,Key:key}); syncErr != nil {
+			if errors.Is(syncErr, context.Canceled) || errors.Is(syncErr, context.DeadlineExceeded) { return nil, syncErr }
+			continue
+		}
+		total, payload, decodeErr := decodeChunk(read.Data)
+		if decodeErr != nil { continue }
+		locations[no] = chunkLocation{ioIndex:ioIndex,key:key,totalLength:total,sizeBytes:uint64(len(read.Data)),readers:&atomic.Int64{}}
 		chunks = append(chunks, chunkDataWithInfo{
-			stripeKey:stripeKeyInfo{objectID:request.ObjectID, stripeID:request.StripeID, stripeVersion:version},
-			distributionMethod:method, chunkNo:no, data:payload, totalLength:total,
+			stripeKey:stripeKeyInfo{objectID:request.ObjectID,stripeID:request.StripeID,stripeVersion:version},
+			distributionMethod:method,chunkNo:no,data:payload,totalLength:total,
 		})
 	}
 	restored, err := restoreStripe(chunks)
 	if err != nil { return nil, err }
-	if !bytes.Equal(restored, request.Data) { return nil, fmt.Errorf("verified Stripe 0 payload differs from requested data") }
-	return locations, nil
+	if !bytes.Equal(restored,request.Data) { return nil, fmt.Errorf("verified Stripe 0 payload differs from requested data") }
+	if len(locations) < required { d.recordIntegrityError() }
+	return locations,nil
 }
