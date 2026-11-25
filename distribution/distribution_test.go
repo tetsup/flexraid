@@ -227,6 +227,9 @@ func TestConcurrentStripeWritesSerializeVersions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if read.Version != writes {
+		t.Fatalf("read version = %d, want latest reserved version %d", read.Version, writes)
+	}
 	if len(read.Data) != 1 {
 		t.Fatalf("read data = %v, want one byte", read.Data)
 	}
