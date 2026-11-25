@@ -200,8 +200,12 @@ func TestCleanupStripeDriveDoesNotWaitForForegroundStripeLock(t *testing.T) {
 	unlockObject()
 	select {
 	case response := <-result:
-		if err := <-errors; err != nil { t.Fatal(err) }
-		if response.FilesProcessed != 1 { t.Fatalf("cleanup processed %d files, want 1", response.FilesProcessed) }
+		if err := <-errors; err != nil {
+			t.Fatal(err)
+		}
+		if response.FilesProcessed != 1 {
+			t.Fatalf("cleanup processed %d files, want 1", response.FilesProcessed)
+		}
 	case <-time.After(time.Second):
 		t.Fatal("cleanup did not resume after the Object read lock was released")
 	}

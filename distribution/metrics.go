@@ -101,7 +101,7 @@ type CacheMemoryMetrics struct {
 }
 
 type GetMetricsResponse struct {
-	CacheMemory CacheMemoryMetrics
+	CacheMemory                        CacheMemoryMetrics
 	Objects                            []ObjectMetrics
 	OrphanChunks                       []OrphanChunkMetrics
 	OrphanChunksByDrive                []DriveOrphanMetrics
