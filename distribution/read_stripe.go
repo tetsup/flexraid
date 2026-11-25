@@ -47,6 +47,10 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 	}
 	source := stripes[request.StripeID]
 	info := &stripeInfo{version: source.version, method: source.method, chunkSize: source.chunkSize, chunks: cloneChunks(source.chunks), corrupted: source.corrupted}
+	if request.ChunkSize != info.chunkSize {
+		d.mapMu.RUnlock()
+		return response, fmt.Errorf("stripe %d chunk size %d does not match selected version chunk size %d: %w", request.StripeID, request.ChunkSize, info.chunkSize, ErrDataCorrupted)
+	}
 	pinned := make([]*atomic.Int64, 0, len(info.chunks))
 	for _, location := range info.chunks {
 		if location.readers != nil {

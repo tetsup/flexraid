@@ -20,6 +20,8 @@ type SyncObjectResponse struct{ SyncedChunks uint32 }
 
 // SyncObject synchronizes the cached latest version of every stripe.
 func (d *Distribution) SyncObject(request SyncObjectRequest) (response SyncObjectResponse, err error) {
+	unlock := d.lockObjectRead(request.ObjectID)
+	defer unlock()
 	started := time.Now()
 	ctx := request.Context
 	if ctx == nil {

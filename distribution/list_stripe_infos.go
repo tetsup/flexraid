@@ -27,6 +27,8 @@ type ListStripeInfosResponse struct {
 
 // ListStripeInfos returns metadata for every stripe with a selected recoverable version.
 func (d *Distribution) ListStripeInfos(request ListStripeInfosRequest) (response ListStripeInfosResponse, err error) {
+	unlock := d.lockObjectRead(request.ObjectID)
+	defer unlock()
 	started := time.Now()
 	defer func() {
 		logOperation(d, "ListStripeInfos", started, err, "object_id", request.ObjectID.String(), "stripes", len(response.Stripes))
