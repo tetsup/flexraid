@@ -1,7 +1,7 @@
 package distribution
 
 import (
-	"context"
+	
 	"fmt"
 	"sync/atomic"
 	"time"
@@ -11,19 +11,7 @@ import (
 	"github.com/tetsup/flexraid/storage"
 )
 
-type WriteStripeRequest struct {
-	Context   context.Context
-	ObjectID  shared.ObjectID
-	StripeID  storage.StripeID
-	ChunkSize uint32
-	Layout    Layout
-	IOIndexes []int
-	Data      []byte
-	Sync      bool
-}
-type WriteStripeResponse struct{ Version storage.StripeVersion }
-
-func (d *Distribution) writeStripeAtVersion(request WriteStripeRequest, forcedVersion storage.StripeVersion, publish bool) (response WriteStripeResponse, err error) {
+func (d *Distribution) writeStripeAtVersion(request WriteStripeRequest, forcedVersion storage.StripeVersion, publish bool) (response writeStripeResponse, err error) {
 	started := time.Now()
 	defer func() {
 		logOperation(d, "WriteStripe", started, err, "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "bytes", len(request.Data))

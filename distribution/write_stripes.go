@@ -15,6 +15,18 @@ import (
 	"github.com/tetsup/flexraid/storage"
 )
 
+type WriteStripeRequest struct {
+	Context   context.Context
+	ObjectID  shared.ObjectID
+	StripeID  storage.StripeID
+	ChunkSize uint32
+	Layout    Layout
+	IOIndexes []int
+	Data      []byte
+	Sync      bool
+}
+type WriteStripeResponse struct{ Version storage.StripeVersion }
+
 type WriteStripesRequest struct {
 	Context context.Context
 	ObjectID shared.ObjectID
