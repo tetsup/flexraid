@@ -184,9 +184,6 @@ func (layer *Orchestration) writeLocked(request WriteRequest) (response WriteRes
 		if _, err = layer.persistDirtyStripesLocked(ctx, staged, true); err != nil {
 			return response, err
 		}
-		if _, err = layer.distribution.SyncObject(distribution.SyncObjectRequest{Context: ctx, ObjectID: file.objectID}); err != nil {
-			return response, fmt.Errorf("sync object %s: %w", file.objectID.String(), err)
-		}
 	}
 	file.header = staged.header
 	file.stripeCache = staged.stripeCache
