@@ -11,6 +11,8 @@ import (
 	"github.com/tetsup/flexraid/storage"
 )
 
+type writeStripeResponse struct{ Version storage.StripeVersion }
+
 func (d *Distribution) writeStripeAtVersion(request WriteStripeRequest, forcedVersion storage.StripeVersion, publish bool) (response writeStripeResponse, err error) {
 	started := time.Now()
 	defer func() {
