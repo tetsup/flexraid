@@ -1,23 +1,8 @@
 package distribution
 
-import (
-	"runtime"
-	"sync"
-)
-
-// lockStripe acquires mapMu before the per-stripe mutex and returns with both
-// held. A contended stripe never makes a waiter retain mapMu.
-func (d *Distribution) lockStripe(key stripeIDKey) (unlockStripe func(), unlockMap func()) {
+// lockStripe is retained only as a temporary compatibility helper. It does
+// not serialize Stripe operations; callers must snapshot shared map values.
+func (d *Distribution) lockStripe(_ stripeIDKey) (unlockStripe func(), unlockMap func()) {
 	d.mapMu.Lock()
-	lock := d.stripeLocks[key]
-	if lock == nil {
-		lock = &sync.Mutex{}
-		d.stripeLocks[key] = lock
-	}
-	for !lock.TryLock() {
-		d.mapMu.Unlock()
-		runtime.Gosched()
-		d.mapMu.Lock()
-	}
-	return lock.Unlock, d.mapMu.Unlock
+	return func() {}, d.mapMu.Unlock
 }
