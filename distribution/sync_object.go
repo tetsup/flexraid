@@ -60,7 +60,7 @@ func (d *Distribution) SyncObject(request SyncObjectRequest) (response SyncObjec
 				return response, err
 			}
 			if location.ioIndex < 0 || location.ioIndex >= len(d.ios) {
-						return response, fmt.Errorf("stripe %d has invalid I/O index %d", rawID, location.ioIndex)
+				return response, fmt.Errorf("stripe %d has invalid I/O index %d", rawID, location.ioIndex)
 			}
 			_, syncErr := d.ios[location.ioIndex].Sync(physicalio.SyncRequest{Context: ctx, Key: location.key})
 			d.recordChunkOperation("Sync", syncErr)
