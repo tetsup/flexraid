@@ -153,3 +153,19 @@ func TestCommitDoesNotActivateUncommittedVersionOnUnchangedStripe(t *testing.T) 
 		t.Fatalf("unchanged stripe was advanced by stale candidate: version=%d data=%q",read.Version,read.Data)
 	}
 }
+
+func TestListObjectsHidesUncommittedObjectVersions(t *testing.T) {
+	ctx := context.Background()
+	ios := makeIOs(t,2)
+	created,err:=New(NewRequest{IOs:ios})
+	if err!=nil { t.Fatal(err) }
+	id:=testObjectID()
+	_,err=created.Layer.writeStripeAtVersion(WriteStripeRequest{
+		Context:ctx,ObjectID:id,StripeID:1,ChunkSize:32,
+		Layout:Layout{Type:LayoutMirror,NumChunks:2},IOIndexes:[]int{0,1},Data:[]byte("uncommitted"),
+	},1,false)
+	if err!=nil { t.Fatal(err) }
+	listed,err:=created.Layer.ListObjects(ListObjectsRequest{Context:ctx})
+	if err!=nil { t.Fatal(err) }
+	for _,got:=range listed.ObjectIDs { if got==id { t.Fatal("uncommitted Object was visible in ListObjects") } }
+}
