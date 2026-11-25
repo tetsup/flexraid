@@ -15,6 +15,7 @@ type objectCommitLock struct {
 // are removed so the lock registry does not grow with the lifetime Object set.
 func (d *Distribution) acquireObjectCommitLock(objectID shared.ObjectID) *objectCommitLock {
 	d.commitLocksMu.Lock()
+	if d.objectCommitLocks == nil { d.objectCommitLocks = make(map[shared.ObjectID]*objectCommitLock) }
 	lock := d.objectCommitLocks[objectID]
 	if lock == nil {
 		lock = &objectCommitLock{}

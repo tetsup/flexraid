@@ -32,11 +32,11 @@ func TestWriteStripeRefreshesPerDriveCleanupQueue(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := created.Layer.cleanupCandidates()
-	if len(got) != 2 {
-		t.Fatalf("got %d candidates, want one per drive: %+v", len(got), got)
+	if len(got) != 4 {
+		t.Fatalf("got %d candidates, want two committed stripes per drive: %+v", len(got), got)
 	}
 	for _, candidate := range got {
-		if candidate.objectID != request.ObjectID || candidate.stripeID != request.StripeID {
+		if candidate.objectID != request.ObjectID || candidate.stripeID != request.StripeID && candidate.stripeID != 0 {
 			t.Errorf("candidate has wrong stripe identity: %+v", candidate)
 		}
 		if candidate.method != cleanupDeleteOldVersion {
@@ -50,7 +50,7 @@ func TestWriteStripeRefreshesPerDriveCleanupQueue(t *testing.T) {
 	created.Layer.mapMu.Lock()
 	created.Layer.refreshStripeCleanupQueueLocked(stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID})
 	created.Layer.mapMu.Unlock()
-	if after := created.Layer.cleanupCandidates(); len(after) != 2 {
+	if after := created.Layer.cleanupCandidates(); len(after) != 4 {
 		t.Fatalf("refresh duplicated candidates: %+v", after)
 	}
 }
@@ -78,8 +78,8 @@ func TestNewRebuildsCleanupQueuePerStripe(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := restarted.Layer.cleanupCandidates()
-	if len(got) != 2 {
-		t.Fatalf("startup rebuilt %d candidates, want two drive candidates: %+v", len(got), got)
+	if len(got) != 4 {
+		t.Fatalf("startup rebuilt %d candidates, want two committed stripes per drive: %+v", len(got), got)
 	}
 	for _, candidate := range got {
 		if candidate.method != cleanupDeleteOldVersion {

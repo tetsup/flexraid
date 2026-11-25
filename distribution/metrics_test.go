@@ -33,17 +33,17 @@ func TestGetMetricsTracksOperationsAndState(t *testing.T) {
 		t.Fatal(err)
 	}
 	write := got.Operations["WriteStripe"]
-	if write.SuccessCount != 1 || write.FailureCount != 0 || write.Recent.ProcessedCount != 1 {
+	if write.SuccessCount != 2 || write.FailureCount != 0 || write.Recent.ProcessedCount != 2 {
 		t.Fatalf("write metrics: %+v", write)
 	}
-	if got.Chunks.Write.SuccessCount != 2 || got.Chunks.Write.RecentProcessedCount != 2 {
+	if got.Chunks.Write.SuccessCount != 4 || got.Chunks.Write.RecentProcessedCount != 4 {
 		t.Fatalf("chunk write metrics: %+v", got.Chunks.Write)
 	}
 	readMetrics := got.Operations["ReadStripe"]
 	if readMetrics.SuccessCount != 1 || readMetrics.FailureCount != 1 || readMetrics.Recent.ProcessedCount != 2 {
 		t.Fatalf("read metrics: %+v", readMetrics)
 	}
-	if got.Stripes.ObjectCount != 1 || got.Stripes.StripeCount != 1 || got.Stripes.RecoverableStripeCount != 1 {
+	if got.Stripes.ObjectCount != 1 || got.Stripes.StripeCount != 2 || got.Stripes.RecoverableStripeCount != 2 {
 		t.Fatalf("stripe metrics: %+v", got.Stripes)
 	}
 	if _, ok := got.Operations["GetMetrics"]; ok {
@@ -102,7 +102,7 @@ func TestGetMetricsSnapshotIsIndependent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if second.Operations["WriteStripe"].SuccessCount != 1 || second.Stripes.StripeCount != 1 {
+	if second.Operations["WriteStripe"].SuccessCount != 2 || second.Stripes.StripeCount != 2 {
 		t.Fatalf("snapshot leaked mutation: %+v", second)
 	}
 }

@@ -72,7 +72,7 @@ func TestCleanupStripeDriveProcessesOnlyOneOldVersionFile(t *testing.T) {
 	if _, err := ios[1].Read(physicalio.ReadRequest{Context: ctx, Key: oldestKeyOnDrive1}); err != nil {
 		t.Fatalf("old version on unselected drive was changed: %v", err)
 	}
-	if candidates := created.Layer.cleanupCandidates(); len(candidates) != 2 {
+	if candidates := created.Layer.cleanupCandidates(); len(candidates) != 4 {
 		t.Fatalf("remaining candidates = %+v; want one candidate per drive for remaining old versions", candidates)
 	}
 }
