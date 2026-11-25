@@ -37,6 +37,17 @@ func (d *Distribution) WriteStripes(request WriteStripesRequest) (response Write
 
 	unlock := d.lockObjectWrite(request.ObjectID)
 	defer unlock()
+	commitPointReached := false
+	defer func() {
+		if err == nil || commitPointReached { return }
+		// Failed attempts may have left incomplete immutable files. Publish
+		// cleanup hints only after the transaction has stopped writing them.
+		d.mapMu.Lock()
+		for key := range d.versions {
+			if key.objectID == request.ObjectID { d.refreshStripeCleanupQueueLocked(key) }
+		}
+		d.mapMu.Unlock()
+	}()
 
 	requests := append([]WriteStripeRequest(nil), request.Stripes...)
 	seen := make(map[storage.StripeID]struct{}, len(requests))
@@ -87,6 +98,7 @@ func (d *Distribution) WriteStripes(request WriteStripesRequest) (response Write
 		versions[version] = &versionInfo{method: method, chunkSize: header.ChunkSize, chunks: locations, recoverable: true}
 		d.mapMu.Unlock()
 	}
+	commitPointReached = true
 
 	d.mapMu.Lock()
 	published := append(append([]WriteStripeRequest(nil), requests...), header)
