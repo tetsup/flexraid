@@ -131,7 +131,6 @@ func (d *Distribution) Cleanup(request CleanupRequest) (response CleanupResponse
 		d.mapMu.Lock()
 		d.removeCleanupLocationLocked(item.candidate, item.location)
 		d.reselectStripeLocked(key)
-		d.refreshStripeCleanupQueueLocked(key)
 		d.mapMu.Unlock()
 		unlock()
 		response.DeletedFiles++
@@ -146,10 +145,7 @@ func (d *Distribution) reselectStripeLocked(key stripeIDKey) {
 	}
 	stripes := d.objects[key.objectID]
 	if stripes == nil || stripes[0] == nil {
-		if stripes != nil {
-			delete(stripes, key.stripeID)
-			if len(stripes) == 0 { delete(d.objects, key.objectID) }
-		}
+		d.reselectObjectStripesLocked(key.objectID)
 		return
 	}
 	watermark := stripes[0].version
@@ -188,6 +184,9 @@ func (d *Distribution) reselectObjectStripesLocked(objectID shared.ObjectID) {
 	}
 	if headerInfo == nil {
 		delete(d.objects, objectID)
+		for key := range d.versions {
+			if key.objectID == objectID { d.refreshStripeCleanupQueueLocked(key) }
+		}
 		return
 	}
 	stripes := d.objects[objectID]
