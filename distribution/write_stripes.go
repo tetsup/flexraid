@@ -25,8 +25,6 @@ type WriteStripeRequest struct {
 	Data      []byte
 	Sync      bool
 }
-type WriteStripeResponse struct{ Version storage.StripeVersion }
-
 type WriteStripesRequest struct {
 	Context context.Context
 	ObjectID shared.ObjectID
@@ -87,13 +85,11 @@ func (d *Distribution) WriteStripes(request WriteStripesRequest) (response Write
 	}
 	for _, stripe := range requests {
 		if err = ctx.Err(); err != nil { return response, err }
-		stripe.Sync = true
 		if _, err = d.writeStripeAtVersion(stripe, version, false); err != nil {
 			return response, fmt.Errorf("write data stripe %d: %w", stripe.StripeID, err)
 		}
 	}
 	if err = ctx.Err(); err != nil { return response, err }
-	header.Sync = true
 	if _, writeErr := d.writeStripeAtVersion(header, version, false); writeErr != nil {
 		// A failed Write response can be ambiguous if the file Sync succeeded
 		// but the directory Sync response was lost. Re-sync and read every

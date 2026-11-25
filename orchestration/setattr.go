@@ -304,7 +304,7 @@ func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file 
 			requests = append(requests, distribution.WriteStripeRequest{
 				Context: ctx, ObjectID: file.objectID, StripeID: storage.StripeID(id),
 				ChunkSize: geometry.ChunkSize, Layout: geometry.Layout,
-				IOIndexes: indexes, Data: data, Sync: true,
+				IOIndexes: indexes, Data: data,
 			})
 			persisted++
 			if id == item.end { break }
