@@ -171,42 +171,70 @@ func New(request NewRequest) (NewResponse, error) {
 	// Validate recoverability before selecting any Object state.
 	for key, versions := range d.versions {
 		for versionNo, version := range versions {
-			if version.invalid { continue }
+			if version.invalid {
+				continue
+			}
 			chunks := make([]chunkDataWithInfo, 0, len(version.chunks))
 			for no, location := range version.chunks {
-				chunks = append(chunks, chunkDataWithInfo{stripeKey: stripeKeyInfo{objectID:key.objectID,stripeID:key.stripeID,stripeVersion:versionNo},distributionMethod:version.method,chunkNo:no,data:location.data,totalLength:location.totalLength})
+				chunks = append(chunks, chunkDataWithInfo{stripeKey: stripeKeyInfo{objectID: key.objectID, stripeID: key.stripeID, stripeVersion: versionNo}, distributionMethod: version.method, chunkNo: no, data: location.data, totalLength: location.totalLength})
 			}
-			if _, restoreErr := restoreStripe(chunks); restoreErr != nil { d.recordIntegrityError(); continue }
+			if _, restoreErr := restoreStripe(chunks); restoreErr != nil {
+				d.recordIntegrityError()
+				continue
+			}
 			version.recoverable = true
-			if len(version.chunks) < len(expectedChunkNos(version.method)) { d.recordIntegrityError() }
+			if len(version.chunks) < len(expectedChunkNos(version.method)) {
+				d.recordIntegrityError()
+			}
 		}
 	}
 	// Stripe 0 is the only commit record for an Object.
 	for key, versions := range d.versions {
-		if key.stripeID != 0 { continue }
+		if key.stripeID != 0 {
+			continue
+		}
 		var watermark storage.StripeVersion
 		found := false
 		for versionNo, version := range versions {
-			if version.recoverable && (!found || versionNo > watermark) { watermark, found = versionNo, true }
+			if version.recoverable && (!found || versionNo > watermark) {
+				watermark, found = versionNo, true
+			}
 		}
-		if found { d.objectWatermarks[key.objectID] = watermark }
+		if found {
+			d.objectWatermarks[key.objectID] = watermark
+		}
 	}
 	// Select the newest recoverable Stripe Version at or below the watermark.
 	for key, versions := range d.versions {
 		watermark, committed := d.objectWatermarks[key.objectID]
-		if !committed { continue }
+		if !committed {
+			continue
+		}
 		var selected storage.StripeVersion
 		var selectedInfo *versionInfo
 		for versionNo, version := range versions {
-			if !version.recoverable || versionNo > watermark { continue }
-			if selectedInfo == nil || versionNo > selected { selected, selectedInfo = versionNo, version }
+			if !version.recoverable || versionNo > watermark {
+				continue
+			}
+			if selectedInfo == nil || versionNo > selected {
+				selected, selectedInfo = versionNo, version
+			}
 		}
-		if selectedInfo == nil { continue }
+		if selectedInfo == nil {
+			continue
+		}
 		stripes := d.objects[key.objectID]
-		if stripes == nil { stripes = make(map[storage.StripeID]*stripeInfo); d.objects[key.objectID] = stripes }
-		stripes[key.stripeID] = &stripeInfo{version:selected,method:selectedInfo.method,chunkSize:selectedInfo.chunkSize,chunks:cloneChunks(selectedInfo.chunks)}
+		if stripes == nil {
+			stripes = make(map[storage.StripeID]*stripeInfo)
+			d.objects[key.objectID] = stripes
+		}
+		stripes[key.stripeID] = &stripeInfo{version: selected, method: selectedInfo.method, chunkSize: selectedInfo.chunkSize, chunks: cloneChunks(selectedInfo.chunks)}
 	}
-	for key := range d.versions { d.mapMu.Lock(); d.refreshStripeCleanupQueueLocked(key); d.mapMu.Unlock() }
+	for key := range d.versions {
+		d.mapMu.Lock()
+		d.refreshStripeCleanupQueueLocked(key)
+		d.mapMu.Unlock()
+	}
 
 	logger.Debug("Distribution initialized", "ios", len(d.ios), "usable_ios", usable, "objects", len(d.objects))
 	return NewResponse{Layer: d}, nil
