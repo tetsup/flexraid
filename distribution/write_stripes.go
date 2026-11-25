@@ -107,8 +107,20 @@ func (d *Distribution) WriteStripes(request WriteStripesRequest) (response Write
 		if verifyErr != nil {
 			return response, fmt.Errorf("commit Stripe 0: %w (verification failed: %v)", writeErr, verifyErr)
 		}
-		key := stripeIDKey{objectID: request.ObjectID, stripeID: 0}
+		// The verified physical files are now part of the committed Stripe,
+		// not orphan cleanup candidates left by the ambiguous Write response.
 		d.mapMu.Lock()
+		verified := make(map[struct{ ioIndex int; key storage.FileKey }]struct{},len(locations))
+		for _, location := range locations {
+			verified[struct{ ioIndex int; key storage.FileKey }{location.ioIndex,location.key}] = struct{}{}
+		}
+		remainingOrphans := d.orphans[request.ObjectID][:0]
+		for _, location := range d.orphans[request.ObjectID] {
+			identity := struct{ ioIndex int; key storage.FileKey }{location.ioIndex,location.key}
+			if _, ok := verified[identity]; !ok { remainingOrphans = append(remainingOrphans,location) }
+		}
+		if len(remainingOrphans)==0 { delete(d.orphans,request.ObjectID) } else { d.orphans[request.ObjectID]=remainingOrphans }
+		key := stripeIDKey{objectID: request.ObjectID, stripeID: 0}
 		versions := d.versions[key]
 		if versions == nil { versions = make(map[storage.StripeVersion]*versionInfo); d.versions[key] = versions }
 		method, _ := header.Layout.method()
