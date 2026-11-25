@@ -104,7 +104,7 @@ func (d *Distribution) writeStripeAtVersion(request WriteStripeRequest, forcedVe
 		}
 		fileKey := storage.FileKey{ObjectID: request.ObjectID, StripeVersion: version, LayoutID: layoutFor(method, no), StripeID: request.StripeID}
 		encoded := encodeChunk(uint64(len(request.Data)), chunks[no])
-		_, writeErr := d.ios[ioIndex].Write(physicalio.WriteRequest{Context: request.Context, Key: fileKey, Data: encoded, Sync: request.Sync})
+		_, writeErr := d.ios[ioIndex].Write(physicalio.WriteRequest{Context: request.Context, Key: fileKey, Data: encoded, Sync: true})
 		d.recordChunkOperation("Write", writeErr)
 		if writeErr != nil {
 			savePartial()

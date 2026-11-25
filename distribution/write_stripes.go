@@ -23,7 +23,6 @@ type WriteStripeRequest struct {
 	Layout    Layout
 	IOIndexes []int
 	Data      []byte
-	Sync      bool
 }
 type WriteStripesRequest struct {
 	Context context.Context
