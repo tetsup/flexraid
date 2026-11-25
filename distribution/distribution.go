@@ -25,6 +25,7 @@ type NewResponse struct{ Layer *Distribution }
 
 type Distribution struct {
 	mapMu                  sync.RWMutex
+	objectCommitLocks      sync.Map // map[shared.ObjectID]*sync.Mutex
 	ios                    []*physicalio.IO
 	logger                 *slog.Logger
 	objects                map[shared.ObjectID]map[storage.StripeID]*stripeInfo

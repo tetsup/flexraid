@@ -23,7 +23,11 @@ type WriteStripeRequest struct {
 }
 type WriteStripeResponse struct{ Version storage.StripeVersion }
 
-func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteStripeResponse, err error) {
+func (d *Distribution) WriteStripe(request WriteStripeRequest) (WriteStripeResponse, error) {
+	return d.writeStripeAtVersion(request, 0, true)
+}
+
+func (d *Distribution) writeStripeAtVersion(request WriteStripeRequest, forcedVersion storage.StripeVersion, publish bool) (response WriteStripeResponse, err error) {
 	started := time.Now()
 	defer func() {
 		logOperation(d, "WriteStripe", started, err, "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "bytes", len(request.Data))
@@ -60,7 +64,10 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 		return response, errInsufficientChunks
 	}
 	d.mapMu.Lock()
-	version := d.nextVersion(key)
+	version := forcedVersion
+	if version == 0 {
+		version = d.nextVersion(key)
+	}
 	versions := d.versions[key]
 	if versions == nil {
 		versions = make(map[storage.StripeVersion]*versionInfo)
@@ -96,7 +103,9 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 			}
 			versions[version] = &versionInfo{method: method, chunkSize: request.ChunkSize, chunks: cloneChunks(written), recoverable: false}
 		}
-		d.refreshStripeCleanupQueueLocked(key)
+		if publish {
+			d.refreshStripeCleanupQueueLocked(key)
+		}
 	}
 	for _, no := range orderedChunkNos(chunks) {
 		if err = request.Context.Err(); err != nil {
@@ -127,18 +136,17 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 		d.versions[key] = versions
 	}
 	versions[version] = &versionInfo{method: method, chunkSize: request.ChunkSize, chunks: cloneChunks(written), recoverable: true}
-	stripes := d.objects[request.ObjectID]
-	if stripes == nil {
-		stripes = make(map[storage.StripeID]*stripeInfo)
-		d.objects[request.ObjectID] = stripes
+if publish {
+		stripes := d.objects[request.ObjectID]
+		if stripes == nil {
+			stripes = make(map[storage.StripeID]*stripeInfo)
+			d.objects[request.ObjectID] = stripes
+		}
+		if current := stripes[request.StripeID]; current == nil || version > current.version {
+			stripes[request.StripeID] = &stripeInfo{version: version, method: method, chunkSize: request.ChunkSize, chunks: cloneChunks(written)}
+		}
+		d.refreshStripeCleanupQueueLocked(key)
 	}
-	if current := stripes[request.StripeID]; current == nil || version > current.version {
-		stripes[request.StripeID] = &stripeInfo{version: version, method: method, chunkSize: request.ChunkSize, chunks: cloneChunks(written)}
-	}
-	// Refresh the Stripe's cleanup hints only after the new Version is fully
-	// written and published as the selected current Version. mapMu is held,
-	// establishing the lock order mapMu -> cleanupQueue.mu.
-	d.refreshStripeCleanupQueueLocked(key)
 	response.Version = version
 	return response, nil
 }
