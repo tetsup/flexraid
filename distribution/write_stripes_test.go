@@ -123,8 +123,8 @@ func TestCommitDoesNotActivateUncommittedVersionOnUnchangedStripe(t *testing.T) 
 		_, err := created.Layer.WriteStripes(WriteStripesRequest{Context:ctx,ObjectID:id,Stripes:stripes})
 		if err != nil { t.Fatal(err) }
 	}
-	makeStripe := func(id storage.StripeID, data string) WriteStripeRequest {
-		return WriteStripeRequest{ObjectID:id,StripeID:id,ChunkSize:32,Layout:layout,IOIndexes:[]int{0,1},Data:[]byte(data)}
+	makeStripe := func(stripeID storage.StripeID, data string) WriteStripeRequest {
+		return WriteStripeRequest{ObjectID:id,StripeID:stripeID,ChunkSize:32,Layout:layout,IOIndexes:[]int{0,1},Data:[]byte(data)}
 	}
 	commit(
 		makeStripe(0,"header-v1"),
