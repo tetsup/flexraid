@@ -149,7 +149,7 @@ func TestCleanupStripeDriveReturnsNoWorkForMissingCandidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := restarted.Layer.CleanupStripeDrive(CleanupStripeDriveRequest{
+	result, err := created.Layer.CleanupStripeDrive(CleanupStripeDriveRequest{
 		Context: context.Background(), IOIndex: 0, ObjectID: testObjectID(), StripeID: 4,
 		Method: CleanupMethodDeleteOldVersion,
 	})
@@ -161,7 +161,7 @@ func TestCleanupStripeDriveReturnsNoWorkForMissingCandidate(t *testing.T) {
 	}
 }
 
-func TestCleanupStripeDriveDoesNotWaitForForegroundStripeLock(t *testing.T) {
+func TestCleanupStripeDriveWaitsForObjectReadLock(t *testing.T) {
 	ctx := context.Background()
 	ios := makeIOs(t, 2)
 	created, err := New(NewRequest{IOs: ios})
@@ -172,20 +172,20 @@ func TestCleanupStripeDriveDoesNotWaitForForegroundStripeLock(t *testing.T) {
 		Context: ctx, ObjectID: testObjectID(), StripeID: 41, ChunkSize: 32,
 		Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: []byte("old"),
 	}
-	if _, err := writeStripeForTest(restarted.Layer, request); err != nil {
+	if _, err := writeStripeForTest(created.Layer, request); err != nil {
 		t.Fatal(err)
 	}
 	request.Data = []byte("new")
-	if _, err := writeStripeForTest(restarted.Layer, request); err != nil {
+	if _, err := writeStripeForTest(created.Layer, request); err != nil {
 		t.Fatal(err)
 	}
 
-	unlockObject := restarted.Layer.lockObjectRead(request.ObjectID)
+	unlockObject := created.Layer.lockObjectRead(request.ObjectID)
 
 	result := make(chan CleanupStripeDriveResponse, 1)
 	errors := make(chan error, 1)
 	go func() {
-		response, cleanupErr := restarted.Layer.CleanupStripeDrive(CleanupStripeDriveRequest{
+		response, cleanupErr := created.Layer.CleanupStripeDrive(CleanupStripeDriveRequest{
 			Context: ctx, IOIndex: 0, ObjectID: request.ObjectID, StripeID: request.StripeID,
 			Method: CleanupMethodDeleteOldVersion,
 		})
