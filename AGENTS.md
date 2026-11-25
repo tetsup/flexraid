@@ -167,6 +167,22 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - Namespace 初期化では Header を読み込み・検証し、ParentID / Name からツリーを構築し、HardLink を解決してから全体を検査する。root を一意に復元できない不整合は初期化エラー。一部 Object の不整合は Namespace から除外して warning を記録し、関連データを誤って Cleanup しないよう保護する。
 - 配置先の選択は容量・利用可能状態・ファイルの配置計画に基づき Orchestration が行う。既存ストライプは Distribution が保持する配置情報を再利用する。
 
+#### 論理ファイルの Stripe Cache と書き込みセッション
+
+- Orchestration は Runtime file ごとに、論理ファイルの最新コミット済み状態を表す Stripe cache を所有する。cache key は StripeID とし、HardLink は同じ Runtime file / cache を共有する。cache entry の payload はその Stripe の論理データ全体であり、Header 予約領域を含む Stripe 0 では Header も同じ entry に含める。
+- Stripe cache は、実行中の読み書きが参照する最新コミット済み論理状態のメモリ上の写しである。物理永続化の正本は Distribution が選択する最新有効 Version であり、cache はその Version と一致しなければならない。未コミットの FileHandle 内データを共有 cache に公開しない。
+- Read / Write は対象 Stripe の最新状態を cache に取り込んでから処理する。cache hit なら物理読み込みを省略する。cache miss なら Distribution から Stripe 全体を読み込み、完全な private buffer を得てから cache に publish する。部分的な Chunk や復元途中の buffer を cache に公開しない。
+- cache の map と payload snapshot は Runtime file が所有する sync.RWMutex で保護する。cache hit は RLock 中に必要な payload を private copy へ複製し、ロック解放後に利用する。cache の追加・置換・削除は Lock 中に行う。公開済み payload を in-place 変更せず、更新は copy-on-write とする。cache lock は map / slice のメモリアクセス中だけ保持し、物理 I/O、Stripe lock の待機、payload の加工中には保持しない。
+- Orchestration は ObjectID + StripeID ごとの論理 Stripe RWMutex を所有する。Read は RLock、Write は Lock を取得する。同一 Stripe の Read 同士は並行可能とし、Write と Read / Write は排他する。cache hit / miss のどちらでも、cache を確認・複製する前に対象論理 Stripe lock を取得する。これにより、永続化済み・cache publish 前の期間に古い cache を返すことを防ぐ。
+- cache miss の読み込み順序は、論理 Stripe RLock → cache RLock で存在確認・hit copy → cache RUnlock → Distribution ReadStripe → 完全な private buffer の取得 → cache Lock で publish → cache Unlock → 論理 Stripe RUnlock とする。cache RLock を保持したまま物理 Stripe lock や Distribution API を待たない。複数 Read が同時に miss した場合の重複 I/O は許容するが、publish 時に既存 entry を確認し、部分データや古い Version で上書きしない。
+- 通常 Write は論理 Stripe Lock を取得し、cache から private copy を得て、その private copy だけを変更する。cache lock は変更中に保持しない。変更後の Stripe payload を新 Version として Distribution に永続化し、永続化と commit が成功した後に初めて cache Lock を取得して entry を置換する。物理書き込み・commit が失敗した場合は cache を変更せず、従来のコミット済み状態を維持する。cache publish 完了後に論理 Stripe lock を解放する。
+- Header を含む Stripe 0 は、ファイル内容・サイズ・時刻・配置情報など Header の変更が発生する各論理 Write において、対象データ Stripe と同じ論理更新として扱う。Stripe 0 自身を更新する場合は一つの Stripe のみをロックする。それ以外は Stripe 0 と対象データ Stripe の論理 Stripe lock を StripeID 昇順で取得し、両方の物理 Version の永続化・commit・cache publish が完了するまで保持する。ロック取得順序を全経路で統一し、逆順取得を禁止する。
+- Distribution の Version は Stripe 単位であるため、Stripe 0 とデータ Stripe の複数 Version を単に順番に WriteStripe するだけでは、クラッシュ時の一体性を保証しない。複数 Stripe を一つの論理 Write として更新する場合は、共通 Transaction ID と durable commit record（または同等の復旧可能な commit protocol）を用い、全対象 Stripe が永続化された後に transaction を commit する。起動時の Version 選択は commit 済み transaction に属する Version のみを有効とする。commit 前に失敗・停止した transaction は全対象 Stripe で未コミットとして扱い、旧状態へ戻す。単一 Stripe の更新は Distribution の Stripe Version commit をその transaction commit としてよい。この protocol がない状態で、複数 Stripe 更新の crash atomicity を保証すると記述・実装してはならない。
+- 一回の Write 要求が複数のデータ Stripe にまたがる場合、Stripe ごとに独立した論理更新として順次処理する。各更新は対象データ Stripe と Stripe 0 を一組として commit する。要求全体を複数 Stripe 横断の一括 atomic operation とみなさず、失敗時は既に commit 済みの範囲と未 commit の範囲を区別して返す。
+- Open 中の Write は FileHandle ごとの private pending buffer で行い、共有 Stripe cache を直接変更しない。最初に書き込む Stripe について必要な論理 Stripe lock（対象データ Stripe と Stripe 0）を取得し、pending buffer を更新する。cache lock は保持しない。Flush / Fsync、または書き込み対象が別 Stripe に移る直前に、pending buffer を上記の通常 Write 手順で永続化・commit・cache publish し、その後ロックを解放する。別 Stripe へ移る場合は先行 Stripe の flush と unlock を完了してから次の Stripe lock を取得し、同一 FileHandle が複数 Stripe lock を蓄積しない。
+- Open 中に pending buffer を持つ Stripe は、その FileHandle が論理 Stripe lock を保持することで他 handle の Read / Write から隔離する。同じ FileHandle の Read は pending buffer を優先して read-your-writes を満たす。Flush は複数回呼ばれても安全な反復可能操作とし、成功後は pending buffer を空にして lock を解放する。Flush 失敗時は pending data と lock を保持し、成功したかのように cache を更新しない。
+- Stripe 0 の Header 更新を各データ Stripe の commit に含めるため、同一 File の異なる Stripe への Write は Stripe 0 の lock で直列化される。これは現在の Header 配置から生じる正当な競合であり、cache lock の保持時間を短縮しても解消しない。Header 更新頻度や配置を変える最適化は、同じ論理整合性を保つ別設計として扱う。
+
 ### Distribution
 
 - 論理ストライプ単位で読み書きする。論理ファイル offset、ファイルサイズ、Namespace、Header の形式を扱わない。
@@ -190,10 +206,12 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - Mirror は有効な複製チャンクが1つ以上あれば復元可能とする。XOR 1 パリティは、全データチャンクがあればパリティチャンクが欠落していても復元可能とし、データチャンクが1つだけ欠落している場合はパリティチャンクを使って復元する。データチャンクが2つ以上欠落している場合は復元不能とする。
 - 読み込み時は選択済み Version の各チャンクを再読込し、物理読み取りエラーや不正なチャンクを欠落として扱って復元を試みる。復元できなければデータ破損エラーを返す。欠落チャンクを復元できた場合は、呼び出し元から修復配置が与えられていれば同じ Version の欠落チャンクを修復する。修復は新しい Version のコミットではない。
 - 復旧はチャンクの欠落または物理読み取りエラーにより取得できない場合を対象とする。読み取れたデータ同士の内容比較や、全データチャンクが読めた場合のパリティ不一致だけを理由にデータを訂正しない。チェックサム等によるサイレント破損・改ざん検出は保証しない。
-- Distribution は StripeID ごとの状態・物理チャンク候補を所有する。Foreground の Read / Write / Recovery は同一 ObjectID + StripeID の Stripe ロックで保護する。自律 Cleanup は Stripe ロックを取得せず、最新有効 Version 以外の不変 FileKey の物理削除・退避を Foreground の有効チャンク操作から独立して行う。
-- Distribution の共有 map（objects / versions / orphans）へのアクセスは `sync.RWMutex` で保護する。参照のみの処理は `RLock` / `RUnlock`、map または map 内の共有値を変更する処理は `Lock` / `Unlock` を使用する。物理 I/O 中に map ロックを保持しない。必要な FileKey・配置・Version 等をロック中に値として snapshot し、ロック解放後に I/O を行い、結果を反映するときだけ再度ロックする。Stripe 単位の Mutex は設けず、同時読み取りを許容する。
-- Foreground の Stripe 操作は、必要な Stripe の metadata と FileKey を map ロック中に snapshot してから実行する。Stripe payload の読み込み・復元・物理書き込みは map ロックを保持せずに行う。読み取り同士および異なる Stripe の操作を map ロックで直列化しない。
-- Distribution は Stripe payload を常駐キャッシュしない。起動時の全 Chunk 走査では Version の復元可能性を検証するために payload を一時利用し、検証後は破棄して FileKey・配置・サイズ等の metadata のみ保持する。ReadStripe は要求された Stripe の Chunk だけを物理 I/O で読み込み、復元・返却に必要な間だけ操作ローカルのメモリに保持し、共有 map へ payload を書き戻さない。ReadStripe は読み取り対象 FileKey ごとに atomic な参照数を保持し、Cleanup は参照中の FileKey を削除・退避対象から除外する。参照数の更新は map ロック保持中の短い処理で行い、参照期間中も物理 I/O で map ロックを保持しない。WriteStripe も物理書き込み完了後は payload を保持せず metadata のみを公開する。キャッシュ確保のために他 Stripe や Object 全体を読み込まない。復元可能な欠損チャンクは既存の復旧契約に従って扱い、最新 Version 自体を復元不能と判断した場合は処理を中止する。
+- Distribution は ObjectID + StripeID ごとの最新有効 Version、Version ごとの Chunk / FileKey、配置・復旧状態を所有する。Foreground の Read / Write / Recovery は同一 ObjectID + StripeID の Distribution Stripe ロックで保護する。Read 同士は並行可能とし、Write / Recovery など状態を変更する操作は排他的に実行する。
+- Distribution の共有 map（objects / versions / orphans / stripe lock registry）へのアクセスは map RWMutex で保護する。map の参照だけなら RLock、追加・更新・削除なら Lock を使う。map ロックは map の参照・更新中だけ保持し、物理 I/O、Stripe ロックの取得待ち、Chunk の復元・分割などの処理中は保持しない。Stripe ロックの参照を map から取得したら map ロックを解放してから Stripe ロックを待つ。Stripe lock registry の entry は、参照中のロックが別インスタンスへ置き換わらない寿命管理を行う。
+- Distribution の map は物理状態の索引であり、論理ファイルの Stripe payload cache ではない。通常の索引には FileKey / Version / Chunk / 配置 / 長さ等のメタデータを保持し、全 Chunk payload を常時保持しない。物理読み込み時の payload は Stripe 単位のローカルバッファで復元し、呼び出し元へ返した後に Distribution が不要な payload を保持し続けない。
+- Distribution の Stripe ロックは、選択中 Version の確定、物理 Chunk の読み込み・復元、Version の書き込み・公開など、同一 Stripe の物理状態を扱う期間を保護する。異なる ObjectID + StripeID の処理は、共有 map ロックやデバイス側の制約がない限り並行可能とする。
+- Foreground の Read / Write / Recovery は最新の選択済み recoverable Version を基準にする。Read は選択 Version の物理 Chunk を読み込み、必要なら既存の復旧契約に従って修復する。Write は新 Version の全 Chunk が永続化された後に限り、その Version を Distribution 内の最新有効 Version として公開する。途中失敗時は従来の最新有効 Version を維持する。
+- Background Cleanup は Foreground の Stripe ロックを取得しない。最新有効 Version 以外の不変 FileKey だけを候補とし、物理 I/O 前に map ロックを解放する。Cleanup が削除対象を確定した後、その FileKey が最新有効 Version に昇格しないことを保証する。
 - Background Cleanup は Foreground の Stripe Mutex を使用しない。map Mutex の短時間の保護下で無効 FileKey を確定した後、map Mutex を解放して物理削除・退避する。削除後の map / queue 反映はそれぞれの Mutex で保護する。無効対象キューは専用 Mutex で保護し、キュー Mutex を保持したまま map Mutex 取得や物理 I/O を行わない。
 
 - Cleanup には、Distribution が自律実行する不要 Version 等の物理 Cleanup と、Orchestration が対象 ObjectID を選択する論理削除 Object の物理 Cleanup の2種類がある。候補の所有者・実行制御・削除順序を混同しない。不要 Version 等は Distribution のバックグラウンドループが Stripe 単位で選択・処理する。論理削除 Object は Orchestration が削除可能な ObjectID を一括選択し、Distribution に ObjectID 単位で削除を依頼する。Management は両方に Drive 単位の許可情報を与えるだけで、ObjectID / StripeID / Chunk の選択や個別削除の dispatch を行わない。
@@ -230,8 +248,8 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - FUSE は物理ファイル・チャンク・パリティ・配置方針を直接扱わない。
 - regular file の Read / Write は有効な Management 経由の FileHandle を必須とする。独立した Open ごとに handle を作り、dup は同じ open-file description / handle を共有する。
 - Read / Write の offset は kernel から渡された値を正とし、handle 内の cursor を位置の正として扱わない。
-- Dirty stripe cache は FileHandle ごとではなく Runtime file 実体ごとに共有し、HardLink 間でも同じ cache を参照する。キャッシュの所有者は論理ファイル状態を管理する Orchestration とし、Management / FUSE が独自の複製を持たない。
-- Flush は複数回呼ばれ得るため反復可能とし、handle を解放しない。Fsync は pending dirty data の永続化を保証する。Release は最終的な handle cleanup とし、失敗し得る永続化を Release だけに依存させない。
+- コミット済み Stripe cache は FileHandle ごとではなく Runtime file 実体ごとに共有し、HardLink 間でも同じ cache を参照する。Open 中の未コミット書き込みは FileHandle ごとの private pending buffer に保持し、共有 cache に公開しない。cache の所有者は Orchestration とし、Management / FUSE が独自の複製を持たない。
+- Flush は複数回呼ばれ得るため反復可能とし、handle を解放しない。Flush は pending Stripe の物理 commit と共有 cache publish を完了させる。Fsync はすべての pending data の永続化を保証する。Release は最終的な handle cleanup とし、失敗し得る永続化を Release だけに依存させない。
 - FUSE の `default_permissions` に OS の権限判定を委ねる。FlexRAID 独自の permission 判定を重複実装しない。
 - Advisory lock forwarding、Direct I/O、KEEP_CACHE、ExplicitDataCacheControl、parallel direct writes は、対応する整合性契約とテストが揃うまで有効化しない。
 
@@ -274,11 +292,11 @@ Distribution -> I/O
 
 ### Management の共通実行ロック
 
-- Management の実行ロックは単一の共通機構とする。Foreground / Background / Exclusive / Initialization / Stop のすべてが同じ機構を使用し、Management の実行単位を複数同時に実行しない。各単位は共通ロックを取得して直列実行し、完了後に解放する。
-- Management では ObjectID、StripeID、Directory、File などの対象をキーにしたロックを設けない。複数 Object のロック集合や、Object ロックとは別の Maintenance ロックも設けない。
-- ロックの取得・解放の粒度は、処理を中断しても整合性を保ち、再実行または再構築できる最小の実行単位とする。実行単位の開始前に共通ロックを取得し、その単位の処理結果と状態を確定してから解放する。
-- ロックを保持したまま次の実行単位へ進まない。単位の境界で実行権を Scheduler に返し、待機中の Foreground / Exclusive / Stop 等を優先順位に従って調停する。
-- ここでいう共通ロックは Management の実行単位を調停するための一つのロック機構であり、Object や Stripe のデータ構造をロック対象として列挙する仕組みではない。並行実行の可否・優先順位は Lifecycle / Scheduler の実行権ルールで決め、別のロック体系を追加して実現しない。
+- Management は Lifecycle admission、drain、Foreground / Background / Exclusive / Stop の優先順位を調停する。通常の Foreground file operation 全体を一つの Mutex で直列化しない。Lifecycle が Ready である間、独立した Object / Stripe の Foreground 操作は並行して下位レイヤーへ進める。
+- Management は ObjectID / StripeID をキーにしたデータロックを所有しない。データの整合性ロックは Orchestration と Distribution がそれぞれの責務に応じて所有する。Management はその内部ロックを取得・操作しない。
+- Admission は要求の受付可否と実行中要求数を原子的に管理する。Exclusive / Stop / Draining は新規 Foreground の受付を止め、実行中の要求がそれぞれの安全な完了境界に達するまで待つ。複数要求の同時実行を禁止するための全体 Mutex として Admission を実装しない。
+- Background 作業は Foreground と共存可能な単位で実行し、必要な優先順位・帯域制御・停止境界を Scheduler が調停する。Foreground と競合するデータの保護は所有レイヤーの Object / Stripe lock と不変 FileKey の規則に従う。
+- Exclusive / Stop は新規 Foreground と Background unit の開始を止め、実行中の安全な単位が完了して active request 数がゼロになるのを待つ。複数 Exclusive はキュー順に実行し、Stop は最優先とする。
 - Admission 登録と Lifecycle 遷移は原子的に調停する。状態確認だけを先に行ってから後で受付登録する構造にせず、drain 開始後に新規 Foreground が紛れ込まないようにする。
 - ロック取得を待っている間に Lifecycle が変化した場合は、実行開始前に受付可否を再確認する。拒否された要求は下位レイヤーを呼び出さず、取得済みの実行権を解放する。
 - Exclusive / Stop は新規 Foreground と Background unit の開始を止め、実行中の安全な単位が完了して共通ロックが解放されるのを待つ。複数 Exclusive はキュー順に実行し、Stop は最優先とする。
@@ -356,7 +374,7 @@ Distribution -> I/O
 - 一覧からの選択と同等に、コマンドから識別子を直接指定する操作も可能にする。対話 UI の利用を必須にしない。
 - 指定された識別子が見つからない場合や、一意に解決できない場合は、誤ったデバイスを対象にせず明確に失敗させる。既存の対応付けを暗黙に別デバイスへ切り替えない。
 - この用途で必要なのは物理デバイスの識別子であり、Filesystem UUID などファイルシステムの識別情報を代用しない。
-- 物理ドライブ UUID は WWN（World Wide Name）とする。Linux では `/dev/disk/by-id/wwn-*` 等で公開される WWN を基準にする。取得できないドライブは識別不能として扱い、シリアル番号など別形式への暗黙のフォールバックは行わない。WWN が重複するなど一意に解決できない場合も操作を拒否する。
+- 物理ドライブの識別子には WWN（World Wide Name）を使用する。Linux では `/dev/disk/by-id/wwn-*` 等で公開される WWN を基準にする。取得できないドライブは識別不能として扱い、シリアル番号など別形式への暗黙のフォールバックは行わない。WWN が重複するなど一意に解決できない場合も操作を拒否する。
 - マウントポイントから物理デバイスまでの自動トポロジー解決は、このユーティリティの必須要件に含めない。必要なデバイス識別情報は列挙結果から利用者が選択し、設定へ明示的に反映する方針とする。
 - 設定ファイルの具体的なフォーマット、設定更新の原子性、実行中プロセスへの反映タイミング、交換前後の安全確認、デバイスが未接続の場合の扱いは、該当機能の実装時に定義する。
 
@@ -414,10 +432,10 @@ workers:
   - name: main
     socket_path: /run/flexraid/workers/main.sock
     devices:
-      - uuid: "..."
-      - uuid: "..."
-      - uuid: "..."
-      - uuid: "..."
+      - wwn: "..."
+      - wwn: "..."
+      - wwn: "..."
+      - wwn: "..."
     management:
       cleanup:
         execution: when_spun_up
@@ -429,10 +447,10 @@ workers:
   - name: backup
     socket_path: /run/flexraid/workers/backup.sock
     devices:
-      - uuid: "..."
-      - uuid: "..."
-      - uuid: "..."
-      - uuid: "..."
+      - wwn: "..."
+      - wwn: "..."
+      - wwn: "..."
+      - wwn: "..."
 ```
 
 設定ファイルの選択規則は Controller / Worker で共通とし、次の優先順位で決定する。
