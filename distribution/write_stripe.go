@@ -23,13 +23,6 @@ type WriteStripeRequest struct {
 }
 type WriteStripeResponse struct{ Version storage.StripeVersion }
 
-// WriteStripe is retained only to return a migration error for callers of
-// the former non-transactional API. Object data must be committed with Stripe 0
-// through WriteStripes.
-func (d *Distribution) WriteStripe(request WriteStripeRequest) (WriteStripeResponse, error) {
-	return WriteStripeResponse{}, fmt.Errorf("single-stripe writes are not supported; use WriteStripes")
-}
-
 func (d *Distribution) writeStripeAtVersion(request WriteStripeRequest, forcedVersion storage.StripeVersion, publish bool) (response WriteStripeResponse, err error) {
 	started := time.Now()
 	defer func() {
