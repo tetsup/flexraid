@@ -153,6 +153,7 @@ func (d *Distribution) reselectStripeLocked(key stripeIDKey) {
 	current := stripes[key.stripeID]
 	if current != nil && current.version <= watermark {
 		if selected := versions[current.version]; selected != nil && selected.recoverable {
+			d.refreshStripeCleanupQueueLocked(key)
 			return
 		}
 	}
