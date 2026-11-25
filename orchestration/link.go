@@ -166,9 +166,9 @@ func (layer *Orchestration) persistHeaderUpdateLocked(ctx context.Context, file 
 	entry.state = stripeCacheDirty
 
 	staged := &runtimeFile{
-		objectID: file.objectID,
-		header: next,
-		stripeCache: cloneStripeCache(file.stripeCache),
+		objectID:         file.objectID,
+		header:           next,
+		stripeCache:      cloneStripeCache(file.stripeCache),
 		zeroStripeRanges: cloneStripeRanges(file.zeroStripeRanges),
 	}
 	staged.stripeCache[0] = entry
