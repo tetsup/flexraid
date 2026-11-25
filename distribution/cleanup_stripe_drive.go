@@ -30,7 +30,7 @@ type CleanupStripeDriveResponse struct {
 // Drive × Stripe × Method. Old versions are deleted; abnormal chunks are moved
 // to the drive-local preservation directory.
 func (d *Distribution) CleanupStripeDrive(request CleanupStripeDriveRequest) (response CleanupStripeDriveResponse, err error) {
-	unlock := d.lockObjectRead(request.ObjectID)
+	unlock := d.lockObjectWrite(request.ObjectID)
 	defer unlock()
 	started := time.Now()
 	ctx := request.Context

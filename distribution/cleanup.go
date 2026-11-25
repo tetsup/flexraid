@@ -109,7 +109,7 @@ func (d *Distribution) Cleanup(request CleanupRequest) (response CleanupResponse
 		if err = ctx.Err(); err != nil {
 			return response, err
 		}
-		unlock := d.lockObjectRead(item.location.key.ObjectID)
+		unlock := d.lockObjectWrite(item.location.key.ObjectID)
 		key := stripeIDKey{objectID: item.location.key.ObjectID, stripeID: item.location.key.StripeID}
 		d.mapMu.RLock()
 		current := d.objects[key.objectID][key.stripeID]
