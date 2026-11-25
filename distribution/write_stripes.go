@@ -128,6 +128,20 @@ func (d *Distribution) removeUncommittedVersions(ctx context.Context, objectID s
 		if key.objectID != objectID { continue }
 		for version := range versions { if version > watermark { delete(versions, version) } }
 		if len(versions) == 0 { delete(d.versions, key) }
+		stripes := d.objects[objectID]
+		var selected storage.StripeVersion
+		var selectedInfo *versionInfo
+		for versionNo, info := range versions {
+			if versionNo <= watermark && info.recoverable && (selectedInfo == nil || versionNo > selected) {
+				selected, selectedInfo = versionNo, info
+			}
+		}
+		if selectedInfo == nil {
+			if stripes != nil { delete(stripes, key.stripeID); if len(stripes) == 0 { delete(d.objects, objectID) } }
+		} else {
+			if stripes == nil { stripes = make(map[storage.StripeID]*stripeInfo); d.objects[objectID] = stripes }
+			stripes[key.stripeID] = &stripeInfo{version:selected, method:selectedInfo.method, chunkSize:selectedInfo.chunkSize, chunks:cloneChunks(selectedInfo.chunks)}
+		}
 		d.refreshStripeCleanupQueueLocked(key)
 	}
 	remaining := d.orphans[objectID][:0]

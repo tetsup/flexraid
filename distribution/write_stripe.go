@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync/atomic"
+	"sync"
 	"time"
 
 	physicalio "github.com/tetsup/flexraid/io"
@@ -23,7 +24,11 @@ type WriteStripeRequest struct {
 }
 type WriteStripeResponse struct{ Version storage.StripeVersion }
 
-func (d *Distribution) WriteStripe(request WriteStripeRequest) (WriteStripeResponse, error) {
+func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteStripeResponse, err error) {
+	value, _ := d.objectCommitLocks.LoadOrStore(request.ObjectID, &sync.RWMutex{})
+	commitMu := value.(*sync.RWMutex)
+	commitMu.Lock()
+	defer commitMu.Unlock()
 	return d.writeStripeAtVersion(request, 0, true)
 }
 

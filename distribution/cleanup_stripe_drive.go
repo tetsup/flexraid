@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"time"
+	"sync"
 
 	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/pkg/shared"
@@ -30,6 +31,10 @@ type CleanupStripeDriveResponse struct {
 // Drive × Stripe × Method. Old versions are deleted; abnormal chunks are moved
 // to the drive-local preservation directory.
 func (d *Distribution) CleanupStripeDrive(request CleanupStripeDriveRequest) (response CleanupStripeDriveResponse, err error) {
+	value, _ := d.objectCommitLocks.LoadOrStore(request.ObjectID, &sync.RWMutex{})
+	commitMu := value.(*sync.RWMutex)
+	commitMu.RLock()
+	defer commitMu.RUnlock()
 	started := time.Now()
 	ctx := request.Context
 	if ctx == nil {

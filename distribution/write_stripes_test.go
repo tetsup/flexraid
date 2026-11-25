@@ -1,0 +1,83 @@
+package distribution
+
+import (
+	"bytes"
+	"context"
+	"testing"
+
+	"github.com/tetsup/flexraid/storage"
+)
+
+func TestWriteStripesCommitsOneObjectVersion(t *testing.T) {
+	ctx := context.Background()
+	ios := makeIOs(t, 2)
+	created, err := New(NewRequest{IOs: ios})
+	if err != nil { t.Fatal(err) }
+	id := testObjectID()
+	layout := Layout{Type: LayoutMirror, NumChunks: 2}
+	request := WriteStripesRequest{Context: ctx, ObjectID: id, Stripes: []WriteStripeRequest{
+		{ObjectID:id, StripeID:1, ChunkSize:32, Layout:layout, IOIndexes:[]int{0,1}, Data:[]byte("data-one")},
+		{ObjectID:id, StripeID:0, ChunkSize:32, Layout:layout, IOIndexes:[]int{0,1}, Data:[]byte("header-one")},
+	}}
+	committed, err := created.Layer.WriteStripes(request)
+	if err != nil { t.Fatal(err) }
+	if committed.Version != 1 { t.Fatalf("commit version = %d, want 1", committed.Version) }
+	for _, stripeID := range []storage.StripeID{0,1} {
+		info, err := created.Layer.GetStripeInfo(GetStripeInfoRequest{ObjectID:id, StripeID:stripeID})
+		if err != nil { t.Fatal(err) }
+		if info.Version != committed.Version { t.Errorf("stripe %d version = %d, want %d", stripeID, info.Version, committed.Version) }
+	}
+	restarted, err := New(NewRequest{IOs:ios})
+	if err != nil { t.Fatal(err) }
+	for stripeID, want := range map[storage.StripeID][]byte{0:[]byte("header-one"),1:[]byte("data-one")} {
+		read, err := restarted.Layer.ReadStripe(ReadStripeRequest{Context:ctx,ObjectID:id,StripeID:stripeID,ChunkSize:32})
+		if err != nil { t.Fatal(err) }
+		if read.Version != committed.Version || !bytes.Equal(read.Data,want) { t.Errorf("stripe %d = version %d data %q; want version %d data %q",stripeID,read.Version,read.Data,committed.Version,want) }
+	}
+}
+
+func TestUncommittedStripeIsIgnoredAndRemovedBeforeNextCommit(t *testing.T) {
+	ctx := context.Background()
+	ios := makeIOs(t,2)
+	created,err := New(NewRequest{IOs:ios})
+	if err != nil { t.Fatal(err) }
+	id:=testObjectID()
+	layout:=Layout{Type:LayoutMirror,NumChunks:2}
+	write := func(version storage.StripeVersion, header,data string) {
+		t.Helper()
+		_,err:=created.Layer.WriteStripes(WriteStripesRequest{Context:ctx,ObjectID:id,Stripes:[]WriteStripeRequest{
+			{ObjectID:id,StripeID:1,ChunkSize:32,Layout:layout,IOIndexes:[]int{0,1},Data:[]byte(data)},
+			{ObjectID:id,StripeID:0,ChunkSize:32,Layout:layout,IOIndexes:[]int{0,1},Data:[]byte(header)},
+		}})
+		if err!=nil { t.Fatal(err) }
+	}
+	write(1,"header-v1","data-v1")
+	// Simulate a crash after a new data stripe has reached disk but before
+	// Stripe 0 advances its watermark.
+	_,err=created.Layer.writeStripeAtVersion(WriteStripeRequest{Context:ctx,ObjectID:id,StripeID:1,ChunkSize:32,Layout:layout,IOIndexes:[]int{0,1},Data:[]byte("uncommitted")},2,false)
+	if err!=nil { t.Fatal(err) }
+	restarted,err:=New(NewRequest{IOs:ios})
+	if err!=nil { t.Fatal(err) }
+	read,err:=restarted.Layer.ReadStripe(ReadStripeRequest{Context:ctx,ObjectID:id,StripeID:1,ChunkSize:32})
+	if err!=nil { t.Fatal(err) }
+	if string(read.Data)!="data-v1" || read.Version!=1 { t.Fatalf("restored uncommitted data: version=%d data=%q",read.Version,read.Data) }
+	_,err=restarted.Layer.WriteStripes(WriteStripesRequest{Context:ctx,ObjectID:id,Stripes:[]WriteStripeRequest{
+		{ObjectID:id,StripeID:1,ChunkSize:32,Layout:layout,IOIndexes:[]int{0,1},Data:[]byte("data-v2")},
+		{ObjectID:id,StripeID:0,ChunkSize:32,Layout:layout,IOIndexes:[]int{0,1},Data:[]byte("header-v2")},
+	}})
+	if err!=nil { t.Fatal(err) }
+	final,err:=New(NewRequest{IOs:ios})
+	if err!=nil { t.Fatal(err) }
+	read,err=final.Layer.ReadStripe(ReadStripeRequest{Context:ctx,ObjectID:id,StripeID:1,ChunkSize:32})
+	if err!=nil { t.Fatal(err) }
+	if read.Version!=2 || string(read.Data)!="data-v2" { t.Fatalf("final data: version=%d data=%q",read.Version,read.Data) }
+}
+
+func TestWriteStripesRequiresStripeZero(t *testing.T) {
+	created,err:=New(NewRequest{IOs:makeIOs(t,2)})
+	if err!=nil { t.Fatal(err) }
+	_,err=created.Layer.WriteStripes(WriteStripesRequest{Context:context.Background(),ObjectID:testObjectID(),Stripes:[]WriteStripeRequest{
+		{ObjectID:testObjectID(),StripeID:4,ChunkSize:8,Layout:Layout{Type:LayoutMirror,NumChunks:2},IOIndexes:[]int{0,1},Data:[]byte("data")},
+	}})
+	if err==nil { t.Fatal("expected missing Stripe 0 error") }
+}
