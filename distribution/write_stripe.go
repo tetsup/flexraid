@@ -1,8 +1,10 @@
 package distribution
 
 import (
-	
+	"bytes"
+	"errors"
 	"fmt"
+	"os"
 	"sync/atomic"
 	"time"
 
@@ -106,10 +108,31 @@ func (d *Distribution) writeStripeAtVersion(request WriteStripeRequest, forcedVe
 		_, writeErr := d.ios[ioIndex].Write(physicalio.WriteRequest{Context: request.Context, Key: fileKey, Data: encoded, Sync: true})
 		d.recordChunkOperation("Write", writeErr)
 		if writeErr != nil {
-			savePartial()
-			err = fmt.Errorf("write chunk %d to I/O %d: %w", no, ioIndex, writeErr)
-			d.logger.Error("stripe write failed", "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "io_index", ioIndex, "chunk", no, "error", err)
-			return response, err
+			// A Write error can be ambiguous after file Sync or directory Sync.
+			// Re-sync and verify the exact immutable chunk before treating it as
+			// durable. Otherwise remove it or retain an orphan for the next commit.
+			verified := false
+			if _, syncErr := d.ios[ioIndex].Sync(physicalio.SyncRequest{Context:request.Context,Key:fileKey}); syncErr == nil {
+				if read, readErr := d.ios[ioIndex].Read(physicalio.ReadRequest{Context:request.Context,Key:fileKey}); readErr == nil {
+					total, payload, decodeErr := decodeChunk(read.Data)
+					verified = decodeErr == nil && total == uint64(len(request.Data)) && bytes.Equal(payload,chunks[no])
+				}
+			}
+			if verified {
+				d.logger.Warn("stripe chunk write response was ambiguous but the chunk was verified durable",
+					"object_id",request.ObjectID.String(),"stripe_id",request.StripeID,"io_index",ioIndex,"chunk",no,"error",writeErr)
+			} else {
+				_, deleteErr := d.ios[ioIndex].Delete(physicalio.DeleteRequest{Context:request.Context,Key:fileKey})
+				if deleteErr != nil && !errors.Is(deleteErr,os.ErrNotExist) {
+					d.mapMu.Lock()
+					d.orphans[request.ObjectID] = append(d.orphans[request.ObjectID],chunkLocation{ioIndex:ioIndex,key:fileKey,totalLength:uint64(len(request.Data)),sizeBytes:uint64(len(encoded))})
+					d.mapMu.Unlock()
+				}
+				savePartial()
+				err = fmt.Errorf("write chunk %d to I/O %d: %w", no, ioIndex, writeErr)
+				d.logger.Error("stripe write failed", "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "io_index", ioIndex, "chunk", no, "error", err)
+				return response, err
+			}
 		}
 		written[no] = chunkLocation{ioIndex: ioIndex, key: fileKey, totalLength: uint64(len(request.Data)), sizeBytes: uint64(len(encoded)), readers: &atomic.Int64{}}
 	}

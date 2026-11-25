@@ -52,8 +52,18 @@ func (d *Distribution) WriteStripes(request WriteStripesRequest) (response Write
 		// Failed attempts may have left incomplete immutable files. Publish
 		// cleanup hints only after the transaction has stopped writing them.
 		d.mapMu.Lock()
+		refreshed := make(map[storage.StripeID]struct{})
 		for key := range d.versions {
-			if key.objectID == request.ObjectID { d.refreshStripeCleanupQueueLocked(key) }
+			if key.objectID == request.ObjectID {
+				d.refreshStripeCleanupQueueLocked(key)
+				refreshed[key.stripeID] = struct{}{}
+			}
+		}
+		for _, location := range d.orphans[request.ObjectID] {
+			if _, ok := refreshed[location.key.StripeID]; !ok {
+				d.refreshStripeCleanupQueueLocked(stripeIDKey{objectID:request.ObjectID,stripeID:location.key.StripeID})
+				refreshed[location.key.StripeID] = struct{}{}
+			}
 		}
 		d.mapMu.Unlock()
 	}()
