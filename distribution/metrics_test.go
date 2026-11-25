@@ -218,7 +218,7 @@ func TestGetMetricsReportsCleanupInventoryAndCapacityEstimate(t *testing.T) {
 		if candidate.Method != CleanupMethodDeleteOldVersion || candidate.DriveIndex != index {
 			t.Errorf("candidate[%d] = %+v", index, candidate)
 		}
-		if candidate.FileCount != 2 || candidate.FileBytes == 0 || candidate.ReclaimableBytes != candidate.FileBytes {
+		if candidate.FileCount != 4 || candidate.FileBytes == 0 || candidate.ReclaimableBytes != candidate.FileBytes {
 			t.Errorf("candidate[%d] size/count = %+v", index, candidate)
 		}
 	}
