@@ -7,7 +7,7 @@ import (
 )
 
 type objectCommitLock struct {
-	mu sync.RWMutex
+	mu   sync.RWMutex
 	refs uint32
 }
 

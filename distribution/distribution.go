@@ -92,10 +92,10 @@ func New(request NewRequest) (NewResponse, error) {
 		seen[layer] = struct{}{}
 	}
 	d := &Distribution{ios: append([]*physicalio.IO(nil), request.IOs...), logger: logger,
-		objects:  make(map[shared.ObjectID]map[storage.StripeID]*stripeInfo),
+		objects:           make(map[shared.ObjectID]map[storage.StripeID]*stripeInfo),
 		objectCommitLocks: make(map[shared.ObjectID]*objectCommitLock),
-		versions: make(map[stripeIDKey]map[storage.StripeVersion]*versionInfo),
-		metrics:  newMetricsCollector(), orphans: make(map[shared.ObjectID][]chunkLocation), cleanupQueue: newCleanupQueue(), cleanupPermissionStore: request.CleanupPermissions, cleanupWake: make(chan struct{}, 1)}
+		versions:          make(map[stripeIDKey]map[storage.StripeVersion]*versionInfo),
+		metrics:           newMetricsCollector(), orphans: make(map[shared.ObjectID][]chunkLocation), cleanupQueue: newCleanupQueue(), cleanupPermissionStore: request.CleanupPermissions, cleanupWake: make(chan struct{}, 1)}
 	if d.cleanupPermissionStore == nil {
 		d.cleanupPermissionStore = shared.NewCleanupPermissionStore(make([]shared.DriveCleanupPermission, len(request.IOs)))
 	}
@@ -172,7 +172,10 @@ func New(request NewRequest) (NewResponse, error) {
 	for key, versions := range d.versions {
 		for versionNo, version := range versions {
 			if version.invalid {
-				for no, location := range version.chunks { location.data = nil; version.chunks[no] = location }
+				for no, location := range version.chunks {
+					location.data = nil
+					version.chunks[no] = location
+				}
 				continue
 			}
 			chunks := make([]chunkDataWithInfo, 0, len(version.chunks))
@@ -180,10 +183,18 @@ func New(request NewRequest) (NewResponse, error) {
 				chunks = append(chunks, chunkDataWithInfo{stripeKey: stripeKeyInfo{objectID: key.objectID, stripeID: key.stripeID, stripeVersion: versionNo}, distributionMethod: version.method, chunkNo: no, data: location.data, totalLength: location.totalLength})
 			}
 			_, restoreErr := restoreStripe(chunks)
-			for no, location := range version.chunks { location.data = nil; version.chunks[no] = location }
-			if restoreErr != nil { d.recordIntegrityError(); continue }
+			for no, location := range version.chunks {
+				location.data = nil
+				version.chunks[no] = location
+			}
+			if restoreErr != nil {
+				d.recordIntegrityError()
+				continue
+			}
 			version.recoverable = true
-			if len(version.chunks) < len(expectedChunkNos(version.method)) { d.recordIntegrityError() }
+			if len(version.chunks) < len(expectedChunkNos(version.method)) {
+				d.recordIntegrityError()
+			}
 		}
 	}
 
@@ -193,22 +204,35 @@ func New(request NewRequest) (NewResponse, error) {
 	for objectID, stripes := range d.versions {
 		if versions := stripes[0]; versions != nil {
 			for versionNo, version := range versions {
-				if version.recoverable && versionNo > watermarks[objectID] { watermarks[objectID] = versionNo }
+				if version.recoverable && versionNo > watermarks[objectID] {
+					watermarks[objectID] = versionNo
+				}
 			}
 		}
 	}
 	for key, versions := range d.versions {
 		watermark, exists := watermarks[key.objectID]
-		if !exists { continue }
+		if !exists {
+			continue
+		}
 		var selected storage.StripeVersion
 		var selectedInfo *versionInfo
 		for versionNo, version := range versions {
-			if versionNo > watermark || !version.recoverable { continue }
-			if selectedInfo == nil || versionNo > selected { selected, selectedInfo = versionNo, version }
+			if versionNo > watermark || !version.recoverable {
+				continue
+			}
+			if selectedInfo == nil || versionNo > selected {
+				selected, selectedInfo = versionNo, version
+			}
 		}
-		if selectedInfo == nil { continue }
+		if selectedInfo == nil {
+			continue
+		}
 		stripes := d.objects[key.objectID]
-		if stripes == nil { stripes = make(map[storage.StripeID]*stripeInfo); d.objects[key.objectID] = stripes }
+		if stripes == nil {
+			stripes = make(map[storage.StripeID]*stripeInfo)
+			d.objects[key.objectID] = stripes
+		}
 		stripes[key.stripeID] = &stripeInfo{version: selected, method: selectedInfo.method, chunkSize: selectedInfo.chunkSize, chunks: cloneChunks(selectedInfo.chunks)}
 		d.mapMu.Lock()
 		d.refreshStripeCleanupQueueLocked(key)

@@ -112,20 +112,20 @@ func (d *Distribution) writeStripeAtVersion(request WriteStripeRequest, forcedVe
 			// Re-sync and verify the exact immutable chunk before treating it as
 			// durable. Otherwise remove it or retain an orphan for the next commit.
 			verified := false
-			if _, syncErr := d.ios[ioIndex].Sync(physicalio.SyncRequest{Context:request.Context,Key:fileKey}); syncErr == nil {
-				if read, readErr := d.ios[ioIndex].Read(physicalio.ReadRequest{Context:request.Context,Key:fileKey}); readErr == nil {
+			if _, syncErr := d.ios[ioIndex].Sync(physicalio.SyncRequest{Context: request.Context, Key: fileKey}); syncErr == nil {
+				if read, readErr := d.ios[ioIndex].Read(physicalio.ReadRequest{Context: request.Context, Key: fileKey}); readErr == nil {
 					total, payload, decodeErr := decodeChunk(read.Data)
-					verified = decodeErr == nil && total == uint64(len(request.Data)) && bytes.Equal(payload,chunks[no])
+					verified = decodeErr == nil && total == uint64(len(request.Data)) && bytes.Equal(payload, chunks[no])
 				}
 			}
 			if verified {
 				d.logger.Warn("stripe chunk write response was ambiguous but the chunk was verified durable",
-					"object_id",request.ObjectID.String(),"stripe_id",request.StripeID,"io_index",ioIndex,"chunk",no,"error",writeErr)
+					"object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "io_index", ioIndex, "chunk", no, "error", writeErr)
 			} else {
-				_, deleteErr := d.ios[ioIndex].Delete(physicalio.DeleteRequest{Context:request.Context,Key:fileKey})
-				if deleteErr != nil && !errors.Is(deleteErr,os.ErrNotExist) {
+				_, deleteErr := d.ios[ioIndex].Delete(physicalio.DeleteRequest{Context: request.Context, Key: fileKey})
+				if deleteErr != nil && !errors.Is(deleteErr, os.ErrNotExist) {
 					d.mapMu.Lock()
-					d.orphans[request.ObjectID] = append(d.orphans[request.ObjectID],chunkLocation{ioIndex:ioIndex,key:fileKey,totalLength:uint64(len(request.Data)),sizeBytes:uint64(len(encoded))})
+					d.orphans[request.ObjectID] = append(d.orphans[request.ObjectID], chunkLocation{ioIndex: ioIndex, key: fileKey, totalLength: uint64(len(request.Data)), sizeBytes: uint64(len(encoded))})
 					d.mapMu.Unlock()
 				}
 				savePartial()
@@ -144,7 +144,7 @@ func (d *Distribution) writeStripeAtVersion(request WriteStripeRequest, forcedVe
 		d.versions[key] = versions
 	}
 	versions[version] = &versionInfo{method: method, chunkSize: request.ChunkSize, chunks: cloneChunks(written), recoverable: true}
-if publish {
+	if publish {
 		stripes := d.objects[request.ObjectID]
 		if stripes == nil {
 			stripes = make(map[storage.StripeID]*stripeInfo)
