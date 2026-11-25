@@ -147,8 +147,8 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - 各ストレージ設定は FlexRAID の I/O root、物理ファイルシステムの mountpoint、WWN の3項目を必須とする。設定読み込み後、物理ストレージディレクトリの作成や Distribution の初期化など副作用を伴う処理より前に、重複・欠落を検証し I/O の公開 API で WWN を解決する。
 - I/O の WWN 解決は Linux の `/dev/disk/by-id/wwn-*` を基準とし、パーティションではなく物理ブロックデバイスを対象とする。別識別子へのフォールバックは禁止する。
 - Management は設定済み WWN のみを指定できる `SpinUp` / `SpinDown` API を提供し、実際の OS 固有デバイス操作は I/O の公開 API に委譲する。電源制御の判断・スケジューリングは Management に属し、今回の API 実装自体は自動制御を開始しない。
-- Management は `pkg/shared` の `CleanupPermissionStore` を唯一の共有状態として所有し、各 Drive の `DeleteAllowed` と `PreserveAllowed` を独立して管理する。初期値は設定ファイルから受け取り、公開 API で実行中に変更する。Management だけが Store を更新し、Orchestration と Distribution は同じ Store の Snapshot を読み取る。許可更新は Management のファイル操作実行ロックを待たずに反映し、論理削除 Object の現在処理中の ObjectID には影響せず、次の ObjectID の開始時から適用する。
-- Management は共有 Store を更新する。Distribution は自律 Cleanup の各物理ファイル開始時に Snapshot を参照する。Orchestration は ObjectID の選択時に Snapshot を参照し、Distribution は各 ObjectID の処理開始時に改めて Snapshot を取得して必要な全 Drive が許可されていることを確認する。ObjectID の処理開始後は、その Snapshot に基づいて完了まで進める。
+- Management は `pkg/shared` の `CleanupPermissionStore` を唯一の共有状態として所有し、各 Drive の `DeleteAllowed` と `PreserveAllowed` を独立して管理する。初期値は設定ファイルから受け取り、公開 API で実行中に変更する。Management だけが Store を更新し、Orchestration と Distribution は同じ Store の Snapshot を読み取る。許可更新は Object ロックグループの取得を待たずに反映し、論理削除 Object の現在処理中の ObjectID には影響せず、次の ObjectID の開始時から適用する。
+- Management は共有 Store を更新する。Distribution は自律 Cleanup の各物理ファイル開始時に Snapshot を参照する。Orchestration は ObjectID の選択時に Snapshot を参照し、Distribution は各 ObjectID の処理開始時に改めて Snapshot を取得して必要な全 Drive が許可されていることを確認する。ObjectID の処理開始後は、その Snapshot に基づいて完了まで進める。Cleanup worker が論理 Object / Namespace の状態を参照・変更する場合は Orchestration の Object ロックグループを取得する。
 - 設定ファイルの各 disk は `cleanup_delete_allowed` / `cleanup_preserve_allowed` を任意指定でき、省略時は両方 false とする。実行中の変更は Management API を通す。外部コマンドから API を呼ぶ IPC / control socket は Management の公開境界として実装し、CLI が下位レイヤーや内部 map を直接操作しない。
 - Object の論理削除状態と削除待ちキューは Orchestration が所有する。削除待ちキューは Deleted Header から再構築可能なメモリ上の候補索引であり、永続化したり Management / Distribution に複製したりしない。Management はドライブ単位の許可情報を Orchestration に渡す。Orchestration は許可ドライブと Header / Namespace の状態から、削除可能な ObjectID をすべて特定し、一括削除要求として Distribution に渡す。Management は ObjectID や StripeID を選択せず、個別 Object の削除をスケジュールしない。
 
@@ -172,7 +172,7 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - 論理ストライプ単位で読み書きする。論理ファイル offset、ファイルサイズ、Namespace、Header の形式を扱わない。
 - `WriteStripes` は一つの Object に対する更新対象 Stripe の集合を受け取り、各 Stripe の Layout / ChunkSize / I/O 配置方針に従ってチャンクへ分割し、必要な冗長データを生成して永続化する。ファイル内 offset の分割や既存ストライプとのマージは行わない。要求には Stripe 0 を必ず含め、単独 Stripe の永続化 API は公開しない。
 - ストライプのバージョン・チャンク・物理配置情報を管理し、起動時に I/O の全件列挙結果からメモリ上へ再構築する。永続インデックスを別途持たない。
-- Distribution の WriteStripes は ObjectID ごとの commit gate を排他的に取得し、Stripe 0 の最新 recoverable Version を watermark として Version を一度だけ採番する。watermark より大きい既知の物理残骸を除去できなければ commit を開始しない。全データ Stripe の Chunk を同一 Version で永続化した後、Stripe 0 を最後に永続化する。Stripe 0 が recoverable になった時点で commit とし、更新対象 Stripe の選択済み Version をまとめて公開する。
+- Distribution の WriteStripes は Distribution 内部の ObjectID ごとの commit gate を排他的に取得し、Stripe 0 の最新 recoverable Version を watermark として Version を一度だけ採番する。この gate は複数 Stripe の物理 commit を保護する Distribution 内部の同期機構であり、Orchestration が所有する論理 Object ロックグループとは別物とする。watermark より大きい既知の物理残骸を除去できなければ commit を開始しない。全データ Stripe の Chunk を同一 Version で永続化した後、Stripe 0 を最後に永続化する。Stripe 0 が recoverable になった時点で commit とし、更新対象 Stripe の選択済み Version をまとめて公開する。
 - 書き込み途中で失敗した場合、その Version の書き込み済みチャンクは物理的に残り得るが、実行中の Distribution では recoverable ではない候補として扱い、現在選択中の有効 Version を切り替えない。失敗した部分書き込みを成功として返したり、既存 Version を削除したりしない。
 - Version は物理的には Stripe 単位で保存するが、有効性の上限は Stripe 0 の Version watermark で決まる。Stripe 0 自身は最新の recoverable Version を watermark とし、各データ Stripe は watermark 以下で最大の recoverable Version を有効とする。異なるデータ Stripe の有効 Version が異なることは許容する。
 - 起動時は物理チャンクを ObjectID / StripeID / Version ごとに集約し、形式・識別子・重複チャンクなどを検証する。不正な候補 Version は復旧候補から除外する。まず Stripe 0 の候補を検証し、最新の recoverable Version を File の watermark として確定する。その後、各データ Stripe は watermark 以下の候補だけを検証対象とし、その中で最大の recoverable Version を有効とする。watermark より大きい Version は、復元可能であっても未コミットの異常 Version であり、有効化しない。
@@ -195,7 +195,7 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - Distribution の map は物理状態の索引であり、論理ファイルの Stripe payload cache ではない。通常の索引には FileKey / Version / Chunk / 配置 / 長さ等のメタデータを保持し、全 Chunk payload を常時保持しない。物理読み込み時の payload は Stripe 単位のローカルバッファで復元し、呼び出し元へ返した後に Distribution が不要な payload を保持し続けない。
 - Distribution の Stripe ロックは、選択中 Version の確定、物理 Chunk の読み込み・復元、Version の書き込み・公開など、同一 Stripe の物理状態を扱う期間を保護する。異なる ObjectID + StripeID の処理は、共有 map ロックやデバイス側の制約がない限り並行可能とする。
 - Foreground の Read / Write / Recovery は Stripe 0 watermark を基準にする。ReadStripe は Distribution が選択済みの最新 recoverable Version を返し、Distribution 自身がその Version を watermark 以下に制限する。WriteStripes は全更新 Stripe を同一 Version で保存し、Stripe 0 の commit 完了前に選択済み Version 索引を変更しない。commit 成功後、Distribution は Object 内の各 Stripe の選択済み Version を watermark 以下の最大 recoverable Version に揃える。読み込みで選択中 Version が復元不能と判明した場合は、同じ watermark 以下のより古い recoverable Version へ再選択する。途中失敗時は従来の watermark と有効 Version 選択を維持する。
-- Distribution は ObjectID ごとの RW commit gate を所有する。WriteStripes、DeleteObject、Stripe Cleanup は排他取得し、ReadStripe は共有取得する。Orchestration の Stripe 0 lock は論理 Read / Write の直列化、Distribution の Object commit gate は複数 Stripe の物理 commit と Cleanup の競合防止を担う。両者は役割が異なり、Write は Orchestration lock → Distribution gate の順に取得する。Cleanup は Distribution gate を排他取得して ReadStripe / WriteStripes と直列化し、対象 FileKey を再検証してから物理 I/O を行う。map RWMutex や候補 queue mutex は物理 I/O 中に保持しない。
+- Distribution は ObjectID ごとの RW commit gate を所有する。WriteStripes、DeleteObject、Stripe Cleanup は排他取得し、ReadStripe は共有取得する。この gate は複数 Stripe の物理 commit と Cleanup の競合防止を担い、Orchestration の Object ロックグループとは別の内部同期機構とする。Write は Orchestration の Object ロックグループを取得した後に Distribution gate を取得する。Distribution から Orchestration の Object ロックグループを取得する逆方向の依存を作らない。Cleanup は Distribution gate を排他取得して ReadStripe / WriteStripes と直列化し、対象 FileKey を再検証してから物理 I/O を行う。map RWMutex や候補 queue mutex は物理 I/O 中に保持しない。
 - Background Cleanup は Foreground の論理 Stripe lock を使用しないが、Object commit gate を使用する。gate を取得して watermark と削除対象を再検証し、対象候補が watermark 以下へ昇格しないことを確定してから物理 I/O を行う。物理 I/O 中は map RWMutex / queue mutex を保持しない。削除後の map / queue 反映は各 Mutex で保護する。
 
 - Cleanup には、Distribution が自律実行する不要 Version 等の物理 Cleanup と、Orchestration が対象 ObjectID を選択する論理削除 Object の物理 Cleanup の2種類がある。候補の所有者・実行制御・削除順序を混同しない。不要 Version 等は Distribution のバックグラウンドループが Stripe 単位で選択・処理する。論理削除 Object は Orchestration が削除可能な ObjectID を一括選択し、Distribution に ObjectID 単位で削除を依頼する。Management は両方に Drive 単位の許可情報を与えるだけで、ObjectID / StripeID / Chunk の選択や個別削除の dispatch を行わない。
@@ -292,12 +292,12 @@ Distribution -> I/O
 ### Distribution の内部 Stripe ロック
 
 - Distribution は Management とは独立して、Distribution 内部の同時実行制約を管理する。Management の実行単位・共通ロックとは概念も粒度も異なり、相互に統合・共有しない。自律 Cleanup は Management の WorkItem / MaintenanceExecutor を待たず、Management が設定した Drive 単位の許可レベルに従って Distribution 内部で進行する。
-- Distribution は同一 ObjectID + StripeID を Foreground Read / Write / Recovery の最小排他単位とする Stripe ロックを所有する。自律 Cleanup はそのロックを使用せず、Foreground と独立して動作する。Management の実行ロックとは独立しており、Management の WorkItem 境界を Distribution の Atomic に流用しない。
+- Distribution は同一 ObjectID + StripeID を Foreground Read / Write / Recovery の最小排他単位とする Stripe ロックを所有する。自律 Cleanup はそのロックを使用せず、Foreground と独立して動作する。Orchestration の Object ロックグループとは独立した物理層の同期機構であり、相互のロックを直接操作しない。
 - 自律 Cleanup の許可は Drive 単位、物理削除対象は Chunk / FileKey 単位で選択する。Cleanup 対象は最新有効 Version 以外の不変 FileKey に限るため、Foreground の有効データのキャッシュ化・Read / Write・Stripe ロックに関与しない。
 - 最新 Version の欠損が確認された Stripe と保護対象は Cleanup しない。最新 Version が復元可能であることを含め、削除候補の安全性を Distribution が判断する。
 - 削除候補は実行時に map Mutex の保護下で最新有効 Version と照合し、無効な FileKey であることを再検証する。物理 I/O はすべての Distribution 状態ロックを解放してから実行する。
-- 論理削除 Object の削除では Orchestration が削除可能な ObjectID を選び、Distribution が ObjectID 単位で物理削除する。Distribution は ObjectID の処理中に Management の実行ロックや Foreground の Stripe ロックを取得しない。ObjectID の削除完了後に Orchestration が論理 Object のメモリ状態を確定する。
-- Distribution の Stripe ロック取得中に Management の実行ロックを要求する逆方向の依存を作らない。Management は Distribution の内部ロックを直接操作しない。
+- 論理削除 Object の削除では Orchestration が Object ロックグループの保護下で削除可能な ObjectID を選び、Distribution が ObjectID 単位で物理削除する。Distribution は ObjectID の処理中に Orchestration の Object ロックグループを取得しない。ObjectID の削除完了後に Orchestration が論理 Object のメモリ状態を確定する。
+- Distribution の commit gate / Stripe ロック取得中に Orchestration の Object ロックグループを要求する逆方向の依存を作らない。Orchestration / Management は Distribution の内部ロックを直接操作しない。
 - I/O は物理ファイル操作を実行する。上位層の Object / Stripe の意味に基づくロックを持たず、必要性が実証された物理ファイル単位の排他だけを内部実装として持つ。
 
 ## 8. ログ
