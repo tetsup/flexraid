@@ -217,7 +217,7 @@ func (d *Distribution) repairStripe(request ReadStripeRequest, info *stripeInfo,
 			_, err := d.ios[index].Write(physicalio.WriteRequest{Context: request.Context, Key: fileKey, Data: encodeChunk(uint64(len(data)), payload)})
 			d.recordChunkOperation("Write", err)
 			if err == nil {
-				location := chunkLocation{ioIndex: index, key: fileKey, totalLength: uint64(len(data))}
+				location := chunkLocation{ioIndex: index, key: fileKey, totalLength: uint64(len(data)), readers: &atomic.Int64{}}
 				d.mapMu.Lock()
 				info.chunks[no] = location
 				stripeKey := stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}
