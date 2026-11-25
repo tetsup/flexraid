@@ -53,7 +53,7 @@ func (d *Distribution) DeleteObject(request DeleteObjectRequest) (response Delet
 	}
 
 	permissions := d.cleanupPermissionStore.Snapshot()
-	d.mapMu.Lock()
+	d.mapMu.RLock()
 	locations := make(map[objectDeleteFileKey]objectDeleteLocation)
 	currentKeys := make(map[objectDeleteFileKey]struct{})
 	for _, stripe := range d.objects[request.ObjectID] {
