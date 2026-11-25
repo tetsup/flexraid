@@ -238,7 +238,7 @@ func (layer *Orchestration) updateHeaderStripeLocked(ctx context.Context, file *
 	return nil
 }
 
-// persistDirtyStripesLocked persists the dirty cache entries in StripeID order.
+// persistDirtyStripesLocked commits all dirty cache entries as one Object transaction.
 func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file *runtimeFile, syncToDisk ...bool) (uint32, error) {
 	_ = syncToDisk // durability is required before advancing the Object watermark
 	work := append([]stripeRange(nil), file.zeroStripeRanges...)
