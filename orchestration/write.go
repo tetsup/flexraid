@@ -184,9 +184,6 @@ func (layer *Orchestration) writeLocked(request WriteRequest) (response WriteRes
 		if _, err = layer.persistDirtyStripesLocked(ctx, staged, true); err != nil {
 			return response, err
 		}
-		if _, err = layer.distribution.SyncObject(distribution.SyncObjectRequest{Context: ctx, ObjectID: file.objectID}); err != nil {
-			return response, fmt.Errorf("sync object %s: %w", file.objectID.String(), err)
-		}
 	}
 	file.header = staged.header
 	file.stripeCache = staged.stripeCache
@@ -375,17 +372,14 @@ func (layer *Orchestration) readLogicalRangeLocked(
 	return result, nil
 }
 
+// cloneStripeCache copies the map while sharing immutable entry payloads.
+// Callers that modify an existing entry must go through loadStripeForWriteLocked,
+// which copies that one stripe before returning it. This keeps staging cost
+// proportional to the number of pending dirty stripes, not their total bytes.
 func cloneStripeCache(source map[uint64]*stripeCacheEntry) map[uint64]*stripeCacheEntry {
 	clone := make(map[uint64]*stripeCacheEntry, len(source))
 	for id, entry := range source {
-		if entry == nil {
-			clone[id] = nil
-			continue
-		}
-		clone[id] = &stripeCacheEntry{
-			data:  append([]byte(nil), entry.data...),
-			state: entry.state,
-		}
+		clone[id] = entry
 	}
 	return clone
 }

@@ -238,9 +238,9 @@ func (layer *Orchestration) updateHeaderStripeLocked(ctx context.Context, file *
 	return nil
 }
 
-// persistDirtyStripesLocked persists the dirty cache entries in StripeID order.
+// persistDirtyStripesLocked commits all dirty cache entries as one Object transaction.
 func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file *runtimeFile, syncToDisk ...bool) (uint32, error) {
-	sync := len(syncToDisk) > 0 && syncToDisk[0]
+	_ = syncToDisk // durability is required before advancing the Object watermark
 	work := append([]stripeRange(nil), file.zeroStripeRanges...)
 	for id, entry := range file.stripeCache {
 		if entry != nil && entry.state == stripeCacheDirty {
@@ -251,6 +251,8 @@ func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file 
 		return 0, nil
 	}
 	sort.Slice(work, func(i, j int) bool { return work[i].start < work[j].start })
+	var persisted uint32
+	var zeroData []byte
 	merged := make([]stripeRange, 0, len(work))
 	for _, item := range work {
 		if len(merged) == 0 {
@@ -267,77 +269,60 @@ func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file 
 		merged = append(merged, item)
 	}
 
-	// Build one Object commit. Distribution writes data Stripes first and
-	// Stripe 0 last, publishing the cache only after the watermark is durable.
-	type pendingStripe struct {
-		id    storage.StripeID
-		entry *stripeCacheEntry
-		zero  bool
-	}
-	pending := make([]pendingStripe, 0)
-	stripes := make([]distribution.WriteStripeData, 0)
-	for _, stripeRange := range merged {
-		for id := stripeRange.start; ; id++ {
-			if err := ctx.Err(); err != nil {
-				return persisted, err
-			}
+	// Build one Object commit. Distribution writes every data stripe first
+	// and Stripe 0 last, so no subset can become visible after a crash.
+	var requests []distribution.WriteStripeRequest
+	for _, item := range merged {
+		for id := item.start; ; id++ {
+			if err := ctx.Err(); err != nil { return persisted, err }
 			entry := file.stripeCache[id]
 			isZero := containsStripeRange(file.zeroStripeRanges, id)
-			if (entry == nil || entry.state != stripeCacheDirty) && !isZero {
-				if id == stripeRange.end {
-					break
+			geometry, err := geometryFor(file.header, storage.StripeID(id))
+			if err != nil { return persisted, err }
+			data := []byte(nil)
+			if entry != nil && entry.state == stripeCacheDirty {
+				data = entry.data
+			} else if isZero {
+				if zeroData == nil || uint64(len(zeroData)) != geometry.Capacity {
+					zeroData = make([]byte, int(geometry.Capacity))
 				}
+				data = zeroData
+			} else {
+				if id == item.end { break }
 				continue
 			}
-			geometry, err := geometryFor(file.header, storage.StripeID(id))
-			if err != nil {
-				return persisted, err
-			}
 			required := int(geometry.Layout.NumChunks)
-			if geometry.Layout.Type == distribution.LayoutParity {
-				required++
-			}
+			if geometry.Layout.Type == distribution.LayoutParity { required++ }
 			placement, placementErr := layer.distribution.StripeIOIndexes(distribution.StripeIOIndexesRequest{ObjectID: file.objectID, StripeID: storage.StripeID(id)})
 			indexes := placement.IOIndexes
 			if placementErr != nil || len(indexes) != required {
-				capacity, capacityErr := layer.distribution.GetCapacity(distribution.CapacityRequest{Context: ctx})
-				if capacityErr != nil {
-					return persisted, fmt.Errorf("read I/O capacities for stripe %d: %w", id, capacityErr)
-				}
+				capacity, capacityErr := layer.distribution.GetCapacity(distribution.CapacityRequest{})
+				if capacityErr != nil { return persisted, fmt.Errorf("read I/O capacities for stripe %d: %w", id, capacityErr) }
 				indexes, err = selectIOIndexes(capacity.Capacities, required)
-				if err != nil {
-					return persisted, fmt.Errorf("select I/O devices for stripe %d: %w", id, err)
-				}
+				if err != nil { return persisted, fmt.Errorf("select I/O devices for stripe %d: %w", id, err) }
 			}
-			item := distribution.WriteStripeData{StripeID: storage.StripeID(id), ChunkSize: geometry.ChunkSize, Layout: geometry.Layout, IOIndexes: indexes}
-			if entry != nil && entry.state == stripeCacheDirty {
-				item.Data = entry.data
-			} else {
-				item.ZeroSize = geometry.Capacity
-			}
-			stripes = append(stripes, item)
-			pending = append(pending, pendingStripe{id: storage.StripeID(id), entry: entry, zero: isZero})
-			if id == stripeRange.end {
-				break
-			}
+			requests = append(requests, distribution.WriteStripeRequest{
+				Context: ctx, ObjectID: file.objectID, StripeID: storage.StripeID(id),
+				ChunkSize: geometry.ChunkSize, Layout: geometry.Layout,
+				IOIndexes: indexes, Data: data,
+			})
+			persisted++
+			if id == item.end { break }
 		}
 	}
-	if len(stripes) == 0 {
-		return 0, nil
+	if len(requests) == 0 { return 0, nil }
+	if _, err := layer.distribution.WriteStripes(distribution.WriteStripesRequest{
+		Context: ctx, ObjectID: file.objectID, Stripes: requests,
+	}); err != nil {
+		return 0, fmt.Errorf("persist Object %s: %w", file.objectID.String(), err)
 	}
-	result, err := layer.distribution.WriteStripes(distribution.WriteStripesRequest{Context: ctx, ObjectID: file.objectID, Stripes: stripes, Sync: sync})
-	if err != nil {
-		return 0, fmt.Errorf("commit Object %s stripes: %w", file.objectID.String(), err)
+	// Cache state is committed only after Distribution confirms the complete
+	// Object transaction. On failure, every dirty payload remains available.
+	for _, request := range requests {
+		id := uint64(request.StripeID)
+		delete(file.stripeCache, id)
+		file.zeroStripeRanges = removeStripeFromRanges(file.zeroStripeRanges, id)
 	}
-	for _, item := range pending {
-		if item.entry != nil {
-			item.entry.state = stripeCacheClean
-		}
-		if item.zero {
-			file.zeroStripeRanges = removeStripeFromRanges(file.zeroStripeRanges, uint64(item.id))
-		}
-	}
-	persisted = result.PersistedStripes
 	return persisted, nil
 }
 

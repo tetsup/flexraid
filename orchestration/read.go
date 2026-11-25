@@ -116,28 +116,17 @@ func (layer *Orchestration) readLocked(request ReadRequest) (response ReadRespon
 }
 
 func (layer *Orchestration) getStripeData(ctx context.Context, file *runtimeFile, geometry stripeGeometry) ([]byte, error) {
-	stripeID := geometry.StripeID
-	key := uint64(stripeID)
-	entry := file.stripeCache[key]
-	if entry != nil {
-		data := append([]byte(nil), entry.data...)
-		return data, nil
-	}
-	if file.stripeCache == nil {
-		file.stripeCache = make(map[uint64]*stripeCacheEntry)
-	}
-	if entry = file.stripeCache[key]; entry != nil {
-		return append([]byte(nil), entry.data...), nil
+	key := uint64(geometry.StripeID)
+	if entry := file.stripeCache[key]; entry != nil {
+		// Dirty stripes must remain available until persistence succeeds.
+		// The caller only reads this slice; write paths clone it before mutation.
+		return entry.data, nil
 	}
 	if containsStripeRange(file.zeroStripeRanges, key) {
 		return make([]byte, int(geometry.Capacity)), nil
 	}
 
-	data, err := layer.readStripeValidated(ctx, file.objectID, file.header, geometry)
-	if err != nil {
-		return nil, err
-	}
-	entry = &stripeCacheEntry{data: append([]byte(nil), data...), state: stripeCacheClean}
-	file.stripeCache[key] = entry
-	return append([]byte(nil), entry.data...), nil
+	// Clean data is deliberately not retained. Reads acquire only the stripes
+	// they need, and the next read reloads a clean stripe from Distribution.
+	return layer.readStripeValidated(ctx, file.objectID, file.header, geometry)
 }
