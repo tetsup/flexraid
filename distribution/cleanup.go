@@ -140,7 +140,38 @@ func (d *Distribution) Cleanup(request CleanupRequest) (response CleanupResponse
 }
 
 func (d *Distribution) reselectStripeLocked(key stripeIDKey) {
-	d.reselectObjectStripesLocked(key.objectID)
+	if key.stripeID == 0 {
+		d.reselectObjectStripesLocked(key.objectID)
+		return
+	}
+	stripes := d.objects[key.objectID]
+	if stripes == nil || stripes[0] == nil {
+		if stripes != nil {
+			delete(stripes, key.stripeID)
+			if len(stripes) == 0 { delete(d.objects, key.objectID) }
+		}
+		return
+	}
+	watermark := stripes[0].version
+	versions := d.versions[key]
+	current := stripes[key.stripeID]
+	if current != nil && current.version <= watermark {
+		if selected := versions[current.version]; selected != nil && selected.recoverable {
+			return
+		}
+	}
+	var latest storage.StripeVersion
+	var selected *versionInfo
+	for versionNo, candidate := range versions {
+		if versionNo > watermark || !candidate.recoverable { continue }
+		if selected == nil || versionNo > latest { latest, selected = versionNo, candidate }
+	}
+	if selected == nil {
+		delete(stripes, key.stripeID)
+	} else {
+		stripes[key.stripeID] = &stripeInfo{version:latest,method:selected.method,chunkSize:selected.chunkSize,chunks:cloneChunks(selected.chunks)}
+	}
+	d.refreshStripeCleanupQueueLocked(key)
 }
 
 // reselectObjectStripesLocked rebuilds all selected Stripe versions from one

@@ -182,8 +182,7 @@ func (d *Distribution) markStripeUnrecoverable(key stripeIDKey, versionNo storag
 			version.recoverable = false
 		}
 	}
-	d.reselectObjectStripesLocked(key.objectID)
-	d.refreshStripeCleanupQueueLocked(key)
+	d.reselectStripeLocked(key)
 }
 
 func (d *Distribution) repairStripe(request ReadStripeRequest, info *stripeInfo, missing []chunkNo, data []byte) {
