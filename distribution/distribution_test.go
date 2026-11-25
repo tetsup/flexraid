@@ -264,7 +264,6 @@ func TestCleanupStripeDriveSkipsChunkPinnedByRead(t *testing.T) {
 		t.Fatal("chunk has no active-read counter")
 	}
 	location.readers.Add(1)
-	defer location.readers.Add(-1)
 
 	candidate := cleanupCandidateKey{
 		ioIndex: location.ioIndex, objectID: testObjectID(), stripeID: 21,
