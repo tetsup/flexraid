@@ -27,6 +27,8 @@ type ListStripeInfosResponse struct {
 
 // ListStripeInfos returns metadata for every stripe with a selected recoverable version.
 func (d *Distribution) ListStripeInfos(request ListStripeInfosRequest) (response ListStripeInfosResponse, err error) {
+	unlock := d.lockObjectRead(request.ObjectID)
+	defer unlock()
 	started := time.Now()
 	defer func() {
 		logOperation(d, "ListStripeInfos", started, err, "object_id", request.ObjectID.String(), "stripes", len(response.Stripes))
@@ -37,30 +39,23 @@ func (d *Distribution) ListStripeInfos(request ListStripeInfosRequest) (response
 	if err = request.Context.Err(); err != nil {
 		return response, err
 	}
-	d.mapMu.Lock()
+	d.mapMu.RLock()
 	ids := make([]storage.StripeID, 0, len(d.objects[request.ObjectID]))
 	for id := range d.objects[request.ObjectID] {
 		ids = append(ids, id)
 	}
-	d.mapMu.Unlock()
+	d.mapMu.RUnlock()
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	for _, id := range ids {
 		if err = request.Context.Err(); err != nil {
 			return ListStripeInfosResponse{}, err
 		}
-		key := stripeIDKey{objectID: request.ObjectID, stripeID: id}
-		unlockStripe, unlockMap := d.lockStripe(key)
-		if err = d.cacheStripeLocked(request.Context, key); err != nil {
-			unlockMap()
-			unlockStripe()
-			return ListStripeInfosResponse{}, err
-		}
+		d.mapMu.RLock()
 		info := d.objects[request.ObjectID][id]
 		if info != nil {
 			response.Stripes = append(response.Stripes, StripeInfo{StripeID: id, Version: info.version, Layout: info.method.layout(), ChunkSize: info.chunkSize})
 		}
-		unlockMap()
-		unlockStripe()
+		d.mapMu.RUnlock()
 	}
 	sort.Slice(response.Stripes, func(i, j int) bool {
 		return response.Stripes[i].StripeID < response.Stripes[j].StripeID

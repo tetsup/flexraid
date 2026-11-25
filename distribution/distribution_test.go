@@ -32,7 +32,7 @@ func TestWriteReadMirrorAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	data := []byte("mirror stripe")
-	if _, err := created.Layer.WriteStripe(WriteStripeRequest{Context: ctx, ObjectID: testObjectID(), StripeID: 0, ChunkSize: 16, Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: data}); err != nil {
+	if _, err := created.Layer.writeStripeAtVersion(WriteStripeRequest{Context: ctx, ObjectID: testObjectID(), StripeID: 0, ChunkSize: 16, Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: data}, 0, true); err != nil {
 		t.Fatal(err)
 	}
 	read, err := created.Layer.ReadStripe(ReadStripeRequest{Context: ctx, ObjectID: testObjectID(), StripeID: 0, ChunkSize: 16})
@@ -63,7 +63,7 @@ func TestWriteReadParityAndRecoverMissingChunk(t *testing.T) {
 		t.Fatal(err)
 	}
 	data := []byte("parity data!")
-	written, err := created.Layer.WriteStripe(WriteStripeRequest{Context: ctx, ObjectID: testObjectID(), StripeID: 4, ChunkSize: 4, Layout: Layout{Type: LayoutParity, NumChunks: 3}, IOIndexes: []int{0, 1, 2, 3}, Data: data})
+	written, err := created.Layer.writeStripeAtVersion(WriteStripeRequest{Context: ctx, ObjectID: testObjectID(), StripeID: 4, ChunkSize: 4, Layout: Layout{Type: LayoutParity, NumChunks: 3}, IOIndexes: []int{0, 1, 2, 3}, Data: data}, 0, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestDeleteObjectRemovesHeaderLastAndAllVersions(t *testing.T) {
 	}
 	for _, stripe := range []storage.StripeID{0, 1} {
 		for i := 0; i < 2; i++ {
-			_, err = created.Layer.WriteStripe(WriteStripeRequest{Context: ctx, ObjectID: id, StripeID: stripe, ChunkSize: 4, Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: []byte{byte(stripe), byte(i)}})
+			_, err = created.Layer.writeStripeAtVersion(WriteStripeRequest{Context: ctx, ObjectID: id, StripeID: stripe, ChunkSize: 4, Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: []byte{byte(stripe), byte(i)}}, 0, true)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -146,11 +146,11 @@ func TestSyncObjectSynchronizesLatestChunksAcrossStripes(t *testing.T) {
 	}
 	objectID := testObjectID()
 	for stripeID, data := range [][]byte{[]byte("stripe zero"), []byte("stripe one")} {
-		if _, err := created.Layer.WriteStripe(WriteStripeRequest{
+		if _, err := created.Layer.writeStripeAtVersion(WriteStripeRequest{
 			Context: ctx, ObjectID: objectID, StripeID: storage.StripeID(stripeID),
 			ChunkSize: 32, Layout: Layout{Type: LayoutMirror, NumChunks: 2},
 			IOIndexes: []int{0, 1}, Data: data,
-		}); err != nil {
+		}, 0, true); err != nil {
 			t.Fatalf("WriteStripe %d: %v", stripeID, err)
 		}
 	}
@@ -185,11 +185,11 @@ func TestConcurrentStripeWritesSerializeVersions(t *testing.T) {
 		wg.Add(1)
 		go func(value byte) {
 			defer wg.Done()
-			_, writeErr := created.Layer.WriteStripe(WriteStripeRequest{
+			_, writeErr := created.Layer.writeStripeAtVersion(WriteStripeRequest{
 				Context: ctx, ObjectID: testObjectID(), StripeID: 9, ChunkSize: 32,
 				Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1},
 				Data: []byte{value},
-			})
+			}, 0, true)
 			errs <- writeErr
 		}(byte(i))
 	}
@@ -227,7 +227,71 @@ func TestConcurrentStripeWritesSerializeVersions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if read.Version != writes {
+		t.Fatalf("read version = %d, want latest reserved version %d", read.Version, writes)
+	}
 	if len(read.Data) != 1 {
 		t.Fatalf("read data = %v, want one byte", read.Data)
+	}
+}
+
+func TestCleanupStripeDriveSkipsChunkPinnedByRead(t *testing.T) {
+	ctx := context.Background()
+	ios := makeIOs(t, 2)
+	created, err := New(NewRequest{IOs: ios})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := WriteStripeRequest{
+		Context: ctx, ObjectID: testObjectID(), StripeID: 21, ChunkSize: 32,
+		Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1},
+		Data: []byte("old version"),
+	}
+	old, err := created.Layer.writeStripeAtVersion(request, 0, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Data = []byte("new version")
+	if _, err := created.Layer.writeStripeAtVersion(request, 0, true); err != nil {
+		t.Fatal(err)
+	}
+
+	key := stripeIDKey{objectID: testObjectID(), stripeID: 21}
+	created.Layer.mapMu.RLock()
+	location := created.Layer.versions[key][old.Version].chunks[0]
+	created.Layer.mapMu.RUnlock()
+	if location.readers == nil {
+		t.Fatal("chunk has no active-read counter")
+	}
+	location.readers.Add(1)
+
+	candidate := cleanupCandidateKey{
+		ioIndex: location.ioIndex, objectID: testObjectID(), stripeID: 21,
+		method: cleanupDeleteOldVersion,
+	}
+	result, err := created.Layer.CleanupStripeDrive(CleanupStripeDriveRequest{
+		Context: ctx, IOIndex: candidate.ioIndex, ObjectID: candidate.objectID,
+		StripeID: candidate.stripeID, Method: CleanupMethodDeleteOldVersion,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.FilesProcessed != 0 {
+		t.Fatalf("cleanup processed %d files while a read was active", result.FilesProcessed)
+	}
+	if _, err := ios[location.ioIndex].Read(physicalio.ReadRequest{Context: ctx, Key: location.key}); err != nil {
+		t.Fatalf("pinned file was deleted: %v", err)
+	}
+
+	location.readers.Add(-1)
+	result, err = created.Layer.CleanupStripeDrive(CleanupStripeDriveRequest{
+		Context: ctx, IOIndex: candidate.ioIndex, ObjectID: candidate.objectID,
+		StripeID: candidate.stripeID, Method: CleanupMethodDeleteOldVersion,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.FilesProcessed != 1 {
+		t.Fatalf("cleanup processed %d files after read release, want 1", result.FilesProcessed)
 	}
 }

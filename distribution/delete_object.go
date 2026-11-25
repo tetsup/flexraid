@@ -39,6 +39,8 @@ type objectDeleteLocation struct {
 // before valid chunks. Valid chunks are deleted from the highest StripeID and
 // chunk index down to Stripe 0.
 func (d *Distribution) DeleteObject(request DeleteObjectRequest) (response DeleteObjectResponse, err error) {
+	unlock := d.lockObjectWrite(request.ObjectID)
+	defer unlock()
 	started := time.Now()
 	ctx := request.Context
 	if ctx == nil {
@@ -53,7 +55,7 @@ func (d *Distribution) DeleteObject(request DeleteObjectRequest) (response Delet
 	}
 
 	permissions := d.cleanupPermissionStore.Snapshot()
-	d.mapMu.Lock()
+	d.mapMu.RLock()
 	locations := make(map[objectDeleteFileKey]objectDeleteLocation)
 	currentKeys := make(map[objectDeleteFileKey]struct{})
 	for _, stripe := range d.objects[request.ObjectID] {
@@ -87,7 +89,7 @@ func (d *Distribution) DeleteObject(request DeleteObjectRequest) (response Delet
 			}
 		}
 	}
-	d.mapMu.Unlock()
+	d.mapMu.RUnlock()
 
 	work := make([]objectDeleteLocation, 0, len(locations))
 	for _, item := range locations {

@@ -22,6 +22,8 @@ type ObjectDriveIndexesResponse struct {
 }
 
 func (d *Distribution) ObjectDriveIndexes(request ObjectDriveIndexesRequest) (response ObjectDriveIndexesResponse, err error) {
+	unlock := d.lockObjectRead(request.ObjectID)
+	defer unlock()
 	started := time.Now()
 	defer func() {
 		logOperation(d, "ObjectDriveIndexes", started, err, "object_id", request.ObjectID.String(), "drives", len(response.IOIndexes))
@@ -33,7 +35,7 @@ func (d *Distribution) ObjectDriveIndexes(request ObjectDriveIndexesRequest) (re
 	if err = ctx.Err(); err != nil {
 		return response, err
 	}
-	d.mapMu.Lock()
+	d.mapMu.RLock()
 	indexes := make(map[int]struct{})
 	for _, stripe := range d.objects[request.ObjectID] {
 		for _, location := range stripe.chunks {
@@ -53,7 +55,7 @@ func (d *Distribution) ObjectDriveIndexes(request ObjectDriveIndexesRequest) (re
 	for _, location := range d.orphans[request.ObjectID] {
 		indexes[location.ioIndex] = struct{}{}
 	}
-	d.mapMu.Unlock()
+	d.mapMu.RUnlock()
 	for index := range indexes {
 		response.IOIndexes = append(response.IOIndexes, index)
 	}
