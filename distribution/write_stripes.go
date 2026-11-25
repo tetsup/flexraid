@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"sync"
 	"time"
 
 	physicalio "github.com/tetsup/flexraid/io"
@@ -34,10 +33,8 @@ func (d *Distribution) WriteStripes(request WriteStripesRequest) (response Write
 	if err = ctx.Err(); err != nil { return response, err }
 	if len(request.Stripes) == 0 { return response, fmt.Errorf("at least one stripe is required") }
 
-	value, _ := d.objectCommitLocks.LoadOrStore(request.ObjectID, &sync.RWMutex{})
-	commitMu := value.(*sync.RWMutex)
-	commitMu.Lock()
-	defer commitMu.Unlock()
+	unlock := d.lockObjectWrite(request.ObjectID)
+	defer unlock()
 
 	requests := append([]WriteStripeRequest(nil), request.Stripes...)
 	seen := make(map[storage.StripeID]struct{}, len(requests))

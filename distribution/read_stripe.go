@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"sync/atomic"
-	"sync"
 	"time"
 
 	physicalio "github.com/tetsup/flexraid/io"
@@ -27,10 +26,8 @@ type ReadStripeResponse struct {
 }
 
 func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStripeResponse, err error) {
-	value, _ := d.objectCommitLocks.LoadOrStore(request.ObjectID, &sync.RWMutex{})
-	commitMu := value.(*sync.RWMutex)
-	commitMu.RLock()
-	defer commitMu.RUnlock()
+	unlock := d.lockObjectRead(request.ObjectID)
+	defer unlock()
 	started := time.Now()
 	defer func() {
 		logOperation(d, "ReadStripe", started, err, "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "bytes", len(response.Data))

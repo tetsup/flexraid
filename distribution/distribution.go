@@ -25,7 +25,8 @@ type NewResponse struct{ Layer *Distribution }
 
 type Distribution struct {
 	mapMu                  sync.RWMutex
-	objectCommitLocks      sync.Map // map[shared.ObjectID]*sync.RWMutex
+	commitLocksMu          sync.Mutex
+	objectCommitLocks      map[shared.ObjectID]*objectCommitLock
 	ios                    []*physicalio.IO
 	logger                 *slog.Logger
 	objects                map[shared.ObjectID]map[storage.StripeID]*stripeInfo
@@ -92,6 +93,7 @@ func New(request NewRequest) (NewResponse, error) {
 	}
 	d := &Distribution{ios: append([]*physicalio.IO(nil), request.IOs...), logger: logger,
 		objects:  make(map[shared.ObjectID]map[storage.StripeID]*stripeInfo),
+		objectCommitLocks: make(map[shared.ObjectID]*objectCommitLock),
 		versions: make(map[stripeIDKey]map[storage.StripeVersion]*versionInfo),
 		metrics:  newMetricsCollector(), orphans: make(map[shared.ObjectID][]chunkLocation), cleanupQueue: newCleanupQueue(), cleanupPermissionStore: request.CleanupPermissions, cleanupWake: make(chan struct{}, 1)}
 	if d.cleanupPermissionStore == nil {
