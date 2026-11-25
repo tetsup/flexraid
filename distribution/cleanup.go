@@ -163,13 +163,17 @@ func (d *Distribution) reselectStripeLocked(key stripeIDKey) {
 	var latest storage.StripeVersion
 	var selected *versionInfo
 	for versionNo, candidate := range versions {
-		if versionNo > watermark || !candidate.recoverable { continue }
-		if selected == nil || versionNo > latest { latest, selected = versionNo, candidate }
+		if versionNo > watermark || !candidate.recoverable {
+			continue
+		}
+		if selected == nil || versionNo > latest {
+			latest, selected = versionNo, candidate
+		}
 	}
 	if selected == nil {
 		delete(stripes, key.stripeID)
 	} else {
-		stripes[key.stripeID] = &stripeInfo{version:latest,method:selected.method,chunkSize:selected.chunkSize,chunks:cloneChunks(selected.chunks)}
+		stripes[key.stripeID] = &stripeInfo{version: latest, method: selected.method, chunkSize: selected.chunkSize, chunks: cloneChunks(selected.chunks)}
 	}
 	d.refreshStripeCleanupQueueLocked(key)
 }
@@ -189,7 +193,9 @@ func (d *Distribution) reselectObjectStripesLocked(objectID shared.ObjectID) {
 	if headerInfo == nil {
 		delete(d.objects, objectID)
 		for key := range d.versions {
-			if key.objectID == objectID { d.refreshStripeCleanupQueueLocked(key) }
+			if key.objectID == objectID {
+				d.refreshStripeCleanupQueueLocked(key)
+			}
 		}
 		return
 	}
@@ -198,17 +204,23 @@ func (d *Distribution) reselectObjectStripesLocked(objectID shared.ObjectID) {
 		stripes = make(map[storage.StripeID]*stripeInfo)
 		d.objects[objectID] = stripes
 	} else {
-		for stripeID := range stripes { delete(stripes, stripeID) }
+		for stripeID := range stripes {
+			delete(stripes, stripeID)
+		}
 	}
 	stripes[0] = &stripeInfo{version: watermark, method: headerInfo.method, chunkSize: headerInfo.chunkSize, chunks: cloneChunks(headerInfo.chunks)}
 	d.refreshStripeCleanupQueueLocked(headerKey)
 
 	for key, versions := range d.versions {
-		if key.objectID != objectID || key.stripeID == 0 { continue }
+		if key.objectID != objectID || key.stripeID == 0 {
+			continue
+		}
 		var selected storage.StripeVersion
 		var selectedInfo *versionInfo
 		for versionNo, candidate := range versions {
-			if versionNo > watermark || !candidate.recoverable { continue }
+			if versionNo > watermark || !candidate.recoverable {
+				continue
+			}
 			if selectedInfo == nil || versionNo > selected {
 				selected, selectedInfo = versionNo, candidate
 			}
@@ -216,11 +228,13 @@ func (d *Distribution) reselectObjectStripesLocked(objectID shared.ObjectID) {
 		if selectedInfo == nil {
 			delete(stripes, key.stripeID)
 		} else {
-			stripes[key.stripeID] = &stripeInfo{version:selected, method:selectedInfo.method, chunkSize:selectedInfo.chunkSize, chunks:cloneChunks(selectedInfo.chunks)}
+			stripes[key.stripeID] = &stripeInfo{version: selected, method: selectedInfo.method, chunkSize: selectedInfo.chunkSize, chunks: cloneChunks(selectedInfo.chunks)}
 		}
 		d.refreshStripeCleanupQueueLocked(key)
 	}
-	if len(stripes) == 0 { delete(d.objects, objectID) }
+	if len(stripes) == 0 {
+		delete(d.objects, objectID)
+	}
 }
 
 func currentVersion(info *stripeInfo, version storage.StripeVersion) bool {
