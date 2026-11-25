@@ -37,7 +37,7 @@ func TestReadReturnsLogicalRangeAcrossStripesAndHardLinks(t *testing.T) {
 	logical := make([]byte, int(cfg.HeaderReservedSize)+len(payload))
 	copy(logical, headerBytes)
 	copy(logical[int(cfg.HeaderReservedSize):], payload)
-	_, err = writeDistributionStripeForTest(distributed.Layer, distribution.WriteStripeRequest{
+	_, err = distributed.Layer.WriteStripe(distribution.WriteStripeRequest{
 		Context: ctx, ObjectID: fileID, StripeID: 0, ChunkSize: 4096,
 		Layout:    distribution.Layout{Type: distribution.LayoutMirror, NumChunks: uint8(h.Layout.DataChunks)},
 		IOIndexes: []int{0, 1}, Data: logical,
@@ -85,8 +85,8 @@ func TestReadReturnsLogicalRangeAcrossStripesAndHardLinks(t *testing.T) {
 			t.Fatalf("Read offset=%d size=%d returned %d bytes, want %d", tc.offset, tc.size, len(got.Data), end-tc.offset)
 		}
 	}
-	if len(layer.objects[fileID].file.stripeCache) == 0 {
-		t.Fatal("Read did not populate the shared stripe cache")
+	if len(layer.objects[fileID].file.stripeCache) != 0 {
+		t.Fatal("Read unexpectedly retained clean stripe payloads")
 	}
 	linkOpen, err := layer.OpenLocked(OpenRequest{ObjectID: linkID})
 	if err != nil {

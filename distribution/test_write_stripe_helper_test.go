@@ -16,11 +16,11 @@ func writeStripeForTest(layer *Distribution, request WriteStripeRequest) (WriteS
 		header := WriteStripeRequest{Context: ctx, ObjectID: request.ObjectID, StripeID: 0, ChunkSize: request.ChunkSize, Layout: request.Layout, IOIndexes: append([]int(nil), request.IOIndexes...)}
 		info, err := layer.GetStripeInfo(GetStripeInfoRequest{Context: ctx, ObjectID: request.ObjectID, StripeID: 0})
 		if err == nil {
-			read, e := layer.ReadStripe(ReadStripeRequest{Context: ctx, ObjectID: request.ObjectID, StripeID: 0, ChunkSize: info.ChunkSize})
+			read, e := layer.ReadStripe(ReadStripeRequest{Context: ctx, ObjectID: request.ObjectID, StripeID: 0, ChunkSize: request.ChunkSize})
 			if e != nil {
 				return WriteStripesResponse{}, e
 			}
-			header.ChunkSize, header.Layout, header.Data = info.ChunkSize, info.Layout, read.Data
+			header.ChunkSize, header.Layout, header.Data = request.ChunkSize, info.Layout, read.Data
 			if p, e := layer.StripeIOIndexes(StripeIOIndexesRequest{ObjectID: request.ObjectID, StripeID: 0}); e == nil {
 				header.IOIndexes = p.IOIndexes
 			}

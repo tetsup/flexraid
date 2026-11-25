@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"time"
+
+	"github.com/tetsup/flexraid/distribution"
 )
 
 type FlushRequest struct {
@@ -25,9 +27,6 @@ func (o *Orchestration) flushLocked(r FlushRequest) (FlushResponse, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if err := ctx.Err(); err != nil {
-		return out, err
-	}
 	if r.Handle == nil {
 		return out, os.ErrInvalid
 	}
@@ -36,11 +35,22 @@ func (o *Orchestration) flushLocked(r FlushRequest) (FlushResponse, error) {
 		return out, os.ErrInvalid
 	}
 	f := h.runtimeFile
+	if err := ctx.Err(); err != nil {
+		dirty := len(f.zeroStripeRanges) > 0
+		for _, entry := range f.stripeCache { dirty = dirty || (entry != nil && entry.state == stripeCacheDirty) }
+		if dirty || r.Sync { return out, err }
+		return out, nil
+	}
 	persisted, err := o.persistDirtyStripesLocked(ctx, f, r.Sync)
 	if err != nil {
 		return out, err
 	}
 	out.PersistedStripes = persisted
+	if r.Sync {
+		if _, err := o.distribution.SyncObject(distribution.SyncObjectRequest{Context: ctx, ObjectID: f.objectID}); err != nil {
+			return out, err
+		}
+	}
 	return out, nil
 }
 
