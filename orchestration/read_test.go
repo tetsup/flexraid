@@ -85,8 +85,8 @@ func TestReadReturnsLogicalRangeAcrossStripesAndHardLinks(t *testing.T) {
 			t.Fatalf("Read offset=%d size=%d returned %d bytes, want %d", tc.offset, tc.size, len(got.Data), end-tc.offset)
 		}
 	}
-	if len(layer.objects[fileID].file.stripeCache) == 0 {
-		t.Fatal("Read did not populate the shared stripe cache")
+	if len(layer.objects[fileID].file.stripeCache) != 0 {
+		t.Fatal("clean Read retained stripe payloads in the shared cache")
 	}
 	linkOpen, err := layer.OpenLocked(OpenRequest{ObjectID: linkID})
 	if err != nil {
