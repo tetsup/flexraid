@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"sync/atomic"
 	"time"
 
 	physicalio "github.com/tetsup/flexraid/io"
@@ -180,7 +181,7 @@ func (d *Distribution) verifyStripeVersion(ctx context.Context, request WriteStr
 		if err != nil { return nil, fmt.Errorf("read chunk %d: %w", no, err) }
 		total, payload, err := decodeChunk(read.Data)
 		if err != nil { return nil, fmt.Errorf("decode chunk %d: %w", no, err) }
-		locations[no] = chunkLocation{ioIndex:ioIndex, key:key, totalLength:total, sizeBytes:uint64(len(read.Data))}
+		locations[no] = chunkLocation{ioIndex:ioIndex, key:key, totalLength:total, sizeBytes:uint64(len(read.Data)), readers:&atomic.Int64{}}
 		chunks = append(chunks, chunkDataWithInfo{
 			stripeKey:stripeKeyInfo{objectID:request.ObjectID, stripeID:request.StripeID, stripeVersion:version},
 			distributionMethod:method, chunkNo:no, data:payload, totalLength:total,
