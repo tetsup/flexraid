@@ -178,11 +178,7 @@ func (d *Distribution) markStripeUnrecoverable(key stripeIDKey, versionNo storag
 			version.recoverable = false
 		}
 	}
-	if stripes := d.objects[key.objectID]; stripes != nil {
-		if current := stripes[key.stripeID]; current != nil && current.version == versionNo {
-			current.corrupted = true
-		}
-	}
+	d.reselectObjectStripesLocked(key.objectID)
 	d.refreshStripeCleanupQueueLocked(key)
 }
 

@@ -140,44 +140,51 @@ func (d *Distribution) Cleanup(request CleanupRequest) (response CleanupResponse
 }
 
 func (d *Distribution) reselectStripeLocked(key stripeIDKey) {
-	stripes := d.objects[key.objectID]
-	versions := d.versions[key]
+	d.reselectObjectStripesLocked(key.objectID)
+}
+
+// reselectObjectStripesLocked rebuilds all selected Stripe versions from one
+// recoverable Stripe 0 watermark. The caller must hold mapMu.
+func (d *Distribution) reselectObjectStripesLocked(objectID shared.ObjectID) {
+	headerKey := stripeIDKey{objectID: objectID, stripeID: 0}
+	headerVersions := d.versions[headerKey]
 	var watermark storage.StripeVersion
-	if key.stripeID != 0 {
-		if stripes == nil || stripes[0] == nil {
-			if stripes != nil {
-				delete(stripes, key.stripeID)
-				if len(stripes) == 0 { delete(d.objects, key.objectID) }
+	var headerInfo *versionInfo
+	for versionNo, candidate := range headerVersions {
+		if candidate.recoverable && (headerInfo == nil || versionNo > watermark) {
+			watermark, headerInfo = versionNo, candidate
+		}
+	}
+	if headerInfo == nil {
+		delete(d.objects, objectID)
+		return
+	}
+	stripes := d.objects[objectID]
+	if stripes == nil {
+		stripes = make(map[storage.StripeID]*stripeInfo)
+		d.objects[objectID] = stripes
+	}
+	stripes[0] = &stripeInfo{version: watermark, method: headerInfo.method, chunkSize: headerInfo.chunkSize, chunks: cloneChunks(headerInfo.chunks)}
+	d.refreshStripeCleanupQueueLocked(headerKey)
+
+	for key, versions := range d.versions {
+		if key.objectID != objectID || key.stripeID == 0 { continue }
+		var selected storage.StripeVersion
+		var selectedInfo *versionInfo
+		for versionNo, candidate := range versions {
+			if versionNo > watermark || !candidate.recoverable { continue }
+			if selectedInfo == nil || versionNo > selected {
+				selected, selectedInfo = versionNo, candidate
 			}
-			return
 		}
-		watermark = stripes[0].version
-	}
-	current := (*stripeInfo)(nil)
-	if stripes != nil { current = stripes[key.stripeID] }
-	if current != nil && versions[current.version] != nil && (key.stripeID == 0 || current.version <= watermark) {
-		return
-	}
-	var latest storage.StripeVersion
-	var selected *versionInfo
-	for versionNo, candidate := range versions {
-		if key.stripeID != 0 && versionNo > watermark { continue }
-		if candidate.recoverable && (selected == nil || versionNo > latest) {
-			latest, selected = versionNo, candidate
-		}
-	}
-	if selected == nil {
-		if stripes != nil {
+		if selectedInfo == nil {
 			delete(stripes, key.stripeID)
-			if len(stripes) == 0 { delete(d.objects, key.objectID) }
+		} else {
+			stripes[key.stripeID] = &stripeInfo{version:selected, method:selectedInfo.method, chunkSize:selectedInfo.chunkSize, chunks:cloneChunks(selectedInfo.chunks)}
 		}
-		return
+		d.refreshStripeCleanupQueueLocked(key)
 	}
-	if stripes == nil { stripes = make(map[storage.StripeID]*stripeInfo); d.objects[key.objectID] = stripes }
-	stripes[key.stripeID] = &stripeInfo{
-		version: latest, method: selected.method, chunkSize: selected.chunkSize,
-		chunks: cloneChunks(selected.chunks),
-	}
+	if len(stripes) == 0 { delete(d.objects, objectID) }
 }
 
 func currentVersion(info *stripeInfo, version storage.StripeVersion) bool {
