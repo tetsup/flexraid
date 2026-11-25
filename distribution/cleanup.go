@@ -163,6 +163,8 @@ func (d *Distribution) reselectObjectStripesLocked(objectID shared.ObjectID) {
 	if stripes == nil {
 		stripes = make(map[storage.StripeID]*stripeInfo)
 		d.objects[objectID] = stripes
+	} else {
+		for stripeID := range stripes { delete(stripes, stripeID) }
 	}
 	stripes[0] = &stripeInfo{version: watermark, method: headerInfo.method, chunkSize: headerInfo.chunkSize, chunks: cloneChunks(headerInfo.chunks)}
 	d.refreshStripeCleanupQueueLocked(headerKey)

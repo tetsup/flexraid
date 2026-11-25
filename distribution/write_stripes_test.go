@@ -81,3 +81,32 @@ func TestWriteStripesRequiresStripeZero(t *testing.T) {
 	}})
 	if err==nil { t.Fatal("expected missing Stripe 0 error") }
 }
+
+func TestUnrecoverableStripeZeroFallsBackAndConstrainsDataVersions(t *testing.T) {
+	ctx := context.Background()
+	ios := makeIOs(t, 2)
+	created, err := New(NewRequest{IOs:ios})
+	if err != nil { t.Fatal(err) }
+	id := testObjectID()
+	layout := Layout{Type:LayoutMirror,NumChunks:2}
+	commit := func(header,data string) storage.StripeVersion {
+		t.Helper()
+		result, err := created.Layer.WriteStripes(WriteStripesRequest{Context:ctx,ObjectID:id,Stripes:[]WriteStripeRequest{
+			{ObjectID:id,StripeID:1,ChunkSize:32,Layout:layout,IOIndexes:[]int{0,1},Data:[]byte(data)},
+			{ObjectID:id,StripeID:0,ChunkSize:32,Layout:layout,IOIndexes:[]int{0,1},Data:[]byte(header)},
+		}})
+		if err != nil { t.Fatal(err) }
+		return result.Version
+	}
+	v1 := commit("header-v1","data-v1")
+	v2 := commit("header-v2","data-v2")
+	created.Layer.markStripeUnrecoverable(stripeIDKey{objectID:id,stripeID:0},v2)
+	headerInfo,err:=created.Layer.GetStripeInfo(GetStripeInfoRequest{ObjectID:id,StripeID:0})
+	if err!=nil { t.Fatal(err) }
+	dataInfo,err:=created.Layer.GetStripeInfo(GetStripeInfoRequest{ObjectID:id,StripeID:1})
+	if err!=nil { t.Fatal(err) }
+	if headerInfo.Version!=v1 || dataInfo.Version!=v1 { t.Fatalf("fallback versions: header=%d data=%d, want %d",headerInfo.Version,dataInfo.Version,v1) }
+	read,err:=created.Layer.ReadStripe(ReadStripeRequest{Context:ctx,ObjectID:id,StripeID:1,ChunkSize:32})
+	if err!=nil { t.Fatal(err) }
+	if read.Version!=v1 || string(read.Data)!="data-v1" { t.Fatalf("fallback read: version=%d data=%q",read.Version,read.Data) }
+}
