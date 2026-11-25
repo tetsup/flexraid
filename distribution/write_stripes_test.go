@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"testing"
+	"strings"
 
 	"github.com/tetsup/flexraid/storage"
 )
@@ -76,10 +77,11 @@ func TestUncommittedStripeIsIgnoredAndRemovedBeforeNextCommit(t *testing.T) {
 func TestWriteStripesRequiresStripeZero(t *testing.T) {
 	created,err:=New(NewRequest{IOs:makeIOs(t,2)})
 	if err!=nil { t.Fatal(err) }
-	_,err=created.Layer.WriteStripes(WriteStripesRequest{Context:context.Background(),ObjectID:testObjectID(),Stripes:[]WriteStripeRequest{
-		{ObjectID:testObjectID(),StripeID:4,ChunkSize:8,Layout:Layout{Type:LayoutMirror,NumChunks:2},IOIndexes:[]int{0,1},Data:[]byte("data")},
+	id := testObjectID()
+	_,err=created.Layer.WriteStripes(WriteStripesRequest{Context:context.Background(),ObjectID:id,Stripes:[]WriteStripeRequest{
+		{ObjectID:id,StripeID:4,ChunkSize:8,Layout:Layout{Type:LayoutMirror,NumChunks:2},IOIndexes:[]int{0,1},Data:[]byte("data")},
 	}})
-	if err==nil { t.Fatal("expected missing Stripe 0 error") }
+	if err==nil || !strings.Contains(err.Error(),"Stripe 0") { t.Fatalf("expected missing Stripe 0 error, got %v",err) }
 }
 
 func TestUnrecoverableStripeZeroFallsBackAndConstrainsDataVersions(t *testing.T) {
