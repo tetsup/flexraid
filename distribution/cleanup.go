@@ -109,20 +109,31 @@ func (d *Distribution) Cleanup(request CleanupRequest) (response CleanupResponse
 		if err = ctx.Err(); err != nil {
 			return response, err
 		}
+		unlock := d.lockObjectRead(item.location.key.ObjectID)
+		key := stripeIDKey{objectID: item.location.key.ObjectID, stripeID: item.location.key.StripeID}
+		d.mapMu.RLock()
+		current := d.objects[key.objectID][key.stripeID]
+		isCurrent := currentVersion(current, item.location.key.StripeVersion)
+		d.mapMu.RUnlock()
+		if isCurrent && !request.InvalidStripes && !request.IncompleteChunks {
+			unlock()
+			continue
+		}
 		_, deleteErr := d.ios[item.location.ioIndex].Delete(physicalio.DeleteRequest{Context: ctx, Key: item.location.key})
 		d.recordChunkOperation("Delete", deleteErr)
 		if deleteErr != nil && !errors.Is(deleteErr, os.ErrNotExist) {
+			unlock()
 			return response, deleteErr
 		}
 
 		// Reconcile only the exact FileKey that was deleted. A concurrent
 		// foreground write may have published a newer immutable version.
-		key := stripeIDKey{objectID: item.location.key.ObjectID, stripeID: item.location.key.StripeID}
 		d.mapMu.Lock()
 		d.removeCleanupLocationLocked(item.candidate, item.location)
 		d.reselectStripeLocked(key)
 		d.refreshStripeCleanupQueueLocked(key)
 		d.mapMu.Unlock()
+		unlock()
 		response.DeletedFiles++
 	}
 	return response, nil

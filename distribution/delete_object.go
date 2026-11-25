@@ -39,6 +39,8 @@ type objectDeleteLocation struct {
 // before valid chunks. Valid chunks are deleted from the highest StripeID and
 // chunk index down to Stripe 0.
 func (d *Distribution) DeleteObject(request DeleteObjectRequest) (response DeleteObjectResponse, err error) {
+	unlock := d.lockObjectWrite(request.ObjectID)
+	defer unlock()
 	started := time.Now()
 	ctx := request.Context
 	if ctx == nil {
