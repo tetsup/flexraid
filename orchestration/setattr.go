@@ -253,11 +253,17 @@ func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file 
 	// Stripe 0 is the Object commit record and must advance with every write.
 	if !containsStripeRange(work, 0) {
 		geometry, err := geometryFor(file.header, storage.StripeID(0))
-		if err != nil { return 0, err }
+		if err != nil {
+			return 0, err
+		}
 		headerEntry, err := layer.loadStripeForWriteLocked(ctx, file, geometry)
-		if err != nil { return 0, fmt.Errorf("load Stripe 0 commit record: %w", err) }
+		if err != nil {
+			return 0, fmt.Errorf("load Stripe 0 commit record: %w", err)
+		}
 		headerEntry.state = stripeCacheDirty
-		if file.stripeCache == nil { file.stripeCache = make(map[uint64]*stripeCacheEntry) }
+		if file.stripeCache == nil {
+			file.stripeCache = make(map[uint64]*stripeCacheEntry)
+		}
 		file.stripeCache[0] = headerEntry
 		work = append(work, stripeRange{start: 0, end: 0})
 	}
