@@ -37,8 +37,12 @@ func (o *Orchestration) flushLocked(r FlushRequest) (FlushResponse, error) {
 	f := h.runtimeFile
 	if err := ctx.Err(); err != nil {
 		dirty := len(f.zeroStripeRanges) > 0
-		for _, entry := range f.stripeCache { dirty = dirty || (entry != nil && entry.state == stripeCacheDirty) }
-		if dirty || r.Sync { return out, err }
+		for _, entry := range f.stripeCache {
+			dirty = dirty || (entry != nil && entry.state == stripeCacheDirty)
+		}
+		if dirty || r.Sync {
+			return out, err
+		}
 		return out, nil
 	}
 	persisted, err := o.persistDirtyStripesLocked(ctx, f, r.Sync)
