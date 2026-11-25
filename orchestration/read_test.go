@@ -37,7 +37,7 @@ func TestReadReturnsLogicalRangeAcrossStripesAndHardLinks(t *testing.T) {
 	logical := make([]byte, int(cfg.HeaderReservedSize)+len(payload))
 	copy(logical, headerBytes)
 	copy(logical[int(cfg.HeaderReservedSize):], payload)
-	_, err = distributed.Layer.WriteStripe(distribution.WriteStripeRequest{
+	_, err = writeDistributionStripeForTest(distributed.Layer, distribution.WriteStripeRequest{
 		Context: ctx, ObjectID: fileID, StripeID: 0, ChunkSize: 4096,
 		Layout:    distribution.Layout{Type: distribution.LayoutMirror, NumChunks: uint8(h.Layout.DataChunks)},
 		IOIndexes: []int{0, 1}, Data: logical,
