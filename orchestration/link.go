@@ -7,7 +7,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/tetsup/flexraid/distribution"
 	"github.com/tetsup/flexraid/pkg/shared"
 	cfg "github.com/tetsup/flexraid/pkg/shared/config"
 	"github.com/tetsup/flexraid/storage"
@@ -164,35 +163,20 @@ func (layer *Orchestration) persistHeaderUpdateLocked(ctx context.Context, file 
 		entry.data = append(entry.data, make([]byte, int(cfg.HeaderReservedSize)-len(entry.data))...)
 	}
 	copy(entry.data[:len(headerBytes)], headerBytes)
+	entry.state = stripeCacheDirty
 
-	required := int(geometry.Layout.NumChunks)
-	if geometry.Layout.Type == distribution.LayoutParity {
-		required++
+	staged := &runtimeFile{
+		objectID: file.objectID,
+		header: next,
+		stripeCache: cloneStripeCache(file.stripeCache),
+		zeroStripeRanges: cloneStripeRanges(file.zeroStripeRanges),
 	}
-	placement, placementErr := layer.distribution.StripeIOIndexes(distribution.StripeIOIndexesRequest{
-		ObjectID: file.objectID, StripeID: storage.StripeID(0),
-	})
-	indexes := placement.IOIndexes
-	if placementErr != nil || len(indexes) != required {
-		capacity, capacityErr := layer.distribution.GetCapacity(distribution.CapacityRequest{})
-		if capacityErr != nil {
-			return fmt.Errorf("read I/O capacities: %w", capacityErr)
-		}
-		indexes, err = selectIOIndexes(capacity.Capacities, required)
-		if err != nil {
-			return err
-		}
-	}
-	_, err = layer.distribution.WriteStripe(distribution.WriteStripeRequest{
-		Context: ctx, ObjectID: file.objectID, StripeID: storage.StripeID(0),
-		ChunkSize: geometry.ChunkSize, Layout: geometry.Layout,
-		IOIndexes: indexes, Data: entry.data,
-	})
-	if err != nil {
+	staged.stripeCache[0] = entry
+	if _, err := layer.persistDirtyStripesLocked(ctx, staged); err != nil {
 		return err
 	}
-	entry.state = stripeCacheClean
-	file.stripeCache[0] = entry
 	file.header = next
+	file.stripeCache = staged.stripeCache
+	file.zeroStripeRanges = staged.zeroStripeRanges
 	return nil
 }

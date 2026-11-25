@@ -333,3 +333,7 @@ func expectedChunkNos(method distributionMethod) []chunkNo {
 	}
 	return result
 }
+
+func (d *Distribution) SetTraceRecorder(recorder shared.TraceRecorder) {
+	d.trace = recorder
+}
