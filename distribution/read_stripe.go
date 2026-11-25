@@ -131,6 +131,9 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 	}
 	if needsClassificationRefresh {
 		d.mapMu.Lock()
+		if current := d.objects[key.objectID][key.stripeID]; current != nil && current.version == info.version {
+			current.corrupted = info.corrupted
+		}
 		if versions := d.versions[key]; versions != nil {
 			if version := versions[info.version]; version != nil {
 				version.recoverable = true
@@ -171,6 +174,11 @@ func (d *Distribution) markStripeUnrecoverable(key stripeIDKey, versionNo storag
 	if versions := d.versions[key]; versions != nil {
 		if version := versions[versionNo]; version != nil {
 			version.recoverable = false
+		}
+	}
+	if stripes := d.objects[key.objectID]; stripes != nil {
+		if current := stripes[key.stripeID]; current != nil && current.version == versionNo {
+			current.corrupted = true
 		}
 	}
 	d.refreshStripeCleanupQueueLocked(key)
