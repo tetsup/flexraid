@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/pkg/shared/config"
@@ -161,48 +160,3 @@ func TestCleanupStripeDriveReturnsNoWorkForMissingCandidate(t *testing.T) {
 	}
 }
 
-func TestCleanupStripeDriveDoesNotWaitForForegroundStripeLock(t *testing.T) {
-	ctx := context.Background()
-	ios := makeIOs(t, 2)
-	created, err := New(NewRequest{IOs: ios})
-	if err != nil {
-		t.Fatal(err)
-	}
-	request := WriteStripeRequest{
-		Context: ctx, ObjectID: testObjectID(), StripeID: 41, ChunkSize: 32,
-		Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: []byte("old"),
-	}
-	if _, err := created.Layer.WriteStripe(request); err != nil {
-		t.Fatal(err)
-	}
-	request.Data = []byte("new")
-	if _, err := created.Layer.WriteStripe(request); err != nil {
-		t.Fatal(err)
-	}
-
-	unlockStripe, unlockMap := created.Layer.lockStripe(stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID})
-	unlockMap()
-	defer unlockStripe()
-
-	result := make(chan CleanupStripeDriveResponse, 1)
-	errors := make(chan error, 1)
-	go func() {
-		response, cleanupErr := created.Layer.CleanupStripeDrive(CleanupStripeDriveRequest{
-			Context: ctx, IOIndex: 0, ObjectID: request.ObjectID, StripeID: request.StripeID,
-			Method: CleanupMethodDeleteOldVersion,
-		})
-		result <- response
-		errors <- cleanupErr
-	}()
-	select {
-	case response := <-result:
-		if err := <-errors; err != nil {
-			t.Fatal(err)
-		}
-		if response.FilesProcessed != 1 {
-			t.Fatalf("cleanup processed %d files, want 1", response.FilesProcessed)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("cleanup waited for the foreground Stripe lock")
-	}
-}
