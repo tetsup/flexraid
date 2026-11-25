@@ -18,7 +18,7 @@ func TestGetMetricsTracksOperationsAndState(t *testing.T) {
 	}
 	id := testObjectID()
 	data := []byte("metrics stripe")
-	if _, err := created.Layer.WriteStripe(WriteStripeRequest{Context: ctx, ObjectID: id, StripeID: 3, ChunkSize: 16, Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: data}); err != nil {
+	if _, err := created.Layer.writeStripeAtVersion(, 0, true); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := created.Layer.ReadStripe(ReadStripeRequest{Context: ctx, ObjectID: id, StripeID: 3, ChunkSize: 0}); err == nil {
@@ -59,7 +59,7 @@ func TestGetMetricsCountsRecoverableMissingChunk(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := testObjectID()
-	written, err := created.Layer.WriteStripe(WriteStripeRequest{Context: ctx, ObjectID: id, StripeID: 4, ChunkSize: 4, Layout: Layout{Type: LayoutParity, NumChunks: 2}, IOIndexes: []int{0, 1, 2}, Data: []byte("12345678")})
+	written, err := created.Layer.writeStripeAtVersion(, 0, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestGetMetricsSnapshotIsIndependent(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if _, err := created.Layer.WriteStripe(WriteStripeRequest{Context: ctx, ObjectID: testObjectID(), StripeID: 1, ChunkSize: 8, Layout: Layout{Type: LayoutMirror, NumChunks: 1}, IOIndexes: []int{0}, Data: []byte("x")}); err != nil {
+	if _, err := created.Layer.writeStripeAtVersion(, 0, true); err != nil {
 		t.Fatal(err)
 	}
 	first, err := created.Layer.GetMetrics(GetMetricsRequest{Context: ctx})
@@ -144,10 +144,7 @@ func TestGetMetricsRetainsRuntimeUnreadableChunk(t *testing.T) {
 	}
 	id := testObjectID()
 	data := []byte("runtime missing")
-	written, err := created.Layer.WriteStripe(WriteStripeRequest{
-		Context: ctx, ObjectID: id, StripeID: 9, ChunkSize: 16,
-		Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: data,
-	})
+	written, err := created.Layer.writeStripeAtVersion(, 0, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +193,7 @@ func TestGetMetricsReportsCleanupInventoryAndCapacityEstimate(t *testing.T) {
 	}
 	for _, value := range []string{"first cleanup version", "second cleanup version", "current version"} {
 		request.Data = []byte(value)
-		if _, err := created.Layer.WriteStripe(request); err != nil {
+		if _, err := created.Layer.writeStripeAtVersion(, 0, true); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -21,14 +21,14 @@ func TestWriteStripeRefreshesPerDriveCleanupQueue(t *testing.T) {
 		Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1},
 		Data: []byte("first version"),
 	}
-	if _, err := created.Layer.WriteStripe(request); err != nil {
+	if _, err := created.Layer.writeStripeAtVersion(, 0, true); err != nil {
 		t.Fatal(err)
 	}
 	if got := created.Layer.cleanupCandidates(); len(got) != 0 {
 		t.Fatalf("first version unexpectedly queued cleanup candidates: %+v", got)
 	}
 	request.Data = []byte("second version")
-	if _, err := created.Layer.WriteStripe(request); err != nil {
+	if _, err := created.Layer.writeStripeAtVersion(, 0, true); err != nil {
 		t.Fatal(err)
 	}
 	got := created.Layer.cleanupCandidates()
@@ -66,11 +66,11 @@ func TestNewRebuildsCleanupQueuePerStripe(t *testing.T) {
 		Context: ctx, ObjectID: testObjectID(), StripeID: storage.StripeID(7), ChunkSize: 16,
 		Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: []byte("old"),
 	}
-	if _, err := created.Layer.WriteStripe(request); err != nil {
+	if _, err := created.Layer.writeStripeAtVersion(, 0, true); err != nil {
 		t.Fatal(err)
 	}
 	request.Data = []byte("new")
-	if _, err := created.Layer.WriteStripe(request); err != nil {
+	if _, err := created.Layer.writeStripeAtVersion(, 0, true); err != nil {
 		t.Fatal(err)
 	}
 	restarted, err := New(NewRequest{IOs: ios})

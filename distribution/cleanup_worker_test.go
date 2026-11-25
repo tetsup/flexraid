@@ -22,12 +22,12 @@ func TestCleanupWorkerRespectsDrivePermissionsAndStops(t *testing.T) {
 		Context: ctx, ObjectID: testObjectID(), StripeID: storage.StripeID(31), ChunkSize: 32,
 		Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: []byte("old"),
 	}
-	first, err := created.Layer.WriteStripe(request)
+	first, err := created.Layer.writeStripeAtVersion(, 0, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	request.Data = []byte("new")
-	second, err := created.Layer.WriteStripe(request)
+	second, err := created.Layer.writeStripeAtVersion(, 0, true)
 	if err != nil {
 		t.Fatal(err)
 	}
