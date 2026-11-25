@@ -34,8 +34,8 @@ func (d *Distribution) WriteStripes(request WriteStripesRequest) (response Write
 	if err = ctx.Err(); err != nil { return response, err }
 	if len(request.Stripes) == 0 { return response, fmt.Errorf("at least one stripe is required") }
 
-	value, _ := d.objectCommitLocks.LoadOrStore(request.ObjectID, &sync.Mutex{})
-	commitMu := value.(*sync.Mutex)
+	value, _ := d.objectCommitLocks.LoadOrStore(request.ObjectID, &sync.RWMutex{})
+	commitMu := value.(*sync.RWMutex)
 	commitMu.Lock()
 	defer commitMu.Unlock()
 

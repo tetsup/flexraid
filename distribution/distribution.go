@@ -25,7 +25,7 @@ type NewResponse struct{ Layer *Distribution }
 
 type Distribution struct {
 	mapMu                  sync.RWMutex
-	objectCommitLocks      sync.Map // map[shared.ObjectID]*sync.Mutex
+	objectCommitLocks      sync.Map // map[shared.ObjectID]*sync.RWMutex
 	ios                    []*physicalio.IO
 	logger                 *slog.Logger
 	objects                map[shared.ObjectID]map[storage.StripeID]*stripeInfo
@@ -166,15 +166,11 @@ func New(request NewRequest) (NewResponse, error) {
 	if usable == 0 {
 		return NewResponse{}, errNoUsableIO
 	}
+	// Validate every physical Version before selecting any Object state.
 	for key, versions := range d.versions {
-		var selected storage.StripeVersion
-		var selectedInfo *versionInfo
 		for versionNo, version := range versions {
 			if version.invalid {
-				for no, location := range version.chunks {
-					location.data = nil
-					version.chunks[no] = location
-				}
+				for no, location := range version.chunks { location.data = nil; version.chunks[no] = location }
 				continue
 			}
 			chunks := make([]chunkDataWithInfo, 0, len(version.chunks))
@@ -182,35 +178,39 @@ func New(request NewRequest) (NewResponse, error) {
 				chunks = append(chunks, chunkDataWithInfo{stripeKey: stripeKeyInfo{objectID: key.objectID, stripeID: key.stripeID, stripeVersion: versionNo}, distributionMethod: version.method, chunkNo: no, data: location.data, totalLength: location.totalLength})
 			}
 			_, restoreErr := restoreStripe(chunks)
-			// Startup scanning validates recoverability but does not retain
-			// payloads. ReadStripe loads only the requested Stripe on demand.
-			for no, location := range version.chunks {
-				location.data = nil
-				version.chunks[no] = location
-			}
-			if restoreErr != nil {
-				d.recordIntegrityError()
-				continue
-			}
+			for no, location := range version.chunks { location.data = nil; version.chunks[no] = location }
+			if restoreErr != nil { d.recordIntegrityError(); continue }
 			version.recoverable = true
-			if len(version.chunks) < len(expectedChunkNos(version.method)) {
-				d.recordIntegrityError()
-			}
-			if selectedInfo == nil || versionNo > selected {
-				selected, selectedInfo = versionNo, version
+			if len(version.chunks) < len(expectedChunkNos(version.method)) { d.recordIntegrityError() }
+		}
+	}
+
+	// Stripe 0 defines the committed Object watermark. An Object without a
+	// recoverable Stripe 0 cannot expose any of its data stripes.
+	watermarks := make(map[shared.ObjectID]storage.StripeVersion)
+	for objectID, stripes := range d.versions {
+		if versions := stripes[0]; versions != nil {
+			for versionNo, version := range versions {
+				if version.recoverable && versionNo > watermarks[objectID] { watermarks[objectID] = versionNo }
 			}
 		}
-		if selectedInfo != nil {
-			stripes := d.objects[key.objectID]
-			if stripes == nil {
-				stripes = make(map[storage.StripeID]*stripeInfo)
-				d.objects[key.objectID] = stripes
-			}
-			stripes[key.stripeID] = &stripeInfo{version: selected, method: selectedInfo.method, chunkSize: selectedInfo.chunkSize, chunks: cloneChunks(selectedInfo.chunks)}
-			d.mapMu.Lock()
-			d.refreshStripeCleanupQueueLocked(key)
-			d.mapMu.Unlock()
+	}
+	for key, versions := range d.versions {
+		watermark, exists := watermarks[key.objectID]
+		if !exists { continue }
+		var selected storage.StripeVersion
+		var selectedInfo *versionInfo
+		for versionNo, version := range versions {
+			if versionNo > watermark || !version.recoverable { continue }
+			if selectedInfo == nil || versionNo > selected { selected, selectedInfo = versionNo, version }
 		}
+		if selectedInfo == nil { continue }
+		stripes := d.objects[key.objectID]
+		if stripes == nil { stripes = make(map[storage.StripeID]*stripeInfo); d.objects[key.objectID] = stripes }
+		stripes[key.stripeID] = &stripeInfo{version: selected, method: selectedInfo.method, chunkSize: selectedInfo.chunkSize, chunks: cloneChunks(selectedInfo.chunks)}
+		d.mapMu.Lock()
+		d.refreshStripeCleanupQueueLocked(key)
+		d.mapMu.Unlock()
 	}
 	logger.Debug("Distribution initialized", "ios", len(d.ios), "usable_ios", usable, "objects", len(d.objects))
 	return NewResponse{Layer: d}, nil
