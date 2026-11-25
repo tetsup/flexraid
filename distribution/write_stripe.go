@@ -60,7 +60,7 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 	}
 	d.mapMu.Lock()
 	version := d.nextVersion(key)
-	versions := d.versions[key]
+	versions = d.versions[key]
 	if versions == nil {
 		versions = make(map[storage.StripeVersion]*versionInfo)
 		d.versions[key] = versions
