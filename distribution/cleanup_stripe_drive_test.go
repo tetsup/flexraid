@@ -81,34 +81,34 @@ func TestCleanupStripeDrivePreservesOneAbnormalUnreadableChunk(t *testing.T) {
 	ctx := context.Background()
 	ios := makeIOs(t, 2)
 	id := testObjectID()
+	created, err := New(NewRequest{IOs: ios})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writeStripeForTest(created.Layer, WriteStripeRequest{
+		Context: ctx, ObjectID: id, StripeID: 9, ChunkSize: 4,
+		Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: []byte("good"),
+	}); err != nil {
+		t.Fatal(err)
+	}
 	currentKey := storage.FileKey{
 		ObjectID: id, StripeVersion: 1, StripeID: 9,
 		LayoutID: storage.LayoutID{Type: storage.LayoutType(LayoutMirror), DriveCount: 2, Role: storage.ChunkRoleData, Index: 1},
-	}
-	if _, err := ios[0].Write(physicalio.WriteRequest{Context: ctx, Key: currentKey, Data: encodeChunk(4, []byte("good"))}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ios[1].Write(physicalio.WriteRequest{Context: ctx, Key: storage.FileKey{
-		ObjectID: id, StripeVersion: 1, StripeID: 9,
-		LayoutID: storage.LayoutID{Type: storage.LayoutType(LayoutMirror), DriveCount: 2, Role: storage.ChunkRoleData, Index: 2},
-	}, Data: encodeChunk(4, []byte("good"))}); err != nil {
-		t.Fatal(err)
 	}
 	abnormalKey := currentKey
 	abnormalKey.StripeVersion = 99
 	if _, err := ios[0].Write(physicalio.WriteRequest{Context: ctx, Key: abnormalKey, Data: []byte("bad")}); err != nil {
 		t.Fatal(err)
 	}
-
-	created, err := New(NewRequest{IOs: ios})
+	restarted, err := New(NewRequest{IOs: ios})
 	if err != nil {
 		t.Fatal(err)
 	}
-	candidates := created.Layer.cleanupCandidates()
+	candidates := restarted.Layer.cleanupCandidates()
 	if len(candidates) != 1 || candidates[0].ioIndex != 0 || candidates[0].method != CleanupMethodPreserveAbnormal {
-		t.Fatalf("startup cleanup candidates = %+v; orphans = %+v", candidates, created.Layer.orphans[id])
+		t.Fatalf("startup cleanup candidates = %+v; orphans = %+v", candidates, restarted.Layer.orphans[id])
 	}
-	metrics, err := created.Layer.GetMetrics(GetMetricsRequest{Context: ctx})
+	metrics, err := restarted.Layer.GetMetrics(GetMetricsRequest{Context: ctx})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestCleanupStripeDrivePreservesOneAbnormalUnreadableChunk(t *testing.T) {
 		metrics.CleanupCandidates[0].ReclaimableBytes != 0 {
 		t.Fatalf("abnormal cleanup metrics = %+v", metrics.CleanupCandidates)
 	}
-	result, err := created.Layer.CleanupStripeDrive(CleanupStripeDriveRequest{
+	result, err := restarted.Layer.CleanupStripeDrive(CleanupStripeDriveRequest{
 		Context: ctx, IOIndex: 0, ObjectID: id, StripeID: 9, Method: CleanupMethodPreserveAbnormal,
 	})
 	if err != nil {
@@ -139,7 +139,7 @@ func TestCleanupStripeDrivePreservesOneAbnormalUnreadableChunk(t *testing.T) {
 	if _, err := ios[0].Read(physicalio.ReadRequest{Context: ctx, Key: currentKey}); err != nil {
 		t.Fatalf("current version was affected: %v", err)
 	}
-	if candidates := created.Layer.cleanupCandidates(); len(candidates) != 0 {
+	if candidates := restarted.Layer.cleanupCandidates(); len(candidates) != 0 {
 		t.Fatalf("completed abnormal candidate remains queued: %+v", candidates)
 	}
 }
@@ -149,7 +149,7 @@ func TestCleanupStripeDriveReturnsNoWorkForMissingCandidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := created.Layer.CleanupStripeDrive(CleanupStripeDriveRequest{
+	result, err := restarted.Layer.CleanupStripeDrive(CleanupStripeDriveRequest{
 		Context: context.Background(), IOIndex: 0, ObjectID: testObjectID(), StripeID: 4,
 		Method: CleanupMethodDeleteOldVersion,
 	})
@@ -172,20 +172,20 @@ func TestCleanupStripeDriveDoesNotWaitForForegroundStripeLock(t *testing.T) {
 		Context: ctx, ObjectID: testObjectID(), StripeID: 41, ChunkSize: 32,
 		Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: []byte("old"),
 	}
-	if _, err := writeStripeForTest(created.Layer, request); err != nil {
+	if _, err := writeStripeForTest(restarted.Layer, request); err != nil {
 		t.Fatal(err)
 	}
 	request.Data = []byte("new")
-	if _, err := writeStripeForTest(created.Layer, request); err != nil {
+	if _, err := writeStripeForTest(restarted.Layer, request); err != nil {
 		t.Fatal(err)
 	}
 
-	unlockObject := created.Layer.lockObjectRead(request.ObjectID)
+	unlockObject := restarted.Layer.lockObjectRead(request.ObjectID)
 
 	result := make(chan CleanupStripeDriveResponse, 1)
 	errors := make(chan error, 1)
 	go func() {
-		response, cleanupErr := created.Layer.CleanupStripeDrive(CleanupStripeDriveRequest{
+		response, cleanupErr := restarted.Layer.CleanupStripeDrive(CleanupStripeDriveRequest{
 			Context: ctx, IOIndex: 0, ObjectID: request.ObjectID, StripeID: request.StripeID,
 			Method: CleanupMethodDeleteOldVersion,
 		})
