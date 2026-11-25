@@ -191,8 +191,8 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - 読み込み時は選択済み Version の各チャンクを再読込し、物理読み取りエラーや不正なチャンクを欠落として扱って復元を試みる。復元できなければデータ破損エラーを返す。欠落チャンクを復元できた場合は、呼び出し元から修復配置が与えられていれば同じ Version の欠落チャンクを修復する。修復は新しい Version のコミットではない。
 - 復旧はチャンクの欠落または物理読み取りエラーにより取得できない場合を対象とする。読み取れたデータ同士の内容比較や、全データチャンクが読めた場合のパリティ不一致だけを理由にデータを訂正しない。チェックサム等によるサイレント破損・改ざん検出は保証しない。
 - Distribution は StripeID ごとの状態・物理チャンク候補を所有する。Foreground の Read / Write / Recovery は同一 ObjectID + StripeID の Stripe ロックで保護する。自律 Cleanup は Stripe ロックを取得せず、最新有効 Version 以外の不変 FileKey の物理削除・退避を Foreground の有効チャンク操作から独立して行う。
-- Distribution の共有 map（objects / versions / orphans / stripeLocks）へのアクセスは map Mutex で保護する。Stripe ロックの取得順序は必ず map Mutex → 対象 Stripe Mutex とする。Stripe Mutex の取得待ちで map Mutex を保持し続けてはならない。Stripe Mutex は map Mutex 保持中に TryLock し、取得できなければ map Mutex を解放して再試行する。これにより、Stripe ロック保持中の map 更新と、同じ Stripe を待つ処理のデッドロックを避ける。
-- Foreground の Stripe 操作（Read / Write / Recovery / Delete / Sync / Stripe 情報取得）は、最新の選択済み recoverable Version をキャッシュしてから実行する。キャッシュの確認・読み込み・map 反映は map Mutex を取得してから対象 Stripe Mutex を取得し、キャッシュ確保と map 反映が完了するまで両方を保持する。その後 map Mutex だけを解放し、Foreground 操作は Stripe Mutex を操作完了まで保持する。異なる Stripe の操作は並行可能とする。
+- Distribution の共有 map（objects / versions / orphans）へのアクセスは `sync.RWMutex` で保護する。参照のみの処理は `RLock` / `RUnlock`、map または map 内の共有値を変更する処理は `Lock` / `Unlock` を使用する。物理 I/O 中に map ロックを保持しない。必要な FileKey・配置・Version 等をロック中に値として snapshot し、ロック解放後に I/O を行い、結果を反映するときだけ再度ロックする。Stripe 単位の Mutex は設けず、同時読み取りを許容する。
+- Foreground の Stripe 操作は、必要な Stripe の metadata と FileKey を map ロック中に snapshot してから実行する。Stripe payload の読み込み・復元・物理書き込みは map ロックを保持せずに行う。読み取り同士および異なる Stripe の操作を map ロックで直列化しない。
 - Stripe のキャッシュは Foreground Read が物理 I/O を繰り返さずに済み、Background Cleanup が旧 Version / Chunk を物理削除した後も最新データを参照できるためのものとする。キャッシュを安全に確保できない場合、Foreground の更新・削除を開始しない。復元可能な欠損チャンクは既存の復旧契約に従って扱い、最新 Version 自体を復元不能と判断した場合は処理を中止する。
 - Background Cleanup は Foreground の Stripe Mutex を使用しない。map Mutex の短時間の保護下で無効 FileKey を確定した後、map Mutex を解放して物理削除・退避する。削除後の map / queue 反映はそれぞれの Mutex で保護する。無効対象キューは専用 Mutex で保護し、キュー Mutex を保持したまま map Mutex 取得や物理 I/O を行わない。
 
