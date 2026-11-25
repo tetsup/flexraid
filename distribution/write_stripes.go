@@ -24,7 +24,7 @@ type WriteStripesRequest struct {
 type WriteStripesResponse struct { Version storage.StripeVersion }
 
 // WriteStripes commits the supplied stripes as one Object-level Version.
-// Data stripes are persisted first and Stripe 0 is persisted last.
+// Data stripes are durably persisted first; Stripe 0 is the final commit record.
 func (d *Distribution) WriteStripes(request WriteStripesRequest) (response WriteStripesResponse, err error) {
 	started := time.Now()
 	defer func() {
