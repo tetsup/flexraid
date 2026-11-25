@@ -68,12 +68,10 @@ func (d *Distribution) SyncObject(request SyncObjectRequest) (response SyncObjec
 				if d.logger != nil {
 					d.logger.Error("stripe synchronization failed", "object_id", request.ObjectID.String(), "stripe_id", rawID, "io_index", location.ioIndex, "error", err)
 				}
-				unlockStripe()
 				return response, fmt.Errorf("sync stripe %d on I/O %d: %w", rawID, location.ioIndex, err)
 			}
 			response.SyncedChunks++
 		}
-		unlockStripe()
 	}
 	return response, nil
 }

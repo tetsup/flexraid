@@ -37,23 +37,30 @@ func (d *Distribution) ListStripeInfos(request ListStripeInfosRequest) (response
 	if err = request.Context.Err(); err != nil {
 		return response, err
 	}
-	d.mapMu.RLock()
+	d.mapMu.Lock()
 	ids := make([]storage.StripeID, 0, len(d.objects[request.ObjectID]))
 	for id := range d.objects[request.ObjectID] {
 		ids = append(ids, id)
 	}
-	d.mapMu.RUnlock()
+	d.mapMu.Unlock()
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	for _, id := range ids {
 		if err = request.Context.Err(); err != nil {
 			return ListStripeInfosResponse{}, err
 		}
-		d.mapMu.RLock()
+		key := stripeIDKey{objectID: request.ObjectID, stripeID: id}
+		unlockStripe, unlockMap := d.lockStripe(key)
+		if err = d.cacheStripeLocked(request.Context, key); err != nil {
+			unlockMap()
+			unlockStripe()
+			return ListStripeInfosResponse{}, err
+		}
 		info := d.objects[request.ObjectID][id]
 		if info != nil {
 			response.Stripes = append(response.Stripes, StripeInfo{StripeID: id, Version: info.version, Layout: info.method.layout(), ChunkSize: info.chunkSize})
 		}
-		d.mapMu.RUnlock()
+		unlockMap()
+		unlockStripe()
 	}
 	sort.Slice(response.Stripes, func(i, j int) bool {
 		return response.Stripes[i].StripeID < response.Stripes[j].StripeID

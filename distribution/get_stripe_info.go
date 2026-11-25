@@ -27,11 +27,6 @@ func (d *Distribution) GetStripeInfo(request GetStripeInfoRequest) (response Get
 	defer func() {
 		logOperation(d, "GetStripeInfo", started, err, "object_id", request.ObjectID.String(), "stripe_id", request.StripeID)
 	}()
-	ctx := request.Context
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	key := stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}
 	d.mapMu.RLock()
 	defer d.mapMu.RUnlock()
 	stripes := d.objects[request.ObjectID]
