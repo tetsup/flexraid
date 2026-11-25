@@ -274,11 +274,15 @@ func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file 
 	var requests []distribution.WriteStripeRequest
 	for _, item := range merged {
 		for id := item.start; ; id++ {
-			if err := ctx.Err(); err != nil { return persisted, err }
+			if err := ctx.Err(); err != nil {
+				return persisted, err
+			}
 			entry := file.stripeCache[id]
 			isZero := containsStripeRange(file.zeroStripeRanges, id)
 			geometry, err := geometryFor(file.header, storage.StripeID(id))
-			if err != nil { return persisted, err }
+			if err != nil {
+				return persisted, err
+			}
 			data := []byte(nil)
 			if entry != nil && entry.state == stripeCacheDirty {
 				data = entry.data
@@ -288,18 +292,26 @@ func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file 
 				}
 				data = zeroData
 			} else {
-				if id == item.end { break }
+				if id == item.end {
+					break
+				}
 				continue
 			}
 			required := int(geometry.Layout.NumChunks)
-			if geometry.Layout.Type == distribution.LayoutParity { required++ }
+			if geometry.Layout.Type == distribution.LayoutParity {
+				required++
+			}
 			placement, placementErr := layer.distribution.StripeIOIndexes(distribution.StripeIOIndexesRequest{ObjectID: file.objectID, StripeID: storage.StripeID(id)})
 			indexes := placement.IOIndexes
 			if placementErr != nil || len(indexes) != required {
 				capacity, capacityErr := layer.distribution.GetCapacity(distribution.CapacityRequest{})
-				if capacityErr != nil { return persisted, fmt.Errorf("read I/O capacities for stripe %d: %w", id, capacityErr) }
+				if capacityErr != nil {
+					return persisted, fmt.Errorf("read I/O capacities for stripe %d: %w", id, capacityErr)
+				}
 				indexes, err = selectIOIndexes(capacity.Capacities, required)
-				if err != nil { return persisted, fmt.Errorf("select I/O devices for stripe %d: %w", id, err) }
+				if err != nil {
+					return persisted, fmt.Errorf("select I/O devices for stripe %d: %w", id, err)
+				}
 			}
 			requests = append(requests, distribution.WriteStripeRequest{
 				Context: ctx, ObjectID: file.objectID, StripeID: storage.StripeID(id),
@@ -307,10 +319,14 @@ func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file 
 				IOIndexes: indexes, Data: data,
 			})
 			persisted++
-			if id == item.end { break }
+			if id == item.end {
+				break
+			}
 		}
 	}
-	if len(requests) == 0 { return 0, nil }
+	if len(requests) == 0 {
+		return 0, nil
+	}
 	if _, err := layer.distribution.WriteStripes(distribution.WriteStripesRequest{
 		Context: ctx, ObjectID: file.objectID, Stripes: requests,
 	}); err != nil {

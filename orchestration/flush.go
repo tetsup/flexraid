@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"time"
-
 )
 
 type FlushRequest struct {
