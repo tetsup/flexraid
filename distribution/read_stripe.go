@@ -75,15 +75,6 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 			}
 			location.data, location.totalLength = payload, total
 			d.markChunkPresent(key, info.version, no)
-			d.mapMu.Lock()
-			info.chunks[no] = location
-			if versions := d.versions[stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}]; versions != nil {
-				if version := versions[info.version]; version != nil {
-					version.chunks[no] = location
-					delete(version.missing, no)
-				}
-			}
-			d.mapMu.Unlock()
 		}
 		chunks = append(chunks, chunkDataWithInfo{stripeKey: stripeKey, distributionMethod: info.method, chunkNo: no, data: location.data, totalLength: location.totalLength})
 	}
@@ -213,7 +204,7 @@ func (d *Distribution) repairStripe(request ReadStripeRequest, info *stripeInfo,
 			_, err := d.ios[index].Write(physicalio.WriteRequest{Context: request.Context, Key: fileKey, Data: encodeChunk(uint64(len(data)), payload)})
 			d.recordChunkOperation("Write", err)
 			if err == nil {
-				location := chunkLocation{ioIndex: index, key: fileKey, data: payload, totalLength: uint64(len(data))}
+				location := chunkLocation{ioIndex: index, key: fileKey, totalLength: uint64(len(data))}
 				d.mapMu.Lock()
 				info.chunks[no] = location
 				stripeKey := stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}

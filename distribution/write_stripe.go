@@ -80,17 +80,22 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 	}
 	written := make(map[chunkNo]chunkLocation, len(chunks))
 	savePartial := func() {
-		if len(written) > 0 {
-			d.mapMu.Lock()
-			defer d.mapMu.Unlock()
-			versions := d.versions[key]
+		d.mapMu.Lock()
+		defer d.mapMu.Unlock()
+		versions := d.versions[key]
+		if len(written) == 0 {
+			delete(versions, version)
+			if len(versions) == 0 {
+				delete(d.versions, key)
+			}
+		} else {
 			if versions == nil {
 				versions = make(map[storage.StripeVersion]*versionInfo)
 				d.versions[key] = versions
 			}
 			versions[version] = &versionInfo{method: method, chunkSize: request.ChunkSize, chunks: cloneChunks(written), recoverable: false}
-			d.refreshStripeCleanupQueueLocked(key)
 		}
+		d.refreshStripeCleanupQueueLocked(key)
 	}
 	for _, no := range orderedChunkNos(chunks) {
 		if err = request.Context.Err(); err != nil {
@@ -111,7 +116,7 @@ func (d *Distribution) WriteStripe(request WriteStripeRequest) (response WriteSt
 			d.logger.Error("stripe write failed", "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "io_index", ioIndex, "chunk", no, "error", err)
 			return response, err
 		}
-		written[no] = chunkLocation{ioIndex: ioIndex, key: fileKey, data: append([]byte(nil), chunks[no]...), totalLength: uint64(len(request.Data)), sizeBytes: uint64(len(encoded))}
+		written[no] = chunkLocation{ioIndex: ioIndex, key: fileKey, totalLength: uint64(len(request.Data)), sizeBytes: uint64(len(encoded))}
 	}
 	d.mapMu.Lock()
 	defer d.mapMu.Unlock()

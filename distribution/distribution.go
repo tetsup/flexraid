@@ -168,13 +168,24 @@ func New(request NewRequest) (NewResponse, error) {
 		var selectedInfo *versionInfo
 		for versionNo, version := range versions {
 			if version.invalid {
+				for no, location := range version.chunks {
+					location.data = nil
+					version.chunks[no] = location
+				}
 				continue
 			}
 			chunks := make([]chunkDataWithInfo, 0, len(version.chunks))
 			for no, location := range version.chunks {
 				chunks = append(chunks, chunkDataWithInfo{stripeKey: stripeKeyInfo{objectID: key.objectID, stripeID: key.stripeID, stripeVersion: versionNo}, distributionMethod: version.method, chunkNo: no, data: location.data, totalLength: location.totalLength})
 			}
-			if _, err := restoreStripe(chunks); err != nil {
+			_, restoreErr := restoreStripe(chunks)
+			// Startup scanning validates recoverability but does not retain
+			// payloads. ReadStripe loads only the requested Stripe on demand.
+			for no, location := range version.chunks {
+				location.data = nil
+				version.chunks[no] = location
+			}
+			if restoreErr != nil {
 				d.recordIntegrityError()
 				continue
 			}
