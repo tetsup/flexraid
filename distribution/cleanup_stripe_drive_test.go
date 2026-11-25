@@ -24,17 +24,17 @@ func TestCleanupStripeDriveProcessesOnlyOneOldVersionFile(t *testing.T) {
 		Context: ctx, ObjectID: id, StripeID: 8, ChunkSize: 32,
 		Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: []byte("version one"),
 	}
-	first, err := created.Layer.writeStripeAtVersion(, 0, true)
+	first, err := created.Layer.writeStripeAtVersion(request, 0, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	request.Data = []byte("version two")
-	second, err := created.Layer.writeStripeAtVersion(, 0, true)
+	second, err := created.Layer.writeStripeAtVersion(request, 0, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	request.Data = []byte("version three")
-	third, err := created.Layer.writeStripeAtVersion(, 0, true)
+	third, err := created.Layer.writeStripeAtVersion(request, 0, true)
 	if err != nil {
 		t.Fatal(err)
 	}
