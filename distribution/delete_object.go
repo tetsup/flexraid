@@ -87,7 +87,7 @@ func (d *Distribution) DeleteObject(request DeleteObjectRequest) (response Delet
 			}
 		}
 	}
-	d.mapMu.Unlock()
+	d.mapMu.RUnlock()
 
 	work := make([]objectDeleteLocation, 0, len(locations))
 	for _, item := range locations {
