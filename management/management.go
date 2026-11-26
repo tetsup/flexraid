@@ -96,7 +96,7 @@ func New(request NewRequest) (*Management, error) {
 func (layer *Management) Cleanup(request orchestration.CleanupRequest) (response orchestration.CleanupResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("Cleanup", started, err) }()
-	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context)
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, orchestration.ObjectLockWrite)
 	if lockErr != nil {
 		return response, lockErr
 	}
@@ -108,7 +108,7 @@ func (layer *Management) Cleanup(request orchestration.CleanupRequest) (response
 func (layer *Management) Create(request orchestration.CreateRequest) (response orchestration.CreateResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("Create", started, err) }()
-	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, orchestration.ObjectLockWrite, orchestration.ObjectLockWrite, request.ParentID)
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, orchestration.ObjectLockWrite, request.ParentID)
 	if lockErr != nil {
 		return response, lockErr
 	}
@@ -288,7 +288,7 @@ func (layer *Management) SetAttr(request orchestration.SetAttrRequest) (response
 func (layer *Management) StatFs(request orchestration.StatFsRequest) (response orchestration.StatFsResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("StatFs", started, err) }()
-	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context)
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, orchestration.ObjectLockRead)
 	if lockErr != nil {
 		return response, lockErr
 	}
@@ -300,7 +300,7 @@ func (layer *Management) StatFs(request orchestration.StatFsRequest) (response o
 func (layer *Management) Symlink(request orchestration.SymlinkRequest) (response orchestration.SymlinkResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("Symlink", started, err) }()
-	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, orchestration.ObjectLockWrite, orchestration.ObjectLockRead, request.ParentID)
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, orchestration.ObjectLockWrite, request.ParentID)
 	if lockErr != nil {
 		return response, lockErr
 	}
