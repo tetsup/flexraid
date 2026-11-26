@@ -66,6 +66,12 @@ func (layer *Orchestration) unlinkLocked(request UnlinkRequest) (response Unlink
 	if !exists {
 		return response, os.ErrNotExist
 	}
+	if err = addObjectLocks(ctx, object.header.ObjectID); err != nil {
+		return response, err
+	}
+	if parent.children[request.Name] != object || object.header.Deleted {
+		return response, os.ErrNotExist
+	}
 
 	switch object.header.Kind {
 	case objectKindFile:
