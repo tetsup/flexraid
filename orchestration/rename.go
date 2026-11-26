@@ -83,6 +83,21 @@ func (layer *Orchestration) renameLocked(request RenameRequest) (response Rename
 	if !exists || source.header.Deleted {
 		return response, os.ErrNotExist
 	}
+	destination, destinationExists := destinationParent.children[request.DestinationName]
+	ids := []shared.ObjectID{source.header.ObjectID}
+	if destinationExists {
+		ids = append(ids, destination.header.ObjectID)
+	}
+	if err = addObjectLocks(ctx, ids...); err != nil {
+		return response, err
+	}
+	if sourceParent.children[request.SourceName] != source || source.header.Deleted {
+		return response, os.ErrNotExist
+	}
+	currentDestination, currentDestinationExists := destinationParent.children[request.DestinationName]
+	if currentDestinationExists != destinationExists || (destinationExists && currentDestination != destination) {
+		return response, fmt.Errorf("rename destination changed during lock acquisition: %w", syscall.EAGAIN)
+	}
 	if request.SourceParentID == request.DestinationParentID &&
 		request.SourceName == request.DestinationName {
 		return response, nil
@@ -100,7 +115,6 @@ func (layer *Orchestration) renameLocked(request RenameRequest) (response Rename
 		return response, syscall.EINVAL
 	}
 
-	destination, destinationExists := destinationParent.children[request.DestinationName]
 	if destinationExists && (destination == source ||
 		(source.file != nil && source.file == destination.file)) {
 		// POSIX permits names for the same inode to be renamed onto one
