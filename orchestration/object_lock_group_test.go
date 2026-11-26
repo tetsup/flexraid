@@ -324,8 +324,12 @@ func TestPublicObjectLockGroupAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := group.Context().Value(objectLockGroupContextKey{}).(*objectLockGroup); !ok {
-		t.Fatal("group context does not carry the lock group")
+	fromContext, ok := layer.ObjectLockGroupFromContext(group.Context())
+	if !ok {
+		t.Fatal("group context does not expose the existing lock group")
+	}
+	if err := fromContext.Add(lockTestObjectID(2)); err != nil {
+		t.Fatalf("add duplicate through context group: %v", err)
 	}
 	if err := group.Add(lockTestObjectID(2)); err != nil {
 		t.Fatal(err)
