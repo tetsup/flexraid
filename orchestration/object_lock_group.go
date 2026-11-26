@@ -10,47 +10,62 @@ import (
 	"github.com/tetsup/flexraid/pkg/shared"
 )
 
+// ObjectLockMode is fixed for the lifetime of an Object lock group.
+type ObjectLockMode uint8
+
+const (
+	// ObjectLockWrite is the zero value and acquires exclusive locks.
+	ObjectLockWrite ObjectLockMode = iota
+	// ObjectLockRead acquires shared locks.
+	ObjectLockRead
+)
+
 type objectLockEntry struct {
-	token chan struct{}
-	refs  int
+	mu   sync.RWMutex
+	refs int
 }
 
 type objectLockManager struct {
-	mu        sync.Mutex
-	entries   map[shared.ObjectID]*objectLockEntry
-	groupGate chan struct{}
+	mu      sync.Mutex
+	entries map[shared.ObjectID]*objectLockEntry
 }
 
 type objectLockGroup struct {
+	mu      sync.Mutex
 	manager *objectLockManager
+	mode    ObjectLockMode
 	held    map[shared.ObjectID]*objectLockEntry
 	order   []shared.ObjectID
 	closed  bool
 }
 
 func newObjectLockManager() *objectLockManager {
-	manager := &objectLockManager{entries: make(map[shared.ObjectID]*objectLockEntry), groupGate: make(chan struct{}, 1)}
-	manager.groupGate <- struct{}{}
-	return manager
+	return &objectLockManager{entries: make(map[shared.ObjectID]*objectLockEntry)}
 }
 
 func (manager *objectLockManager) entry(id shared.ObjectID) *objectLockEntry {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
+
 	entry := manager.entries[id]
 	if entry == nil {
-		entry = &objectLockEntry{token: make(chan struct{}, 1)}
-		entry.token <- struct{}{}
+		entry = &objectLockEntry{}
 		manager.entries[id] = entry
 	}
+	// References include both holders and goroutines waiting for the RWMutex.
 	entry.refs++
 	return entry
 }
 
-func (manager *objectLockManager) put(id shared.ObjectID, entry *objectLockEntry, unlock bool) {
+func (manager *objectLockManager) put(id shared.ObjectID, entry *objectLockEntry, mode ObjectLockMode, unlock bool) {
 	if unlock {
-		entry.token <- struct{}{}
+		if mode == ObjectLockRead {
+			entry.mu.RUnlock()
+		} else {
+			entry.mu.Unlock()
+		}
 	}
+
 	manager.mu.Lock()
 	entry.refs--
 	if entry.refs == 0 && manager.entries[id] == entry {
@@ -59,135 +74,135 @@ func (manager *objectLockManager) put(id shared.ObjectID, entry *objectLockEntry
 	manager.mu.Unlock()
 }
 
-func (manager *objectLockManager) acquire(ctx context.Context, id shared.ObjectID) (*objectLockEntry, error) {
+func (manager *objectLockManager) acquire(ctx context.Context, id shared.ObjectID, mode ObjectLockMode) (*objectLockEntry, error) {
 	entry := manager.entry(id)
-	select {
-	case <-ctx.Done():
-		manager.put(id, entry, false)
-		return nil, ctx.Err()
-	case <-entry.token:
-		if err := ctx.Err(); err != nil {
-			manager.put(id, entry, true)
-			return nil, err
-		}
-		return entry, nil
+	if mode == ObjectLockRead {
+		entry.mu.RLock()
+	} else {
+		entry.mu.Lock()
 	}
+	if err := ctx.Err(); err != nil {
+		manager.put(id, entry, mode, true)
+		return nil, err
+	}
+	return entry, nil
 }
 
-func (manager *objectLockManager) lockGroup(ctx context.Context, ids ...shared.ObjectID) (*objectLockGroup, error) {
+func (manager *objectLockManager) lockGroup(ctx context.Context, ids []shared.ObjectID, mode ObjectLockMode) (*objectLockGroup, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("object lock context is required")
 	}
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-manager.groupGate:
-		if err := ctx.Err(); err != nil {
-			manager.groupGate <- struct{}{}
-			return nil, err
-		}
+	if mode != ObjectLockRead && mode != ObjectLockWrite {
+		return nil, fmt.Errorf("invalid object lock mode: %d", mode)
 	}
 	group := &objectLockGroup{
 		manager: manager,
+		mode:    mode,
 		held:    make(map[shared.ObjectID]*objectLockEntry),
 	}
-	if err := group.Add(ctx, ids...); err != nil {
-		group.Unlock()
-		return nil, err
+	for _, id := range uniqueSortedObjectIDs(ids) {
+		if err := group.Add(ctx, id); err != nil {
+			group.Unlock()
+			return nil, err
+		}
 	}
 	return group, nil
 }
 
-// Add extends the group without ever waiting for a lower ObjectID while
-// retaining a higher one. Higher held locks are released in reverse order,
-// then the merged set is acquired in ascending ObjectID order.
-func (group *objectLockGroup) Add(ctx context.Context, ids ...shared.ObjectID) error {
-	if group.closed {
-		return fmt.Errorf("object lock group is closed")
-	}
+// Add adds one Object to the group. Locks after the insertion point are
+// released in reverse order and reacquired with the new lock in ascending order.
+func (group *objectLockGroup) Add(ctx context.Context, id shared.ObjectID) error {
 	if ctx == nil {
 		return fmt.Errorf("object lock context is required")
 	}
 
-	additional := make([]shared.ObjectID, 0, len(ids))
-	seen := make(map[shared.ObjectID]struct{}, len(ids))
-	for _, id := range ids {
-		if _, exists := group.held[id]; exists {
-			continue
-		}
-		if _, exists := seen[id]; exists {
-			continue
-		}
-		seen[id] = struct{}{}
-		additional = append(additional, id)
-	}
-	if len(additional) == 0 {
-		return ctx.Err()
-	}
-	sortObjectIDs(additional)
+	group.mu.Lock()
+	defer group.mu.Unlock()
 
-	var retained []shared.ObjectID
-	var reacquire []shared.ObjectID
-	if len(group.order) > 0 && objectIDLess(additional[0], group.order[len(group.order)-1]) {
-		first := additional[0]
-		for _, id := range group.order {
-			if objectIDLess(first, id) {
-				reacquire = append(reacquire, id)
-			} else {
-				retained = append(retained, id)
-			}
-		}
-		for i := len(group.order) - 1; i >= 0; i-- {
-			id := group.order[i]
-			if _, release := group.held[id]; release && objectIDLess(first, id) {
-				group.manager.put(id, group.held[id], true)
-				delete(group.held, id)
-			}
-		}
-		group.order = retained
+	if group.closed {
+		return fmt.Errorf("object lock group is closed")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if _, exists := group.held[id]; exists {
+		return nil
 	}
 
-	toAcquire := append(additional, reacquire...)
+	insertAt := sort.Search(len(group.order), func(i int) bool {
+		return !objectIDLess(group.order[i], id)
+	})
+	reacquire := append([]shared.ObjectID(nil), group.order[insertAt:]...)
+
+	// Release the suffix in reverse order before acquiring the new Object.
+	for i := len(group.order) - 1; i >= insertAt; i-- {
+		heldID := group.order[i]
+		group.manager.put(heldID, group.held[heldID], group.mode, true)
+		delete(group.held, heldID)
+	}
+	group.order = group.order[:insertAt]
+
+	toAcquire := make([]shared.ObjectID, 1, len(reacquire)+1)
+	toAcquire[0] = id
+	toAcquire = append(toAcquire, reacquire...)
 	sortObjectIDs(toAcquire)
+
 	acquired := make([]shared.ObjectID, 0, len(toAcquire))
-	for _, id := range toAcquire {
-		entry, err := group.manager.acquire(ctx, id)
+	for _, nextID := range toAcquire {
+		entry, err := group.manager.acquire(ctx, nextID, group.mode)
 		if err != nil {
 			for i := len(acquired) - 1; i >= 0; i-- {
 				heldID := acquired[i]
-				group.manager.put(heldID, group.held[heldID], true)
+				group.manager.put(heldID, group.held[heldID], group.mode, true)
 				delete(group.held, heldID)
 			}
 			return err
 		}
-		group.held[id] = entry
-		acquired = append(acquired, id)
+		group.held[nextID] = entry
+		acquired = append(acquired, nextID)
 	}
+
 	group.order = append(group.order, acquired...)
-	sortObjectIDs(group.order)
 	return nil
 }
 
-// Unlock releases every lock in reverse ObjectID order. It is idempotent.
+// Unlock releases all locks in reverse ObjectID order. It is idempotent.
 func (group *objectLockGroup) Unlock() {
-	if group == nil || group.closed {
+	if group == nil {
+		return
+	}
+
+	group.mu.Lock()
+	defer group.mu.Unlock()
+	if group.closed {
 		return
 	}
 	group.closed = true
 	for i := len(group.order) - 1; i >= 0; i-- {
 		id := group.order[i]
-		if entry := group.held[id]; entry != nil {
-			group.manager.put(id, entry, true)
-			delete(group.held, id)
-		}
+		group.manager.put(id, group.held[id], group.mode, true)
+		delete(group.held, id)
 	}
 	group.order = nil
-	group.manager.groupGate <- struct{}{}
+}
+
+func uniqueSortedObjectIDs(ids []shared.ObjectID) []shared.ObjectID {
+	unique := make(map[shared.ObjectID]struct{}, len(ids))
+	result := make([]shared.ObjectID, 0, len(ids))
+	for _, id := range ids {
+		if _, exists := unique[id]; exists {
+			continue
+		}
+		unique[id] = struct{}{}
+		result = append(result, id)
+	}
+	sortObjectIDs(result)
+	return result
 }
 
 func sortObjectIDs(ids []shared.ObjectID) {
 	sort.Slice(ids, func(i, j int) bool {
-		return bytes.Compare(ids[i][:], ids[j][:]) < 0
+		return objectIDLess(ids[i], ids[j])
 	})
 }
 
