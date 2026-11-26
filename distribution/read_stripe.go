@@ -41,7 +41,11 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 	if lockErr != nil {
 		return response, lockErr
 	}
-	defer unlockVersion()
+	defer func() {
+		if unlockVersion != nil {
+			unlockVersion()
+		}
+	}()
 	if info.chunkSize != 0 && request.ChunkSize != info.chunkSize {
 		return response, fmt.Errorf("stripe %d chunk size %d does not match selected version chunk size %d: %w", request.StripeID, request.ChunkSize, info.chunkSize, ErrDataCorrupted)
 	}
@@ -127,8 +131,24 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 		d.recordRecovery(true)
 		info.corrupted = true
 		d.logger.Warn("stripe recovered from missing chunks", "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "missing_chunks", len(missing))
-		d.repairStripe(request, info, missing, restored)
-		needsClassificationRefresh = true
+
+		// Repair mutates the physical contents of this Version. Upgrade from
+		// the read lock only after releasing it, then verify it is still selected.
+		unlockVersion()
+		unlockVersion = d.lockVersionWrite(request.ObjectID, request.StripeID, info.version)
+		d.mapMu.RLock()
+		selected := d.objects[key.objectID][key.stripeID]
+		versions := d.versions[key]
+		versionInfo := versions[info.version]
+		stillSelected := selected != nil && selected.version == info.version && versionInfo != nil
+		if stillSelected {
+			info.chunks = cloneChunks(versionInfo.chunks)
+		}
+		d.mapMu.RUnlock()
+		if stillSelected {
+			d.repairStripe(request, info, missing, restored)
+			needsClassificationRefresh = true
+		}
 	}
 	if needsClassificationRefresh {
 		d.mapMu.Lock()
