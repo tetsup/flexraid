@@ -15,7 +15,16 @@ type LockObjectGroupRequest struct {
 
 type LockObjectGroupResponse struct {
 	Context context.Context
+	Group   *orchestration.ObjectLockGroup
 	Unlock  func()
+}
+
+// NewObjectLockGroup creates an empty Object lock group owned by Orchestration.
+func (layer *Management) NewObjectLockGroup(ctx context.Context) (*orchestration.ObjectLockGroup, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return layer.orchestration.NewObjectLockGroup(ctx)
 }
 
 // LockObjectGroup begins or extends the fixed-mode Object lock group for one logical operation.
@@ -33,7 +42,7 @@ func (layer *Management) LockObjectGroup(request LockObjectGroupRequest) (LockOb
 	if err != nil {
 		return LockObjectGroupResponse{}, err
 	}
-	return LockObjectGroupResponse{Context: result.Context, Unlock: result.Unlock}, nil
+	return LockObjectGroupResponse{Context: result.Context, Group: result.Group, Unlock: result.Unlock}, nil
 }
 
 func fileHandleObjectIDs(handle *orchestration.FileHandle) []shared.ObjectID {
