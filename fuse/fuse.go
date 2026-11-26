@@ -593,7 +593,6 @@ type fileHandle struct {
 	handle   *orchestration.FileHandle
 }
 
-
 func fileHandleObjectIDs(handle *orchestration.FileHandle) []shared.ObjectID {
 	if id, ok := handle.ObjectID(); ok {
 		return []shared.ObjectID{id}
