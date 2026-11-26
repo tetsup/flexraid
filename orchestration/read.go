@@ -73,6 +73,12 @@ func (layer *Orchestration) readLocked(request ReadRequest) (response ReadRespon
 	if object.file == nil || object.file != handle.runtimeFile {
 		return response, fmt.Errorf("handle does not refer to object %s: %w", request.ObjectID.String(), os.ErrInvalid)
 	}
+	if err = addObjectLocks(ctx, object.file.objectID); err != nil {
+		return response, err
+	}
+	if layer.objects[request.ObjectID] != object || object.file != handle.runtimeFile {
+		return response, os.ErrNotExist
+	}
 	file := handle.runtimeFile
 	fileHeader := file.header
 	fileSize := fileHeader.Size
