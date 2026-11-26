@@ -50,6 +50,22 @@ func newObjectLockGroup(manager *objectLockManager) *objectLockGroup {
 	}
 }
 
+func (manager *objectLockManager) lockGroup(ctx context.Context, ids []shared.ObjectID, mode ObjectLockMode) (*objectLockGroup, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("object lock context is required")
+	}
+	group := newObjectLockGroup(manager)
+	for _, id := range uniqueSortedObjectIDs(ids) {
+		if err := group.Add(ctx, id); err != nil {
+			return nil, err
+		}
+	}
+	if err := group.Lock(ctx, mode); err != nil {
+		return nil, err
+	}
+	return group, nil
+}
+
 func (manager *objectLockManager) entry(id shared.ObjectID) *objectLockEntry {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
