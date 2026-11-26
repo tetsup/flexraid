@@ -105,6 +105,12 @@ func (layer *Orchestration) openLocked(request OpenRequest) (response OpenRespon
 	if object.file == nil {
 		return response, fmt.Errorf("file backing is unavailable: %w", os.ErrNotExist)
 	}
+	if err = addObjectLocks(ctx, object.file.objectID); err != nil {
+		return response, err
+	}
+	if layer.objects[request.ObjectID] != object || object.file == nil {
+		return response, os.ErrNotExist
+	}
 
 	var accessMode AccessMode
 	switch request.Flags & uint32(syscall.O_ACCMODE) {
