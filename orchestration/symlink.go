@@ -98,6 +98,9 @@ func (layer *Orchestration) symlinkLocked(request SymlinkRequest) (response Syml
 	if err = addObjectLocks(ctx, objectID); err != nil {
 		return response, err
 	}
+	if layer.objects[request.ParentID] != parent || parent.header.Deleted || parent.children[request.Name] != nil {
+		return response, syscall.EAGAIN
+	}
 	objectHeader, err = layer.persistNewObject(ctx, objectHeader, []byte(request.Target))
 	if err != nil {
 		return response, fmt.Errorf("persist symlink %q: %w", request.Name, err)
