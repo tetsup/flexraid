@@ -225,3 +225,30 @@ func TestObjectLockAcquisitionCanBeCanceled(t *testing.T) {
 		t.Fatalf("lock registry retains %d entries after cancellation and unlock", len(manager.entries))
 	}
 }
+
+func TestObjectLockGroupBecomesUnusableAfterCanceledAddition(t *testing.T) {
+	manager := newObjectLockManager()
+	group := newTestLockGroup(t, manager, ObjectLockWrite, lockTestObjectID(1), lockTestObjectID(3))
+	blocker := newTestLockGroup(t, manager, ObjectLockWrite, lockTestObjectID(2))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if err := group.Add(ctx, lockTestObjectID(2)); err == nil {
+		t.Fatal("addition succeeded despite context deadline")
+	}
+	if err := group.Add(context.Background(), lockTestObjectID(4)); err == nil {
+		t.Fatal("group accepted another addition after a failed extension")
+	}
+
+	blocker.Unlock()
+	group.Unlock()
+	deadline := time.Now().Add(time.Second)
+	for {
+		manager.mu.Lock()
+		remaining := len(manager.entries)
+		manager.mu.Unlock()
+		if remaining == 0 { return }
+		if time.Now().After(deadline) { t.Fatalf("lock registry retains %d entries after cleanup", remaining) }
+		time.Sleep(time.Millisecond)
+	}
+}
