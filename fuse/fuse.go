@@ -101,6 +101,12 @@ func (n *node) Getattr(ctx context.Context, _ fs.FileHandle, out *gofuse.AttrOut
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, n.objectID)
+	if errno != 0 {
+		return errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	attributes, err := n.layer.GetAttr(orchestration.GetAttrRequest{Context: ctx, ObjectID: n.objectID})
 	if err != nil {
 		return toErrno(err)
@@ -143,6 +149,12 @@ func (n *node) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, s
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return nil, 0, errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, n.objectID)
+	if errno != 0 {
+		return nil, 0, errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	result, err := n.layer.Open(orchestration.OpenRequest{Context: ctx, ObjectID: n.objectID, Flags: flags})
 	if err != nil {
 		return nil, 0, toErrno(err)
@@ -159,6 +171,12 @@ func (n *node) Read(ctx context.Context, fh fs.FileHandle, dest []byte, offset i
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return nil, errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, n.objectID)
+	if errno != 0 {
+		return nil, errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	result, err := n.layer.Read(orchestration.ReadRequest{
 		Context: ctx, Handle: handle.handle, ObjectID: n.objectID,
 		Offset: uint64(offset), Size: uint32(len(dest)),
@@ -178,6 +196,12 @@ func (n *node) Write(ctx context.Context, fh fs.FileHandle, data []byte, offset 
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return 0, errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, n.objectID)
+	if errno != 0 {
+		return 0, errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	result, err := n.layer.Write(orchestration.WriteRequest{
 		Context: ctx, Handle: handle.handle, ObjectID: n.objectID,
 		Offset: uint64(offset), Data: data,
@@ -197,6 +221,12 @@ func (n *node) Flush(ctx context.Context, fh fs.FileHandle) syscall.Errno {
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, handle.handle.ObjectID())
+	if errno != 0 {
+		return errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	_, err := n.layer.Flush(orchestration.FlushRequest{Context: ctx, Handle: handle.handle})
 	return toErrno(err)
 }
@@ -210,6 +240,12 @@ func (n *node) Fsync(ctx context.Context, fh fs.FileHandle, _ uint32) syscall.Er
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, handle.handle.ObjectID())
+	if errno != 0 {
+		return errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	_, err := n.layer.Fsync(orchestration.FsyncRequest{Context: ctx, Handle: handle.handle})
 	return toErrno(err)
 }
@@ -336,6 +372,12 @@ func (n *node) Unlink(ctx context.Context, name string) syscall.Errno {
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, n.objectID)
+	if errno != 0 {
+		return errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	_, err := n.layer.Unlink(orchestration.UnlinkRequest{Context: ctx, ParentID: n.objectID, Name: name})
 	return toErrno(err)
 }
@@ -345,6 +387,12 @@ func (n *node) Rmdir(ctx context.Context, name string) syscall.Errno {
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, n.objectID)
+	if errno != 0 {
+		return errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	_, err := n.layer.Rmdir(orchestration.RmdirRequest{Context: ctx, ParentID: n.objectID, Name: name})
 	return toErrno(err)
 }
@@ -364,6 +412,12 @@ func (n *node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, n.objectID, destination.objectID)
+	if errno != 0 {
+		return errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	_, err := n.layer.Rename(orchestration.RenameRequest{
 		Context: ctx, SourceParentID: n.objectID, SourceName: name,
 		DestinationParentID: destination.objectID, DestinationName: newName,
@@ -437,6 +491,12 @@ func (n *node) Readlink(ctx context.Context) ([]byte, syscall.Errno) {
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return nil, errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, n.objectID)
+	if errno != 0 {
+		return nil, errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	result, err := n.layer.ReadLink(orchestration.ReadLinkRequest{Context: ctx, ObjectID: n.objectID})
 	if err != nil {
 		return nil, toErrno(err)
@@ -508,6 +568,12 @@ func (n *node) Statfs(ctx context.Context, out *gofuse.StatfsOut) syscall.Errno 
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx)
+	if errno != 0 {
+		return errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	result, err := n.layer.StatFs(orchestration.StatFsRequest{Context: ctx})
 	if err != nil {
 		return toErrno(err)
