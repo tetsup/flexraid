@@ -65,3 +65,35 @@ func TestObjectLockGroupSerializesGroupsWithinProcess(t *testing.T) {
 		t.Fatal("second lock group did not acquire after first group was released")
 	}
 }
+
+func TestNestedObjectLockGroupReusesOuterGroup(t *testing.T) {
+	layer := &Orchestration{objectLocks: newObjectLockManager()}
+	first, err := layer.LockObjectGroup(LockObjectGroupRequest{
+		Context: context.Background(), ObjectIDs: []shared.ObjectID{testObjectID(1), testObjectID(3)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Unlock()
+
+	nested, err := layer.LockObjectGroup(LockObjectGroupRequest{
+		Context: first.Context, ObjectIDs: []shared.ObjectID{testObjectID(2)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	nested.Unlock()
+
+	group, ok := first.Context.Value(objectLockGroupContextKey{}).(*objectLockGroup)
+	if !ok {
+		t.Fatal("outer context lost its lock group")
+	}
+	if len(group.order) != 3 {
+		t.Fatalf("outer group holds %d objects, want 3", len(group.order))
+	}
+	for i, want := range []shared.ObjectID{testObjectID(1), testObjectID(2), testObjectID(3)} {
+		if group.order[i] != want {
+			t.Fatalf("lock order[%d] = %v, want %v", i, group.order[i], want)
+		}
+	}
+}
