@@ -154,49 +154,57 @@ func TestObjectLockGroupUnlockIsIdempotentAndRetiresEntries(t *testing.T) {
 
 func TestNestedObjectLockGroupReusesOuterGroup(t *testing.T) {
 	layer := &Orchestration{objectLocks: newObjectLockManager()}
-	first, err := layer.LockObjectGroup(LockObjectGroupRequest{
-		Context:   context.Background(),
-		ObjectIDs: []shared.ObjectID{lockTestObjectID(1), lockTestObjectID(3)},
-		Mode:      ObjectLockWrite,
-	})
+	first, err := layer.NewObjectLockGroup(context.Background())
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Add(lockTestObjectID(1)); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Add(lockTestObjectID(3)); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Lock(ObjectLockWrite); err != nil {
 		t.Fatal(err)
 	}
 	defer first.Unlock()
 
-	nested, err := layer.LockObjectGroup(LockObjectGroupRequest{
-		Context:   first.Context,
-		ObjectIDs: []shared.ObjectID{lockTestObjectID(2)},
-		Mode:      ObjectLockWrite,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	nested.Unlock()
-
-	group, ok := first.Context.Value(objectLockGroupContextKey{}).(*objectLockGroup)
+	nested, ok := layer.ObjectLockGroupFromContext(first.Context())
 	if !ok {
 		t.Fatal("outer context lost its lock group")
 	}
+	if err := nested.Add(lockTestObjectID(2)); err != nil {
+		t.Fatal(err)
+	}
+
 	want := []shared.ObjectID{lockTestObjectID(1), lockTestObjectID(2), lockTestObjectID(3)}
 	for i := range want {
-		if group.order[i] != want[i] {
-			t.Fatalf("order[%d] = %v, want %v", i, group.order[i], want[i])
+		if first.group.order[i] != want[i] {
+			t.Fatalf("order[%d] = %v, want %v", i, first.group.order[i], want[i])
 		}
 	}
 }
 
-func TestNestedObjectLockGroupCannotChangeMode(t *testing.T) {
+func TestObjectLockGroupRelocksWithDifferentMode(t *testing.T) {
 	layer := &Orchestration{objectLocks: newObjectLockManager()}
-	first, err := layer.LockObjectGroup(LockObjectGroupRequest{Context: context.Background(), Mode: ObjectLockRead})
+	group, err := layer.NewObjectLockGroup(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer first.Unlock()
-	_, err = layer.LockObjectGroup(LockObjectGroupRequest{Context: first.Context, Mode: ObjectLockWrite})
-	if err == nil {
-		t.Fatal("nested group changed its lock mode")
+	if err := group.Add(lockTestObjectID(1)); err != nil {
+		t.Fatal(err)
 	}
+	if err := group.Lock(ObjectLockRead); err != nil {
+		t.Fatal(err)
+	}
+	if err := group.Lock(ObjectLockWrite); err == nil {
+		t.Fatal("Lock succeeded while group was already locked")
+	}
+	group.Unlock()
+	if err := group.Lock(ObjectLockWrite); err != nil {
+		t.Fatalf("Lock after Unlock with a different mode: %v", err)
+	}
+	group.Unlock()
 }
 
 func TestObjectLockAcquisitionCanBeCanceled(t *testing.T) {
