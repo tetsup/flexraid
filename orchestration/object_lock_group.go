@@ -10,7 +10,7 @@ import (
 	"github.com/tetsup/flexraid/pkg/shared"
 )
 
-// ObjectLockMode is fixed for the lifetime of an Object lock group.
+// ObjectLockMode selects the lock mode for one Lock call.
 type ObjectLockMode uint8
 
 const (
@@ -31,15 +31,23 @@ type objectLockManager struct {
 type objectLockGroup struct {
 	mu      sync.Mutex
 	manager *objectLockManager
-	mode    ObjectLockMode
+	targets map[shared.ObjectID]struct{}
 	held    map[shared.ObjectID]*objectLockEntry
 	order   []shared.ObjectID
-	closed  bool
-	failed  bool
+	mode    ObjectLockMode
+	locked  bool
 }
 
 func newObjectLockManager() *objectLockManager {
 	return &objectLockManager{entries: make(map[shared.ObjectID]*objectLockEntry)}
+}
+
+func newObjectLockGroup(manager *objectLockManager) *objectLockGroup {
+	return &objectLockGroup{
+		manager: manager,
+		targets: make(map[shared.ObjectID]struct{}),
+		held:    make(map[shared.ObjectID]*objectLockEntry),
+	}
 }
 
 func (manager *objectLockManager) entry(id shared.ObjectID) *objectLockEntry {
@@ -77,8 +85,6 @@ func (manager *objectLockManager) acquire(ctx context.Context, id shared.ObjectI
 		return nil, err
 	}
 
-	// Use the fast path for uncontended locks. Once contended, use the
-	// blocking RWMutex operation so queued writers retain RWMutex fairness.
 	acquired := false
 	if mode == ObjectLockRead {
 		acquired = entry.mu.TryRLock()
@@ -121,41 +127,24 @@ func (manager *objectLockManager) acquire(ctx context.Context, id shared.ObjectI
 	}
 }
 
-func (manager *objectLockManager) lockGroup(ctx context.Context, ids []shared.ObjectID, mode ObjectLockMode) (*objectLockGroup, error) {
-	if ctx == nil {
-		return nil, fmt.Errorf("object lock context is required")
-	}
-	if mode != ObjectLockRead && mode != ObjectLockWrite {
-		return nil, fmt.Errorf("invalid object lock mode: %d", mode)
-	}
-	group := &objectLockGroup{manager: manager, mode: mode, held: make(map[shared.ObjectID]*objectLockEntry)}
-	for _, id := range uniqueSortedObjectIDs(ids) {
-		if err := group.Add(ctx, id); err != nil {
-			group.Unlock()
-			return nil, err
-		}
-	}
-	return group, nil
-}
-
-// Add inserts one Object. The held suffix is released in reverse order and
-// reacquired together with the new Object in ascending ObjectID order.
+// Add inserts an ObjectID into the target set. Before Lock it only records the
+// target. While locked, it releases the held suffix and reacquires the new
+// target and suffix in ascending ObjectID order.
 func (group *objectLockGroup) Add(ctx context.Context, id shared.ObjectID) error {
 	if ctx == nil {
 		return fmt.Errorf("object lock context is required")
 	}
 	group.mu.Lock()
 	defer group.mu.Unlock()
-	if group.closed {
-		return fmt.Errorf("object lock group is closed")
-	}
-	if group.failed {
-		return fmt.Errorf("object lock group is unusable after a failed addition")
-	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if _, exists := group.held[id]; exists {
+	if _, exists := group.targets[id]; exists {
+		return nil
+	}
+	group.targets[id] = struct{}{}
+
+	if !group.locked {
 		return nil
 	}
 
@@ -173,42 +162,76 @@ func (group *objectLockGroup) Add(ctx context.Context, id shared.ObjectID) error
 	toAcquire = append(toAcquire, reacquire...)
 	sortObjectIDs(toAcquire)
 
-	acquired := make([]shared.ObjectID, 0, len(toAcquire))
-	for _, nextID := range toAcquire {
-		entry, err := group.manager.acquire(ctx, nextID, group.mode)
-		if err != nil {
-			for i := len(acquired) - 1; i >= 0; i-- {
-				heldID := acquired[i]
-				group.manager.put(heldID, group.held[heldID], group.mode, true)
-				delete(group.held, heldID)
-			}
-			group.failed = true
-			return err
-		}
-		group.held[nextID] = entry
-		acquired = append(acquired, nextID)
+	if err := group.acquireLocked(ctx, toAcquire); err != nil {
+		group.unlockHeldLocked()
+		group.locked = false
+		return err
 	}
-	group.order = append(group.order, acquired...)
 	return nil
 }
 
-// Unlock releases all held Objects in reverse ObjectID order. It is idempotent.
-func (group *objectLockGroup) Unlock() {
-	if group == nil {
-		return
+// Lock acquires every target in ascending ObjectID order using the requested
+// mode. The mode applies only until the next Unlock.
+func (group *objectLockGroup) Lock(ctx context.Context, mode ObjectLockMode) error {
+	if ctx == nil {
+		return fmt.Errorf("object lock context is required")
+	}
+	if mode != ObjectLockRead && mode != ObjectLockWrite {
+		return fmt.Errorf("invalid object lock mode: %d", mode)
 	}
 	group.mu.Lock()
 	defer group.mu.Unlock()
-	if group.closed {
-		return
+	if group.locked {
+		return fmt.Errorf("object lock group is already locked")
 	}
-	group.closed = true
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	group.mode = mode
+	ids := make([]shared.ObjectID, 0, len(group.targets))
+	for id := range group.targets {
+		ids = append(ids, id)
+	}
+	sortObjectIDs(ids)
+	if err := group.acquireLocked(ctx, ids); err != nil {
+		group.unlockHeldLocked()
+		return err
+	}
+	group.locked = true
+	return nil
+}
+
+func (group *objectLockGroup) acquireLocked(ctx context.Context, ids []shared.ObjectID) error {
+	for _, id := range ids {
+		entry, err := group.manager.acquire(ctx, id, group.mode)
+		if err != nil {
+			return err
+		}
+		group.held[id] = entry
+		group.order = append(group.order, id)
+	}
+	return nil
+}
+
+func (group *objectLockGroup) unlockHeldLocked() {
 	for i := len(group.order) - 1; i >= 0; i-- {
 		id := group.order[i]
 		group.manager.put(id, group.held[id], group.mode, true)
 		delete(group.held, id)
 	}
 	group.order = nil
+}
+
+// Unlock releases every held Object in reverse order but retains the target
+// set so the group can be locked again, including with a different mode.
+func (group *objectLockGroup) Unlock() {
+	if group == nil {
+		return
+	}
+	group.mu.Lock()
+	defer group.mu.Unlock()
+	group.unlockHeldLocked()
+	group.locked = false
 }
 
 func uniqueSortedObjectIDs(ids []shared.ObjectID) []shared.ObjectID {
