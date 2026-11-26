@@ -247,8 +247,12 @@ func TestObjectLockGroupBecomesUnusableAfterCanceledAddition(t *testing.T) {
 		manager.mu.Lock()
 		remaining := len(manager.entries)
 		manager.mu.Unlock()
-		if remaining == 0 { return }
-		if time.Now().After(deadline) { t.Fatalf("lock registry retains %d entries after cleanup", remaining) }
+		if remaining == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("lock registry retains %d entries after cleanup", remaining)
+		}
 		time.Sleep(time.Millisecond)
 	}
 }
