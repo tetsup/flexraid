@@ -277,7 +277,7 @@ Distribution -> I/O
 ### Object ロックグループ
 
 - 論理 Object / Namespace の競合を保護するロックは Orchestration が所有する。FUSE callback 単位のロック、および通常ファイルシステム操作を一律に直列化するグローバル実行ロックは設けない。
-- 1 プロセスが同時に保持できる Object ロックグループは一つだけとする。一つの操作が複数 Object を必要とする場合も、同じグループにまとめて保持し、別グループをネスト・並行保持しない。
+- 一つの論理操作は、その操作に必要な ObjectID をまとめた一つの Object ロックグループを保持する。プロセス全体で保持できるグループ数を一つに制限しない。異なるグループは、含まれる ObjectID が重複しない限り並行して保持・実行でき、ObjectID が重複する場合は該当 Object のロックで競合を直列化する。
 - ロックグループの取得は共通の API / コマンドに集約する。必要な ObjectID を重複除去し、UUID のバイト列による辞書順など一意で安定した全順序で昇順に整列し、その順序で取得する。取得・解放の順序を個々の呼び出し元が独自実装しない。
 - ObjectID の集合を列挙できたら、全 Object ロックを取得し終えるまで Namespace / Object の状態を変更しない。全ロック取得後、列挙時に観測した親子関係、Directory entry、HardLink の参照先、対象の存在・Kind・状態など、操作成立の前提をまとめて再検証する。検証に失敗した場合は状態を変更せず、全ロックを解放して対象の再列挙からやり直す。
 - 操作に必要な ObjectID が追加で判明した場合、状態変更を開始する前にロック集合を拡張する。単純な方式では全ロックを降順に解放してから新しい集合を昇順で取得し直す。効率化する場合は、新規 ObjectID より大きい既取得ロックを降順に解放し、新規 ObjectID を取得した後、解放したロックを昇順で再取得してよい。どちらの方式でも全ロック取得後に、列挙済みの前提を必ず再検証する。
@@ -291,12 +291,13 @@ Distribution -> I/O
 
 ### Orchestration の Runtime Object Cache
 
-- Runtime Object を格納する共有 Map の構造と、Map 要素が指す各 Object の内部状態は別々に保護する。Map の検索は読み取りロック、要素の追加・削除は排他ロックで Map 構造を保護する。Map 全体のロックを Object の Header / Stripe cache 等の読み書きのために保持しない。
-- Map から取得した既存 Object の内部状態は、その ObjectID を含む Object ロックグループで保護する。異なる ObjectID の要素は、それぞれの Object ロックを保持することで並行して読み書きできる。
-- Map の検索で Object pointer を取得した後、Object ロックグループを取得するまで Map ロックを保持しない。Object ロック取得後に Map を再検索し、同じ Object pointer が現在も登録されていることを確認してから利用する。削除済み・差し替え済みなら取得した pointer を使用せず、最新状態からやり直す。
-- Object の追加・削除は、対象 ObjectID の Object ロックグループを取得したうえで Map の排他ロックを取得して行う。Object ロックを保持したまま Map 構造ロックを取得する順序に統一し、Map ロックを保持したまま Object ロックグループの取得を待たない。
-- Map 構造ロックは検索・追加・削除に必要な短時間だけ保持する。Object の内部処理、キャッシュ内容の更新、物理 I/O、Object ロック取得待ちの間に Map 構造ロックを保持しない。
-- Map から削除された Object pointer を既に取得していた処理があっても、Object ロック取得後の Map 再検証によって削除・差し替えを検出する。Map からの削除だけで Object の内部状態や pointer の利用可能性を即時に破棄したものとみなさず、open handle 等の寿命管理は別途その所有規則に従う。
+- Runtime Object Cache は ObjectID をキーとする共有 Map とし、Map 構造の同期と各 Object の論理的な排他を分離する。Map 構造は専用の RWMutex で保護し、Map 要素の内容・更新競合・削除との競合は対象 ObjectID を含む Object ロックグループで保護する。
+- Cache の Get / Put / Delete を含む各操作は、対象 ObjectID の Object ロックグループを先に取得してから Map ロックを取得する。ロック順序は常に Object ロックグループ → Map RWMutex とし、Map ロックを保持したまま Object ロックグループの取得を待たない。
+- Get は Map の読み取りロックを取得し、存在確認と Object 全体の独立した複製を行ってから Map ロックを解放する。呼び出し元は複製した Object を読み書きし、Map 内に登録された Object を直接変更しない。
+- Put は Map の排他ロックを短時間取得し、Map 内の Object pointer を新しい Object インスタンスの pointer で丸ごと置き換える。取得時の Object と書き戻す Object の pointer 同一性を前提にしない。Object の内部フィールド単位の部分更新ではなく、Object 全体の置き換えを更新単位とする。
+- Object の追加・削除も、対象 ObjectID の Object ロックグループを保持した状態で Map の排他ロックを短時間取得して行う。追加・削除・置き換えのいずれも Map 構造の変更中だけ Map ロックを保持する。
+- Map ロックは Object の複製・参照・登録・削除に必要な短時間だけ保持し、Object の複製後の処理、論理状態の変更、物理 I/O、Object ロック取得待ちの間は保持しない。Object ロックグループを保持している間は対象 Object の Map 登録状態が他の準拠操作によって削除・置き換えられないため、Get で得た複製を安全に処理して Put できる。
+- Map から Object pointer を外部へ返して共有しない。Get が返す Object は独立したインスタンスとし、Put 後の Object は Cache 内部の所有物として扱い、以後呼び出し元から変更しない。Object の全フィールドを含む独立した複製を作成できることを型の契約とする。
 
 ### Distribution の内部 Stripe ロック
 
