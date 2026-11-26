@@ -116,10 +116,10 @@ func (group *objectLockGroup) Add(ctx context.Context, ids ...shared.ObjectID) e
 
 	var retained []shared.ObjectID
 	var reacquire []shared.ObjectID
-	if len(group.order) > 0 && additional[0].Less(group.order[len(group.order)-1]) {
+	if len(group.order) > 0 && objectIDLess(additional[0], group.order[len(group.order)-1]) {
 		first := additional[0]
 		for _, id := range group.order {
-			if first.Less(id) {
+			if objectIDLess(first, id) {
 				reacquire = append(reacquire, id)
 			} else {
 				retained = append(retained, id)
