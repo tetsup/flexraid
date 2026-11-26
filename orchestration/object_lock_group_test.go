@@ -234,7 +234,7 @@ func TestObjectLockAcquisitionCanBeCanceled(t *testing.T) {
 	}
 }
 
-func TestObjectLockGroupBecomesUnusableAfterCanceledAddition(t *testing.T) {
+func TestObjectLockGroupCanBeRelockedAfterCanceledAddition(t *testing.T) {
 	manager := newObjectLockManager()
 	group := newTestLockGroup(t, manager, ObjectLockWrite, lockTestObjectID(1), lockTestObjectID(3))
 	blocker := newTestLockGroup(t, manager, ObjectLockWrite, lockTestObjectID(2))
@@ -244,11 +244,15 @@ func TestObjectLockGroupBecomesUnusableAfterCanceledAddition(t *testing.T) {
 	if err := group.Add(ctx, lockTestObjectID(2)); err == nil {
 		t.Fatal("addition succeeded despite context deadline")
 	}
-	if err := group.Add(context.Background(), lockTestObjectID(4)); err == nil {
-		t.Fatal("group accepted another addition after a failed extension")
+	if err := group.Add(context.Background(), lockTestObjectID(4)); err != nil {
+		t.Fatalf("group did not recover after failed extension: %v", err)
 	}
 
 	blocker.Unlock()
+	group.Unlock()
+	if err := group.Lock(context.Background(), ObjectLockRead); err != nil {
+		t.Fatalf("relock after failed extension: %v", err)
+	}
 	group.Unlock()
 	deadline := time.Now().Add(time.Second)
 	for {
@@ -263,4 +267,53 @@ func TestObjectLockGroupBecomesUnusableAfterCanceledAddition(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
+}
+
+func TestObjectLockGroupCanBeRelockedWithDifferentMode(t *testing.T) {
+	manager := newObjectLockManager()
+	group := newObjectLockGroup(manager)
+	if err := group.Add(context.Background(), lockTestObjectID(2)); err != nil {
+		t.Fatal(err)
+	}
+	if err := group.Add(context.Background(), lockTestObjectID(1)); err != nil {
+		t.Fatal(err)
+	}
+	if err := group.Lock(context.Background(), ObjectLockRead); err != nil {
+		t.Fatal(err)
+	}
+	if err := group.Lock(context.Background(), ObjectLockWrite); err == nil {
+		t.Fatal("Lock succeeded while group was already locked")
+	}
+	group.Unlock()
+	if len(group.targets) != 2 {
+		t.Fatalf("target count after Unlock = %d, want 2", len(group.targets))
+	}
+	if err := group.Lock(context.Background(), ObjectLockWrite); err != nil {
+		t.Fatalf("Lock with a new mode: %v", err)
+	}
+	group.Unlock()
+}
+
+func TestObjectLockGroupAddBeforeAndAfterLock(t *testing.T) {
+	manager := newObjectLockManager()
+	group := newObjectLockGroup(manager)
+	if err := group.Add(context.Background(), lockTestObjectID(3)); err != nil {
+		t.Fatal(err)
+	}
+	if err := group.Lock(context.Background(), ObjectLockWrite); err != nil {
+		t.Fatal(err)
+	}
+	if err := group.Add(context.Background(), lockTestObjectID(1)); err != nil {
+		t.Fatal(err)
+	}
+	want := []shared.ObjectID{lockTestObjectID(1), lockTestObjectID(3)}
+	if len(group.order) != len(want) {
+		t.Fatalf("held count = %d, want %d", len(group.order), len(want))
+	}
+	for i := range want {
+		if group.order[i] != want[i] {
+			t.Fatalf("order[%d] = %v, want %v", i, group.order[i], want[i])
+		}
+	}
+	group.Unlock()
 }
