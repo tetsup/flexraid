@@ -212,12 +212,16 @@ func TestObjectLockAcquisitionCanBeCanceled(t *testing.T) {
 	cancel()
 	select {
 	case err := <-result:
-		if err == nil { t.Fatal("canceled acquisition succeeded") }
+		if err == nil {
+			t.Fatal("canceled acquisition succeeded")
+		}
 	case <-time.After(time.Second):
 		t.Fatal("canceled acquisition did not return")
 	}
 	held.Unlock()
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
-	if len(manager.entries) != 0 { t.Fatalf("lock registry retains %d entries after cancellation and unlock", len(manager.entries)) }
+	if len(manager.entries) != 0 {
+		t.Fatalf("lock registry retains %d entries after cancellation and unlock", len(manager.entries))
+	}
 }
