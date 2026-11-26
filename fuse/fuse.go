@@ -532,6 +532,10 @@ func (n *node) lockObjectGroup(ctx context.Context, ids ...shared.ObjectID) (con
 	if err != nil {
 		return nil, nil, toErrno(err)
 	}
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		result.Unlock()
+		return nil, nil, errno
+	}
 	return result.Context, result.Unlock, 0
 }
 
