@@ -17,7 +17,9 @@ func lockTestObjectID(value byte) shared.ObjectID {
 func newTestLockGroup(t *testing.T, manager *objectLockManager, mode ObjectLockMode, ids ...shared.ObjectID) *objectLockGroup {
 	t.Helper()
 	group, err := manager.lockGroup(context.Background(), ids, mode)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	return group
 }
 
@@ -26,8 +28,14 @@ func TestObjectLockGroupSortsAndDeduplicatesInitialIDs(t *testing.T) {
 	group := newTestLockGroup(t, manager, ObjectLockWrite, lockTestObjectID(3), lockTestObjectID(1), lockTestObjectID(3), lockTestObjectID(2))
 	defer group.Unlock()
 	want := []shared.ObjectID{lockTestObjectID(1), lockTestObjectID(2), lockTestObjectID(3)}
-	if len(group.order) != len(want) { t.Fatalf("held count = %d, want %d", len(group.order), len(want)) }
-	for i := range want { if group.order[i] != want[i] { t.Fatalf("order[%d] = %v, want %v", i, group.order[i], want[i]) } }
+	if len(group.order) != len(want) {
+		t.Fatalf("held count = %d, want %d", len(group.order), len(want))
+	}
+	for i := range want {
+		if group.order[i] != want[i] {
+			t.Fatalf("order[%d] = %v, want %v", i, group.order[i], want[i])
+		}
+	}
 }
 
 func TestObjectLockGroupsAllowIndependentObjectsConcurrently(t *testing.T) {
@@ -38,11 +46,15 @@ func TestObjectLockGroupsAllowIndependentObjectsConcurrently(t *testing.T) {
 	acquired := make(chan struct{})
 	go func() {
 		second, err := manager.lockGroup(context.Background(), []shared.ObjectID{lockTestObjectID(2)}, ObjectLockWrite)
-		if err == nil { second.Unlock(); close(acquired) }
+		if err == nil {
+			second.Unlock()
+			close(acquired)
+		}
 	}()
 	select {
 	case <-acquired:
-	case <-time.After(time.Second): t.Fatal("independent Object lock group was serialized")
+	case <-time.After(time.Second):
+		t.Fatal("independent Object lock group was serialized")
 	}
 }
 
@@ -56,17 +68,22 @@ func TestObjectReadLocksShareAndExcludeWriters(t *testing.T) {
 	writerAcquired := make(chan struct{})
 	go func() {
 		writer, err := manager.lockGroup(context.Background(), []shared.ObjectID{lockTestObjectID(1)}, ObjectLockWrite)
-		if err == nil { close(writerAcquired); writer.Unlock() }
+		if err == nil {
+			close(writerAcquired)
+			writer.Unlock()
+		}
 	}()
 	select {
-	case <-writerAcquired: t.Fatal("writer acquired while readers held the Object")
+	case <-writerAcquired:
+		t.Fatal("writer acquired while readers held the Object")
 	case <-time.After(30 * time.Millisecond):
 	}
 	first.Unlock()
 	second.Unlock()
 	select {
 	case <-writerAcquired:
-	case <-time.After(time.Second): t.Fatal("writer did not acquire after readers released")
+	case <-time.After(time.Second):
+		t.Fatal("writer did not acquire after readers released")
 	}
 }
 
@@ -83,28 +100,44 @@ func TestObjectLockGroupAddReleasesSuffixBeforeReacquiringInOrder(t *testing.T) 
 	suffixAcquired := make(chan struct{})
 	go func() {
 		suffix, err := manager.lockGroup(context.Background(), []shared.ObjectID{lockTestObjectID(3)}, ObjectLockWrite)
-		if err == nil { close(suffixAcquired); suffix.Unlock() }
+		if err == nil {
+			close(suffixAcquired)
+			suffix.Unlock()
+		}
 	}()
 	select {
 	case <-suffixAcquired:
-	case <-time.After(time.Second): t.Fatal("higher Object lock was not released before waiting for lower Object")
+	case <-time.After(time.Second):
+		t.Fatal("higher Object lock was not released before waiting for lower Object")
 	}
 
 	blocker.Unlock()
 	select {
-	case err := <-addDone: if err != nil { t.Fatal(err) }
-	case <-time.After(time.Second): t.Fatal("Add did not complete after inserted Object became available")
+	case err := <-addDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Add did not complete after inserted Object became available")
 	}
 	want := []shared.ObjectID{lockTestObjectID(1), lockTestObjectID(2), lockTestObjectID(3)}
-	for i := range want { if group.order[i] != want[i] { t.Fatalf("order[%d] = %v, want %v", i, group.order[i], want[i]) } }
+	for i := range want {
+		if group.order[i] != want[i] {
+			t.Fatalf("order[%d] = %v, want %v", i, group.order[i], want[i])
+		}
+	}
 }
 
 func TestObjectLockGroupAddExistingObjectIsNoop(t *testing.T) {
 	manager := newObjectLockManager()
 	group := newTestLockGroup(t, manager, ObjectLockRead, lockTestObjectID(1))
 	defer group.Unlock()
-	if err := group.Add(context.Background(), lockTestObjectID(1)); err != nil { t.Fatal(err) }
-	if len(group.order) != 1 { t.Fatalf("held count = %d, want 1", len(group.order)) }
+	if err := group.Add(context.Background(), lockTestObjectID(1)); err != nil {
+		t.Fatal(err)
+	}
+	if len(group.order) != 1 {
+		t.Fatalf("held count = %d, want 1", len(group.order))
+	}
 }
 
 func TestObjectLockGroupUnlockIsIdempotentAndRetiresEntries(t *testing.T) {
@@ -114,38 +147,54 @@ func TestObjectLockGroupUnlockIsIdempotentAndRetiresEntries(t *testing.T) {
 	group.Unlock()
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
-	if len(manager.entries) != 0 { t.Fatalf("lock registry retains %d entries after final unlock", len(manager.entries)) }
+	if len(manager.entries) != 0 {
+		t.Fatalf("lock registry retains %d entries after final unlock", len(manager.entries))
+	}
 }
 
 func TestNestedObjectLockGroupReusesOuterGroup(t *testing.T) {
 	layer := &Orchestration{objectLocks: newObjectLockManager()}
 	first, err := layer.LockObjectGroup(LockObjectGroupRequest{
-		Context: context.Background(),
+		Context:   context.Background(),
 		ObjectIDs: []shared.ObjectID{lockTestObjectID(1), lockTestObjectID(3)},
-		Mode: ObjectLockWrite,
+		Mode:      ObjectLockWrite,
 	})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer first.Unlock()
 
 	nested, err := layer.LockObjectGroup(LockObjectGroupRequest{
-		Context: first.Context,
+		Context:   first.Context,
 		ObjectIDs: []shared.ObjectID{lockTestObjectID(2)},
-		Mode: ObjectLockWrite,
+		Mode:      ObjectLockWrite,
 	})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	nested.Unlock()
 
 	group, ok := first.Context.Value(objectLockGroupContextKey{}).(*objectLockGroup)
-	if !ok { t.Fatal("outer context lost its lock group") }
+	if !ok {
+		t.Fatal("outer context lost its lock group")
+	}
 	want := []shared.ObjectID{lockTestObjectID(1), lockTestObjectID(2), lockTestObjectID(3)}
-	for i := range want { if group.order[i] != want[i] { t.Fatalf("order[%d] = %v, want %v", i, group.order[i], want[i]) } }
+	for i := range want {
+		if group.order[i] != want[i] {
+			t.Fatalf("order[%d] = %v, want %v", i, group.order[i], want[i])
+		}
+	}
 }
 
 func TestNestedObjectLockGroupCannotChangeMode(t *testing.T) {
 	layer := &Orchestration{objectLocks: newObjectLockManager()}
 	first, err := layer.LockObjectGroup(LockObjectGroupRequest{Context: context.Background(), Mode: ObjectLockRead})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer first.Unlock()
 	_, err = layer.LockObjectGroup(LockObjectGroupRequest{Context: first.Context, Mode: ObjectLockWrite})
-	if err == nil { t.Fatal("nested group changed its lock mode") }
+	if err == nil {
+		t.Fatal("nested group changed its lock mode")
+	}
 }
