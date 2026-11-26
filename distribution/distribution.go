@@ -25,8 +25,8 @@ type NewResponse struct{ Layer *Distribution }
 
 type Distribution struct {
 	mapMu                  sync.RWMutex
-	versionLocksMu        sync.Mutex
-	versionLocks          map[versionLockKey]*versionLockEntry
+	versionLocksMu         sync.Mutex
+	versionLocks           map[versionLockKey]*versionLockEntry
 	commitLocksMu          sync.Mutex
 	objectCommitLocks      map[shared.ObjectID]*objectCommitLock
 	ios                    []*physicalio.IO
