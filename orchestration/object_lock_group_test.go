@@ -198,3 +198,26 @@ func TestNestedObjectLockGroupCannotChangeMode(t *testing.T) {
 		t.Fatal("nested group changed its lock mode")
 	}
 }
+
+func TestObjectLockAcquisitionCanBeCanceled(t *testing.T) {
+	manager := newObjectLockManager()
+	held := newTestLockGroup(t, manager, ObjectLockWrite, lockTestObjectID(1))
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		_, err := manager.acquire(ctx, lockTestObjectID(1), ObjectLockWrite)
+		result <- err
+	}()
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	select {
+	case err := <-result:
+		if err == nil { t.Fatal("canceled acquisition succeeded") }
+	case <-time.After(time.Second):
+		t.Fatal("canceled acquisition did not return")
+	}
+	held.Unlock()
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	if len(manager.entries) != 0 { t.Fatalf("lock registry retains %d entries after cancellation and unlock", len(manager.entries)) }
+}
