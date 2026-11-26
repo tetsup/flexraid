@@ -38,6 +38,9 @@ func (layer *Management) LockObjectGroup(request LockObjectGroupRequest) (LockOb
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if layer.orchestration == nil {
+		return LockObjectGroupResponse{}, fmt.Errorf("Orchestration layer is not initialized")
+	}
 	group, nested := layer.orchestration.ObjectLockGroupFromContext(ctx)
 	if !nested {
 		var err error
