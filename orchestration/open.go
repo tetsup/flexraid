@@ -41,11 +41,11 @@ type FileHandle struct {
 }
 
 // ObjectID returns the data Object protected by this open handle.
-func (handle *FileHandle) ObjectID() shared.ObjectID {
+func (handle *FileHandle) ObjectID() (shared.ObjectID, bool) {
 	if handle == nil || handle.runtimeFile == nil {
-		return shared.ObjectID{}
+		return shared.ObjectID{}, false
 	}
-	return handle.runtimeFile.objectID
+	return handle.runtimeFile.objectID, true
 }
 
 type OpenRequest struct {
