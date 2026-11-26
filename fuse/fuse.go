@@ -221,7 +221,8 @@ func (n *node) Flush(ctx context.Context, fh fs.FileHandle) syscall.Errno {
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return errno
 	}
-	lockedContext, unlock, errno := n.lockObjectGroup(ctx, handle.handle.ObjectID())
+	objectIDs := fileHandleObjectIDs(handle.handle)
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, objectIDs...)
 	if errno != 0 {
 		return errno
 	}
@@ -589,6 +590,14 @@ type fileHandle struct {
 	layer    *management.Management
 	objectID shared.ObjectID
 	handle   *orchestration.FileHandle
+}
+
+
+func fileHandleObjectIDs(handle *orchestration.FileHandle) []shared.ObjectID {
+	if id, ok := handle.ObjectID(); ok {
+		return []shared.ObjectID{id}
+	}
+	return nil
 }
 
 func (n *node) lockObjectGroup(ctx context.Context, ids ...shared.ObjectID) (context.Context, func(), syscall.Errno) {
