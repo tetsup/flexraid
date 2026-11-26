@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/tetsup/flexraid/pkg/shared"
 )
@@ -71,16 +72,29 @@ func (manager *objectLockManager) put(id shared.ObjectID, entry *objectLockEntry
 
 func (manager *objectLockManager) acquire(ctx context.Context, id shared.ObjectID, mode ObjectLockMode) (*objectLockEntry, error) {
 	entry := manager.entry(id)
-	if mode == ObjectLockRead {
-		entry.mu.RLock()
-	} else {
-		entry.mu.Lock()
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if err := ctx.Err(); err != nil {
+			manager.put(id, entry, mode, false)
+			return nil, err
+		}
+		acquired := false
+		if mode == ObjectLockRead {
+			acquired = entry.mu.TryRLock()
+		} else {
+			acquired = entry.mu.TryLock()
+		}
+		if acquired {
+			return entry, nil
+		}
+		select {
+		case <-ctx.Done():
+			manager.put(id, entry, mode, false)
+			return nil, ctx.Err()
+		case <-ticker.C:
+		}
 	}
-	if err := ctx.Err(); err != nil {
-		manager.put(id, entry, mode, true)
-		return nil, err
-	}
-	return entry, nil
 }
 
 func (manager *objectLockManager) lockGroup(ctx context.Context, ids []shared.ObjectID, mode ObjectLockMode) (*objectLockGroup, error) {
