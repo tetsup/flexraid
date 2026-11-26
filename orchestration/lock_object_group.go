@@ -61,6 +61,10 @@ func (layer *Orchestration) NewObjectLockGroup(ctx context.Context) (*ObjectLock
 
 // ObjectLockGroupFromContext returns the group already associated with ctx.
 func (layer *Orchestration) ObjectLockGroupFromContext(ctx context.Context) (*ObjectLockGroup, bool) {
+	return objectLockGroupFromContext(ctx)
+}
+
+func objectLockGroupFromContext(ctx context.Context) (*ObjectLockGroup, bool) {
 	if ctx == nil {
 		return nil, false
 	}
@@ -77,7 +81,7 @@ func addObjectLocks(ctx context.Context, ids ...shared.ObjectID) error {
 	if ctx == nil {
 		return context.Canceled
 	}
-	group, ok := (&Orchestration{}).ObjectLockGroupFromContext(ctx)
+	group, ok := objectLockGroupFromContext(ctx)
 	if !ok {
 		// Internal unit tests may invoke Orchestration methods directly. Runtime
 		// entry points attach a group through Management.
