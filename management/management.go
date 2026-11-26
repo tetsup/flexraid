@@ -96,7 +96,7 @@ func New(request NewRequest) (*Management, error) {
 func (layer *Management) Cleanup(request orchestration.CleanupRequest) (response orchestration.CleanupResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("Cleanup", started, err) }()
-	lockContext, lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context)
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context)
 	if lockErr != nil {
 		return response, lockErr
 	}
