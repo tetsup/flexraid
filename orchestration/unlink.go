@@ -66,7 +66,14 @@ func (layer *Orchestration) unlinkLocked(request UnlinkRequest) (response Unlink
 	if !exists {
 		return response, os.ErrNotExist
 	}
-	if err = addObjectLocks(ctx, object.header.ObjectID); err != nil {
+	lockIDs := []shared.ObjectID{object.header.ObjectID}
+	if object.file != nil {
+		lockIDs = append(lockIDs, object.file.objectID)
+	}
+	if object.header.TargetID != nil {
+		lockIDs = append(lockIDs, *object.header.TargetID)
+	}
+	if err = addObjectLocks(ctx, lockIDs...); err != nil {
 		return response, err
 	}
 	if parent.children[request.Name] != object || object.header.Deleted {
