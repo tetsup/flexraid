@@ -289,6 +289,15 @@ Distribution -> I/O
 - Release / Releasedir / Forget / Interrupt 等の kernel bookkeeping と handle teardown は Lifecycle admission の例外として停止・Failed 状態でも実行可能にする。これらが Namespace / Object の共有状態を変更する場合は、通常操作と同じ Object ロックグループ規則に従う。Flush は通常操作として扱い、Release の代替にしない。
 - FUSE callback は Management の公開 API を呼び出すアダプターであり、ロック機構・順序制御・再検証を実装しない。単一の Management API で完結しない callback は、開始時に Management の Object ロックグループ API を呼び出し、返された Context を同一 callback 内のすべての Management API 呼び出しへ伝播する。入れ子の Management API は既存グループを再利用し、callback の最後に外側だけが解放する。Object の追加・再取得・整合性検証は Orchestration が行う。
 
+### Orchestration の Runtime Object Cache
+
+- Runtime Object を格納する共有 Map の構造と、Map 要素が指す各 Object の内部状態は別々に保護する。Map の検索は読み取りロック、要素の追加・削除は排他ロックで Map 構造を保護する。Map 全体のロックを Object の Header / Stripe cache 等の読み書きのために保持しない。
+- Map から取得した既存 Object の内部状態は、その ObjectID を含む Object ロックグループで保護する。異なる ObjectID の要素は、それぞれの Object ロックを保持することで並行して読み書きできる。
+- Map の検索で Object pointer を取得した後、Object ロックグループを取得するまで Map ロックを保持しない。Object ロック取得後に Map を再検索し、同じ Object pointer が現在も登録されていることを確認してから利用する。削除済み・差し替え済みなら取得した pointer を使用せず、最新状態からやり直す。
+- Object の追加・削除は、対象 ObjectID の Object ロックグループを取得したうえで Map の排他ロックを取得して行う。Object ロックを保持したまま Map 構造ロックを取得する順序に統一し、Map ロックを保持したまま Object ロックグループの取得を待たない。
+- Map 構造ロックは検索・追加・削除に必要な短時間だけ保持する。Object の内部処理、キャッシュ内容の更新、物理 I/O、Object ロック取得待ちの間に Map 構造ロックを保持しない。
+- Map から削除された Object pointer を既に取得していた処理があっても、Object ロック取得後の Map 再検証によって削除・差し替えを検出する。Map からの削除だけで Object の内部状態や pointer の利用可能性を即時に破棄したものとみなさず、open handle 等の寿命管理は別途その所有規則に従う。
+
 ### Distribution の内部 Stripe ロック
 
 - Distribution は Management とは独立して、Distribution 内部の同時実行制約を管理する。Management の実行単位・共通ロックとは概念も粒度も異なり、相互に統合・共有しない。自律 Cleanup は Management の WorkItem / MaintenanceExecutor を待たず、Management が設定した Drive 単位の許可レベルに従って Distribution 内部で進行する。
