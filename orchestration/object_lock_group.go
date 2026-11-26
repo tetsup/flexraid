@@ -36,6 +36,7 @@ type objectLockGroup struct {
 	held    map[shared.ObjectID]*objectLockEntry
 	order   []shared.ObjectID
 	closed  bool
+	failed  bool
 }
 
 func newObjectLockManager() *objectLockManager {
@@ -125,6 +126,9 @@ func (group *objectLockGroup) Add(ctx context.Context, id shared.ObjectID) error
 	if group.closed {
 		return fmt.Errorf("object lock group is closed")
 	}
+	if group.failed {
+		return fmt.Errorf("object lock group is unusable after a failed addition")
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -155,6 +159,7 @@ func (group *objectLockGroup) Add(ctx context.Context, id shared.ObjectID) error
 				group.manager.put(heldID, group.held[heldID], group.mode, true)
 				delete(group.held, heldID)
 			}
+			group.failed = true
 			return err
 		}
 		group.held[nextID] = entry
