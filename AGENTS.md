@@ -261,7 +261,7 @@ Distribution -> I/O
 
 ### 現行実装からの移行
 
-- FUSE callback は Management の公開 API を呼び出すアダプターであり、操作スコープは Management の Object ロックグループ API で開始する。FUSE 自身は mutex・Object ロックの取得順序・追加取得・再検証を実装しない。
+- FUSE callback は Management の公開 API を呼び出すアダプターであり、すべての操作は Object ロックグループの保護下で実行する。単一 Management API で完結する callback は Management がグループを取得し、複数 API を呼ぶ callback は FUSE adapter が Management のグループ API で外側のグループを取得して Context を引き回す。FUSE 自身は mutex・Object ロックの取得順序・追加取得・再検証を実装しない。
 - Orchestration の論理状態保護は Object ロックグループへ統一する。旧来の Orchestration グローバル mutex や FUSE 単位ロックを残したまま重ねて使用せず、Object ロックグループへ移行する際は保護対象・操作境界を確認してから置き換える。
 - Distribution の Stripe ロックは Distribution 自身が所有する。Management / Orchestration が Distribution の内部ロックを直接操作しない。
 
