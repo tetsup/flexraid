@@ -141,7 +141,7 @@ func New(request NewRequest) (NewResponse, error) {
 				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key, sizeBytes: entry.SizeBytes})
 				return nil
 			}
-			version.chunks[no] = chunkLocation{ioIndex: index, key: entry.Key, data: payload, totalLength: total, sizeBytes: entry.SizeBytes, readers: &atomic.Int64{}}
+			version.chunks[no] = chunkLocation{ioIndex: index, key: entry.Key, data: payload, totalLength: total, sizeBytes: entry.SizeBytes}
 			if method.distributionType == distributionParity {
 				if version.chunkSize == 0 {
 					version.chunkSize = uint32(len(payload))
