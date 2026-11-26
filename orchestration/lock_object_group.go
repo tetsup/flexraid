@@ -12,7 +12,8 @@ type LockObjectGroupRequest struct {
 }
 
 type LockObjectGroupResponse struct {
-	Unlock func()
+	Context context.Context
+	Unlock  func()
 }
 
 // LockObjectGroup acquires one process-wide Object lock group in ObjectID order.
@@ -22,5 +23,19 @@ func (layer *Orchestration) LockObjectGroup(request LockObjectGroupRequest) (Loc
 	if err != nil {
 		return LockObjectGroupResponse{}, err
 	}
-	return LockObjectGroupResponse{Unlock: group.Unlock}, nil
+	groupContext := context.WithValue(request.Context, objectLockGroupContextKey{}, group)
+	return LockObjectGroupResponse{Context: groupContext, Unlock: group.Unlock}, nil
+}
+
+type objectLockGroupContextKey struct{}
+
+func addObjectLocks(ctx context.Context, ids ...shared.ObjectID) error {
+	if ctx == nil {
+		return context.Canceled
+	}
+	group, ok := ctx.Value(objectLockGroupContextKey{}).(*objectLockGroup)
+	if !ok || group == nil {
+		return fmt.Errorf("Object lock group is missing from operation context")
+	}
+	return group.Add(ctx, ids...)
 }
