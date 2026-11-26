@@ -7,14 +7,14 @@ import (
 )
 
 type LockObjectGroupRequest struct {
-	Context context.Context
+	Context   context.Context
 	ObjectIDs []shared.ObjectID
-	Mode ObjectLockMode
+	Mode      ObjectLockMode
 }
 
 type LockObjectGroupResponse struct {
 	Context context.Context
-	Unlock func()
+	Unlock  func()
 }
 
 // LockObjectGroup creates an Object lock group with a fixed read/write mode.
