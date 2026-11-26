@@ -156,6 +156,12 @@ func (layer *Orchestration) renameLocked(request RenameRequest) (response Rename
 		if currentDestinationExists != destinationExists || (destinationExists && currentDestination != destination) {
 			return response, fmt.Errorf("rename destination changed during lock acquisition: %w", syscall.EAGAIN)
 		}
+		if layer.objects[request.SourceParentID] != sourceParent || layer.objects[request.DestinationParentID] != destinationParent {
+			return response, syscall.EAGAIN
+		}
+		if source.header.Kind == objectKindDirectory && layer.renameDirectoryContains(source, destinationParent) {
+			return response, syscall.EINVAL
+		}
 	}
 	if err = ctx.Err(); err != nil {
 		return response, err
