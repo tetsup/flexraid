@@ -82,6 +82,10 @@ func (manager *objectLockManager) lockGroup(ctx context.Context, ids ...shared.O
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case <-manager.groupGate:
+		if err := ctx.Err(); err != nil {
+			manager.groupGate <- struct{}{}
+			return nil, err
+		}
 	}
 	group := &objectLockGroup{
 		manager: manager,
@@ -118,7 +122,7 @@ func (group *objectLockGroup) Add(ctx context.Context, ids ...shared.ObjectID) e
 		additional = append(additional, id)
 	}
 	if len(additional) == 0 {
-		return nil
+		return ctx.Err()
 	}
 	sortObjectIDs(additional)
 
