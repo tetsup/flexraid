@@ -8,7 +8,7 @@ import (
 	"github.com/tetsup/flexraid/pkg/shared"
 )
 
-func testObjectID(value byte) shared.ObjectID {
+func lockTestObjectID(value byte) shared.ObjectID {
 	var id shared.ObjectID
 	id[0] = value
 	return id
@@ -16,19 +16,19 @@ func testObjectID(value byte) shared.ObjectID {
 
 func TestObjectLockGroupAcquiresAdditionalIDsInOrder(t *testing.T) {
 	manager := newObjectLockManager()
-	group, err := manager.lockGroup(context.Background(), testObjectID(1), testObjectID(3))
+	group, err := manager.lockGroup(context.Background(), lockTestObjectID(1), lockTestObjectID(3))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer group.Unlock()
 
-	if err := group.Add(context.Background(), testObjectID(2)); err != nil {
+	if err := group.Add(context.Background(), lockTestObjectID(2)); err != nil {
 		t.Fatal(err)
 	}
 	if len(group.order) != 3 {
 		t.Fatalf("held lock count = %d, want 3", len(group.order))
 	}
-	for i, want := range []shared.ObjectID{testObjectID(1), testObjectID(2), testObjectID(3)} {
+	for i, want := range []shared.ObjectID{lockTestObjectID(1), lockTestObjectID(2), lockTestObjectID(3)} {
 		if group.order[i] != want {
 			t.Fatalf("lock order[%d] = %v, want %v", i, group.order[i], want)
 		}
@@ -37,7 +37,7 @@ func TestObjectLockGroupAcquiresAdditionalIDsInOrder(t *testing.T) {
 
 func TestObjectLockGroupSerializesGroupsWithinProcess(t *testing.T) {
 	manager := newObjectLockManager()
-	first, err := manager.lockGroup(context.Background(), testObjectID(1))
+	first, err := manager.lockGroup(context.Background(), lockTestObjectID(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestObjectLockGroupSerializesGroupsWithinProcess(t *testing.T) {
 
 	acquired := make(chan struct{})
 	go func() {
-		second, lockErr := manager.lockGroup(context.Background(), testObjectID(2))
+		second, lockErr := manager.lockGroup(context.Background(), lockTestObjectID(2))
 		if lockErr == nil {
 			close(acquired)
 			second.Unlock()
@@ -69,7 +69,7 @@ func TestObjectLockGroupSerializesGroupsWithinProcess(t *testing.T) {
 func TestNestedObjectLockGroupReusesOuterGroup(t *testing.T) {
 	layer := &Orchestration{objectLocks: newObjectLockManager()}
 	first, err := layer.LockObjectGroup(LockObjectGroupRequest{
-		Context: context.Background(), ObjectIDs: []shared.ObjectID{testObjectID(1), testObjectID(3)},
+		Context: context.Background(), ObjectIDs: []shared.ObjectID{lockTestObjectID(1), lockTestObjectID(3)},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -77,7 +77,7 @@ func TestNestedObjectLockGroupReusesOuterGroup(t *testing.T) {
 	defer first.Unlock()
 
 	nested, err := layer.LockObjectGroup(LockObjectGroupRequest{
-		Context: first.Context, ObjectIDs: []shared.ObjectID{testObjectID(2)},
+		Context: first.Context, ObjectIDs: []shared.ObjectID{lockTestObjectID(2)},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -91,7 +91,7 @@ func TestNestedObjectLockGroupReusesOuterGroup(t *testing.T) {
 	if len(group.order) != 3 {
 		t.Fatalf("outer group holds %d objects, want 3", len(group.order))
 	}
-	for i, want := range []shared.ObjectID{testObjectID(1), testObjectID(2), testObjectID(3)} {
+	for i, want := range []shared.ObjectID{lockTestObjectID(1), lockTestObjectID(2), lockTestObjectID(3)} {
 		if group.order[i] != want {
 			t.Fatalf("lock order[%d] = %v, want %v", i, group.order[i], want)
 		}
