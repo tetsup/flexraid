@@ -90,6 +90,9 @@ func (layer *Orchestration) createLocked(request CreateRequest) (response Create
 		Mtime:         now,
 		Ctime:         now,
 	}
+	if err = addObjectLocks(ctx, objectID); err != nil {
+		return response, err
+	}
 	objectHeader, err = layer.persistNewObject(ctx, objectHeader, nil)
 	if err != nil {
 		return response, fmt.Errorf("persist file %q: %w", request.Name, err)
