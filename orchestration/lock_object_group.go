@@ -7,31 +7,39 @@ import (
 )
 
 type LockObjectGroupRequest struct {
-	Context   context.Context
+	Context context.Context
 	ObjectIDs []shared.ObjectID
+	Mode ObjectLockMode
 }
 
 type LockObjectGroupResponse struct {
 	Context context.Context
-	Unlock  func()
+	Unlock func()
 }
 
-// LockObjectGroup acquires one process-wide Object lock group in ObjectID order.
-// The caller must invoke Unlock exactly once when the protected operation ends.
+// LockObjectGroup creates an Object lock group with a fixed read/write mode.
+// Nested calls using its Context may only add ObjectIDs; they cannot change the mode.
 func (layer *Orchestration) LockObjectGroup(request LockObjectGroupRequest) (LockObjectGroupResponse, error) {
-	if request.Context != nil {
-		if existing, ok := request.Context.Value(objectLockGroupContextKey{}).(*objectLockGroup); ok && existing != nil {
-			if err := existing.Add(request.Context, request.ObjectIDs...); err != nil {
+	ctx := request.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if existing, ok := ctx.Value(objectLockGroupContextKey{}).(*objectLockGroup); ok && existing != nil {
+		if existing.mode != request.Mode {
+			return LockObjectGroupResponse{}, fmt.Errorf("object lock group mode cannot be changed")
+		}
+		for _, id := range uniqueSortedObjectIDs(request.ObjectIDs) {
+			if err := existing.Add(ctx, id); err != nil {
 				return LockObjectGroupResponse{}, err
 			}
-			return LockObjectGroupResponse{Context: request.Context, Unlock: func() {}}, nil
 		}
+		return LockObjectGroupResponse{Context: ctx, Unlock: func() {}}, nil
 	}
-	group, err := layer.objectLocks.lockGroup(request.Context, request.ObjectIDs...)
+	group, err := layer.objectLocks.lockGroup(ctx, request.ObjectIDs, request.Mode)
 	if err != nil {
 		return LockObjectGroupResponse{}, err
 	}
-	groupContext := context.WithValue(request.Context, objectLockGroupContextKey{}, group)
+	groupContext := context.WithValue(ctx, objectLockGroupContextKey{}, group)
 	return LockObjectGroupResponse{Context: groupContext, Unlock: group.Unlock}, nil
 }
 
@@ -44,8 +52,13 @@ func addObjectLocks(ctx context.Context, ids ...shared.ObjectID) error {
 	group, ok := ctx.Value(objectLockGroupContextKey{}).(*objectLockGroup)
 	if !ok || group == nil {
 		// Internal unit tests may invoke Orchestration methods directly. Runtime
-		// entry points always attach a group through Management.
+		// entry points attach a group through Management.
 		return nil
 	}
-	return group.Add(ctx, ids...)
+	for _, id := range uniqueSortedObjectIDs(ids) {
+		if err := group.Add(ctx, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
