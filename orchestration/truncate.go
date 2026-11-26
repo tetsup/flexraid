@@ -49,6 +49,12 @@ func (layer *Orchestration) truncateLocked(request TruncateRequest) (TruncateRes
 	if (object.header.Kind != objectKindFile && object.header.Kind != objectKindHardLink) || object.file == nil || object.file != handle.runtimeFile {
 		return TruncateResponse{}, fmt.Errorf("handle does not refer to writable file %s: %w", request.ObjectID.String(), os.ErrInvalid)
 	}
+	if err := addObjectLocks(ctx, object.file.objectID); err != nil {
+		return TruncateResponse{}, err
+	}
+	if layer.objects[request.ObjectID] != object || object.file != handle.runtimeFile {
+		return TruncateResponse{}, os.ErrNotExist
+	}
 	file := handle.runtimeFile
 	if request.Size == file.header.Size {
 		return TruncateResponse{}, nil
