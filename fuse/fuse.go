@@ -241,7 +241,8 @@ func (n *node) Fsync(ctx context.Context, fh fs.FileHandle, _ uint32) syscall.Er
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return errno
 	}
-	lockedContext, unlock, errno := n.lockObjectGroup(ctx, handle.handle.ObjectID())
+	objectIDs := fileHandleObjectIDs(handle.handle)
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, objectIDs...)
 	if errno != 0 {
 		return errno
 	}
