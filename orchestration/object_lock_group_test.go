@@ -324,6 +324,9 @@ func TestPublicObjectLockGroupAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, ok := group.Context().Value(objectLockGroupContextKey{}).(*objectLockGroup); !ok {
+		t.Fatal("group context does not carry the lock group")
+	}
 	if err := group.Add(lockTestObjectID(2)); err != nil {
 		t.Fatal(err)
 	}
