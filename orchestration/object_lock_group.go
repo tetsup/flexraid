@@ -135,7 +135,7 @@ func (group *objectLockGroup) Add(ctx context.Context, ids ...shared.ObjectID) e
 		}
 		for i := len(group.order) - 1; i >= 0; i-- {
 			id := group.order[i]
-			if _, release := group.held[id]; release && first.Less(id) {
+			if _, release := group.held[id]; release && objectIDLess(first, id) {
 				group.manager.put(id, group.held[id], true)
 				delete(group.held, id)
 			}
