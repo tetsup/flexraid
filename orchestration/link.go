@@ -141,6 +141,9 @@ func (layer *Orchestration) linkLockedWithID(request LinkRequest, requestedID *s
 	if err = addObjectLocks(ctx, request.SourceID, backingID, linkID); err != nil {
 		return response, err
 	}
+	if layer.objects[request.ParentID] != parent || parent.header.Deleted || parent.children[request.Name] != nil || layer.objects[request.SourceID] != source || source.file != file {
+		return response, syscall.EAGAIN
+	}
 	linkHeader, err = layer.persistNewObject(ctx, linkHeader, nil)
 	if err != nil {
 		return response, fmt.Errorf("persist HardLink %q: %w", request.Name, err)
