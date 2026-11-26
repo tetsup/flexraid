@@ -110,7 +110,7 @@ func (d *Distribution) lockSelectedStripeRead(key stripeIDKey) (*stripeInfo, fun
 	}
 }
 
-func (d *Distribution) lockObjectVersions(objectID shared.ObjectID) []func() {
+func (d *Distribution) lockAllVersionsForObject(objectID shared.ObjectID) []func() {
 	for {
 		keys := d.objectVersionKeys(objectID)
 		unlocks := make([]func(), 0, len(keys))

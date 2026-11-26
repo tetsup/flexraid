@@ -55,7 +55,7 @@ func (d *Distribution) DeleteObject(request DeleteObjectRequest) (response Delet
 	// Pin every physical Stripe Version belonging to this Object before
 	// collecting deletion work. The Orchestration Object lock prevents new
 	// logical writes while this operation is in progress.
-	unlockVersions := d.lockObjectVersions(request.ObjectID)
+	unlockVersions := d.lockAllVersionsForObject(request.ObjectID)
 	defer func() {
 		for i := len(unlockVersions) - 1; i >= 0; i-- {
 			unlockVersions[i]()

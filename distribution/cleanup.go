@@ -125,13 +125,12 @@ func (d *Distribution) Cleanup(request CleanupRequest) (response CleanupResponse
 		}
 		isCurrent := currentVersion(current, location.key.StripeVersion)
 		unrecoverable := target == nil || target.invalid || !target.recoverable
-		eligible := !isCurrent && ((request.OldVersions && newerRecoverable) ||
+		eligible := !isCurrent && ((request.OldVersions && (target == nil || newerRecoverable)) ||
 			((request.InvalidStripes || request.IncompleteChunks) && unrecoverable))
 		if target == nil {
 			for _, orphan := range d.orphans[location.key.ObjectID] {
 				if orphan.ioIndex == location.ioIndex && orphan.key == location.key {
-					eligible = !isCurrent && (request.InvalidStripes || request.IncompleteChunks ||
-						(request.OldVersions && newerRecoverable))
+					eligible = !isCurrent && (request.InvalidStripes || request.IncompleteChunks || request.OldVersions)
 					break
 				}
 			}
