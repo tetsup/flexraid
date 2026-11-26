@@ -52,9 +52,6 @@ func (d *Distribution) Cleanup(request CleanupRequest) (response CleanupResponse
 		key     storage.FileKey
 	}]struct{})
 	appendItem := func(location chunkLocation) {
-		if location.readers != nil && location.readers.Load() > 0 {
-			return
-		}
 		identity := struct {
 			ioIndex int
 			key     storage.FileKey
@@ -109,33 +106,55 @@ func (d *Distribution) Cleanup(request CleanupRequest) (response CleanupResponse
 		if err = ctx.Err(); err != nil {
 			return response, err
 		}
-		unlock := d.lockObjectWrite(item.location.key.ObjectID)
-		key := stripeIDKey{objectID: item.location.key.ObjectID, stripeID: item.location.key.StripeID}
+		location := item.location
+		key := stripeIDKey{objectID: location.key.ObjectID, stripeID: location.key.StripeID}
+		unlockVersion := d.lockVersionWrite(location.key.ObjectID, location.key.StripeID, location.key.StripeVersion)
+
+		// Revalidate after acquiring the Version lock. A target is invalid
+		// when it is unrecoverable or a newer recoverable Version exists.
 		d.mapMu.RLock()
+		versions := d.versions[key]
+		target := versions[location.key.StripeVersion]
 		current := d.objects[key.objectID][key.stripeID]
-		isCurrent := currentVersion(current, item.location.key.StripeVersion)
+		newerRecoverable := false
+		for versionNo, version := range versions {
+			if versionNo > location.key.StripeVersion && !version.invalid && version.recoverable {
+				newerRecoverable = true
+				break
+			}
+		}
+		isCurrent := currentVersion(current, location.key.StripeVersion)
+		unrecoverable := target == nil || target.invalid || !target.recoverable
+		eligible := !isCurrent && ((request.OldVersions && newerRecoverable) ||
+			((request.InvalidStripes || request.IncompleteChunks) && unrecoverable))
+		if target == nil {
+			for _, orphan := range d.orphans[location.key.ObjectID] {
+				if orphan.ioIndex == location.ioIndex && orphan.key == location.key {
+					eligible = !isCurrent && (request.InvalidStripes || request.IncompleteChunks ||
+						(request.OldVersions && newerRecoverable))
+					break
+				}
+			}
+		}
 		d.mapMu.RUnlock()
-		// A candidate selected as current at revalidation time is never
-		// deletable, even when the original scan requested invalid/incomplete
-		// cleanup: a concurrent commit may have reused and committed this key.
-		if isCurrent {
-			unlock()
+		if !eligible {
+			unlockVersion()
 			continue
 		}
-		_, deleteErr := d.ios[item.location.ioIndex].Delete(physicalio.DeleteRequest{Context: ctx, Key: item.location.key})
+
+		_, deleteErr := d.ios[location.ioIndex].Delete(physicalio.DeleteRequest{Context: ctx, Key: location.key})
 		d.recordChunkOperation("Delete", deleteErr)
 		if deleteErr != nil && !errors.Is(deleteErr, os.ErrNotExist) {
-			unlock()
+			unlockVersion()
 			return response, deleteErr
 		}
 
-		// Reconcile only the exact FileKey that was deleted. A concurrent
-		// foreground write may have published a newer immutable version.
+		// Reconcile only the exact FileKey while its Version remains exclusive.
 		d.mapMu.Lock()
-		d.removeCleanupLocationLocked(item.candidate, item.location)
+		d.removeCleanupLocationLocked(item.candidate, location)
 		d.reselectStripeLocked(key)
 		d.mapMu.Unlock()
-		unlock()
+		unlockVersion()
 		response.DeletedFiles++
 	}
 	return response, nil
