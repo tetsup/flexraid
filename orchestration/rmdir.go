@@ -62,6 +62,12 @@ func (layer *Orchestration) rmdirLocked(request RmdirRequest) (response RmdirRes
 	if !exists || object.header.Deleted {
 		return response, os.ErrNotExist
 	}
+	if err = addObjectLocks(ctx, object.header.ObjectID); err != nil {
+		return response, err
+	}
+	if parent.children[request.Name] != object || object.header.Deleted {
+		return response, os.ErrNotExist
+	}
 	if object.header.Kind != objectKindDirectory {
 		return response, fmt.Errorf("object %q is not a directory: %w", request.Name, errNotDirectory)
 	}
