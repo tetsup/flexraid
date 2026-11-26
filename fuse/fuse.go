@@ -470,6 +470,7 @@ func (n *node) Setattr(ctx context.Context, fh fs.FileHandle, in *gofuse.SetAttr
 	}
 	defer unlock()
 	ctx = lockedContext
+	request.Context = ctx
 	if mode, ok := in.GetMode(); ok {
 		request.Mode = &mode
 	}
