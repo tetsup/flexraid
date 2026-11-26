@@ -349,7 +349,7 @@ func (layer *Management) lockObjectGroup(ctx context.Context, mode orchestration
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	result, err := layer.orchestration.LockObjectGroup(orchestration.LockObjectGroupRequest{
+	result, err := layer.LockObjectGroup(LockObjectGroupRequest{
 		Context: ctx, ObjectIDs: ids, Mode: mode,
 	})
 	if err != nil {
