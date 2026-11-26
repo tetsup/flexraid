@@ -120,7 +120,7 @@ func (layer *Management) Create(request orchestration.CreateRequest) (response o
 func (layer *Management) Flush(request orchestration.FlushRequest) (response orchestration.FlushResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("Flush", started, err) }()
-	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, request.Handle.ObjectID())
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, fileHandleObjectIDs(request.Handle)...)
 	if lockErr != nil {
 		return response, lockErr
 	}
@@ -132,7 +132,7 @@ func (layer *Management) Flush(request orchestration.FlushRequest) (response orc
 func (layer *Management) Fsync(request orchestration.FsyncRequest) (response orchestration.FsyncResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("Fsync", started, err) }()
-	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, request.Handle.ObjectID())
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, fileHandleObjectIDs(request.Handle)...)
 	if lockErr != nil {
 		return response, lockErr
 	}
@@ -204,7 +204,7 @@ func (layer *Management) Open(request orchestration.OpenRequest) (response orche
 func (layer *Management) Release(request orchestration.ReleaseRequest) (response orchestration.ReleaseResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("Release", started, err) }()
-	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, request.Handle.ObjectID())
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, fileHandleObjectIDs(request.Handle)...)
 	if lockErr != nil {
 		return response, lockErr
 	}
