@@ -96,11 +96,12 @@ func New(request NewRequest) (*Management, error) {
 func (layer *Management) Cleanup(request orchestration.CleanupRequest) (response orchestration.CleanupResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("Cleanup", started, err) }()
-	unlock, lockErr := layer.lockObjectGroup(request.Context)
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context)
 	if lockErr != nil {
 		return response, lockErr
 	}
 	defer unlock()
+	request.Context = lockContext
 	return layer.orchestration.CleanupLocked(request)
 }
 
@@ -324,7 +325,7 @@ func (layer *Management) Write(request orchestration.WriteRequest) (response orc
 	return layer.orchestration.WriteLocked(request)
 }
 
-func (layer *Management) lockObjectGroup(ctx context.Context, ids ...shared.ObjectID) (func(), error) {
+func (layer *Management) lockObjectGroup(ctx context.Context, ids ...shared.ObjectID) (context.Context, func(), error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -332,7 +333,7 @@ func (layer *Management) lockObjectGroup(ctx context.Context, ids ...shared.Obje
 		Context: ctx, ObjectIDs: ids,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return result.Unlock, nil
+	return result.Context, result.Unlock, nil
 }
