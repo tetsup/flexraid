@@ -41,6 +41,11 @@ func (group *ObjectLockGroup) Unlock() {
 	group.group.Unlock()
 }
 
+// Context returns the context that carries this group into nested layer calls.
+func (group *ObjectLockGroup) Context() context.Context {
+	return group.ctx
+}
+
 // NewObjectLockGroup creates an empty, unlocked Object lock group.
 func (layer *Orchestration) NewObjectLockGroup(ctx context.Context) (*ObjectLockGroup, error) {
 	if ctx == nil {
@@ -49,7 +54,9 @@ func (layer *Orchestration) NewObjectLockGroup(ctx context.Context) (*ObjectLock
 	if layer.objectLocks == nil {
 		return nil, fmt.Errorf("object lock manager is not initialized")
 	}
-	return &ObjectLockGroup{ctx: ctx, group: newObjectLockGroup(layer.objectLocks)}, nil
+	inner := newObjectLockGroup(layer.objectLocks)
+	groupContext := context.WithValue(ctx, objectLockGroupContextKey{}, inner)
+	return &ObjectLockGroup{ctx: groupContext, group: inner}, nil
 }
 
 // LockObjectGroup creates an Object lock group with a fixed read/write mode.
