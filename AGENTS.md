@@ -287,7 +287,7 @@ Distribution -> I/O
 - 全操作・全レイヤーで同じロックグループ API と順序規則を使用する。Object ロックを保持したまま、別の経路から Object ロックを直接取得したり、逆順で取得したりしない。再入取得・二重取得は許可しない。
 - Management は Lifecycle admission、Foreground / Background の優先順位、Exclusive / Stop の drain を担当するが、通常操作の Object ロックを所有・代替しない。Exclusive / Stop は新規操作の受付を止め、受付済み操作がロックグループを解放して終了するのを待つ。
 - Release / Releasedir / Forget / Interrupt 等の kernel bookkeeping と handle teardown は Lifecycle admission の例外として停止・Failed 状態でも実行可能にする。これらが Namespace / Object の共有状態を変更する場合は、通常操作と同じ Object ロックグループ規則に従う。Flush は通常操作として扱い、Release の代替にしない。
-- FUSE callback は Management の単一公開 API を呼び出すアダプターであり、ロックを取得しない。複数の FUSE callback や Management API 呼び出しを組み合わせて一つの atomic 操作に見せず、不可分な論理状態遷移は Orchestration の一つの操作として実装する。
+- FUSE callback は Management の公開 API を呼び出すアダプターであり、ロック機構・順序制御・再検証を実装しない。単一の Management API で完結しない callback は、開始時に Management の Object ロックグループ API を呼び出し、返された Context を同一 callback 内のすべての Management API 呼び出しへ伝播する。入れ子の Management API は既存グループを再利用し、callback の最後に外側だけが解放する。Object の追加・再取得・整合性検証は Orchestration が行う。
 
 ### Distribution の内部 Stripe ロック
 
