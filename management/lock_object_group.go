@@ -32,3 +32,10 @@ func (layer *Management) LockObjectGroup(request LockObjectGroupRequest) (LockOb
 	}
 	return LockObjectGroupResponse{Context: result.Context, Unlock: result.Unlock}, nil
 }
+
+func fileHandleObjectIDs(handle *orchestration.FileHandle) []shared.ObjectID {
+	if id, ok := handle.ObjectID(); ok {
+		return []shared.ObjectID{id}
+	}
+	return nil
+}
