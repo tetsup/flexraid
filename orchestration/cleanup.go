@@ -43,6 +43,9 @@ func (layer *Orchestration) cleanupLocked(request CleanupRequest) (response Clea
 		ids = append(ids, objectID)
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i].String() < ids[j].String() })
+	if err = addObjectLocks(ctx, ids...); err != nil {
+		return response, err
+	}
 
 	// Resolve the complete set of Objects whose physical files are all on
 	// currently permitted drives. Distribution revalidates permission at each
