@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sync/atomic"
 	"time"
 
 	physicalio "github.com/tetsup/flexraid/io"
@@ -134,7 +133,7 @@ func (d *Distribution) writeStripeAtVersion(request WriteStripeRequest, forcedVe
 				return response, err
 			}
 		}
-		written[no] = chunkLocation{ioIndex: ioIndex, key: fileKey, totalLength: uint64(len(request.Data)), sizeBytes: uint64(len(encoded)), readers: &atomic.Int64{}}
+		written[no] = chunkLocation{ioIndex: ioIndex, key: fileKey, totalLength: uint64(len(request.Data)), sizeBytes: uint64(len(encoded))}
 	}
 	d.mapMu.Lock()
 	defer d.mapMu.Unlock()

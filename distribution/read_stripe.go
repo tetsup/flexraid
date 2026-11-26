@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sync/atomic"
 	"time"
 
 	physicalio "github.com/tetsup/flexraid/io"
@@ -49,20 +48,6 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 	if info.chunkSize != 0 && request.ChunkSize != info.chunkSize {
 		return response, fmt.Errorf("stripe %d chunk size %d does not match selected version chunk size %d: %w", request.StripeID, request.ChunkSize, info.chunkSize, ErrDataCorrupted)
 	}
-	d.mapMu.RLock()
-	pinned := make([]*atomic.Int64, 0, len(info.chunks))
-	for _, location := range info.chunks {
-		if location.readers != nil {
-			location.readers.Add(1)
-			pinned = append(pinned, location.readers)
-		}
-	}
-	d.mapMu.RUnlock()
-	defer func() {
-		for _, readers := range pinned {
-			readers.Add(-1)
-		}
-	}()
 	needsClassificationRefresh := false
 	stripeKey := stripeKeyInfo{objectID: request.ObjectID, stripeID: request.StripeID, stripeVersion: info.version}
 	chunks := make([]chunkDataWithInfo, 0, len(info.chunks))
@@ -241,7 +226,7 @@ func (d *Distribution) repairStripe(request ReadStripeRequest, info *stripeInfo,
 			_, err := d.ios[index].Write(physicalio.WriteRequest{Context: request.Context, Key: fileKey, Data: encodeChunk(uint64(len(data)), payload)})
 			d.recordChunkOperation("Write", err)
 			if err == nil {
-				location := chunkLocation{ioIndex: index, key: fileKey, totalLength: uint64(len(data)), readers: &atomic.Int64{}}
+				location := chunkLocation{ioIndex: index, key: fileKey, totalLength: uint64(len(data))}
 				d.mapMu.Lock()
 				info.chunks[no] = location
 				stripeKey := stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}

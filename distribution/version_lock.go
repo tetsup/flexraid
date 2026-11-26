@@ -1,6 +1,7 @@
 package distribution
 
 import (
+	"sort"
 	"sync"
 
 	"github.com/tetsup/flexraid/pkg/shared"
@@ -107,4 +108,66 @@ func (d *Distribution) lockSelectedStripeRead(key stripeIDKey) (*stripeInfo, fun
 		d.mapMu.RUnlock()
 		return info, unlock, nil
 	}
+}
+
+func (d *Distribution) lockObjectVersions(objectID shared.ObjectID) []func() {
+	for {
+		keys := d.objectVersionKeys(objectID)
+		unlocks := make([]func(), 0, len(keys))
+		for _, key := range keys {
+			unlocks = append(unlocks, d.lockVersionWrite(key.objectID, key.stripeID, key.version))
+		}
+		if d.objectVersionKeysCovered(objectID, keys) {
+			return unlocks
+		}
+		for i := len(unlocks) - 1; i >= 0; i-- {
+			unlocks[i]()
+		}
+	}
+}
+
+func (d *Distribution) objectVersionKeys(objectID shared.ObjectID) []versionLockKey {
+	d.mapMu.RLock()
+	defer d.mapMu.RUnlock()
+	set := make(map[versionLockKey]struct{})
+	for key, versions := range d.versions {
+		if key.objectID != objectID {
+			continue
+		}
+		for version := range versions {
+			set[versionLockKey{objectID: objectID, stripeID: key.stripeID, version: version}] = struct{}{}
+		}
+	}
+	for stripeID, stripe := range d.objects[objectID] {
+		for _, location := range stripe.chunks {
+			set[versionLockKey{objectID: objectID, stripeID: stripeID, version: location.key.StripeVersion}] = struct{}{}
+		}
+	}
+	for _, location := range d.orphans[objectID] {
+		set[versionLockKey{objectID: objectID, stripeID: location.key.StripeID, version: location.key.StripeVersion}] = struct{}{}
+	}
+	keys := make([]versionLockKey, 0, len(set))
+	for key := range set {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].stripeID != keys[j].stripeID {
+			return keys[i].stripeID < keys[j].stripeID
+		}
+		return keys[i].version < keys[j].version
+	})
+	return keys
+}
+
+func (d *Distribution) objectVersionKeysCovered(objectID shared.ObjectID, locked []versionLockKey) bool {
+	lockedSet := make(map[versionLockKey]struct{}, len(locked))
+	for _, key := range locked {
+		lockedSet[key] = struct{}{}
+	}
+	for _, key := range d.objectVersionKeys(objectID) {
+		if _, ok := lockedSet[key]; !ok {
+			return false
+		}
+	}
+	return true
 }

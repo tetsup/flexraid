@@ -161,7 +161,7 @@ func TestCleanupStripeDriveReturnsNoWorkForMissingCandidate(t *testing.T) {
 	}
 }
 
-func TestCleanupStripeDriveWaitsForObjectReadLock(t *testing.T) {
+func TestCleanupStripeDriveWaitsForVersionReadLock(t *testing.T) {
 	ctx := context.Background()
 	ios := makeIOs(t, 2)
 	created, err := New(NewRequest{IOs: ios})
@@ -180,7 +180,7 @@ func TestCleanupStripeDriveWaitsForObjectReadLock(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	unlockObject := created.Layer.lockObjectRead(request.ObjectID)
+	unlockVersion := created.Layer.lockVersionRead(request.ObjectID, request.StripeID, 1)
 
 	result := make(chan CleanupStripeDriveResponse, 1)
 	errors := make(chan error, 1)
@@ -194,10 +194,10 @@ func TestCleanupStripeDriveWaitsForObjectReadLock(t *testing.T) {
 	}()
 	select {
 	case <-result:
-		t.Fatal("cleanup proceeded while an Object read lock was held")
+		t.Fatal("cleanup proceeded while a Version read lock was held")
 	case <-time.After(50 * time.Millisecond):
 	}
-	unlockObject()
+	unlockVersion()
 	select {
 	case response := <-result:
 		if err := <-errors; err != nil {
@@ -207,6 +207,6 @@ func TestCleanupStripeDriveWaitsForObjectReadLock(t *testing.T) {
 			t.Fatalf("cleanup processed %d files, want 1", response.FilesProcessed)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("cleanup did not resume after the Object read lock was released")
+		t.Fatal("cleanup did not resume after the Version read lock was released")
 	}
 }

@@ -30,8 +30,6 @@ type CleanupStripeDriveResponse struct {
 // Drive × Stripe × Method. Old versions are deleted; abnormal chunks are moved
 // to the drive-local preservation directory.
 func (d *Distribution) CleanupStripeDrive(request CleanupStripeDriveRequest) (response CleanupStripeDriveResponse, err error) {
-	unlock := d.lockObjectWrite(request.ObjectID)
-	defer unlock()
 	started := time.Now()
 	ctx := request.Context
 	if ctx == nil {
@@ -69,6 +67,21 @@ func (d *Distribution) CleanupStripeDrive(request CleanupStripeDriveRequest) (re
 		d.mapMu.Unlock()
 		return response, nil
 	}
+
+	unlockVersion := d.lockVersionWrite(request.ObjectID, request.StripeID, location.key.StripeVersion)
+	defer unlockVersion()
+
+	// The candidate may have become valid while waiting for its Version lock.
+	d.mapMu.RLock()
+	currentLocation, stillEligible := d.findCleanupLocationLocked(candidate)
+	d.mapMu.RUnlock()
+	if !stillEligible || currentLocation.ioIndex != location.ioIndex || currentLocation.key != location.key {
+		d.mapMu.Lock()
+		d.refreshStripeCleanupQueueLocked(stripeKey)
+		d.mapMu.Unlock()
+		return response, nil
+	}
+	location = currentLocation
 
 	// The immutable FileKey is a value snapshot. Physical I/O runs without
 	// Distribution locks; only this exact key is removed from inventory.
@@ -130,7 +143,7 @@ func (d *Distribution) findCleanupLocationLocked(candidate cleanupCandidateKey) 
 		return eligible[i].ioIndex < eligible[j].ioIndex
 	})
 	for _, location := range eligible {
-		if location.ioIndex == candidate.ioIndex && (location.readers == nil || location.readers.Load() == 0) {
+		if location.ioIndex == candidate.ioIndex {
 			return location, true
 		}
 	}

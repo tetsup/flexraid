@@ -39,8 +39,6 @@ type objectDeleteLocation struct {
 // before valid chunks. Valid chunks are deleted from the highest StripeID and
 // chunk index down to Stripe 0.
 func (d *Distribution) DeleteObject(request DeleteObjectRequest) (response DeleteObjectResponse, err error) {
-	unlock := d.lockObjectWrite(request.ObjectID)
-	defer unlock()
 	started := time.Now()
 	ctx := request.Context
 	if ctx == nil {
@@ -53,6 +51,16 @@ func (d *Distribution) DeleteObject(request DeleteObjectRequest) (response Delet
 	if err = ctx.Err(); err != nil {
 		return response, err
 	}
+
+	// Pin every physical Stripe Version belonging to this Object before
+	// collecting deletion work. The Orchestration Object lock prevents new
+	// logical writes while this operation is in progress.
+	unlockVersions := d.lockObjectVersions(request.ObjectID)
+	defer func() {
+		for i := len(unlockVersions) - 1; i >= 0; i-- {
+			unlockVersions[i]()
+		}
+	}()
 
 	permissions := d.cleanupPermissionStore.Snapshot()
 	d.mapMu.RLock()

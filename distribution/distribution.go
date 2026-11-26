@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"sync"
-	"sync/atomic"
 
 	physicalio "github.com/tetsup/flexraid/io"
 	"github.com/tetsup/flexraid/pkg/shared"
@@ -27,8 +26,6 @@ type Distribution struct {
 	mapMu                  sync.RWMutex
 	versionLocksMu         sync.Mutex
 	versionLocks           map[versionLockKey]*versionLockEntry
-	commitLocksMu          sync.Mutex
-	objectCommitLocks      map[shared.ObjectID]*objectCommitLock
 	ios                    []*physicalio.IO
 	logger                 *slog.Logger
 	objects                map[shared.ObjectID]map[storage.StripeID]*stripeInfo
@@ -69,7 +66,6 @@ type chunkLocation struct {
 	data        []byte
 	totalLength uint64
 	sizeBytes   uint64
-	readers     *atomic.Int64
 }
 
 func New(request NewRequest) (NewResponse, error) {
@@ -96,7 +92,6 @@ func New(request NewRequest) (NewResponse, error) {
 	}
 	d := &Distribution{ios: append([]*physicalio.IO(nil), request.IOs...), logger: logger,
 		objects:           make(map[shared.ObjectID]map[storage.StripeID]*stripeInfo),
-		objectCommitLocks: make(map[shared.ObjectID]*objectCommitLock),
 		versionLocks:      make(map[versionLockKey]*versionLockEntry),
 		versions:          make(map[stripeIDKey]map[storage.StripeVersion]*versionInfo),
 		metrics:           newMetricsCollector(), orphans: make(map[shared.ObjectID][]chunkLocation), cleanupQueue: newCleanupQueue(), cleanupPermissionStore: request.CleanupPermissions, cleanupWake: make(chan struct{}, 1)}
@@ -108,7 +103,7 @@ func New(request NewRequest) (NewResponse, error) {
 		scanResult, err := layer.ListChunks(physicalio.ListChunksRequest{Context: ctx, Callback: func(entry physicalio.ScanEntry) error {
 			if entry.Error != nil {
 				d.recordIntegrityError()
-				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key, sizeBytes: entry.SizeBytes, readers: &atomic.Int64{}})
+				d.orphans[entry.Key.ObjectID] = append(d.orphans[entry.Key.ObjectID], chunkLocation{ioIndex: index, key: entry.Key, sizeBytes: entry.SizeBytes})
 				return nil
 			}
 			method, no, methodErr := methodFromLayout(entry.Key.LayoutID)
