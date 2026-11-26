@@ -64,6 +64,14 @@ func (layer *Orchestration) getAttrLocked(request GetAttrRequest) (GetAttrRespon
 	if object.header.Kind == objectKindHardLink && (object.header.TargetID == nil || object.file == nil) {
 		return GetAttrResponse{}, fmt.Errorf("HardLink %s has no resolvable File target: %w", request.ObjectID, errInvalidHeader)
 	}
+	if object.file != nil {
+		if err := addObjectLocks(ctx, object.file.objectID); err != nil {
+			return GetAttrResponse{}, err
+		}
+		if layer.objects[request.ObjectID] != object {
+			return GetAttrResponse{}, os.ErrNotExist
+		}
+	}
 	if object.header.Kind == objectKindFile && object.header.ParentID == nil && layer.deriveHardLinkCount(object.header.ObjectID) == 0 &&
 		(object.file == nil || openHandleCount(object.file) == 0) {
 		return GetAttrResponse{}, os.ErrNotExist
