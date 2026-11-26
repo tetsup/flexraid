@@ -91,10 +91,10 @@ func New(request NewRequest) (NewResponse, error) {
 		seen[layer] = struct{}{}
 	}
 	d := &Distribution{ios: append([]*physicalio.IO(nil), request.IOs...), logger: logger,
-		objects:           make(map[shared.ObjectID]map[storage.StripeID]*stripeInfo),
-		versionLocks:      make(map[versionLockKey]*versionLockEntry),
-		versions:          make(map[stripeIDKey]map[storage.StripeVersion]*versionInfo),
-		metrics:           newMetricsCollector(), orphans: make(map[shared.ObjectID][]chunkLocation), cleanupQueue: newCleanupQueue(), cleanupPermissionStore: request.CleanupPermissions, cleanupWake: make(chan struct{}, 1)}
+		objects:      make(map[shared.ObjectID]map[storage.StripeID]*stripeInfo),
+		versionLocks: make(map[versionLockKey]*versionLockEntry),
+		versions:     make(map[stripeIDKey]map[storage.StripeVersion]*versionInfo),
+		metrics:      newMetricsCollector(), orphans: make(map[shared.ObjectID][]chunkLocation), cleanupQueue: newCleanupQueue(), cleanupPermissionStore: request.CleanupPermissions, cleanupWake: make(chan struct{}, 1)}
 	if d.cleanupPermissionStore == nil {
 		d.cleanupPermissionStore = shared.NewCleanupPermissionStore(make([]shared.DriveCleanupPermission, len(request.IOs)))
 	}
