@@ -44,12 +44,14 @@ func TestObjectLockGroupSerializesGroupsWithinProcess(t *testing.T) {
 	defer first.Unlock()
 
 	acquired := make(chan struct{})
+	released := make(chan struct{})
 	go func() {
 		second, lockErr := manager.lockGroup(context.Background(), lockTestObjectID(2))
 		if lockErr == nil {
 			close(acquired)
 			second.Unlock()
 		}
+		close(released)
 	}()
 
 	select {
@@ -63,6 +65,11 @@ func TestObjectLockGroupSerializesGroupsWithinProcess(t *testing.T) {
 	case <-acquired:
 	case <-time.After(time.Second):
 		t.Fatal("second lock group did not acquire after first group was released")
+	}
+	select {
+	case <-released:
+	case <-time.After(time.Second):
+		t.Fatal("second lock group did not release")
 	}
 }
 
