@@ -61,6 +61,12 @@ func (layer *Orchestration) writeLocked(request WriteRequest) (response WriteRes
 		object.file == nil || object.file != handle.runtimeFile {
 		return response, fmt.Errorf("handle does not refer to writable file %s: %w", request.ObjectID.String(), os.ErrInvalid)
 	}
+	if err = addObjectLocks(ctx, object.file.objectID); err != nil {
+		return response, err
+	}
+	if layer.objects[request.ObjectID] != object || object.file != handle.runtimeFile {
+		return response, os.ErrNotExist
+	}
 	if len(request.Data) == 0 {
 		return response, nil
 	}
