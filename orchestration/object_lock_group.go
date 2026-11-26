@@ -16,8 +16,9 @@ type objectLockEntry struct {
 }
 
 type objectLockManager struct {
-	mu      sync.Mutex
-	entries map[shared.ObjectID]*objectLockEntry
+	mu        sync.Mutex
+	entries   map[shared.ObjectID]*objectLockEntry
+	groupGate chan struct{}
 }
 
 type objectLockGroup struct {
@@ -28,7 +29,9 @@ type objectLockGroup struct {
 }
 
 func newObjectLockManager() *objectLockManager {
-	return &objectLockManager{entries: make(map[shared.ObjectID]*objectLockEntry)}
+	manager := &objectLockManager{entries: make(map[shared.ObjectID]*objectLockEntry), groupGate: make(chan struct{}, 1)}
+	manager.groupGate <- struct{}{}
+	return manager
 }
 
 func (manager *objectLockManager) entry(id shared.ObjectID) *objectLockEntry {
@@ -74,6 +77,11 @@ func (manager *objectLockManager) acquire(ctx context.Context, id shared.ObjectI
 func (manager *objectLockManager) lockGroup(ctx context.Context, ids ...shared.ObjectID) (*objectLockGroup, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("object lock context is required")
+	}
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-manager.groupGate:
 	}
 	group := &objectLockGroup{
 		manager: manager,
@@ -170,10 +178,15 @@ func (group *objectLockGroup) Unlock() {
 		}
 	}
 	group.order = nil
+	group.manager.groupGate <- struct{}{}
 }
 
 func sortObjectIDs(ids []shared.ObjectID) {
 	sort.Slice(ids, func(i, j int) bool {
 		return bytes.Compare(ids[i][:], ids[j][:]) < 0
 	})
+}
+
+func objectIDLess(a, b shared.ObjectID) bool {
+	return bytes.Compare(a[:], b[:]) < 0
 }
