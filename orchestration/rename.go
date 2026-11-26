@@ -85,8 +85,20 @@ func (layer *Orchestration) renameLocked(request RenameRequest) (response Rename
 	}
 	destination, destinationExists := destinationParent.children[request.DestinationName]
 	ids := []shared.ObjectID{source.header.ObjectID}
+	if source.file != nil {
+		ids = append(ids, source.file.objectID)
+	}
+	if source.header.TargetID != nil {
+		ids = append(ids, *source.header.TargetID)
+	}
 	if destinationExists {
 		ids = append(ids, destination.header.ObjectID)
+		if destination.file != nil {
+			ids = append(ids, destination.file.objectID)
+		}
+		if destination.header.TargetID != nil {
+			ids = append(ids, *destination.header.TargetID)
+		}
 	}
 	if err = addObjectLocks(ctx, ids...); err != nil {
 		return response, err
