@@ -96,7 +96,7 @@ func New(request NewRequest) (*Management, error) {
 func (layer *Management) Cleanup(request orchestration.CleanupRequest) (response orchestration.CleanupResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("Cleanup", started, err) }()
-	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context)
+	lockContext, lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context)
 	if lockErr != nil {
 		return response, lockErr
 	}
@@ -108,220 +108,240 @@ func (layer *Management) Cleanup(request orchestration.CleanupRequest) (response
 func (layer *Management) Create(request orchestration.CreateRequest) (response orchestration.CreateResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("Create", started, err) }()
-	unlock, lockErr := layer.lockObjectGroup(request.Context, request.ParentID)
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, request.ParentID)
 	if lockErr != nil {
 		return response, lockErr
 	}
 	defer unlock()
+	request.Context = lockContext
 	return layer.orchestration.CreateLocked(request)
 }
 
 func (layer *Management) Flush(request orchestration.FlushRequest) (response orchestration.FlushResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("Flush", started, err) }()
-	unlock, lockErr := layer.lockObjectGroup(request.Context, request.Handle.ObjectID())
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, request.Handle.ObjectID())
 	if lockErr != nil {
 		return response, lockErr
 	}
 	defer unlock()
+	request.Context = lockContext
 	return layer.orchestration.FlushLocked(request)
 }
 
 func (layer *Management) Fsync(request orchestration.FsyncRequest) (response orchestration.FsyncResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("Fsync", started, err) }()
-	unlock, lockErr := layer.lockObjectGroup(request.Context, request.Handle.ObjectID())
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, request.Handle.ObjectID())
 	if lockErr != nil {
 		return response, lockErr
 	}
 	defer unlock()
+	request.Context = lockContext
 	return layer.orchestration.FsyncLocked(request)
 }
 
 func (layer *Management) GetAttr(request orchestration.GetAttrRequest) (response orchestration.GetAttrResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("GetAttr", started, err) }()
-	unlock, lockErr := layer.lockObjectGroup(request.Context, request.ObjectID)
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, request.ObjectID)
 	if lockErr != nil {
 		return response, lockErr
 	}
 	defer unlock()
+	request.Context = lockContext
 	return layer.orchestration.GetAttrLocked(request)
 }
 
 func (layer *Management) Link(request orchestration.LinkRequest) (response orchestration.LinkResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("Link", started, err) }()
-	unlock, lockErr := layer.lockObjectGroup(request.Context, request.SourceID, request.ParentID)
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, request.SourceID, request.ParentID)
 	if lockErr != nil {
 		return response, lockErr
 	}
 	defer unlock()
+	request.Context = lockContext
 	return layer.orchestration.LinkLocked(request)
 }
 
 func (layer *Management) Lookup(request orchestration.LookupRequest) (response orchestration.LookupResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("Lookup", started, err) }()
-	unlock, lockErr := layer.lockObjectGroup(request.Context, request.ParentID)
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, request.ParentID)
 	if lockErr != nil {
 		return response, lockErr
 	}
 	defer unlock()
+	request.Context = lockContext
 	return layer.orchestration.LookupLocked(request)
 }
 
 func (layer *Management) Mkdir(request orchestration.MkdirRequest) (response orchestration.MkdirResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("Mkdir", started, err) }()
-	unlock, lockErr := layer.lockObjectGroup(request.Context, request.ParentID)
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, request.ParentID)
 	if lockErr != nil {
 		return response, lockErr
 	}
 	defer unlock()
+	request.Context = lockContext
 	return layer.orchestration.MkdirLocked(request)
 }
 
 func (layer *Management) Open(request orchestration.OpenRequest) (response orchestration.OpenResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("Open", started, err) }()
-	unlock, lockErr := layer.lockObjectGroup(request.Context, request.ObjectID)
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, request.ObjectID)
 	if lockErr != nil {
 		return response, lockErr
 	}
 	defer unlock()
+	request.Context = lockContext
 	return layer.orchestration.OpenLocked(request)
 }
 
 func (layer *Management) Release(request orchestration.ReleaseRequest) (response orchestration.ReleaseResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("Release", started, err) }()
-	unlock, lockErr := layer.lockObjectGroup(request.Context, request.Handle.ObjectID())
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, request.Handle.ObjectID())
 	if lockErr != nil {
 		return response, lockErr
 	}
 	defer unlock()
+	request.Context = lockContext
 	return layer.orchestration.ReleaseLocked(request)
 }
 
 func (layer *Management) Read(request orchestration.ReadRequest) (response orchestration.ReadResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("Read", started, err) }()
-	unlock, lockErr := layer.lockObjectGroup(request.Context, request.ObjectID)
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, request.ObjectID)
 	if lockErr != nil {
 		return response, lockErr
 	}
 	defer unlock()
+	request.Context = lockContext
 	return layer.orchestration.ReadLocked(request)
 }
 
 func (layer *Management) ReadDir(request orchestration.ReadDirRequest) (response orchestration.ReadDirResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("ReadDir", started, err) }()
-	unlock, lockErr := layer.lockObjectGroup(request.Context, request.ObjectID)
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, request.ObjectID)
 	if lockErr != nil {
 		return response, lockErr
 	}
 	defer unlock()
+	request.Context = lockContext
 	return layer.orchestration.ReadDirLocked(request)
 }
 
 func (layer *Management) ReadLink(request orchestration.ReadLinkRequest) (response orchestration.ReadLinkResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("ReadLink", started, err) }()
-	unlock, lockErr := layer.lockObjectGroup(request.Context, request.ObjectID)
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, request.ObjectID)
 	if lockErr != nil {
 		return response, lockErr
 	}
 	defer unlock()
+	request.Context = lockContext
 	return layer.orchestration.ReadLinkLocked(request)
 }
 
 func (layer *Management) Rename(request orchestration.RenameRequest) (response orchestration.RenameResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("Rename", started, err) }()
-	unlock, lockErr := layer.lockObjectGroup(request.Context, request.SourceParentID, request.DestinationParentID)
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, request.SourceParentID, request.DestinationParentID)
 	if lockErr != nil {
 		return response, lockErr
 	}
 	defer unlock()
+	request.Context = lockContext
 	return layer.orchestration.RenameLocked(request)
 }
 
 func (layer *Management) Rmdir(request orchestration.RmdirRequest) (response orchestration.RmdirResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("Rmdir", started, err) }()
-	unlock, lockErr := layer.lockObjectGroup(request.Context, request.ParentID)
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, request.ParentID)
 	if lockErr != nil {
 		return response, lockErr
 	}
 	defer unlock()
+	request.Context = lockContext
 	return layer.orchestration.RmdirLocked(request)
 }
 
 func (layer *Management) SetAttr(request orchestration.SetAttrRequest) (response orchestration.SetAttrResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("SetAttr", started, err) }()
-	unlock, lockErr := layer.lockObjectGroup(request.Context, request.ObjectID)
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, request.ObjectID)
 	if lockErr != nil {
 		return response, lockErr
 	}
 	defer unlock()
+	request.Context = lockContext
 	return layer.orchestration.SetAttrLocked(request)
 }
 
 func (layer *Management) StatFs(request orchestration.StatFsRequest) (response orchestration.StatFsResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("StatFs", started, err) }()
-	unlock, lockErr := layer.lockObjectGroup(request.Context)
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context)
 	if lockErr != nil {
 		return response, lockErr
 	}
 	defer unlock()
+	request.Context = lockContext
 	return layer.orchestration.StatFsLocked(request)
 }
 
 func (layer *Management) Symlink(request orchestration.SymlinkRequest) (response orchestration.SymlinkResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("Symlink", started, err) }()
-	unlock, lockErr := layer.lockObjectGroup(request.Context, request.ParentID)
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, request.ParentID)
 	if lockErr != nil {
 		return response, lockErr
 	}
 	defer unlock()
+	request.Context = lockContext
 	return layer.orchestration.SymlinkLocked(request)
 }
 
 func (layer *Management) Truncate(request orchestration.TruncateRequest) (response orchestration.TruncateResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("Truncate", started, err) }()
-	unlock, lockErr := layer.lockObjectGroup(request.Context, request.ObjectID)
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, request.ObjectID)
 	if lockErr != nil {
 		return response, lockErr
 	}
 	defer unlock()
+	request.Context = lockContext
 	return layer.orchestration.TruncateLocked(request)
 }
 
 func (layer *Management) Unlink(request orchestration.UnlinkRequest) (response orchestration.UnlinkResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("Unlink", started, err) }()
-	unlock, lockErr := layer.lockObjectGroup(request.Context, request.ParentID)
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, request.ParentID)
 	if lockErr != nil {
 		return response, lockErr
 	}
 	defer unlock()
+	request.Context = lockContext
 	return layer.orchestration.UnlinkLocked(request)
 }
 
 func (layer *Management) Write(request orchestration.WriteRequest) (response orchestration.WriteResponse, err error) {
 	started := time.Now()
 	defer func() { layer.recordOperation("Write", started, err) }()
-	unlock, lockErr := layer.lockObjectGroup(request.Context, request.ObjectID)
+	lockContext, unlock, lockErr := layer.lockObjectGroup(request.Context, request.ObjectID)
 	if lockErr != nil {
 		return response, lockErr
 	}
 	defer unlock()
+	request.Context = lockContext
 	return layer.orchestration.WriteLocked(request)
 }
 
