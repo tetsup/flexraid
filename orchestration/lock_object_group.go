@@ -59,30 +59,16 @@ func (layer *Orchestration) NewObjectLockGroup(ctx context.Context) (*ObjectLock
 	return &ObjectLockGroup{ctx: groupContext, group: inner}, nil
 }
 
-// LockObjectGroup creates an Object lock group with a fixed read/write mode.
-// Nested calls using its Context may only add ObjectIDs; they cannot change the mode.
-func (layer *Orchestration) LockObjectGroup(request LockObjectGroupRequest) (LockObjectGroupResponse, error) {
-	ctx := request.Context
+// ObjectLockGroupFromContext returns the group already associated with ctx.
+func (layer *Orchestration) ObjectLockGroupFromContext(ctx context.Context) (*ObjectLockGroup, bool) {
 	if ctx == nil {
-		ctx = context.Background()
+		return nil, false
 	}
-	if existing, ok := ctx.Value(objectLockGroupContextKey{}).(*objectLockGroup); ok && existing != nil {
-		if existing.mode != request.Mode {
-			return LockObjectGroupResponse{}, fmt.Errorf("object lock group mode cannot be changed")
-		}
-		for _, id := range uniqueSortedObjectIDs(request.ObjectIDs) {
-			if err := existing.Add(ctx, id); err != nil {
-				return LockObjectGroupResponse{}, err
-			}
-		}
-		return LockObjectGroupResponse{Context: ctx, Group: &ObjectLockGroup{ctx: ctx, group: existing}, Unlock: func() {}}, nil
+	inner, ok := ctx.Value(objectLockGroupContextKey{}).(*objectLockGroup)
+	if !ok || inner == nil {
+		return nil, false
 	}
-	group, err := layer.objectLocks.lockGroup(ctx, request.ObjectIDs, request.Mode)
-	if err != nil {
-		return LockObjectGroupResponse{}, err
-	}
-	groupContext := context.WithValue(ctx, objectLockGroupContextKey{}, group)
-	return LockObjectGroupResponse{Context: groupContext, Group: &ObjectLockGroup{ctx: ctx, group: group}, Unlock: group.Unlock}, nil
+	return &ObjectLockGroup{ctx: ctx, group: inner}, true
 }
 
 type objectLockGroupContextKey struct{}
