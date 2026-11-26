@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tetsup/flexraid/pkg/shared"
 	"github.com/tetsup/flexraid/storage"
 )
 
@@ -175,5 +176,43 @@ func TestVersionLockKeysAreIndependent(t *testing.T) {
 		case <-time.After(3 * time.Second):
 			t.Fatalf("independent key %+v was blocked by %+v", key, base)
 		}
+	}
+}
+
+func TestSelectedStripeReadPinsSelectedVersion(t *testing.T) {
+	d := &Distribution{
+		objects: map[shared.ObjectID]map[storage.StripeID]*stripeInfo{
+			testObjectID(): {
+				7: {version: 11, method: distributionMethod{distributionType: distributionMirror, numChunks: 1}},
+			},
+		},
+	}
+	key := stripeIDKey{objectID: testObjectID(), stripeID: 7}
+	info, unlockRead, err := d.lockSelectedStripeRead(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.version != 11 {
+		t.Fatalf("selected Version = %d, want 11", info.version)
+	}
+
+	acquired := make(chan func(), 1)
+	go func() {
+		acquired <- d.lockVersionWrite(key.objectID, key.stripeID, info.version)
+	}()
+	waitForVersionLockRefs(t, d, versionLockKey{objectID: key.objectID, stripeID: key.stripeID, version: info.version}, 2)
+	select {
+	case unlock := <-acquired:
+		unlock()
+		t.Fatal("exclusive Version lock acquired while foreground read was active")
+	default:
+	}
+
+	unlockRead()
+	select {
+	case unlock := <-acquired:
+		unlock()
+	case <-time.After(3 * time.Second):
+		t.Fatal("exclusive Version lock did not proceed after read completed")
 	}
 }

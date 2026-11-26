@@ -50,8 +50,6 @@ func (d *Distribution) WriteStripes(request WriteStripesRequest) (response Write
 		return response, fmt.Errorf("at least one stripe is required")
 	}
 
-	unlock := d.lockObjectWrite(request.ObjectID)
-	defer unlock()
 	commitPointReached := false
 	defer func() {
 		if err == nil || commitPointReached {
@@ -101,16 +99,60 @@ func (d *Distribution) WriteStripes(request WriteStripesRequest) (response Write
 	requests = append(requests[:headerIndex], requests[headerIndex+1:]...)
 	sort.Slice(requests, func(i, j int) bool { return requests[i].StripeID < requests[j].StripeID })
 
-	d.mapMu.RLock()
-	var watermark storage.StripeVersion
-	if stripes := d.objects[request.ObjectID]; stripes != nil && stripes[0] != nil {
-		watermark = stripes[0].version
+	// The candidate Stripe 0 Version lock serializes Object commits. A
+	// waiter rechecks the watermark after acquiring it and retries if needed.
+	var version storage.StripeVersion
+	var versionUnlocks []func()
+	for {
+		d.mapMu.RLock()
+		var watermark storage.StripeVersion
+		if stripes := d.objects[request.ObjectID]; stripes != nil && stripes[0] != nil {
+			watermark = stripes[0].version
+		}
+		d.mapMu.RUnlock()
+		if watermark == ^storage.StripeVersion(0) {
+			return response, fmt.Errorf("Object version exhausted")
+		}
+		candidate := watermark + 1
+		unlockHeader := d.lockVersionWrite(request.ObjectID, 0, candidate)
+		if err = ctx.Err(); err != nil {
+			unlockHeader()
+			return response, err
+		}
+		d.mapMu.RLock()
+		currentWatermark := storage.StripeVersion(0)
+		if stripes := d.objects[request.ObjectID]; stripes != nil && stripes[0] != nil {
+			currentWatermark = stripes[0].version
+		}
+		d.mapMu.RUnlock()
+		if currentWatermark != watermark {
+			unlockHeader()
+			continue
+		}
+
+		locks := []func(){unlockHeader}
+		for _, stripe := range requests {
+			if stripe.StripeID == 0 {
+				continue
+			}
+			if err = ctx.Err(); err != nil {
+				for i := len(locks) - 1; i >= 0; i-- {
+					locks[i]()
+				}
+				return response, err
+			}
+			locks = append(locks, d.lockVersionWrite(request.ObjectID, stripe.StripeID, candidate))
+		}
+		version = candidate
+		versionUnlocks = locks
+		break
 	}
-	d.mapMu.RUnlock()
-	if watermark == ^storage.StripeVersion(0) {
-		return response, fmt.Errorf("Object version exhausted")
-	}
-	version := watermark + 1
+	defer func() {
+		for i := len(versionUnlocks) - 1; i >= 0; i-- {
+			versionUnlocks[i]()
+		}
+	}()
+	watermark := version - 1
 	if err = d.removeUncommittedVersions(ctx, request.ObjectID, watermark); err != nil {
 		return response, fmt.Errorf("remove uncommitted versions: %w", err)
 	}

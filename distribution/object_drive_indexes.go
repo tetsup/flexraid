@@ -22,8 +22,6 @@ type ObjectDriveIndexesResponse struct {
 }
 
 func (d *Distribution) ObjectDriveIndexes(request ObjectDriveIndexesRequest) (response ObjectDriveIndexesResponse, err error) {
-	unlock := d.lockObjectRead(request.ObjectID)
-	defer unlock()
 	started := time.Now()
 	defer func() {
 		logOperation(d, "ObjectDriveIndexes", started, err, "object_id", request.ObjectID.String(), "drives", len(response.IOIndexes))

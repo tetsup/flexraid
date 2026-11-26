@@ -74,3 +74,37 @@ func (d *Distribution) releaseVersionLock(key versionLockKey, entry *versionLock
 		delete(d.versionLocks, key)
 	}
 }
+
+func (d *Distribution) lockSelectedStripeRead(key stripeIDKey) (*stripeInfo, func(), error) {
+	for {
+		d.mapMu.RLock()
+		stripes := d.objects[key.objectID]
+		if stripes == nil || stripes[key.stripeID] == nil {
+			d.mapMu.RUnlock()
+			return nil, nil, ErrStripeNotFound
+		}
+		version := stripes[key.stripeID].version
+		d.mapMu.RUnlock()
+
+		unlock := d.lockVersionRead(key.objectID, key.stripeID, version)
+		d.mapMu.RLock()
+		stripes = d.objects[key.objectID]
+		if stripes == nil || stripes[key.stripeID] == nil {
+			d.mapMu.RUnlock()
+			unlock()
+			return nil, nil, ErrStripeNotFound
+		}
+		source := stripes[key.stripeID]
+		if source.version != version {
+			d.mapMu.RUnlock()
+			unlock()
+			continue
+		}
+		info := &stripeInfo{
+			version: source.version, method: source.method, chunkSize: source.chunkSize,
+			chunks: cloneChunks(source.chunks), corrupted: source.corrupted,
+		}
+		d.mapMu.RUnlock()
+		return info, unlock, nil
+	}
+}

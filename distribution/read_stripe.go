@@ -26,8 +26,6 @@ type ReadStripeResponse struct {
 }
 
 func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStripeResponse, err error) {
-	unlock := d.lockObjectRead(request.ObjectID)
-	defer unlock()
 	started := time.Now()
 	defer func() {
 		logOperation(d, "ReadStripe", started, err, "object_id", request.ObjectID.String(), "stripe_id", request.StripeID, "bytes", len(response.Data))
@@ -39,18 +37,15 @@ func (d *Distribution) ReadStripe(request ReadStripeRequest) (response ReadStrip
 		return response, err
 	}
 	key := stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}
-	d.mapMu.RLock()
-	stripes := d.objects[request.ObjectID]
-	if stripes == nil || stripes[request.StripeID] == nil {
-		d.mapMu.RUnlock()
-		return response, ErrStripeNotFound
+	info, unlockVersion, lockErr := d.lockSelectedStripeRead(key)
+	if lockErr != nil {
+		return response, lockErr
 	}
-	source := stripes[request.StripeID]
-	info := &stripeInfo{version: source.version, method: source.method, chunkSize: source.chunkSize, chunks: cloneChunks(source.chunks), corrupted: source.corrupted}
+	defer unlockVersion()
 	if info.chunkSize != 0 && request.ChunkSize != info.chunkSize {
-		d.mapMu.RUnlock()
 		return response, fmt.Errorf("stripe %d chunk size %d does not match selected version chunk size %d: %w", request.StripeID, request.ChunkSize, info.chunkSize, ErrDataCorrupted)
 	}
+	d.mapMu.RLock()
 	pinned := make([]*atomic.Int64, 0, len(info.chunks))
 	for _, location := range info.chunks {
 		if location.readers != nil {
