@@ -139,6 +139,24 @@ func (layer *Orchestration) renameLocked(request RenameRequest) (response Rename
 		}
 	}
 
+	var renameLinkID *shared.ObjectID
+	if source.header.Kind == objectKindFile || source.header.Kind == objectKindHardLink {
+		id, idErr := shared.NewObjectID()
+		if idErr != nil {
+			return response, fmt.Errorf("generate rename HardLink ObjectID: %w", idErr)
+		}
+		if err = addObjectLocks(ctx, id); err != nil {
+			return response, err
+		}
+		renameLinkID = &id
+		if sourceParent.children[request.SourceName] != source || source.header.Deleted {
+			return response, os.ErrNotExist
+		}
+		currentDestination, currentDestinationExists = destinationParent.children[request.DestinationName]
+		if currentDestinationExists != destinationExists || (destinationExists && currentDestination != destination) {
+			return response, fmt.Errorf("rename destination changed during lock acquisition: %w", syscall.EAGAIN)
+		}
+	}
 	if err = ctx.Err(); err != nil {
 		return response, err
 	}
@@ -154,10 +172,10 @@ func (layer *Orchestration) renameLocked(request RenameRequest) (response Rename
 				return response, fmt.Errorf("remove rename destination: %w", err)
 			}
 		}
-		if _, err = layer.linkLocked(LinkRequest{
+		if _, err = layer.linkLockedWithID(LinkRequest{
 			Context: ctx, SourceID: source.header.ObjectID,
 			ParentID: request.DestinationParentID, Name: request.DestinationName,
-		}); err != nil {
+		}, renameLinkID); err != nil {
 			return response, fmt.Errorf("create destination HardLink: %w", err)
 		}
 		if _, err = layer.unlinkLocked(UnlinkRequest{
