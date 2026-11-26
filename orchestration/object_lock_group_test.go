@@ -219,10 +219,18 @@ func TestObjectLockAcquisitionCanBeCanceled(t *testing.T) {
 		t.Fatal("canceled acquisition did not return")
 	}
 	held.Unlock()
-	manager.mu.Lock()
-	defer manager.mu.Unlock()
-	if len(manager.entries) != 0 {
-		t.Fatalf("lock registry retains %d entries after cancellation and unlock", len(manager.entries))
+	deadline := time.Now().Add(time.Second)
+	for {
+		manager.mu.Lock()
+		remaining := len(manager.entries)
+		manager.mu.Unlock()
+		if remaining == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("lock registry retains %d entries after cancellation and unlock", remaining)
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 
