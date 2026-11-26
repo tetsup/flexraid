@@ -82,6 +82,12 @@ func (layer *Orchestration) setAttrLocked(request SetAttrRequest) (response SetA
 
 	now := time.Now()
 	if object.file != nil {
+		if err = addObjectLocks(ctx, object.file.objectID); err != nil {
+			return response, err
+		}
+		if layer.objects[request.ObjectID] != object {
+			return response, os.ErrNotExist
+		}
 		file := object.file
 		if err = ctx.Err(); err != nil {
 			return response, err
