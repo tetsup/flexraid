@@ -317,3 +317,25 @@ func TestObjectLockGroupAddBeforeAndAfterLock(t *testing.T) {
 	}
 	group.Unlock()
 }
+
+func TestPublicObjectLockGroupAPI(t *testing.T) {
+	layer := &Orchestration{objectLocks: newObjectLockManager()}
+	group, err := layer.NewObjectLockGroup(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := group.Add(lockTestObjectID(2)); err != nil {
+		t.Fatal(err)
+	}
+	if err := group.Add(lockTestObjectID(1)); err != nil {
+		t.Fatal(err)
+	}
+	if err := group.Lock(ObjectLockRead); err != nil {
+		t.Fatal(err)
+	}
+	group.Unlock()
+	if err := group.Lock(ObjectLockWrite); err != nil {
+		t.Fatal(err)
+	}
+	group.Unlock()
+}
