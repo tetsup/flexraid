@@ -300,6 +300,7 @@ Distribution -> I/O
 - Distribution は Management とは独立して、Distribution 内部の同時実行制約を管理する。Management の実行単位・共通ロックとは概念も粒度も異なり、相互に統合・共有しない。自律 Cleanup は Management の WorkItem / MaintenanceExecutor を待たず、Management が設定した Drive 単位の許可レベルに従って Distribution 内部で進行する。
 - Distribution は同一 ObjectID + StripeID を Foreground Read / Write / Recovery の状態同期単位とする Stripe ロックを所有する。Orchestration の Object ロックグループは論理 Object 操作全体を保護し、Distribution は同じ Object 全体を保護する同期機構を重ねて設けない。
 - 自律 Cleanup の許可は Drive 単位で管理し、物理処理対象は Version に属する Chunk / FileKey とする。Cleanup は Foreground の Stripe ロックや Orchestration の Object ロックを取得しない。対象 Version のロックで Foreground の物理アクセスと排他し、ロック取得後に対象 Stripe の有効状態を確認する。
+- Cleanup 判定における「対象 Stripe が有効ではない」とは、対象 ObjectID + StripeID + Version の Stripe が自身では復元不可能である、または同一 ObjectID + StripeID に対象 Version より新しい復元可能な Version が存在することをいう。いずれか一方を満たせば無効と判定する。
 - Cleanup の実行可否は、対象 Version の排他ロックを取得できたこと、および対象 Stripe が有効な Stripe ではないことだけで判断する。これら以外の追加保護条件を設けない。
 - Cleanup は対象 Version の排他ロックを取得した後、map RWMutex による短時間の状態参照で対象 Stripe が有効でないことを確認する。map RWMutex は物理 I/O の前に解放する。
 - 論理削除 Object の削除では Orchestration が Object ロックグループの保護下で削除可能な ObjectID を選び、Distribution が ObjectID 単位で物理削除する。Distribution は ObjectID の処理中に Orchestration の Object ロックグループを取得しない。ObjectID の削除完了後に Orchestration が論理 Object のメモリ状態を確定する。
