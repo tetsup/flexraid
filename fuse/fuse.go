@@ -524,7 +524,6 @@ type fileHandle struct {
 	handle   *orchestration.FileHandle
 }
 
-
 func (n *node) lockObjectGroup(ctx context.Context, ids ...shared.ObjectID) (context.Context, func(), syscall.Errno) {
 	result, err := n.layer.LockObjectGroup(management.LockObjectGroupRequest{
 		Context: ctx, ObjectIDs: ids,
