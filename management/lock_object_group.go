@@ -8,16 +8,17 @@ import (
 )
 
 type LockObjectGroupRequest struct {
-	Context   context.Context
+	Context context.Context
 	ObjectIDs []shared.ObjectID
+	Mode orchestration.ObjectLockMode
 }
 
 type LockObjectGroupResponse struct {
 	Context context.Context
-	Unlock  func()
+	Unlock func()
 }
 
-// LockObjectGroup begins or extends the Object lock group for one logical operation.
+// LockObjectGroup begins or extends the fixed-mode Object lock group for one logical operation.
 // Nested calls using the returned Context reuse the same group.
 func (layer *Management) LockObjectGroup(request LockObjectGroupRequest) (LockObjectGroupResponse, error) {
 	ctx := request.Context
@@ -25,7 +26,9 @@ func (layer *Management) LockObjectGroup(request LockObjectGroupRequest) (LockOb
 		ctx = context.Background()
 	}
 	result, err := layer.orchestration.LockObjectGroup(orchestration.LockObjectGroupRequest{
-		Context: ctx, ObjectIDs: request.ObjectIDs,
+		Context: ctx,
+		ObjectIDs: request.ObjectIDs,
+		Mode: request.Mode,
 	})
 	if err != nil {
 		return LockObjectGroupResponse{}, err
