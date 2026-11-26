@@ -7,18 +7,6 @@ import (
 	"github.com/tetsup/flexraid/pkg/shared"
 )
 
-type LockObjectGroupRequest struct {
-	Context   context.Context
-	ObjectIDs []shared.ObjectID
-	Mode      ObjectLockMode
-}
-
-type LockObjectGroupResponse struct {
-	Context context.Context
-	Group   *ObjectLockGroup
-	Unlock  func()
-}
-
 // ObjectLockGroup is a reusable logical Object lock set. Its target set is
 // retained across Unlock calls; each Lock call selects the mode for that interval.
 type ObjectLockGroup struct {
