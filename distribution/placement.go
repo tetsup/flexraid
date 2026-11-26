@@ -16,15 +16,11 @@ type StripeIOIndexesResponse struct{ IOIndexes []int }
 // StripeIOIndexes returns persisted physical I/O indexes in logical chunk order,
 // with parity last. The returned slice contains only the devices used by the stripe.
 func (d *Distribution) StripeIOIndexes(request StripeIOIndexesRequest) (StripeIOIndexesResponse, error) {
-	unlock := d.lockObjectRead(request.ObjectID)
-	defer unlock()
-	d.mapMu.RLock()
-	defer d.mapMu.RUnlock()
-	stripes := d.objects[request.ObjectID]
-	if stripes == nil || stripes[request.StripeID] == nil {
-		return StripeIOIndexesResponse{}, ErrStripeNotFound
+	info, unlock, err := d.lockSelectedStripeRead(stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID})
+	if err != nil {
+		return StripeIOIndexesResponse{}, err
 	}
-	info := stripes[request.StripeID]
+	defer unlock()
 	indexes := make([]int, 0, len(info.chunks))
 	for _, no := range expectedChunkNos(info.method) {
 		location, exists := info.chunks[no]
