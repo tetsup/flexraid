@@ -77,14 +77,14 @@ func addObjectLocks(ctx context.Context, ids ...shared.ObjectID) error {
 	if ctx == nil {
 		return context.Canceled
 	}
-	group, ok := ctx.Value(objectLockGroupContextKey{}).(*objectLockGroup)
-	if !ok || group == nil {
+	group, ok := (&Orchestration{}).ObjectLockGroupFromContext(ctx)
+	if !ok {
 		// Internal unit tests may invoke Orchestration methods directly. Runtime
 		// entry points attach a group through Management.
 		return nil
 	}
 	for _, id := range uniqueSortedObjectIDs(ids) {
-		if err := group.Add(ctx, id); err != nil {
+		if err := group.Add(id); err != nil {
 			return err
 		}
 	}
