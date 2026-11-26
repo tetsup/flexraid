@@ -40,6 +40,14 @@ type FileHandle struct {
 	hasActiveStripeID bool
 }
 
+// ObjectID returns the data Object protected by this open handle.
+func (handle *FileHandle) ObjectID() shared.ObjectID {
+	if handle == nil || handle.runtimeFile == nil {
+		return shared.ObjectID{}
+	}
+	return handle.runtimeFile.objectID
+}
+
 type OpenRequest struct {
 	Context  context.Context
 	ObjectID shared.ObjectID
