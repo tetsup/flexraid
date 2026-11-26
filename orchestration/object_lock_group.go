@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sort"
 	"sync"
-	"time"
 
 	"github.com/tetsup/flexraid/pkg/shared"
 )
@@ -73,28 +72,52 @@ func (manager *objectLockManager) put(id shared.ObjectID, entry *objectLockEntry
 
 func (manager *objectLockManager) acquire(ctx context.Context, id shared.ObjectID, mode ObjectLockMode) (*objectLockEntry, error) {
 	entry := manager.entry(id)
-	ticker := time.NewTicker(time.Millisecond)
-	defer ticker.Stop()
-	for {
+	if err := ctx.Err(); err != nil {
+		manager.put(id, entry, mode, false)
+		return nil, err
+	}
+
+	// Use the fast path for uncontended locks. Once contended, use the
+	// blocking RWMutex operation so queued writers retain RWMutex fairness.
+	acquired := false
+	if mode == ObjectLockRead {
+		acquired = entry.mu.TryRLock()
+	} else {
+		acquired = entry.mu.TryLock()
+	}
+	if acquired {
 		if err := ctx.Err(); err != nil {
-			manager.put(id, entry, mode, false)
+			manager.put(id, entry, mode, true)
 			return nil, err
 		}
-		acquired := false
+		return entry, nil
+	}
+
+	locked := make(chan struct{})
+	go func() {
 		if mode == ObjectLockRead {
-			acquired = entry.mu.TryRLock()
+			entry.mu.RLock()
 		} else {
-			acquired = entry.mu.TryLock()
+			entry.mu.Lock()
 		}
-		if acquired {
-			return entry, nil
+		close(locked)
+	}()
+
+	select {
+	case <-locked:
+		if err := ctx.Err(); err != nil {
+			manager.put(id, entry, mode, true)
+			return nil, err
 		}
-		select {
-		case <-ctx.Done():
-			manager.put(id, entry, mode, false)
-			return nil, ctx.Err()
-		case <-ticker.C:
-		}
+		return entry, nil
+	case <-ctx.Done():
+		// RWMutex has no cancellable wait. Keep the registry reference until
+		// the queued waiter eventually acquires and releases the lock.
+		go func() {
+			<-locked
+			manager.put(id, entry, mode, true)
+		}()
+		return nil, ctx.Err()
 	}
 }
 
