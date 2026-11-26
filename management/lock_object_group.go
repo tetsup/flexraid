@@ -2,6 +2,7 @@ package management
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/tetsup/flexraid/orchestration"
 	"github.com/tetsup/flexraid/pkg/shared"
@@ -23,6 +24,9 @@ type LockObjectGroupResponse struct {
 func (layer *Management) NewObjectLockGroup(ctx context.Context) (*orchestration.ObjectLockGroup, error) {
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	if layer.orchestration == nil {
+		return nil, fmt.Errorf("Orchestration layer is not initialized")
 	}
 	return layer.orchestration.NewObjectLockGroup(ctx)
 }
