@@ -570,7 +570,7 @@ func (n *node) Statfs(ctx context.Context, out *gofuse.StatfsOut) syscall.Errno 
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return errno
 	}
-	lockedContext, unlock, errno := n.lockObjectGroup(ctx)
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, orchestration.ObjectLockRead)
 	if errno != 0 {
 		return errno
 	}
