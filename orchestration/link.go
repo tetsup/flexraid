@@ -46,6 +46,10 @@ func (layer *Orchestration) LinkLocked(request LinkRequest) (response LinkRespon
 }
 
 func (layer *Orchestration) linkLocked(request LinkRequest) (response LinkResponse, err error) {
+	return layer.linkLockedWithID(request, nil)
+}
+
+func (layer *Orchestration) linkLockedWithID(request LinkRequest, requestedID *shared.ObjectID) (response LinkResponse, err error) {
 	started := time.Now()
 	ctx := request.Context
 	if ctx == nil {
@@ -107,9 +111,14 @@ func (layer *Orchestration) linkLocked(request LinkRequest) (response LinkRespon
 
 	backingID := file.objectID
 	backingHeader := file.header
-	linkID, err := shared.NewObjectID()
-	if err != nil {
-		return response, fmt.Errorf("generate HardLink ObjectID: %w", err)
+	var linkID shared.ObjectID
+	if requestedID != nil {
+		linkID = *requestedID
+	} else {
+		linkID, err = shared.NewObjectID()
+		if err != nil {
+			return response, fmt.Errorf("generate HardLink ObjectID: %w", err)
+		}
 	}
 	now := time.Now()
 	parentID := request.ParentID
