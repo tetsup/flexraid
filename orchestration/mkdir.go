@@ -88,6 +88,9 @@ func (layer *Orchestration) mkdirLocked(request MkdirRequest) (response MkdirRes
 	if err = addObjectLocks(ctx, objectID); err != nil {
 		return response, err
 	}
+	if layer.objects[request.ParentID] != parent || parent.header.Deleted || parent.children[request.Name] != nil {
+		return response, syscall.EAGAIN
+	}
 	objectHeader, err = layer.persistNewObject(ctx, objectHeader, nil)
 	if err != nil {
 		return response, fmt.Errorf("persist directory %q: %w", request.Name, err)
