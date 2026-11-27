@@ -40,8 +40,10 @@ func (layer *Orchestration) SetCleanupPermissionStore(store *shared.CleanupPermi
 
 type Orchestration struct {
 	distribution           *distribution.Distribution
+	objectLocks            *objectLockManager
 	cleanupPermissionStore *shared.CleanupPermissionStore
 	logger                 *slog.Logger
+	mapMu                  sync.RWMutex
 	headers                map[shared.ObjectID]header
 	objects                map[shared.ObjectID]*runtimeObject
 	root                   *runtimeObject
@@ -78,6 +80,7 @@ func New(request NewRequest) (NewResponse, error) {
 
 	layer := &Orchestration{
 		distribution:           request.Distribution,
+		objectLocks:            newObjectLockManager(),
 		metrics:                newMetricsCollector(),
 		cleanupPermissionStore: request.CleanupPermissions,
 		logger:                 logger,

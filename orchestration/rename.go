@@ -83,6 +83,33 @@ func (layer *Orchestration) renameLocked(request RenameRequest) (response Rename
 	if !exists || source.header.Deleted {
 		return response, os.ErrNotExist
 	}
+	destination, destinationExists := destinationParent.children[request.DestinationName]
+	ids := []shared.ObjectID{source.header.ObjectID}
+	if source.file != nil {
+		ids = append(ids, source.file.objectID)
+	}
+	if source.header.TargetID != nil {
+		ids = append(ids, *source.header.TargetID)
+	}
+	if destinationExists {
+		ids = append(ids, destination.header.ObjectID)
+		if destination.file != nil {
+			ids = append(ids, destination.file.objectID)
+		}
+		if destination.header.TargetID != nil {
+			ids = append(ids, *destination.header.TargetID)
+		}
+	}
+	if err = addObjectLocks(ctx, ids...); err != nil {
+		return response, err
+	}
+	if sourceParent.children[request.SourceName] != source || source.header.Deleted {
+		return response, os.ErrNotExist
+	}
+	currentDestination, currentDestinationExists := destinationParent.children[request.DestinationName]
+	if currentDestinationExists != destinationExists || (destinationExists && currentDestination != destination) {
+		return response, fmt.Errorf("rename destination changed during lock acquisition: %w", syscall.EAGAIN)
+	}
 	if request.SourceParentID == request.DestinationParentID &&
 		request.SourceName == request.DestinationName {
 		return response, nil
@@ -100,7 +127,6 @@ func (layer *Orchestration) renameLocked(request RenameRequest) (response Rename
 		return response, syscall.EINVAL
 	}
 
-	destination, destinationExists := destinationParent.children[request.DestinationName]
 	if destinationExists && (destination == source ||
 		(source.file != nil && source.file == destination.file)) {
 		// POSIX permits names for the same inode to be renamed onto one
@@ -113,6 +139,30 @@ func (layer *Orchestration) renameLocked(request RenameRequest) (response Rename
 		}
 	}
 
+	var renameLinkID *shared.ObjectID
+	if source.header.Kind == objectKindFile || source.header.Kind == objectKindHardLink {
+		id, idErr := shared.NewObjectID()
+		if idErr != nil {
+			return response, fmt.Errorf("generate rename HardLink ObjectID: %w", idErr)
+		}
+		if err = addObjectLocks(ctx, id); err != nil {
+			return response, err
+		}
+		renameLinkID = &id
+		if sourceParent.children[request.SourceName] != source || source.header.Deleted {
+			return response, os.ErrNotExist
+		}
+		currentDestination, currentDestinationExists = destinationParent.children[request.DestinationName]
+		if currentDestinationExists != destinationExists || (destinationExists && currentDestination != destination) {
+			return response, fmt.Errorf("rename destination changed during lock acquisition: %w", syscall.EAGAIN)
+		}
+		if layer.objects[request.SourceParentID] != sourceParent || layer.objects[request.DestinationParentID] != destinationParent {
+			return response, syscall.EAGAIN
+		}
+		if source.header.Kind == objectKindDirectory && layer.renameDirectoryContains(source, destinationParent) {
+			return response, syscall.EINVAL
+		}
+	}
 	if err = ctx.Err(); err != nil {
 		return response, err
 	}
@@ -128,10 +178,10 @@ func (layer *Orchestration) renameLocked(request RenameRequest) (response Rename
 				return response, fmt.Errorf("remove rename destination: %w", err)
 			}
 		}
-		if _, err = layer.linkLocked(LinkRequest{
+		if _, err = layer.linkLockedWithID(LinkRequest{
 			Context: ctx, SourceID: source.header.ObjectID,
 			ParentID: request.DestinationParentID, Name: request.DestinationName,
-		}); err != nil {
+		}, renameLinkID); err != nil {
 			return response, fmt.Errorf("create destination HardLink: %w", err)
 		}
 		if _, err = layer.unlinkLocked(UnlinkRequest{

@@ -82,6 +82,12 @@ func (layer *Orchestration) setAttrLocked(request SetAttrRequest) (response SetA
 
 	now := time.Now()
 	if object.file != nil {
+		if err = addObjectLocks(ctx, object.file.objectID); err != nil {
+			return response, err
+		}
+		if layer.objects[request.ObjectID] != object {
+			return response, os.ErrNotExist
+		}
 		file := object.file
 		if err = ctx.Err(); err != nil {
 			return response, err
@@ -238,9 +244,9 @@ func (layer *Orchestration) updateHeaderStripeLocked(ctx context.Context, file *
 	return nil
 }
 
-// persistDirtyStripesLocked persists the dirty cache entries in StripeID order.
+// persistDirtyStripesLocked commits all dirty cache entries as one Object transaction.
 func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file *runtimeFile, syncToDisk ...bool) (uint32, error) {
-	sync := len(syncToDisk) > 0 && syncToDisk[0]
+	_ = syncToDisk // durability is required before advancing the Object watermark
 	work := append([]stripeRange(nil), file.zeroStripeRanges...)
 	for id, entry := range file.stripeCache {
 		if entry != nil && entry.state == stripeCacheDirty {
@@ -250,7 +256,26 @@ func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file 
 	if len(work) == 0 {
 		return 0, nil
 	}
+	// Stripe 0 is the Object commit record and must advance with every write.
+	if !containsStripeRange(work, 0) {
+		geometry, err := geometryFor(file.header, storage.StripeID(0))
+		if err != nil {
+			return 0, err
+		}
+		headerEntry, err := layer.loadStripeForWriteLocked(ctx, file, geometry)
+		if err != nil {
+			return 0, fmt.Errorf("load Stripe 0 commit record: %w", err)
+		}
+		headerEntry.state = stripeCacheDirty
+		if file.stripeCache == nil {
+			file.stripeCache = make(map[uint64]*stripeCacheEntry)
+		}
+		file.stripeCache[0] = headerEntry
+		work = append(work, stripeRange{start: 0, end: 0})
+	}
 	sort.Slice(work, func(i, j int) bool { return work[i].start < work[j].start })
+	var persisted uint32
+	var zeroData []byte
 	merged := make([]stripeRange, 0, len(work))
 	for _, item := range work {
 		if len(merged) == 0 {
@@ -267,10 +292,9 @@ func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file 
 		merged = append(merged, item)
 	}
 
-	// Persist only dirty stripes and zero ranges, in StripeID order. Stripe 0
-	// therefore remains the first commit and the zero payload stays O(1) in RAM.
-	var zeroData []byte
-	var persisted uint32
+	// Build one Object commit. Distribution writes every data stripe first
+	// and Stripe 0 last, so no subset can become visible after a crash.
+	var requests []distribution.WriteStripeRequest
 	for _, item := range merged {
 		for id := item.start; ; id++ {
 			if err := ctx.Err(); err != nil {
@@ -312,24 +336,31 @@ func (layer *Orchestration) persistDirtyStripesLocked(ctx context.Context, file 
 					return persisted, fmt.Errorf("select I/O devices for stripe %d: %w", id, err)
 				}
 			}
-			if _, err = layer.distribution.WriteStripe(distribution.WriteStripeRequest{
+			requests = append(requests, distribution.WriteStripeRequest{
 				Context: ctx, ObjectID: file.objectID, StripeID: storage.StripeID(id),
 				ChunkSize: geometry.ChunkSize, Layout: geometry.Layout,
-				IOIndexes: indexes, Data: data, Sync: sync,
-			}); err != nil {
-				return persisted, fmt.Errorf("persist stripe %d: %w", id, err)
-			}
-			if entry != nil {
-				entry.state = stripeCacheClean
-			}
-			if isZero {
-				file.zeroStripeRanges = removeStripeFromRanges(file.zeroStripeRanges, id)
-			}
+				IOIndexes: indexes, Data: data,
+			})
 			persisted++
 			if id == item.end {
 				break
 			}
 		}
+	}
+	if len(requests) == 0 {
+		return 0, nil
+	}
+	if _, err := layer.distribution.WriteStripes(distribution.WriteStripesRequest{
+		Context: ctx, ObjectID: file.objectID, Stripes: requests,
+	}); err != nil {
+		return 0, fmt.Errorf("persist Object %s: %w", file.objectID.String(), err)
+	}
+	// Cache state is committed only after Distribution confirms the complete
+	// Object transaction. On failure, every dirty payload remains available.
+	for _, request := range requests {
+		id := uint64(request.StripeID)
+		delete(file.stripeCache, id)
+		file.zeroStripeRanges = removeStripeFromRanges(file.zeroStripeRanges, id)
 	}
 	return persisted, nil
 }

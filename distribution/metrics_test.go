@@ -18,7 +18,7 @@ func TestGetMetricsTracksOperationsAndState(t *testing.T) {
 	}
 	id := testObjectID()
 	data := []byte("metrics stripe")
-	if _, err := created.Layer.WriteStripe(WriteStripeRequest{Context: ctx, ObjectID: id, StripeID: 3, ChunkSize: 16, Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: data}); err != nil {
+	if _, err := writeStripeForTest(created.Layer, WriteStripeRequest{Context: ctx, ObjectID: id, StripeID: 3, ChunkSize: 16, Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: data}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := created.Layer.ReadStripe(ReadStripeRequest{Context: ctx, ObjectID: id, StripeID: 3, ChunkSize: 0}); err == nil {
@@ -33,17 +33,17 @@ func TestGetMetricsTracksOperationsAndState(t *testing.T) {
 		t.Fatal(err)
 	}
 	write := got.Operations["WriteStripe"]
-	if write.SuccessCount != 1 || write.FailureCount != 0 || write.Recent.ProcessedCount != 1 {
+	if write.SuccessCount != 2 || write.FailureCount != 0 || write.Recent.ProcessedCount != 2 {
 		t.Fatalf("write metrics: %+v", write)
 	}
-	if got.Chunks.Write.SuccessCount != 2 || got.Chunks.Write.RecentProcessedCount != 2 {
+	if got.Chunks.Write.SuccessCount != 4 || got.Chunks.Write.RecentProcessedCount != 4 {
 		t.Fatalf("chunk write metrics: %+v", got.Chunks.Write)
 	}
 	readMetrics := got.Operations["ReadStripe"]
 	if readMetrics.SuccessCount != 1 || readMetrics.FailureCount != 1 || readMetrics.Recent.ProcessedCount != 2 {
 		t.Fatalf("read metrics: %+v", readMetrics)
 	}
-	if got.Stripes.ObjectCount != 1 || got.Stripes.StripeCount != 1 || got.Stripes.RecoverableStripeCount != 1 {
+	if got.Stripes.ObjectCount != 1 || got.Stripes.StripeCount != 2 || got.Stripes.RecoverableStripeCount != 2 {
 		t.Fatalf("stripe metrics: %+v", got.Stripes)
 	}
 	if _, ok := got.Operations["GetMetrics"]; ok {
@@ -59,7 +59,7 @@ func TestGetMetricsCountsRecoverableMissingChunk(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := testObjectID()
-	written, err := created.Layer.WriteStripe(WriteStripeRequest{Context: ctx, ObjectID: id, StripeID: 4, ChunkSize: 4, Layout: Layout{Type: LayoutParity, NumChunks: 2}, IOIndexes: []int{0, 1, 2}, Data: []byte("12345678")})
+	written, err := writeStripeForTest(created.Layer, WriteStripeRequest{Context: ctx, ObjectID: id, StripeID: 4, ChunkSize: 4, Layout: Layout{Type: LayoutParity, NumChunks: 2}, IOIndexes: []int{0, 1, 2}, Data: []byte("12345678")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestGetMetricsSnapshotIsIndependent(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if _, err := created.Layer.WriteStripe(WriteStripeRequest{Context: ctx, ObjectID: testObjectID(), StripeID: 1, ChunkSize: 8, Layout: Layout{Type: LayoutMirror, NumChunks: 1}, IOIndexes: []int{0}, Data: []byte("x")}); err != nil {
+	if _, err := writeStripeForTest(created.Layer, WriteStripeRequest{Context: ctx, ObjectID: testObjectID(), StripeID: 1, ChunkSize: 8, Layout: Layout{Type: LayoutMirror, NumChunks: 1}, IOIndexes: []int{0}, Data: []byte("x")}); err != nil {
 		t.Fatal(err)
 	}
 	first, err := created.Layer.GetMetrics(GetMetricsRequest{Context: ctx})
@@ -102,7 +102,7 @@ func TestGetMetricsSnapshotIsIndependent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if second.Operations["WriteStripe"].SuccessCount != 1 || second.Stripes.StripeCount != 1 {
+	if second.Operations["WriteStripe"].SuccessCount != 2 || second.Stripes.StripeCount != 2 {
 		t.Fatalf("snapshot leaked mutation: %+v", second)
 	}
 }
@@ -144,7 +144,7 @@ func TestGetMetricsRetainsRuntimeUnreadableChunk(t *testing.T) {
 	}
 	id := testObjectID()
 	data := []byte("runtime missing")
-	written, err := created.Layer.WriteStripe(WriteStripeRequest{
+	written, err := writeStripeForTest(created.Layer, WriteStripeRequest{
 		Context: ctx, ObjectID: id, StripeID: 9, ChunkSize: 16,
 		Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: data,
 	})
@@ -196,7 +196,7 @@ func TestGetMetricsReportsCleanupInventoryAndCapacityEstimate(t *testing.T) {
 	}
 	for _, value := range []string{"first cleanup version", "second cleanup version", "current version"} {
 		request.Data = []byte(value)
-		if _, err := created.Layer.WriteStripe(request); err != nil {
+		if _, err := writeStripeForTest(created.Layer, request); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -218,7 +218,7 @@ func TestGetMetricsReportsCleanupInventoryAndCapacityEstimate(t *testing.T) {
 		if candidate.Method != CleanupMethodDeleteOldVersion || candidate.DriveIndex != index {
 			t.Errorf("candidate[%d] = %+v", index, candidate)
 		}
-		if candidate.FileCount != 2 || candidate.FileBytes == 0 || candidate.ReclaimableBytes != candidate.FileBytes {
+		if candidate.FileCount != 4 || candidate.FileBytes == 0 || candidate.ReclaimableBytes != candidate.FileBytes {
 			t.Errorf("candidate[%d] size/count = %+v", index, candidate)
 		}
 	}

@@ -126,9 +126,9 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - Orchestration と Distribution の双方を統括する。通常のファイル操作では Orchestration を呼び出し、Orchestration が Distribution を呼び出す親子関係を維持する。
 - Cleanup、Recovery、Scrub 等のレイヤー横断の管理ワークフローでは、必要な論理判断を Orchestration に依頼し、物理ストライプ処理を Distribution に依頼する。意味上 Orchestration を通すべき通常データ操作を、Management から Distribution へ迂回させない。
 - Orchestration / Distribution の内部状態を直接変更しない。各レイヤーが公開する API を通じて操作し、状態の所有者と排他制御の所有者を分離する。
-- Foreground / Background / Exclusive / Initialization / Stop のすべてに共通する、Management 唯一の実行ロック機構を所有する。Management の実行単位は同時に一つだけ実行し、各単位が共通ロックを取得して直列実行する。ObjectID などの対象別ロック、複数対象ロック、別系統のメンテナンスロックは設けない。ロックは復旧可能な最小実行単位の開始時に取得し、その単位の完了・状態確定後に必ず解放する。次の単位へ進む前に実行権を譲り、Lifecycle と Scheduler が実行種別ごとの受付・優先順位・drain を調停する。これはロック粒度を Object や Stripe に広げることを意味しない。
+- Management は Lifecycle / Scheduler による受付可否・優先順位・drain を調停する。通常のファイルシステム操作を一つのグローバル実行ロックで直列化しない。論理状態の競合は Orchestration が所有する Object ロックグループで保護し、FUSE callback 自身は排他ロックを取得しない。Exclusive / Stop 等は新規操作の受付を止め、実行中の操作が Object ロックグループを解放して完了するのを待つ。
 - Management 自身の操作メトリクスは Management が所有・集計する。監視 API の応答を構成するときは、Orchestration・Distribution・I/O がそれぞれ所有するメトリクス snapshot を各層の公開取得 API から直接取得する。下位層のメトリクスを別の下位層へ渡して再集計させない。Management は表示・集約の窓口であり、各層の統計の所有者にはならない。
-- Management が Scheduler / MaintenanceExecutor を通じて実行する Background 作業は、Foreground との優先順位を Management の共通実行ロックで調停する。一方、Distribution の自律 Cleanup は Management の Background WorkItem として実行しない。Management は Distribution の物理 Cleanup ループと Orchestration の論理削除 Object Cleanup ループの起動・停止、および Drive ごとの許可情報更新を行う。各ループの処理判断と候補管理は所有レイヤーが行う。Orchestration worker は Management の公開 Cleanup 経路を通じて実行し、Management の操作排他を迂回しない。Cleanup の進捗は永続化せず、起動時・再開時に各所有レイヤーが状態から候補を再構築する。
+- Management が Scheduler / MaintenanceExecutor を通じて実行する Background 作業は、Foreground との優先順位を Scheduler の admission / 実行枠で調停する。通常のファイルシステム操作をグローバルロックで直列化せず、論理 Object の競合は Orchestration の Object ロックグループで保護する。一方、Distribution の自律 Cleanup は Management の Background WorkItem として実行しない。Management は Distribution の物理 Cleanup ループと Orchestration の論理削除 Object Cleanup ループの起動・停止、および Drive ごとの許可情報更新を行う。各ループの処理判断と候補管理は所有レイヤーが行う。Orchestration worker は Management の公開 Cleanup 経路を通じて実行し、Object ロックグループの規則を迂回しない。Cleanup の進捗は永続化せず、起動時・再開時に各所有レイヤーが状態から候補を再構築する。
 
 #### Maintenance Policy / Executor
 
@@ -137,7 +137,7 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - `MaintenanceWorkProvider` は自レイヤーが所有する状態から、作業候補と計画・実行に必要な情報を読み取り専用 Snapshot として提供する。Management は候補の所有者にならず、候補一覧やレイヤー内部状態を独立した正として複製しない。候補情報と下位レイヤーの物理情報からメトリクスを集計するのは Management の責務とし、実行時には所有レイヤーの公開 API を使用する。
 - `MaintenancePlan` は順序付きの `MaintenanceBatch` と `MaintenanceWorkItem` で構成する。Batch は Policy が決めた作業のグルーピングであり、ロック範囲ではない。WorkItem は Provider ID、Provider が識別する Work ID、および Policy が判断に使った Disk ID 情報を保持する。
 - `MaintenanceExecutor` は Plan の Batch / WorkItem の順序を変更せず、各 WorkItem について Provider の最小安全単位を一度ずつ実行する。Provider はその WorkItem が完了したかを返し、未完了なら次回も同じ WorkItem を続ける。Executor は計画外の作業を追加せず、Disk ID に対応するドライブ状態を再取得・再判定せず、SpinUp / SpinDown もしない。
-- Management の共通実行ロックは復旧可能な最小作業単位ごとに取得・解放する。Batch 全体や WorkItem 全体でロックを保持せず、各 Provider unit の境界で Scheduler に実行権を返し、待機中の Foreground / Exclusive / Stop を調停する。MaintenanceExecutor は既存 Scheduler の BackgroundTask 契約に適合し、別のロック機構を設けない。
+- MaintenanceExecutor は Plan の Batch / WorkItem の順序を維持し、Provider の最小安全単位を実行する。Scheduler は Foreground / Exclusive / Stop との受付・優先順位を調停するが、通常ファイル操作の Object ロックを代替するグローバル排他ロックを設けない。Provider が Object の論理状態を参照・変更する場合は Orchestration の Object ロックグループ規則に従う。
 - MaintenancePolicy / Executor が扱う Management 所有の保守作業では、停止中ドライブの扱いを Policy が判断する。Distribution Cleanup のドライブ選択・実行は、別途定義する Drive 単位の Cleanup 許可レベルに従い Distribution 自身が行う。
 - ドライブ状態の観測と SpinUp / SpinDown の OS 固有操作は I/O が提供する。Management はドライブ単位の Cleanup 許可レベルを所有し、設定ファイルで初期値を受け取り、公開 API で実行中に変更する。許可情報は不要 Version 等の自律 Cleanup と論理削除 Object の物理削除の双方に適用する。Management は許可情報を各レイヤーへ公開するだけで、削除対象や削除単位を選択・指示しない。許可情報の変更自体は削除処理を開始しない。
 - 初期実装に学習、適応的な効率推定、複雑な最適化アルゴリズムを持ち込まない。効率計算・アルゴリズム比較は外部シミュレータで行う。Policy は差し替え可能にし、判断入力・Plan・実行結果を観測できるようにする。
@@ -147,8 +147,8 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 - 各ストレージ設定は FlexRAID の I/O root、物理ファイルシステムの mountpoint、WWN の3項目を必須とする。設定読み込み後、物理ストレージディレクトリの作成や Distribution の初期化など副作用を伴う処理より前に、重複・欠落を検証し I/O の公開 API で WWN を解決する。
 - I/O の WWN 解決は Linux の `/dev/disk/by-id/wwn-*` を基準とし、パーティションではなく物理ブロックデバイスを対象とする。別識別子へのフォールバックは禁止する。
 - Management は設定済み WWN のみを指定できる `SpinUp` / `SpinDown` API を提供し、実際の OS 固有デバイス操作は I/O の公開 API に委譲する。電源制御の判断・スケジューリングは Management に属し、今回の API 実装自体は自動制御を開始しない。
-- Management は `pkg/shared` の `CleanupPermissionStore` を唯一の共有状態として所有し、各 Drive の `DeleteAllowed` と `PreserveAllowed` を独立して管理する。初期値は設定ファイルから受け取り、公開 API で実行中に変更する。Management だけが Store を更新し、Orchestration と Distribution は同じ Store の Snapshot を読み取る。許可更新は Management のファイル操作実行ロックを待たずに反映し、論理削除 Object の現在処理中の ObjectID には影響せず、次の ObjectID の開始時から適用する。
-- Management は共有 Store を更新する。Distribution は自律 Cleanup の各物理ファイル開始時に Snapshot を参照する。Orchestration は ObjectID の選択時に Snapshot を参照し、Distribution は各 ObjectID の処理開始時に改めて Snapshot を取得して必要な全 Drive が許可されていることを確認する。ObjectID の処理開始後は、その Snapshot に基づいて完了まで進める。
+- Management は `pkg/shared` の `CleanupPermissionStore` を唯一の共有状態として所有し、各 Drive の `DeleteAllowed` と `PreserveAllowed` を独立して管理する。初期値は設定ファイルから受け取り、公開 API で実行中に変更する。Management だけが Store を更新し、Orchestration と Distribution は同じ Store の Snapshot を読み取る。許可更新は Object ロックグループの取得を待たずに反映し、論理削除 Object の現在処理中の ObjectID には影響せず、次の ObjectID の開始時から適用する。
+- Management は共有 Store を更新する。Distribution は自律 Cleanup の各物理ファイル開始時に Snapshot を参照する。Orchestration は ObjectID の選択時に Snapshot を参照し、Distribution は各 ObjectID の処理開始時に改めて Snapshot を取得して必要な全 Drive が許可されていることを確認する。ObjectID の処理開始後は、その Snapshot に基づいて完了まで進める。Cleanup worker が論理 Object / Namespace の状態を参照・変更する場合は Orchestration の Object ロックグループを取得する。
 - 設定ファイルの各 disk は `cleanup_delete_allowed` / `cleanup_preserve_allowed` を任意指定でき、省略時は両方 false とする。実行中の変更は Management API を通す。外部コマンドから API を呼ぶ IPC / control socket は Management の公開境界として実装し、CLI が下位レイヤーや内部 map を直接操作しない。
 - Object の論理削除状態と削除待ちキューは Orchestration が所有する。削除待ちキューは Deleted Header から再構築可能なメモリ上の候補索引であり、永続化したり Management / Distribution に複製したりしない。Management はドライブ単位の許可情報を Orchestration に渡す。Orchestration は許可ドライブと Header / Namespace の状態から、削除可能な ObjectID をすべて特定し、一括削除要求として Distribution に渡す。Management は ObjectID や StripeID を選択せず、個別 Object の削除をスケジュールしない。
 
@@ -156,7 +156,7 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 
 - Header の定義・生成・解析・シリアライズ・更新、論理 Object と Namespace、ファイル offset と StripeID / stripe 内 offset の変換、配置方針を担当する。
 - 通常のファイルシステム操作における論理状態の所有者である。Namespace、Header、Object の論理削除状態、open handle、および Deleted Header から再構築する一時的な削除待ちキューを管理する。削除待ちキューは Orchestration が所有し、Management はドライブ単位の許可情報を渡す。Orchestration は Header / Namespace と許可ドライブを照合して削除可能な ObjectID を一括選択し、Distribution に一括削除を依頼する。
-- Management が提供する共通実行ロック機構の制御下で呼び出される。Orchestration 自身はレイヤー横断のロック管理・ロック取得を行わない。Namespace の内部 map や Runtime 状態を外部へ直接公開しない。
+- Management の Lifecycle admission を通じて呼び出される。論理 Object / Namespace の競合制御は Orchestration が Object ロックグループとして所有・実行する。Namespace の内部 map や Runtime 状態を外部へ直接公開しない。
 - 初期化では Header の読み込み・解析・検証、Namespace 構築、HardLink 解決、整合性検査を行う。Deleted Header を持つ ObjectID を一時的な削除待ちキューへ登録し、不整合保護対象はキューから除外する。削除待ちキューは Orchestration 内部に保持し、削除実行時に許可ドライブと Header / Namespace の状態から削除可能な ObjectID を一括選択する。
 - 論理削除操作では Header の Deleted 状態、Namespace の変更、および削除待ちキューへの登録を担当する。論理削除 Object の物理削除では、Orchestration が Management から受け取った許可ドライブ情報と自身の Header / Namespace 状態を照合し、削除可能な ObjectID をすべて選択して Distribution へ一括要求する。Distribution の ObjectID 単位の削除が完了した後、Orchestration は対象 Object の Runtime 状態と削除待ちキューを確定する。
 - Distribution の API は論理ストライプ単位で利用する。チャンク番号、StripeVersion、物理配置の内部表現を持ち込まない。
@@ -170,40 +170,37 @@ Namespace は独立したツリーやデータベースとして保存せず、�
 ### Distribution
 
 - 論理ストライプ単位で読み書きする。論理ファイル offset、ファイルサイズ、Namespace、Header の形式を扱わない。
-- `WriteStripe` は指定された Layout / ChunkSize / I/O 配置方針に従ってストライプをチャンクへ分割し、必要な冗長データを生成して永続化する。ファイル内 offset の分割や既存ストライプとのマージは行わない。
+- `WriteStripes` は一つの Object に対する更新対象 Stripe の集合を受け取り、各 Stripe の Layout / ChunkSize / I/O 配置方針に従ってチャンクへ分割し、必要な冗長データを生成して永続化する。ファイル内 offset の分割や既存ストライプとのマージは行わない。要求には Stripe 0 を必ず含め、単独 Stripe の永続化 API は公開しない。
 - ストライプのバージョン・チャンク・物理配置情報を管理し、起動時に I/O の全件列挙結果からメモリ上へ再構築する。永続インデックスを別途持たない。
-- ストライプ書き込みは、ストライプごとに単調増加する Version を割り当て、新しい Version のチャンクを個別の物理ファイルとして順次書き込む。全チャンクの書き込みが完了した場合に限り、その Version を実行中の最新有効 Version として公開し、成功を返す。
+- Distribution の WriteStripes は、呼び出し元 Orchestration が Object ロックグループを保持していることを前提に、Stripe 0 の最新 recoverable Version を watermark として Version を一度だけ採番する。watermark より大きい既知の物理残骸を除去できなければ commit を開始しない。全データ Stripe の Chunk を同一 Version で永続化した後、Stripe 0 を最後に永続化する。Stripe 0 が recoverable になった時点で commit とし、更新対象 Stripe の選択済み Version をまとめて公開する。
 - 書き込み途中で失敗した場合、その Version の書き込み済みチャンクは物理的に残り得るが、実行中の Distribution では recoverable ではない候補として扱い、現在選択中の有効 Version を切り替えない。失敗した部分書き込みを成功として返したり、既存 Version を削除したりしない。
-- Version はストライプ単位で管理する。ファイル全体や複数ストライプをまたぐ Version 切り替え・トランザクションは行わず、異なるストライプで最新 Version が異なることを許容する。
-- 起動時は物理チャンクを ObjectID / StripeID / Version ごとに集約し、形式・識別子・重複チャンクなどを検証する。不正な候補 Version は復旧候補から除外する。各候補を実際に復元可能か検証し、復元可能な候補のうち最も大きい Version をそのストライプの最新有効 Version として選ぶ。
-- 起動時の復旧判定では、以前の実行で書き込み途中に失敗した Version であっても、残存チャンクだけで復元可能なら選択対象になり得る。逆に、より新しい Version が復元不能なら、それを選択せず、復元可能な最も古い Version ではなく「最も新しい復元可能 Version」へフォールバックする。復元可能な Version が一つもなければ、そのストライプは利用できない。
+- Version は物理的には Stripe 単位で保存するが、有効性の上限は Stripe 0 の Version watermark で決まる。Stripe 0 自身は最新の recoverable Version を watermark とし、各データ Stripe は watermark 以下で最大の recoverable Version を有効とする。異なるデータ Stripe の有効 Version が異なることは許容する。
+- 起動時は物理チャンクを ObjectID / StripeID / Version ごとに集約し、形式・識別子・重複チャンクなどを検証する。不正な候補 Version は復旧候補から除外する。まず Stripe 0 の候補を検証し、最新の recoverable Version を File の watermark として確定する。その後、各データ Stripe は watermark 以下の候補だけを検証対象とし、その中で最大の recoverable Version を有効とする。watermark より大きい Version は、復元可能であっても未コミットの異常 Version であり、有効化しない。
+- データ Stripe の起動時復旧では、watermark を超える Version は復元可能性にかかわらず無効とする。watermark 以下では最大の recoverable Version を選択し、より新しい候補が復元不能なら、その次に新しい recoverable Version へフォールバックする。Stripe 0 自身は最新の recoverable Version が watermark となる。Stripe 0 に recoverable Version が一つもなければ、その File の watermark を確定できず、データ Stripe を通常利用可能として公開しない。
 - Cleanup の Version 分類は Object 全体の一括処理ではなく、ObjectID + StripeID ごとに、その Stripe の最新有効 Version が確定した時点で行う。起動時は全物理チャンクの列挙・Version 集約・復元可能性判定を先に完了させ、各 Stripe の最新有効 Version を確定した後、Stripe ごとに同じ分類処理を実行する。起動時に全 Stripe の分類を一度に行う専用ロジックを設けない。
-- Stripe の分類処理は初期化時と Foreground Write 成功時で共通化する。共通処理は対象 Stripe の最新有効 Version と全 Version 情報から分類を導出し、有効 Version より古い Version を OldVersion、有効 Version より新しい Version を AbnormalVersion とする。最新有効 Version を確定できない Stripe は分類を保留し、削除候補を生成しない。
-- Write 時の分類は、新 Version の全チャンク書き込みが成功し、Distribution の最新有効 Version（objects）と Version 情報（versions）を更新した後に行う。失敗した部分書き込みを、その場で正常系の旧 Version として分類しない。再起動時の復元可能性判定で有効 Version が確定した場合は、起動時の共通分類処理で改めて分類する。
+- Stripe の分類処理は初期化時と Foreground Write の watermark commit 成功時で共通化する。データ Stripe では watermark より大きい Version を AbnormalVersion、選択された有効 Version より小さい Version を OldVersion とする。Stripe 0 では watermark 自身より小さい Version を OldVersion とする。watermark を確定できない File は分類・Cleanup を保留する。
+- commit 成功後の分類では、各データ Stripe の Version > watermark を AbnormalVersion、watermark 以下で選択された Version より古い候補を OldVersion とする。commit 前に失敗した候補は有効 Version として公開せず、トランザクション終了後に AbnormalVersion として Cleanup queue へ登録する。候補整理・分類・Cleanup queue 登録は Distribution の Stripe 状態同期に従って行う。
 - 共通分類処理は Stripe 内の Version 全体から分類結果を導出する。初期化時は既存 Version 全体が初回の対象となり、Write 時は更新後の全体状態から新たに発生した候補を追加する。候補キューへの登録は冪等とし、同一候補の重複登録で処理が重複しないようにする。
 - 分類された Version の物理チャンクは IOIndex（Drive）ごとに分割し、Cleanup 候補キューへ登録する。候補の識別単位は IOIndex + ObjectID + StripeID + Method とし、キュー項目は物理ファイル一覧を固定的に保持するのではなく、処理時に対象 Stripe の最新状態から対象ファイルを再確定するための識別情報とする。Method は少なくとも DeleteOldVersion と PreserveAbnormal を区別する。
 - DeleteOldVersion は許可された Drive 上で物理削除する。PreserveAbnormal は通常の削除対象にせず、同じ Drive 内の保全領域へ元の物理ファイル名を維持して Rename する。保全領域は通常の Distribution スキャン対象から除外する。
 - Distribution は IOIndex + ObjectID + StripeID + Method を指定して一件の Cleanup 候補を処理する API を提供する。DeleteOldVersion は Delete、PreserveAbnormal は Preserve（同一物理ファイルシステム内の Rename）で処理し、対象チャンクのヘッダーや内容を Cleanup のために再解析しない。対象は Stripe の分類情報と物理 FileKey から特定する。
 - 保全領域名は `pkg/shared/config.PreservationDirectory` を唯一の正とし、初期値は `.flexraid-preserved` とする。各 Drive の物理 mountpoint 直下に固定し、元の物理ファイル名を維持する。16進数だけの名前にはしない。通常の `ListChunks` / `ScanHeaders` は保全領域を再帰探索しない。
 - 旧 Version / 異常 Version など、既に無効と確定した Stripe 内の Version 単位 Cleanup では Stripe 0 を最後にする順序制約を設けない。Stripe 0 を最後にする制約は、Header を含む論理削除 Object 全体の物理削除に限る。
-- 分類・候補生成は map Mutex で共有状態を保護して行い、候補登録後に物理 I/O を行わずロックを解放する。Cleanup ワーカーは Distribution 内の自律ループとして動作し、実行開始ごとに Drive 単位の許可情報を読み取る。map Mutex の短時間の保護下で対象 FileKey を確定し、解放後に Delete / Rename を実行する。Cleanup のために Stripe Mutex を取得しない。キュー Mutex を保持したまま map Mutex 取得や物理 I/O を行わない。
+- 分類・候補生成は Distribution の Stripe 状態同期に従って行い、共有 map の参照・更新時だけ map RWMutex を短時間取得する。候補登録後の物理 I/O は map RWMutex / queue mutex を解放してから行う。Cleanup worker は Distribution 内の自律ループとして動作し、Drive 単位の許可情報を確認する。候補 queue は専用 Mutex で保護し、queue mutex を保持したまま map RWMutex、Version ロックの取得待ち、物理 I/O を行わない。
 - Mirror は有効な複製チャンクが1つ以上あれば復元可能とする。XOR 1 パリティは、全データチャンクがあればパリティチャンクが欠落していても復元可能とし、データチャンクが1つだけ欠落している場合はパリティチャンクを使って復元する。データチャンクが2つ以上欠落している場合は復元不能とする。
 - 読み込み時は選択済み Version の各チャンクを再読込し、物理読み取りエラーや不正なチャンクを欠落として扱って復元を試みる。復元できなければデータ破損エラーを返す。欠落チャンクを復元できた場合は、呼び出し元から修復配置が与えられていれば同じ Version の欠落チャンクを修復する。修復は新しい Version のコミットではない。
 - 復旧はチャンクの欠落または物理読み取りエラーにより取得できない場合を対象とする。読み取れたデータ同士の内容比較や、全データチャンクが読めた場合のパリティ不一致だけを理由にデータを訂正しない。チェックサム等によるサイレント破損・改ざん検出は保証しない。
-- Distribution は StripeID ごとの状態・物理チャンク候補を所有する。Foreground の Read / Write / Recovery は同一 ObjectID + StripeID の Stripe ロックで保護する。自律 Cleanup は Stripe ロックを取得せず、最新有効 Version 以外の不変 FileKey の物理削除・退避を Foreground の有効チャンク操作から独立して行う。
-- Distribution の共有 map（objects / versions / orphans / stripeLocks）へのアクセスは map Mutex で保護する。Stripe ロックの取得順序は必ず map Mutex → 対象 Stripe Mutex とする。Stripe Mutex の取得待ちで map Mutex を保持し続けてはならない。Stripe Mutex は map Mutex 保持中に TryLock し、取得できなければ map Mutex を解放して再試行する。これにより、Stripe ロック保持中の map 更新と、同じ Stripe を待つ処理のデッドロックを避ける。
-- Foreground の Stripe 操作（Read / Write / Recovery / Delete / Sync / Stripe 情報取得）は、最新の選択済み recoverable Version をキャッシュしてから実行する。キャッシュの確認・読み込み・map 反映は map Mutex を取得してから対象 Stripe Mutex を取得し、キャッシュ確保と map 反映が完了するまで両方を保持する。その後 map Mutex だけを解放し、Foreground 操作は Stripe Mutex を操作完了まで保持する。異なる Stripe の操作は並行可能とする。
-- Stripe のキャッシュは Foreground Read が物理 I/O を繰り返さずに済み、Background Cleanup が旧 Version / Chunk を物理削除した後も最新データを参照できるためのものとする。キャッシュを安全に確保できない場合、Foreground の更新・削除を開始しない。復元可能な欠損チャンクは既存の復旧契約に従って扱い、最新 Version 自体を復元不能と判断した場合は処理を中止する。
-- Background Cleanup は Foreground の Stripe Mutex を使用しない。map Mutex の短時間の保護下で無効 FileKey を確定した後、map Mutex を解放して物理削除・退避する。削除後の map / queue 反映はそれぞれの Mutex で保護する。無効対象キューは専用 Mutex で保護し、キュー Mutex を保持したまま map Mutex 取得や物理 I/O を行わない。
+- Distribution は ObjectID + StripeID ごとの最新有効 Version、Version ごとの Chunk / FileKey、配置・復旧状態を所有する。Foreground の Read / Write / Recovery は同一 ObjectID + StripeID の Distribution Stripe ロックで保護する。Read 同士は並行可能とし、Write / Recovery など状態を変更する操作は排他的に実行する。
+- Distribution の共有 map（objects / versions / orphans / stripe lock registry）へのアクセスは map RWMutex で保護する。map の参照だけなら RLock、追加・更新・削除なら Lock を使う。map ロックは map の参照・更新中だけ保持し、物理 I/O、Stripe ロックの取得待ち、Chunk の復元・分割などの処理中は保持しない。Stripe ロックの参照を map から取得したら map ロックを解放してから Stripe ロックを待つ。Stripe lock registry の entry は、参照中のロックが別インスタンスへ置き換わらない寿命管理を行う。
+- Distribution の map は物理状態の索引であり、論理ファイルの Stripe payload cache ではない。通常の索引には FileKey / Version / Chunk / 配置 / 長さ等のメタデータを保持し、全 Chunk payload を常時保持しない。物理読み込み時の payload は Stripe 単位のローカルバッファで復元し、呼び出し元へ返した後に Distribution が不要な payload を保持し続けない。
+- Distribution の Stripe ロックは、選択中 Version の確定、物理 Chunk の読み込み・復元、Version の書き込み・公開など、同一 Stripe の物理状態を扱う期間を保護する。異なる ObjectID + StripeID の処理は、共有 map ロックやデバイス側の制約がない限り並行可能とする。
+- Foreground の Read / Write / Recovery は Stripe 0 watermark を基準にする。ReadStripe は Distribution が選択済みの最新 recoverable Version を返し、Distribution 自身がその Version を watermark 以下に制限する。WriteStripes は全更新 Stripe を同一 Version で保存し、Stripe 0 の commit 完了前に選択済み Version 索引を変更しない。commit 成功後、Distribution は Object 内の各 Stripe の選択済み Version を watermark 以下の最大 recoverable Version に揃える。読み込みで選択中 Version が復元不能と判明した場合は、同じ watermark 以下のより古い recoverable Version へ再選択する。途中失敗時は従来の watermark と有効 Version 選択を維持する。
 
 - Cleanup には、Distribution が自律実行する不要 Version 等の物理 Cleanup と、Orchestration が対象 ObjectID を選択する論理削除 Object の物理 Cleanup の2種類がある。候補の所有者・実行制御・削除順序を混同しない。不要 Version 等は Distribution のバックグラウンドループが Stripe 単位で選択・処理する。論理削除 Object は Orchestration が削除可能な ObjectID を一括選択し、Distribution に ObjectID 単位で削除を依頼する。Management は両方に Drive 単位の許可情報を与えるだけで、ObjectID / StripeID / Chunk の選択や個別削除の dispatch を行わない。
 - 論理削除 Object の Cleanup では、Distribution は ObjectID 単位の一括削除 API を提供する。Orchestration は許可ドライブ情報を受け取り、削除可能な ObjectID をすべて特定して一括要求する。Distribution は各 ObjectID について、まずその Object の無効 Version に属する物理データを削除し、続いて有効 Version のチャンクを後方（大きい StripeID / ChunkIndex）から順に削除する。これにより Stripe 0 は最後に残る。ObjectID の処理を開始した後は、Drive の許可条件が変更されても当該 ObjectID の削除を完了する。許可条件の再評価は次の ObjectID の選択・開始時に行う。処理に失敗して ObjectID の削除を完了できない場合は、その ObjectID を未完了として残し、後続 ObjectID の処理へ進まない。
 - 初期パリティ方式は XOR 1 パリティであり、1 データチャンクの欠損まで復元できる。内容改ざん・サイレント破損の検出を保証しない。
 - **旧 Version 等の自律 Cleanup** は Distribution が実行主体となる。Management は Distribution のバックグラウンドループを起動・停止し、各 Drive に対する Cleanup 許可情報を更新するだけとする。Cleanup の候補・Stripe / Object / Chunk・Method を指定する API や、個別 Cleanup を Management の Scheduler / MaintenanceExecutor から実行する経路を設けない。許可情報は `CleanupPermissionStore` の共有 Snapshot として参照する。不要 Version の Delete は `DeleteAllowed`、異常データの保全領域への Rename は `PreserveAllowed` を使用し、各物理ファイルの処理開始時に最新 Snapshot を確認する。
-- Cleanup の候補選定・保護判定・実行順序・内部並列度は Distribution のバックグラウンドループが所有する。Management は候補一覧や Version / Chunk の内部状態を複製しない。Distribution は Drive ごとの許可レベルを参照し、許可された Drive 上の無効な物理 Chunk を順次削除する。Cleanup は Foreground の論理操作とは独立して実行し、Cleanup のための Object 単位・Stripe 単位ロックや Management 共通実行ロックを取得しない。物理ファイルは不変の Version として扱い、Foreground が参照・更新する最新有効 Version のファイルを候補に含めないこと、候補確定後に新しい Version が追加されても削除対象 FileKey が最新有効 Versionへ昇格しないことを保証する。物理 I/O 中に Distribution の共有 map ロックを保持せず、削除完了後の管理情報更新は短時間の map ロックで行う。
-- Distribution は保護対象を Cleanup 候補から除外する。最新 Version に欠損が確認されている Stripe は、その Stripe の Cleanup 全体を保留し、通常の許可レベルだけでは実行しない。強制的な保護解除は未実装とし、保留対象を誤って削除しない。
-- Cleanup は物理 FileKey が不変であることを利用し、Foreground が使用する最新有効 Version のファイルを削除対象から除外することで競合を防ぐ。Foreground Read / Write と Cleanup のために Stripe キャッシュの切り替えや Stripe ロックを共有しない。Cleanup は候補を値として確定してから物理 Delete / Rename を実行し、Foreground の処理を待たせない。
-- Cleanup は Stripe ごとに自律的に進める。Stripe 内の無効 Chunk は、それが配置された Drive の許可レベルに従って削除できる。複数 Stripe の同時実行は Distribution 内部の並列化方針であり、Management の指示単位や Atomic の変更を意味しない。
+- Cleanup の候補選定・実行順序・内部並列度は Distribution のバックグラウンドループが所有する。Management は候補一覧や Version / Chunk の内部状態を複製しない。Distribution は Drive ごとの許可レベルを参照し、許可された Drive 上の Cleanup 候補を処理する。各候補の物理処理では対象 Version の排他ロックを取得し、その Stripe が有効な Stripe ではないことを確認できた場合に限り Delete / Rename を実行する。この2条件以外の Cleanup 専用の保護条件は設けない。物理ファイルは不変の Version として扱い、物理 I/O 中に Distribution の共有 map ロックや候補 queue mutex を保持せず、処理完了後の管理情報更新は短時間の map ロックで行う。
 - 自律 Cleanup の候補キューは Distribution が所有し、Foreground の Stripe 状態更新と Cleanup ワーカーの双方から更新される共有メモリである。候補キュー専用の Mutex で、候補の追加・削除・取得・更新をすべて保護する。キュー Mutex を保持したまま物理 I/O や Stripe の Cleanup 処理を実行しない。候補はキューから値として取り出し、ロック解放後に処理する。処理結果の反映・再登録もキュー Mutex の保護下で行う。
 - 候補キューの Mutex は Stripe のデータ状態を保護するロックとは別物である。キュー Mutex を Stripe Atomic の代替にせず、Stripe の状態や物理データをキュー内の候補情報だけで判断しない。候補を取得した後、実行時点の Distribution 状態に基づいて削除対象を確定する。
 - Queue Mutex の保持中に他の Distribution 状態ロックを取得する設計、または逆順で取得する設計を混在させない。ロック順序を固定し、キュー操作と Stripe 処理の間でデッドロックを発生させない。
@@ -259,8 +256,8 @@ Distribution -> I/O
 
 ### 現行実装からの移行
 
-- Management は今後導入するレイヤーであり、現時点の実装は FUSE が Orchestration を直接呼び出し、Orchestration が自身の mutex で操作を排他している。この状態は移行前の実装であり、目標アーキテクチャを変更する理由にはしない。
-- Management 導入時は FUSE の接続先を Management に変更し、Orchestration のグローバル mutex に依存する契約を Management 所有の共通実行ロック機構へ移行する。Object 単位などの対象別ロックへ分割しない。移行中に Orchestration のロックを単に削除して競合保護を失わせてはならない。
+- FUSE callback は Management の公開 API を呼び出すアダプターであり、すべての操作は Object ロックグループの保護下で実行する。単一 Management API で完結する callback は Management がグループを取得し、複数 API を呼ぶ callback は FUSE adapter が Management のグループ API で外側のグループを取得して Context を引き回す。FUSE 自身は mutex・Object ロックの取得順序・追加取得・再検証を実装しない。
+- Orchestration の論理状態保護は Object ロックグループへ統一する。旧来の Orchestration グローバル mutex や FUSE 単位ロックを残したまま重ねて使用せず、Object ロックグループへ移行する際は保護対象・操作境界を確認してから置き換える。
 - Distribution の Stripe ロックは Distribution 自身が所有する。Management / Orchestration が Distribution の内部ロックを直接操作しない。
 
 ## 6. 制約値とファイルシステム属性
@@ -272,30 +269,46 @@ Distribution -> I/O
 
 ## 7. 排他制御
 
-### Management の共通実行ロック
+### Object ロックグループ
 
-- Management の実行ロックは単一の共通機構とする。Foreground / Background / Exclusive / Initialization / Stop のすべてが同じ機構を使用し、Management の実行単位を複数同時に実行しない。各単位は共通ロックを取得して直列実行し、完了後に解放する。
-- Management では ObjectID、StripeID、Directory、File などの対象をキーにしたロックを設けない。複数 Object のロック集合や、Object ロックとは別の Maintenance ロックも設けない。
-- ロックの取得・解放の粒度は、処理を中断しても整合性を保ち、再実行または再構築できる最小の実行単位とする。実行単位の開始前に共通ロックを取得し、その単位の処理結果と状態を確定してから解放する。
-- ロックを保持したまま次の実行単位へ進まない。単位の境界で実行権を Scheduler に返し、待機中の Foreground / Exclusive / Stop 等を優先順位に従って調停する。
-- ここでいう共通ロックは Management の実行単位を調停するための一つのロック機構であり、Object や Stripe のデータ構造をロック対象として列挙する仕組みではない。並行実行の可否・優先順位は Lifecycle / Scheduler の実行権ルールで決め、別のロック体系を追加して実現しない。
-- Admission 登録と Lifecycle 遷移は原子的に調停する。状態確認だけを先に行ってから後で受付登録する構造にせず、drain 開始後に新規 Foreground が紛れ込まないようにする。
-- ロック取得を待っている間に Lifecycle が変化した場合は、実行開始前に受付可否を再確認する。拒否された要求は下位レイヤーを呼び出さず、取得済みの実行権を解放する。
-- Exclusive / Stop は新規 Foreground と Background unit の開始を止め、実行中の安全な単位が完了して共通ロックが解放されるのを待つ。複数 Exclusive はキュー順に実行し、Stop は最優先とする。
-- Initialization も同じ共通ロック機構と安全単位を使用する。初期化中の Stop は現在の単位の完了境界で反映し、通常の Exclusive は初期化完了後に実行する。
-- Release / Releasedir / Forget / Interrupt 等の kernel bookkeeping と handle teardown は通常操作の Lifecycle admission から除外し、停止・Failed 状態でも実行可能にする。Flush は通常操作であり、Release の代替として扱わない。
-- Orchestration は Management の共通実行ロック機構の制御下で呼び出される。Orchestration 自身は Management のロック取得・解放や Lifecycle admission を行わない。
-- FUSE callback はアダプターであり、Management の実行ロックを直接取得しない。複数の Management API を FUSE 側で組み合わせても原子性は得られない。不可分な操作は Management の単一 API とする。
+- 論理 Object / Namespace の競合を保護するロックは Orchestration が所有する。FUSE callback 単位のロック、および通常ファイルシステム操作を一律に直列化するグローバル実行ロックは設けない。
+- 一つの論理操作は、その操作に必要な ObjectID をまとめた一つの Object ロックグループを保持する。プロセス全体で保持できるグループ数を一つに制限しない。異なるグループは、含まれる ObjectID が重複しない限り並行して保持・実行でき、ObjectID が重複する場合は該当 Object のロックで競合を直列化する。
+- ロックグループは空の状態で作成し、ObjectID の追加とロック取得を分離する。`Add(ObjectID)` はロック取得前・取得後のどちらでも呼び出せ、重複 ObjectID は no-op とする。`Lock(mode)` はその呼び出し時に Read / Write を指定し、Read は RLock、Write は Lock を使用する。モードは一回の Lock〜Unlock 区間で固定する。`Unlock()` は全ロックを降順で解放するが、対象 ObjectID 集合は保持し、Unlock 後に異なるモードで再度 Lock できる。必要な ObjectID は UUID のバイト列による辞書順で昇順に取得し、取得・解放の順序を個々の呼び出し元が独自実装しない。
+- ObjectID の集合を列挙できたら、全 Object ロックを取得し終えるまで Namespace / Object の状態を変更しない。全ロック取得後、列挙時に観測した親子関係、Directory entry、HardLink の参照先、対象の存在・Kind・状態など、操作成立の前提をまとめて再検証する。検証に失敗した場合は状態を変更せず、全ロックを解放して対象の再列挙からやり直す。
+- 操作に必要な ObjectID が追加で判明した場合、状態変更を開始する前にロック集合を拡張する。単純な方式では全ロックを降順に解放してから新しい集合を昇順で取得し直す。効率化する場合は、新規 ObjectID より大きい既取得ロックを降順に解放し、新規 ObjectID を取得した後、解放したロックを昇順で再取得してよい。どちらの方式でも全ロック取得後に、列挙済みの前提を必ず再検証する。
+- 部分解放方式では、追加対象 ObjectID のうち最小の ID より大きい既取得ロックだけを降順で解放し、それより小さい既取得ロックは保持する。追加対象と解放したロックを合わせた不足分を昇順で取得し直す。例えば A と C を保持中に B（A < B < C）が必要になった場合、C だけを解放し、B → C の順で取得する。追加対象が複数ある場合も同様に、追加対象の最小 ID を境界として適用する。
+- 追加ロックのために一部のロックを解放した場合、その Object は他の操作によって変更され得る。したがって、再取得前の検証結果を引き継がず、全ロックを再取得した後に関係する前提を再検証する。
+- 最初の状態変更を開始した後は Object ロックの追加取得・途中解放を禁止する。状態変更後に新たな Object が必要と判明した操作は、その場でロックを追加せず、操作固有の失敗処理・ロールバックが可能な場合を除き、設計上の不備として扱う。操作に必要な Object の列挙と検証を完了してから書き込みを開始する。
+- ロックグループの操作は空のグループ作成、Object の追加、Lock、Unlock とする。ロック取得前の Add は対象集合への登録だけを行い、Lock 後の Add は追加対象より大きい既取得ロックを降順で解放し、追加対象と解放した Object を昇順で取得し直す。追加対象より小さい既取得ロックは保持する。追加に失敗した場合はグループが保持する全ロックを解放して未ロック状態へ戻し、対象集合は保持する。Unlock は保持中の ObjectID を降順で解放し、対象集合を保持したまま未ロック状態へ戻す。Unlock は複数回呼び出しても安全とし、その後に異なるモードで Lock し直せる。Lock 中の再 Lock はエラーとする。キャンセル・エラー・panic 等のすべての終了経路で、取得済みロックを漏れなく解放する。
+- 全操作・全レイヤーで同じロックグループ API と順序規則を使用する。グループ Context を引き継ぐ入れ子の API 呼び出しは同じグループを再利用する。Object ロックを保持したまま別経路から Object ロックを直接取得したり、逆順で取得したりしない。
+- Management は Lifecycle admission、Foreground / Background の優先順位、Exclusive / Stop の drain を担当するが、通常操作の Object ロックを所有・代替しない。Exclusive / Stop は新規操作の受付を止め、受付済み操作がロックグループを解放して終了するのを待つ。
+- Release / Releasedir / Forget / Interrupt 等の kernel bookkeeping と handle teardown は Lifecycle admission の例外として停止・Failed 状態でも実行可能にする。これらが Namespace / Object の共有状態を変更する場合は、通常操作と同じ Object ロックグループ規則に従う。Flush は通常操作として扱い、Release の代替にしない。
+- FUSE callback は Management の公開 API を呼び出すアダプターであり、ロック機構・順序制御・再検証を実装しない。単一の Management API で完結しない callback は、開始時に Management の Object ロックグループ API を呼び出し、返された Context を同一 callback 内のすべての Management API 呼び出しへ伝播する。入れ子の Management API は既存グループを再利用し、callback の最後に外側だけが解放する。Object の追加・再取得・整合性検証は Orchestration が行う。
+
+### Orchestration の Runtime Object Cache
+
+- Runtime Object Cache は ObjectID をキーとする共有 Map とし、Map 構造の同期と各 Object の論理的な排他を分離する。Map 構造は専用の RWMutex で保護し、Map 要素の内容・更新競合・削除との競合は対象 ObjectID を含む Object ロックグループで保護する。
+- Cache の Get / Put / Delete を含む各操作は、対象 ObjectID の Object ロックグループを先に取得してから Map ロックを取得する。ロック順序は常に Object ロックグループ → Map RWMutex とし、Map ロックを保持したまま Object ロックグループの取得を待たない。
+- Get は Map の読み取りロックを取得し、存在確認と Object 全体の独立した複製を行ってから Map ロックを解放する。呼び出し元は複製した Object を読み書きし、Map 内に登録された Object を直接変更しない。
+- Put は Map の排他ロックを短時間取得し、Map 内の Object pointer を新しい Object インスタンスの pointer で丸ごと置き換える。取得時の Object と書き戻す Object の pointer 同一性を前提にしない。Object の内部フィールド単位の部分更新ではなく、Object 全体の置き換えを更新単位とする。
+- Object の追加・削除も、対象 ObjectID の Object ロックグループを保持した状態で Map の排他ロックを短時間取得して行う。追加・削除・置き換えのいずれも Map 構造の変更中だけ Map ロックを保持する。
+- Map ロックは Object の複製・参照・登録・削除に必要な短時間だけ保持し、Object の複製後の処理、論理状態の変更、物理 I/O、Object ロック取得待ちの間は保持しない。Object ロックグループを保持している間は対象 Object の Map 登録状態が他の準拠操作によって削除・置き換えられないため、Get で得た複製を安全に処理して Put できる。
+- Map から Object pointer を外部へ返して共有しない。Get が返す Object は独立したインスタンスとし、Put 後の Object は Cache 内部の所有物として扱い、以後呼び出し元から変更しない。Object の全フィールドを含む独立した複製を作成できることを型の契約とする。
 
 ### Distribution の内部 Stripe ロック
 
 - Distribution は Management とは独立して、Distribution 内部の同時実行制約を管理する。Management の実行単位・共通ロックとは概念も粒度も異なり、相互に統合・共有しない。自律 Cleanup は Management の WorkItem / MaintenanceExecutor を待たず、Management が設定した Drive 単位の許可レベルに従って Distribution 内部で進行する。
-- Distribution は同一 ObjectID + StripeID を Foreground Read / Write / Recovery の最小排他単位とする Stripe ロックを所有する。自律 Cleanup はそのロックを使用せず、Foreground と独立して動作する。Management の実行ロックとは独立しており、Management の WorkItem 境界を Distribution の Atomic に流用しない。
-- 自律 Cleanup の許可は Drive 単位、物理削除対象は Chunk / FileKey 単位で選択する。Cleanup 対象は最新有効 Version 以外の不変 FileKey に限るため、Foreground の有効データのキャッシュ化・Read / Write・Stripe ロックに関与しない。
-- 最新 Version の欠損が確認された Stripe と保護対象は Cleanup しない。最新 Version が復元可能であることを含め、削除候補の安全性を Distribution が判断する。
-- 削除候補は実行時に map Mutex の保護下で最新有効 Version と照合し、無効な FileKey であることを再検証する。物理 I/O はすべての Distribution 状態ロックを解放してから実行する。
-- 論理削除 Object の削除では Orchestration が削除可能な ObjectID を選び、Distribution が ObjectID 単位で物理削除する。Distribution は ObjectID の処理中に Management の実行ロックや Foreground の Stripe ロックを取得しない。ObjectID の削除完了後に Orchestration が論理 Object のメモリ状態を確定する。
-- Distribution の Stripe ロック取得中に Management の実行ロックを要求する逆方向の依存を作らない。Management は Distribution の内部ロックを直接操作しない。
+- Distribution は同一 ObjectID + StripeID を Foreground Read / Write / Recovery の状態同期単位とする Stripe ロックを所有する。Orchestration の Object ロックグループは論理 Object 操作全体を保護し、Distribution は同じ Object 全体を保護する同期機構を重ねて設けない。
+- 自律 Cleanup の許可は Drive 単位で管理し、物理処理対象は Version に属する Chunk / FileKey とする。Cleanup は Foreground の Stripe ロックや Orchestration の Object ロックを取得しない。対象 Version のロックで Foreground の物理アクセスと排他し、ロック取得後に対象 Stripe の有効状態を確認する。
+- Cleanup 判定における「対象 Stripe が有効ではない」とは、対象 ObjectID + StripeID + Version の Stripe が自身では復元不可能である、または同一 ObjectID + StripeID に対象 Version より新しい復元可能な Version が存在することをいう。いずれか一方を満たせば無効と判定する。
+- Cleanup の実行可否は、対象 Version の排他ロックを取得できたこと、および対象 Stripe が有効な Stripe ではないことだけで判断する。これら以外の追加保護条件を設けない。
+- Cleanup は対象 Version の排他ロックを取得した後、map RWMutex による短時間の状態参照で対象 Stripe が有効でないことを確認する。map RWMutex は物理 I/O の前に解放する。
+- 論理削除 Object の削除では Orchestration が Object ロックグループの保護下で削除可能な ObjectID を選び、Distribution が ObjectID 単位で物理削除する。Distribution は ObjectID の処理中に Orchestration の Object ロックグループを取得しない。ObjectID の削除完了後に Orchestration が論理 Object のメモリ状態を確定する。
+- Distribution は Version 単位の RWMutex を所有し、ロックキーは ObjectID + StripeID + Version とする。この Version ロックは Distribution の内部だけで管理し、Management / Orchestration へ公開しない。Orchestration の Object ロックグループとは独立している。
+- Foreground Read / Recovery は対象 Version の共有ロックを物理 Chunk の読み込み・復元など必要な物理アクセスが完了するまで保持する。Foreground Write は新しい Version の作成・公開、および同じ Version を再利用する場合の物理更新について、対象 Version の排他ロックを保持する。
+- 自律 Cleanup は対象 Version の排他ロックを取得してから、その Version が属する Stripe の有効状態を再確認する。ロックを取得でき、かつ対象 Stripe が有効な Stripe ではない場合に限り、対象 Version の物理 Chunk を Delete または Preserve 領域へ Rename する。この2条件が Cleanup 実行の唯一の条件である。
+- Version ロックの registry は、ロックを保持している処理だけでなく、取得待ちの処理も含めて entry の参照寿命を管理する。参照中の entry を削除・置換して同じキーに別の Mutex を生成してはならない。entry の解放・削除は保持者と待機者がいなくなった後に行う。
+- Version ロック取得待ちの間、Distribution の map RWMutex / Cleanup queue mutex を保持しない。Stripe の有効状態確認に必要な map ロックは短時間だけ取得し、物理 I/O 中は保持しない。
 - I/O は物理ファイル操作を実行する。上位層の Object / Stripe の意味に基づくロックを持たず、必要性が実証された物理ファイル単位の排他だけを内部実装として持つ。
 
 ## 8. ログ

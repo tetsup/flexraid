@@ -17,20 +17,15 @@ func (d *Distribution) ListObjects(request ListObjectsRequest) (response ListObj
 	if err = request.Context.Err(); err != nil {
 		return response, err
 	}
-	d.mapMu.Lock()
-	defer d.mapMu.Unlock()
-	seen := make(map[shared.ObjectID]struct{})
-	for id := range d.objects {
-		seen[id] = struct{}{}
-	}
-	for key := range d.versions {
-		seen[key.objectID] = struct{}{}
-	}
-	for id := range d.orphans {
-		seen[id] = struct{}{}
-	}
-	for id := range seen {
-		response.ObjectIDs = append(response.ObjectIDs, id)
+	d.mapMu.RLock()
+	defer d.mapMu.RUnlock()
+	for id, stripes := range d.objects {
+		// An Object is visible only after its Stripe 0 watermark has been
+		// committed and published. In-flight versions and orphan-only Objects
+		// must not leak through the namespace listing.
+		if stripes[0] != nil {
+			response.ObjectIDs = append(response.ObjectIDs, id)
+		}
 	}
 	sort.Slice(response.ObjectIDs, func(i, j int) bool { return response.ObjectIDs[i].String() < response.ObjectIDs[j].String() })
 	return response, nil

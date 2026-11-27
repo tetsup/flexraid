@@ -32,7 +32,7 @@ func newMultiStripeWriteFixture(t *testing.T, chunkSize uint32, regularStripes i
 	first := make([]byte, int(cfg.HeaderReservedSize)+int(firstCapacity))
 	copy(first, headerBytes)
 	copy(first[int(cfg.HeaderReservedSize):], payload[:firstCapacity])
-	if _, err := fixture.layer.distribution.WriteStripe(distribution.WriteStripeRequest{
+	if _, err := writeDistributionStripeForTest(fixture.layer.distribution, distribution.WriteStripeRequest{
 		Context: context.Background(), ObjectID: fixture.fileID, StripeID: 0,
 		ChunkSize: cfg.MinimumChunkSize, Layout: distribution.Layout{Type: distribution.LayoutParity, NumChunks: 3},
 		IOIndexes: []int{0, 1, 2, 3}, Data: first,
@@ -45,7 +45,7 @@ func newMultiStripeWriteFixture(t *testing.T, chunkSize uint32, regularStripes i
 		if end > size {
 			end = size
 		}
-		if _, err := fixture.layer.distribution.WriteStripe(distribution.WriteStripeRequest{
+		if _, err := writeDistributionStripeForTest(fixture.layer.distribution, distribution.WriteStripeRequest{
 			Context: context.Background(), ObjectID: fixture.fileID, StripeID: storage.StripeID(stripeID),
 			ChunkSize: chunkSize, Layout: distribution.Layout{Type: distribution.LayoutParity, NumChunks: 3},
 			IOIndexes: []int{0, 1, 2, 3}, Data: payload[int(offset):int(end)],

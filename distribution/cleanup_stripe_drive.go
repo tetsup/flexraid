@@ -58,14 +58,30 @@ func (d *Distribution) CleanupStripeDrive(request CleanupStripeDriveRequest) (re
 	defer d.releaseCleanupCandidate(candidate)
 
 	stripeKey := stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID}
-	d.mapMu.Lock()
+	d.mapMu.RLock()
 	location, found := d.findCleanupLocationLocked(candidate)
+	d.mapMu.RUnlock()
 	if !found {
+		d.mapMu.Lock()
 		d.refreshStripeCleanupQueueLocked(stripeKey)
 		d.mapMu.Unlock()
 		return response, nil
 	}
-	d.mapMu.Unlock()
+
+	unlockVersion := d.lockVersionWrite(request.ObjectID, request.StripeID, location.key.StripeVersion)
+	defer unlockVersion()
+
+	// The candidate may have become valid while waiting for its Version lock.
+	d.mapMu.RLock()
+	currentLocation, stillEligible := d.findCleanupLocationLocked(candidate)
+	d.mapMu.RUnlock()
+	if !stillEligible || currentLocation.ioIndex != location.ioIndex || currentLocation.key != location.key {
+		d.mapMu.Lock()
+		d.refreshStripeCleanupQueueLocked(stripeKey)
+		d.mapMu.Unlock()
+		return response, nil
+	}
+	location = currentLocation
 
 	// The immutable FileKey is a value snapshot. Physical I/O runs without
 	// Distribution locks; only this exact key is removed from inventory.

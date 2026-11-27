@@ -38,7 +38,7 @@ func TestStartupRebuildsDeletionQueueAndCleanupDeletesObject(t *testing.T) {
 		stripe storage.StripeID
 		data   []byte
 	}{{rootID, 0, rootData}, {deletedID, 0, headerData}, {deletedID, 1, []byte("payload")}} {
-		if _, err := initial.Layer.WriteStripe(distribution.WriteStripeRequest{
+		if _, err := writeDistributionStripeForTest(initial.Layer, distribution.WriteStripeRequest{
 			Context: ctx, ObjectID: item.id, StripeID: item.stripe, ChunkSize: 4096,
 			Layout:    distribution.Layout{Type: distribution.LayoutMirror, NumChunks: 2},
 			IOIndexes: []int{0, 1}, Data: item.data,

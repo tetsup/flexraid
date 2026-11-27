@@ -7,7 +7,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/tetsup/flexraid/distribution"
 	"github.com/tetsup/flexraid/pkg/shared"
 	cfg "github.com/tetsup/flexraid/pkg/shared/config"
 	"github.com/tetsup/flexraid/storage"
@@ -47,6 +46,10 @@ func (layer *Orchestration) LinkLocked(request LinkRequest) (response LinkRespon
 }
 
 func (layer *Orchestration) linkLocked(request LinkRequest) (response LinkResponse, err error) {
+	return layer.linkLockedWithID(request, nil)
+}
+
+func (layer *Orchestration) linkLockedWithID(request LinkRequest, requestedID *shared.ObjectID) (response LinkResponse, err error) {
 	started := time.Now()
 	ctx := request.Context
 	if ctx == nil {
@@ -108,9 +111,14 @@ func (layer *Orchestration) linkLocked(request LinkRequest) (response LinkRespon
 
 	backingID := file.objectID
 	backingHeader := file.header
-	linkID, err := shared.NewObjectID()
-	if err != nil {
-		return response, fmt.Errorf("generate HardLink ObjectID: %w", err)
+	var linkID shared.ObjectID
+	if requestedID != nil {
+		linkID = *requestedID
+	} else {
+		linkID, err = shared.NewObjectID()
+		if err != nil {
+			return response, fmt.Errorf("generate HardLink ObjectID: %w", err)
+		}
 	}
 	now := time.Now()
 	parentID := request.ParentID
@@ -129,6 +137,12 @@ func (layer *Orchestration) linkLocked(request LinkRequest) (response LinkRespon
 		Mtime:         backingHeader.Mtime,
 		Ctime:         now,
 		Layout:        backingHeader.Layout,
+	}
+	if err = addObjectLocks(ctx, request.SourceID, backingID, linkID); err != nil {
+		return response, err
+	}
+	if layer.objects[request.ParentID] != parent || parent.header.Deleted || parent.children[request.Name] != nil || layer.objects[request.SourceID] != source || source.file != file {
+		return response, syscall.EAGAIN
 	}
 	linkHeader, err = layer.persistNewObject(ctx, linkHeader, nil)
 	if err != nil {
@@ -164,35 +178,20 @@ func (layer *Orchestration) persistHeaderUpdateLocked(ctx context.Context, file 
 		entry.data = append(entry.data, make([]byte, int(cfg.HeaderReservedSize)-len(entry.data))...)
 	}
 	copy(entry.data[:len(headerBytes)], headerBytes)
+	entry.state = stripeCacheDirty
 
-	required := int(geometry.Layout.NumChunks)
-	if geometry.Layout.Type == distribution.LayoutParity {
-		required++
+	staged := &runtimeFile{
+		objectID:         file.objectID,
+		header:           next,
+		stripeCache:      cloneStripeCache(file.stripeCache),
+		zeroStripeRanges: cloneStripeRanges(file.zeroStripeRanges),
 	}
-	placement, placementErr := layer.distribution.StripeIOIndexes(distribution.StripeIOIndexesRequest{
-		ObjectID: file.objectID, StripeID: storage.StripeID(0),
-	})
-	indexes := placement.IOIndexes
-	if placementErr != nil || len(indexes) != required {
-		capacity, capacityErr := layer.distribution.GetCapacity(distribution.CapacityRequest{})
-		if capacityErr != nil {
-			return fmt.Errorf("read I/O capacities: %w", capacityErr)
-		}
-		indexes, err = selectIOIndexes(capacity.Capacities, required)
-		if err != nil {
-			return err
-		}
-	}
-	_, err = layer.distribution.WriteStripe(distribution.WriteStripeRequest{
-		Context: ctx, ObjectID: file.objectID, StripeID: storage.StripeID(0),
-		ChunkSize: geometry.ChunkSize, Layout: geometry.Layout,
-		IOIndexes: indexes, Data: entry.data,
-	})
-	if err != nil {
+	staged.stripeCache[0] = entry
+	if _, err := layer.persistDirtyStripesLocked(ctx, staged); err != nil {
 		return err
 	}
-	entry.state = stripeCacheClean
-	file.stripeCache[0] = entry
 	file.header = next
+	file.stripeCache = staged.stripeCache
+	file.zeroStripeRanges = staged.zeroStripeRanges
 	return nil
 }

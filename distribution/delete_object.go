@@ -52,8 +52,18 @@ func (d *Distribution) DeleteObject(request DeleteObjectRequest) (response Delet
 		return response, err
 	}
 
+	// Pin every physical Stripe Version belonging to this Object before
+	// collecting deletion work. The Orchestration Object lock prevents new
+	// logical writes while this operation is in progress.
+	unlockVersions := d.lockAllVersionsForObject(request.ObjectID)
+	defer func() {
+		for i := len(unlockVersions) - 1; i >= 0; i-- {
+			unlockVersions[i]()
+		}
+	}()
+
 	permissions := d.cleanupPermissionStore.Snapshot()
-	d.mapMu.Lock()
+	d.mapMu.RLock()
 	locations := make(map[objectDeleteFileKey]objectDeleteLocation)
 	currentKeys := make(map[objectDeleteFileKey]struct{})
 	for _, stripe := range d.objects[request.ObjectID] {
@@ -87,7 +97,7 @@ func (d *Distribution) DeleteObject(request DeleteObjectRequest) (response Delet
 			}
 		}
 	}
-	d.mapMu.Unlock()
+	d.mapMu.RUnlock()
 
 	work := make([]objectDeleteLocation, 0, len(locations))
 	for _, item := range locations {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"syscall"
 	"time"
 
 	"github.com/tetsup/flexraid/distribution"
@@ -43,6 +44,21 @@ func (layer *Orchestration) cleanupLocked(request CleanupRequest) (response Clea
 		ids = append(ids, objectID)
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i].String() < ids[j].String() })
+	candidates := make(map[shared.ObjectID]*runtimeObject, len(ids))
+	for _, objectID := range ids {
+		candidates[objectID] = layer.objects[objectID]
+	}
+	if err = addObjectLocks(ctx, ids...); err != nil {
+		return response, err
+	}
+	for objectID, candidate := range candidates {
+		if layer.objects[objectID] != candidate {
+			return response, fmt.Errorf("cleanup candidate %s changed during lock acquisition: %w", objectID.String(), syscall.EAGAIN)
+		}
+		if _, queued := layer.deletionQueue[objectID]; !queued {
+			return response, fmt.Errorf("cleanup candidate %s left deletion queue during lock acquisition: %w", objectID.String(), syscall.EAGAIN)
+		}
+	}
 
 	// Resolve the complete set of Objects whose physical files are all on
 	// currently permitted drives. Distribution revalidates permission at each

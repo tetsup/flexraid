@@ -23,8 +23,9 @@ type NewRequest struct {
 type NewResponse struct{ Layer *Distribution }
 
 type Distribution struct {
-	mapMu                  sync.Mutex
-	stripeLocks            map[stripeIDKey]*sync.Mutex
+	mapMu                  sync.RWMutex
+	versionLocksMu         sync.Mutex
+	versionLocks           map[versionLockKey]*versionLockEntry
 	ios                    []*physicalio.IO
 	logger                 *slog.Logger
 	objects                map[shared.ObjectID]map[storage.StripeID]*stripeInfo
@@ -89,10 +90,11 @@ func New(request NewRequest) (NewResponse, error) {
 		}
 		seen[layer] = struct{}{}
 	}
-	d := &Distribution{stripeLocks: make(map[stripeIDKey]*sync.Mutex), ios: append([]*physicalio.IO(nil), request.IOs...), logger: logger,
-		objects:  make(map[shared.ObjectID]map[storage.StripeID]*stripeInfo),
-		versions: make(map[stripeIDKey]map[storage.StripeVersion]*versionInfo),
-		metrics:  newMetricsCollector(), orphans: make(map[shared.ObjectID][]chunkLocation), cleanupQueue: newCleanupQueue(), cleanupPermissionStore: request.CleanupPermissions, cleanupWake: make(chan struct{}, 1)}
+	d := &Distribution{ios: append([]*physicalio.IO(nil), request.IOs...), logger: logger,
+		objects:      make(map[shared.ObjectID]map[storage.StripeID]*stripeInfo),
+		versionLocks: make(map[versionLockKey]*versionLockEntry),
+		versions:     make(map[stripeIDKey]map[storage.StripeVersion]*versionInfo),
+		metrics:      newMetricsCollector(), orphans: make(map[shared.ObjectID][]chunkLocation), cleanupQueue: newCleanupQueue(), cleanupPermissionStore: request.CleanupPermissions, cleanupWake: make(chan struct{}, 1)}
 	if d.cleanupPermissionStore == nil {
 		d.cleanupPermissionStore = shared.NewCleanupPermissionStore(make([]shared.DriveCleanupPermission, len(request.IOs)))
 	}
@@ -165,18 +167,26 @@ func New(request NewRequest) (NewResponse, error) {
 	if usable == 0 {
 		return NewResponse{}, errNoUsableIO
 	}
+	// Validate every physical Version before selecting any Object state.
 	for key, versions := range d.versions {
-		var selected storage.StripeVersion
-		var selectedInfo *versionInfo
 		for versionNo, version := range versions {
 			if version.invalid {
+				for no, location := range version.chunks {
+					location.data = nil
+					version.chunks[no] = location
+				}
 				continue
 			}
 			chunks := make([]chunkDataWithInfo, 0, len(version.chunks))
 			for no, location := range version.chunks {
 				chunks = append(chunks, chunkDataWithInfo{stripeKey: stripeKeyInfo{objectID: key.objectID, stripeID: key.stripeID, stripeVersion: versionNo}, distributionMethod: version.method, chunkNo: no, data: location.data, totalLength: location.totalLength})
 			}
-			if _, err := restoreStripe(chunks); err != nil {
+			_, restoreErr := restoreStripe(chunks)
+			for no, location := range version.chunks {
+				location.data = nil
+				version.chunks[no] = location
+			}
+			if restoreErr != nil {
 				d.recordIntegrityError()
 				continue
 			}
@@ -184,21 +194,49 @@ func New(request NewRequest) (NewResponse, error) {
 			if len(version.chunks) < len(expectedChunkNos(version.method)) {
 				d.recordIntegrityError()
 			}
+		}
+	}
+
+	// Stripe 0 defines the committed Object watermark. An Object without a
+	// recoverable Stripe 0 cannot expose any of its data stripes.
+	watermarks := make(map[shared.ObjectID]storage.StripeVersion)
+	for key, versions := range d.versions {
+		if key.stripeID != 0 {
+			continue
+		}
+		for versionNo, version := range versions {
+			if version.recoverable && versionNo > watermarks[key.objectID] {
+				watermarks[key.objectID] = versionNo
+			}
+		}
+	}
+	for key, versions := range d.versions {
+		watermark, exists := watermarks[key.objectID]
+		if !exists {
+			continue
+		}
+		var selected storage.StripeVersion
+		var selectedInfo *versionInfo
+		for versionNo, version := range versions {
+			if versionNo > watermark || !version.recoverable {
+				continue
+			}
 			if selectedInfo == nil || versionNo > selected {
 				selected, selectedInfo = versionNo, version
 			}
 		}
-		if selectedInfo != nil {
-			stripes := d.objects[key.objectID]
-			if stripes == nil {
-				stripes = make(map[storage.StripeID]*stripeInfo)
-				d.objects[key.objectID] = stripes
-			}
-			stripes[key.stripeID] = &stripeInfo{version: selected, method: selectedInfo.method, chunkSize: selectedInfo.chunkSize, chunks: cloneChunks(selectedInfo.chunks)}
-			d.mapMu.Lock()
-			d.refreshStripeCleanupQueueLocked(key)
-			d.mapMu.Unlock()
+		if selectedInfo == nil {
+			continue
 		}
+		stripes := d.objects[key.objectID]
+		if stripes == nil {
+			stripes = make(map[storage.StripeID]*stripeInfo)
+			d.objects[key.objectID] = stripes
+		}
+		stripes[key.stripeID] = &stripeInfo{version: selected, method: selectedInfo.method, chunkSize: selectedInfo.chunkSize, chunks: cloneChunks(selectedInfo.chunks)}
+		d.mapMu.Lock()
+		d.refreshStripeCleanupQueueLocked(key)
+		d.mapMu.Unlock()
 	}
 	logger.Debug("Distribution initialized", "ios", len(d.ios), "usable_ios", usable, "objects", len(d.objects))
 	return NewResponse{Layer: d}, nil
@@ -296,7 +334,4 @@ func expectedChunkNos(method distributionMethod) []chunkNo {
 
 func (d *Distribution) SetTraceRecorder(recorder shared.TraceRecorder) {
 	d.trace = recorder
-	for _, layer := range d.ios {
-		layer.SetTraceRecorder(recorder)
-	}
 }

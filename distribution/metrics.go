@@ -295,44 +295,10 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 		return response, err
 	}
 	response.Operations, response.Chunks, response.IntegrityErrorCount, response.RecoveryCount, response.RecoveryFailureCount = d.metricsCollector().snapshot()
-	d.mapMu.Lock()
-	for _, stripes := range d.objects {
-		response.CacheMemory.ObjectIndexEntries++
-		response.CacheMemory.StripeIndexEntries += uint64(len(stripes))
-		for _, stripe := range stripes {
-			for _, location := range stripe.chunks {
-				if location.data != nil {
-					response.CacheMemory.CachedChunkCount++
-					response.CacheMemory.CachedChunkBytes += uint64(len(location.data))
-				}
-			}
-		}
-	}
-	for _, versions := range d.versions {
-		response.CacheMemory.VersionIndexEntries += uint64(len(versions))
-		for _, version := range versions {
-			for _, location := range version.chunks {
-				if location.data != nil {
-					response.CacheMemory.CachedChunkCount++
-					response.CacheMemory.CachedChunkBytes += uint64(len(location.data))
-				}
-			}
-		}
-	}
-	for _, locations := range d.orphans {
-		response.CacheMemory.OrphanChunkEntries += uint64(len(locations))
-	}
-	response.CacheMemory.StripeLockEntries = uint64(len(d.stripeLocks))
-	if d.cleanupQueue != nil {
-		d.cleanupQueue.mu.Lock()
-		response.CacheMemory.CleanupPendingEntries = uint64(len(d.cleanupQueue.pending))
-		response.CacheMemory.CleanupInFlightEntries = uint64(len(d.cleanupQueue.inFlight))
-		d.cleanupQueue.mu.Unlock()
-	}
 	if request.SummaryOnly {
-		d.mapMu.Unlock()
 		return response, nil
 	}
+	d.mapMu.RLock()
 	objects := make(map[shared.ObjectID]struct{})
 	stripes := make(map[stripeIDKey]struct{})
 	for objectID, entries := range d.objects {
@@ -455,7 +421,7 @@ func (d *Distribution) GetMetrics(request GetMetricsRequest) (response GetMetric
 		}
 	}
 	response.CleanupCandidates = d.cleanupCandidateMetricsLocked()
-	d.mapMu.Unlock()
+	d.mapMu.RUnlock()
 
 	capacity, capacityErr := d.getCapacity(CapacityRequest{Context: request.Context})
 	if capacityErr != nil {

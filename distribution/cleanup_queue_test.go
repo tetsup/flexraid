@@ -21,22 +21,22 @@ func TestWriteStripeRefreshesPerDriveCleanupQueue(t *testing.T) {
 		Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1},
 		Data: []byte("first version"),
 	}
-	if _, err := created.Layer.WriteStripe(request); err != nil {
+	if _, err := writeStripeForTest(created.Layer, request); err != nil {
 		t.Fatal(err)
 	}
 	if got := created.Layer.cleanupCandidates(); len(got) != 0 {
 		t.Fatalf("first version unexpectedly queued cleanup candidates: %+v", got)
 	}
 	request.Data = []byte("second version")
-	if _, err := created.Layer.WriteStripe(request); err != nil {
+	if _, err := writeStripeForTest(created.Layer, request); err != nil {
 		t.Fatal(err)
 	}
 	got := created.Layer.cleanupCandidates()
-	if len(got) != 2 {
-		t.Fatalf("got %d candidates, want one per drive: %+v", len(got), got)
+	if len(got) != 4 {
+		t.Fatalf("got %d candidates, want two committed stripes per drive: %+v", len(got), got)
 	}
 	for _, candidate := range got {
-		if candidate.objectID != request.ObjectID || candidate.stripeID != request.StripeID {
+		if candidate.objectID != request.ObjectID || candidate.stripeID != request.StripeID && candidate.stripeID != 0 {
 			t.Errorf("candidate has wrong stripe identity: %+v", candidate)
 		}
 		if candidate.method != cleanupDeleteOldVersion {
@@ -50,7 +50,7 @@ func TestWriteStripeRefreshesPerDriveCleanupQueue(t *testing.T) {
 	created.Layer.mapMu.Lock()
 	created.Layer.refreshStripeCleanupQueueLocked(stripeIDKey{objectID: request.ObjectID, stripeID: request.StripeID})
 	created.Layer.mapMu.Unlock()
-	if after := created.Layer.cleanupCandidates(); len(after) != 2 {
+	if after := created.Layer.cleanupCandidates(); len(after) != 4 {
 		t.Fatalf("refresh duplicated candidates: %+v", after)
 	}
 }
@@ -66,11 +66,11 @@ func TestNewRebuildsCleanupQueuePerStripe(t *testing.T) {
 		Context: ctx, ObjectID: testObjectID(), StripeID: storage.StripeID(7), ChunkSize: 16,
 		Layout: Layout{Type: LayoutMirror, NumChunks: 2}, IOIndexes: []int{0, 1}, Data: []byte("old"),
 	}
-	if _, err := created.Layer.WriteStripe(request); err != nil {
+	if _, err := writeStripeForTest(created.Layer, request); err != nil {
 		t.Fatal(err)
 	}
 	request.Data = []byte("new")
-	if _, err := created.Layer.WriteStripe(request); err != nil {
+	if _, err := writeStripeForTest(created.Layer, request); err != nil {
 		t.Fatal(err)
 	}
 	restarted, err := New(NewRequest{IOs: ios})
@@ -78,8 +78,8 @@ func TestNewRebuildsCleanupQueuePerStripe(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := restarted.Layer.cleanupCandidates()
-	if len(got) != 2 {
-		t.Fatalf("startup rebuilt %d candidates, want two drive candidates: %+v", len(got), got)
+	if len(got) != 4 {
+		t.Fatalf("startup rebuilt %d candidates, want two committed stripes per drive: %+v", len(got), got)
 	}
 	for _, candidate := range got {
 		if candidate.method != cleanupDeleteOldVersion {

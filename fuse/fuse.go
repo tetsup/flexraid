@@ -77,6 +77,12 @@ func (n *node) Lookup(ctx context.Context, name string, out *gofuse.EntryOut) (*
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return nil, errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, orchestration.ObjectLockRead, n.objectID)
+	if errno != 0 {
+		return nil, errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	result, err := n.layer.Lookup(orchestration.LookupRequest{Context: ctx, ParentID: n.objectID, Name: name})
 	if err != nil {
 		return nil, toErrno(err)
@@ -95,6 +101,12 @@ func (n *node) Getattr(ctx context.Context, _ fs.FileHandle, out *gofuse.AttrOut
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, orchestration.ObjectLockRead, n.objectID)
+	if errno != 0 {
+		return errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	attributes, err := n.layer.GetAttr(orchestration.GetAttrRequest{Context: ctx, ObjectID: n.objectID})
 	if err != nil {
 		return toErrno(err)
@@ -108,6 +120,12 @@ func (n *node) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return nil, errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, orchestration.ObjectLockRead, n.objectID)
+	if errno != 0 {
+		return nil, errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	result, err := n.layer.ReadDir(orchestration.ReadDirRequest{Context: ctx, ObjectID: n.objectID})
 	if err != nil {
 		return nil, toErrno(err)
@@ -131,6 +149,12 @@ func (n *node) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, s
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return nil, 0, errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, orchestration.ObjectLockWrite, n.objectID)
+	if errno != 0 {
+		return nil, 0, errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	result, err := n.layer.Open(orchestration.OpenRequest{Context: ctx, ObjectID: n.objectID, Flags: flags})
 	if err != nil {
 		return nil, 0, toErrno(err)
@@ -147,6 +171,12 @@ func (n *node) Read(ctx context.Context, fh fs.FileHandle, dest []byte, offset i
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return nil, errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, orchestration.ObjectLockRead, n.objectID)
+	if errno != 0 {
+		return nil, errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	result, err := n.layer.Read(orchestration.ReadRequest{
 		Context: ctx, Handle: handle.handle, ObjectID: n.objectID,
 		Offset: uint64(offset), Size: uint32(len(dest)),
@@ -166,6 +196,12 @@ func (n *node) Write(ctx context.Context, fh fs.FileHandle, data []byte, offset 
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return 0, errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, orchestration.ObjectLockWrite, n.objectID)
+	if errno != 0 {
+		return 0, errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	result, err := n.layer.Write(orchestration.WriteRequest{
 		Context: ctx, Handle: handle.handle, ObjectID: n.objectID,
 		Offset: uint64(offset), Data: data,
@@ -185,6 +221,13 @@ func (n *node) Flush(ctx context.Context, fh fs.FileHandle) syscall.Errno {
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return errno
 	}
+	objectIDs := fileHandleObjectIDs(handle.handle)
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, orchestration.ObjectLockWrite, objectIDs...)
+	if errno != 0 {
+		return errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	_, err := n.layer.Flush(orchestration.FlushRequest{Context: ctx, Handle: handle.handle})
 	return toErrno(err)
 }
@@ -198,6 +241,13 @@ func (n *node) Fsync(ctx context.Context, fh fs.FileHandle, _ uint32) syscall.Er
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return errno
 	}
+	objectIDs := fileHandleObjectIDs(handle.handle)
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, orchestration.ObjectLockWrite, objectIDs...)
+	if errno != 0 {
+		return errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	_, err := n.layer.Fsync(orchestration.FsyncRequest{Context: ctx, Handle: handle.handle})
 	return toErrno(err)
 }
@@ -220,6 +270,12 @@ func (n *node) Create(ctx context.Context, name string, flags, mode uint32, out 
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return nil, nil, 0, errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, orchestration.ObjectLockWrite, n.objectID)
+	if errno != 0 {
+		return nil, nil, 0, errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	credentials := caller(ctx)
 	result, err := n.layer.Create(orchestration.CreateRequest{
 		Context: ctx, ParentID: n.objectID, Name: name,
@@ -258,6 +314,12 @@ func (n *node) Mknod(ctx context.Context, name string, mode, _ uint32, out *gofu
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return nil, errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, orchestration.ObjectLockWrite, n.objectID)
+	if errno != 0 {
+		return nil, errno
+	}
+	defer unlock()
+	ctx = lockedContext
 
 	credentials := caller(ctx)
 	result, err := n.layer.Create(orchestration.CreateRequest{
@@ -283,6 +345,12 @@ func (n *node) Mkdir(ctx context.Context, name string, mode uint32, out *gofuse.
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return nil, errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, orchestration.ObjectLockWrite, n.objectID)
+	if errno != 0 {
+		return nil, errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	credentials := caller(ctx)
 	result, err := n.layer.Mkdir(orchestration.MkdirRequest{
 		Context: ctx, ParentID: n.objectID, Name: name,
@@ -306,6 +374,12 @@ func (n *node) Unlink(ctx context.Context, name string) syscall.Errno {
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, orchestration.ObjectLockWrite, n.objectID)
+	if errno != 0 {
+		return errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	_, err := n.layer.Unlink(orchestration.UnlinkRequest{Context: ctx, ParentID: n.objectID, Name: name})
 	return toErrno(err)
 }
@@ -315,6 +389,12 @@ func (n *node) Rmdir(ctx context.Context, name string) syscall.Errno {
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, orchestration.ObjectLockWrite, n.objectID)
+	if errno != 0 {
+		return errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	_, err := n.layer.Rmdir(orchestration.RmdirRequest{Context: ctx, ParentID: n.objectID, Name: name})
 	return toErrno(err)
 }
@@ -334,6 +414,12 @@ func (n *node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, orchestration.ObjectLockWrite, n.objectID, destination.objectID)
+	if errno != 0 {
+		return errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	_, err := n.layer.Rename(orchestration.RenameRequest{
 		Context: ctx, SourceParentID: n.objectID, SourceName: name,
 		DestinationParentID: destination.objectID, DestinationName: newName,
@@ -353,6 +439,12 @@ func (n *node) Link(ctx context.Context, existing fs.InodeEmbedder, name string,
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return nil, errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, orchestration.ObjectLockWrite, n.objectID, source.objectID)
+	if errno != 0 {
+		return nil, errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	result, err := n.layer.Link(orchestration.LinkRequest{Context: ctx, SourceID: source.objectID, ParentID: n.objectID, Name: name})
 	if err != nil {
 		return nil, toErrno(err)
@@ -372,6 +464,12 @@ func (n *node) Symlink(ctx context.Context, target, name string, out *gofuse.Ent
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return nil, errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, orchestration.ObjectLockWrite, n.objectID)
+	if errno != 0 {
+		return nil, errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	credentials := caller(ctx)
 	result, err := n.layer.Symlink(orchestration.SymlinkRequest{
 		Context: ctx, ParentID: n.objectID, Name: name, Target: target,
@@ -395,6 +493,12 @@ func (n *node) Readlink(ctx context.Context) ([]byte, syscall.Errno) {
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return nil, errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, orchestration.ObjectLockRead, n.objectID)
+	if errno != 0 {
+		return nil, errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	result, err := n.layer.ReadLink(orchestration.ReadLinkRequest{Context: ctx, ObjectID: n.objectID})
 	if err != nil {
 		return nil, toErrno(err)
@@ -422,6 +526,13 @@ func (n *node) Setattr(ctx context.Context, fh fs.FileHandle, in *gofuse.SetAttr
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, orchestration.ObjectLockWrite, n.objectID)
+	if errno != 0 {
+		return errno
+	}
+	defer unlock()
+	ctx = lockedContext
+	request.Context = ctx
 	if mode, ok := in.GetMode(); ok {
 		request.Mode = &mode
 	}
@@ -459,6 +570,12 @@ func (n *node) Statfs(ctx context.Context, out *gofuse.StatfsOut) syscall.Errno 
 	if errno := n.layer.LifecycleErrno(); errno != 0 {
 		return errno
 	}
+	lockedContext, unlock, errno := n.lockObjectGroup(ctx, orchestration.ObjectLockRead)
+	if errno != 0 {
+		return errno
+	}
+	defer unlock()
+	ctx = lockedContext
 	result, err := n.layer.StatFs(orchestration.StatFsRequest{Context: ctx})
 	if err != nil {
 		return toErrno(err)
@@ -474,6 +591,27 @@ type fileHandle struct {
 	layer    *management.Management
 	objectID shared.ObjectID
 	handle   *orchestration.FileHandle
+}
+
+func fileHandleObjectIDs(handle *orchestration.FileHandle) []shared.ObjectID {
+	if id, ok := handle.ObjectID(); ok {
+		return []shared.ObjectID{id}
+	}
+	return nil
+}
+
+func (n *node) lockObjectGroup(ctx context.Context, mode orchestration.ObjectLockMode, ids ...shared.ObjectID) (context.Context, func(), syscall.Errno) {
+	result, err := n.layer.LockObjectGroup(management.LockObjectGroupRequest{
+		Context: ctx, ObjectIDs: ids, Mode: mode,
+	})
+	if err != nil {
+		return nil, nil, toErrno(err)
+	}
+	if errno := n.layer.LifecycleErrno(); errno != 0 {
+		result.Unlock()
+		return nil, nil, errno
+	}
+	return result.Context, result.Unlock, 0
 }
 
 func objectMode(attributes orchestration.ObjectAttributes) uint32 {

@@ -49,11 +49,11 @@ func newWriteFixture(t *testing.T) writeFixture {
 	logical := make([]byte, int(cfg.HeaderReservedSize)+len(payload))
 	copy(logical, headerData)
 	copy(logical[int(cfg.HeaderReservedSize):], payload)
-	_, err = distributed.Layer.WriteStripe(distribution.WriteStripeRequest{
+	_, err = distributed.Layer.WriteStripes(distribution.WriteStripesRequest{Context: ctx, ObjectID: fileID, Stripes: []distribution.WriteStripeRequest{{
 		Context: ctx, ObjectID: fileID, StripeID: 0, ChunkSize: 4096,
 		Layout:    distribution.Layout{Type: distribution.LayoutMirror, NumChunks: 2},
 		IOIndexes: []int{0, 1}, Data: logical,
-	})
+	}}})
 	if err != nil {
 		t.Fatal(err)
 	}

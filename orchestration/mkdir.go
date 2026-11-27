@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"syscall"
 	"time"
 
 	"github.com/tetsup/flexraid/pkg/shared"
@@ -84,6 +85,12 @@ func (layer *Orchestration) mkdirLocked(request MkdirRequest) (response MkdirRes
 		Atime:         now,
 		Mtime:         now,
 		Ctime:         now,
+	}
+	if err = addObjectLocks(ctx, objectID); err != nil {
+		return response, err
+	}
+	if layer.objects[request.ParentID] != parent || parent.header.Deleted || parent.children[request.Name] != nil {
+		return response, syscall.EAGAIN
 	}
 	objectHeader, err = layer.persistNewObject(ctx, objectHeader, nil)
 	if err != nil {

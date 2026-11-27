@@ -40,6 +40,14 @@ type FileHandle struct {
 	hasActiveStripeID bool
 }
 
+// ObjectID returns the data Object protected by this open handle.
+func (handle *FileHandle) ObjectID() (shared.ObjectID, bool) {
+	if handle == nil || handle.runtimeFile == nil {
+		return shared.ObjectID{}, false
+	}
+	return handle.runtimeFile.objectID, true
+}
+
 type OpenRequest struct {
 	Context  context.Context
 	ObjectID shared.ObjectID
@@ -96,6 +104,12 @@ func (layer *Orchestration) openLocked(request OpenRequest) (response OpenRespon
 	}
 	if object.file == nil {
 		return response, fmt.Errorf("file backing is unavailable: %w", os.ErrNotExist)
+	}
+	if err = addObjectLocks(ctx, object.file.objectID); err != nil {
+		return response, err
+	}
+	if layer.objects[request.ObjectID] != object || object.file == nil {
+		return response, os.ErrNotExist
 	}
 
 	var accessMode AccessMode
