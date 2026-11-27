@@ -43,6 +43,7 @@ type Orchestration struct {
 	objectLocks            *objectLockManager
 	cleanupPermissionStore *shared.CleanupPermissionStore
 	logger                 *slog.Logger
+	mapMu                  sync.RWMutex
 	headers                map[shared.ObjectID]header
 	objects                map[shared.ObjectID]*runtimeObject
 	root                   *runtimeObject
